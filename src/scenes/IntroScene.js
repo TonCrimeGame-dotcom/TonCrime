@@ -1,3 +1,5 @@
+import { supabase } from "../supabase.js";
+
 export class IntroScene {
   constructor({ store, input, scenes, assets }) {
     this.store = store;
@@ -12,15 +14,6 @@ export class IntroScene {
   onEnter() {
     this.stage = "splash";
     this.lock = false;
-
-    // HUD gizle
-    const hud = document.getElementById("hudTop");
-    if (hud) hud.style.display = "none";
-  }
-
-  onExit() {
-    const hud = document.getElementById("hudTop");
-    if (hud) hud.style.display = "";
   }
 
   update() {
@@ -35,11 +28,11 @@ export class IntroScene {
 
     if (this.stage === "warning" && this.input.justPressed()) {
       this.lock = true;
-      this.startFlow();
+      this.createOrLoadUser();
     }
   }
 
-  startFlow() {
+  async createOrLoadUser() {
     const age = Number(prompt("Yaşınızı girin:"));
 
     if (!age || age < 18) {
@@ -52,6 +45,7 @@ export class IntroScene {
 
     try {
       const tg = window.Telegram?.WebApp?.initDataUnsafe?.user;
+
       if (tg) {
         username =
           tg.username ||
@@ -65,17 +59,39 @@ export class IntroScene {
 
     if (!username) username = "Player";
 
+    const telegramId =
+      window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "test_user";
+
+    let { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
+
+    if (!profile) {
+      const { data } = await supabase
+        .from("profiles")
+        .insert({
+          telegram_id: telegramId,
+          username: username,
+          age: age
+        })
+        .select()
+        .single();
+
+      profile = data;
+    }
+
     const s = this.store.get();
     const p = s.player || {};
 
     this.store.set({
       player: {
         ...p,
-        username,
-        age,
-        level: p.level || 1,
-        energy: p.energy || 10,
-        energyMax: p.energyMax || 10,
+        username: profile.username,
+        level: profile.level,
+        energy: profile.energy,
+        energyMax: profile.energy_max,
       },
     });
 
@@ -121,11 +137,7 @@ export class IntroScene {
         210
       );
 
-      ctx.fillText(
-        "Devam etmek için ekrana dokun.",
-        w / 2,
-        250
-      );
+      ctx.fillText("Devam etmek için ekrana dokun.", w / 2, 250);
     }
   }
 }
