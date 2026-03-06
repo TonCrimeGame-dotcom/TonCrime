@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-
+import { MissionsScene } from "./scenes/MissionsScene.js";
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import { BootScene } from "./scenes/BootScene.js";
@@ -281,10 +281,11 @@ scenes.register(
   "trade",
   new TradeScene({ store, scenes, assets })
 );
-
+scenes.register(
+  "missions",
+  new MissionsScene({ store, input, i18n, assets, scenes })
+);
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
-
-scenes.register("missions", new SimpleScreenScene({ i18n, titleKey: "Missions" }));
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 
