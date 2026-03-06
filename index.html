@@ -1,0 +1,1044 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>TonCrime</title>
+
+  <style>
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      background: #0b0b0f;
+      overflow: hidden;
+      touch-action: none;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    #game {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    #safe {
+      position: fixed;
+      left: var(--sal);
+      top: var(--sat);
+      right: var(--sar);
+      bottom: var(--sab);
+      pointer-events: none;
+    }
+
+    /* ===== TOP HUD (GLOBAL) ===== */
+    #hudTop {
+      position: fixed;
+      left: var(--sal);
+      right: var(--sar);
+      top: var(--sat);
+      padding: 10px 12px 0;
+      z-index: 9998;
+      pointer-events: auto;
+    }
+
+    #hudTop, #hudTop * {
+      touch-action: auto;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #hudRow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hudPanel {
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.02);
+      border-radius: 12px;
+      padding: 8px 10px;
+      backdrop-filter: blur(6px);
+    }
+
+    #hudLeft { justify-self: start; width: min(270px, 100%); }
+    #hudLeft .line1 { color: rgba(255,255,255,0.92); font-size: 13px; margin-bottom: 6px; }
+    #hudLeft .line2 { display:flex; align-items:center; gap:8px; color: rgba(255,255,255,0.92); font-size: 13px; margin-bottom: 6px; }
+    #hudCoinIcon { width: 16px; height: 16px; display: inline-block; }
+    #hudLeft .line3 { color: rgba(255,255,255,0.82); font-size: 12px; }
+    #hudLeft .line3 small { color: rgba(255,255,255,0.60); font-size: 11px; }
+
+    #hudLogoWrap { justify-self: center; pointer-events: none; }
+    #hudLogo { height: 64px; width: auto; display:block; filter: drop-shadow(0 6px 16px rgba(0,0,0,0.35)); }
+
+    #hudRight { justify-self: end; width: min(300px, 100%); display: grid; gap: 8px; }
+
+    .bar {
+      height: 28px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.12);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .barFill { height: 100%; width: 0%; background: rgba(255,255,255,0.22); }
+    .barText {
+      position: absolute; inset: 0;
+      display:flex; align-items:center; justify-content:center;
+      color: rgba(255,255,255,0.92);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    /* ===== CHAT DRAWER (GLOBAL) ===== */
+    #chatDrawer {
+      position: fixed;
+      left: var(--sal);
+      right: var(--sar);
+      bottom: var(--sab);
+      height: min(42vh, 360px);
+      transform: translateY(calc(100% - 44px));
+      transition: transform 220ms ease;
+      z-index: 9999;
+      pointer-events: auto;
+    }
+
+    #chatDrawer, #chatDrawer * {
+      touch-action: auto;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #chatDrawer.open { transform: translateY(0); }
+
+    #chatHeader {
+      height: 44px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 0 12px;
+      background: rgba(0,0,0,0.72);
+      border-top: 1px solid rgba(255,255,255,0.14);
+      border-left: 1px solid rgba(255,255,255,0.10);
+      border-right: 1px solid rgba(255,255,255,0.10);
+      border-top-left-radius: 14px;
+      border-top-right-radius: 14px;
+      backdrop-filter: blur(6px);
+    }
+
+    #chatTitle { color: rgba(255,255,255,0.92); font-size: 13px; display:flex; align-items:center; gap:8px; }
+    #chatToggle {
+      appearance:none;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.10);
+      color: rgba(255,255,255,0.92);
+      border-radius: 10px;
+      height: 28px;
+      padding: 0 10px;
+      font-size: 12px;
+      cursor:pointer;
+    }
+
+    #chatBody {
+      height: calc(100% - 44px);
+      background: rgba(0,0,0,0.62);
+      border-left: 1px solid rgba(255,255,255,0.10);
+      border-right: 1px solid rgba(255,255,255,0.10);
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      border-bottom-left-radius: 14px;
+      border-bottom-right-radius: 14px;
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      backdrop-filter: blur(6px);
+    }
+
+    #chatMessages { flex:1; overflow-y:auto; padding: 10px 10px 6px; }
+    .msg { margin: 6px 0; display:flex; gap:8px; align-items:baseline; color: rgba(255,255,255,0.92); font-size:13px; line-height:1.25; word-break:break-word; }
+    .msg .meta { color: rgba(255,255,255,0.55); font-size: 11px; min-width: 56px; }
+
+    #chatInputRow { display:flex; gap:8px; padding: 8px; border-top: 1px solid rgba(255,255,255,0.10); background: rgba(0,0,0,0.30); }
+    #chatInput {
+      flex:1; height:34px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.92);
+      padding: 0 10px;
+      outline:none;
+      font-size: 13px;
+      user-select:text;
+      -webkit-user-select:text;
+    }
+    #chatSend {
+      width:74px; height:34px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.10);
+      color: rgba(255,255,255,0.92);
+      font-size: 13px;
+      cursor:pointer;
+    }
+
+    /* ===== PVP OVERLAY ===== */
+    #pvpLayer {
+      position: fixed;
+      left: var(--sal);
+      right: var(--sar);
+      top: calc(var(--sat) + 92px);
+      bottom: calc(var(--sab) + 56px);
+      z-index: 5000;
+      pointer-events: none;
+    }
+
+    #pvpWrap {
+      position: absolute;
+      inset: 0;
+      margin: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.82);
+      background: rgba(20,27,46,0.28);
+      backdrop-filter: blur(60px);
+      display: none;
+      pointer-events: auto;
+    }
+    #pvpWrap.open { display:block; }
+
+    /* --- PvP MENU (giriş ekranı) --- */
+    #pvpMenu {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    #pvpMenu.open { display: flex; }
+
+    #pvpMenuCard{
+      width: min(520px, 100%);
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    #pvpMenuHead{
+      padding: 12px 12px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    #pvpMenuTitle{
+      color: rgba(255,255,255,0.95);
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      font-size: 14px;
+    }
+    #pvpMenuClose{
+      appearance:none;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.92);
+      border-radius: 10px;
+      height: 30px;
+      padding: 0 10px;
+      font-weight: 900;
+      cursor:pointer;
+    }
+
+    #pvpMenuBody{ padding: 12px; display:grid; gap: 10px; }
+
+    .menuGrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 420px){
+      .menuGrid{ grid-template-columns: 1fr; }
+    }
+
+    .menuBtn{
+      appearance:none;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.92);
+      border-radius: 14px;
+      padding: 12px;
+      text-align: left;
+      cursor:pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .menuBtn:hover{ transform: translateY(-1px); background: rgba(255,255,255,0.09); }
+    .menuBtn .t{ font-weight: 900; font-size: 13px; margin-bottom: 6px; }
+    .menuBtn .d{ font-size: 12px; color: rgba(255,255,255,0.75); line-height: 1.25; }
+
+    #pvpMenuFooter{
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,0.10);
+      display:flex;
+      justify-content:space-between;
+      gap: 10px;
+      color: rgba(255,255,255,0.70);
+      font-size: 12px;
+    }
+
+    /* --- PvP Arena header --- */
+    #pvpHeader{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 10px;
+      padding: 10px 10px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+    }
+
+    #pvpLeftHead { display:flex; flex-direction:column; gap: 4px; }
+    #pvpStatus { font-weight: 900; font-size: 13px; color: rgba(255,255,255,0.92); }
+    #pvpOpponentRow { font-size: 12px; color: rgba(255,255,255,0.80); }
+    #pvpOpponentRow b { color: rgba(255,255,255,0.95); }
+
+    #pvpSpinner {
+      display:inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: rgba(255,255,255,0.85);
+      vertical-align: -2px;
+      margin-right: 8px;
+      animation: spin 0.8s linear infinite;
+    }
+    #pvpSpinner.hidden { display:none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .pvpBtns{ display:flex; gap:8px; }
+    .pvpBtn{
+      appearance:none;
+      border:1px solid rgba(255,255,255,0.16);
+      background: rgba(0,0,0,0.35);
+      color: rgba(255,255,255,0.92);
+      border-radius: 10px;
+      height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 900;
+      cursor:pointer;
+      white-space: nowrap;
+    }
+
+    #pvpBars{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 10px;
+    }
+    .pvpBar{
+      height: 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      overflow:hidden;
+    }
+    .pvpFill{
+      height:100%;
+      width:100%;
+      transform-origin: left center;
+      transform: scaleX(1);
+      background: rgba(255,255,255,0.65);
+    }
+    .pvpBarLabel{
+      display:flex;
+      justify-content:space-between;
+      font-size: 12px;
+      color: rgba(255,255,255,0.95);
+      margin-top: 6px;
+    }
+
+ #arena{
+  /* ✅ absolute KALDIR */
+  position: relative;
+
+
+  border-radius: 14px;
+  border: 0px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.92);
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+    #pvpFab {
+      position: fixed;
+      right: calc(var(--sar) + 12px);
+      bottom: calc(var(--sab) + 56px);
+      z-index: 9997;
+      pointer-events: auto;
+      appearance:none;
+      border:1px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.55);
+      color: rgba(255,255,255,0.92);
+      border-radius: 14px;
+      height: 40px;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 900;
+      backdrop-filter: blur(6px);
+      cursor:pointer;
+    }
+
+    #pvpResultToast{
+      position: fixed;
+      left: 50%;
+      top: 18%;
+      transform: translateX(-50%);
+      z-index: 10000;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.65);
+      color: rgba(255,255,255,0.92);
+      font-weight: 900;
+      font-size: 14px;
+      backdrop-filter: blur(6px);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 160ms ease;
+    }
+
+    /* leaderboard / turnuva popup */
+    #pvpPopup {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(0,0,0,0.85);
+    }
+    #pvpPopup.open{ display:flex; }
+    #pvpPopupCard{
+      width: min(560px, 100%);
+      max-height: min(72vh, 520px);
+      overflow:auto;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.85);
+      background: rgba(0,0,0,0.58);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.85);
+    }
+    #pvpPopupHead{
+      padding: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.85);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    #pvpPopupTitle{ color: rgba(255,255,255,0.95); font-weight: 900; font-size: 14px; }
+    #pvpPopupClose{
+      appearance:none;
+      border: 1px solid rgba(255,255,255,0.80);
+      background: rgba(255,255,255,0.88);
+      color: rgba(255,255,255,0.92);
+      border-radius: 10px;
+      height: 30px;
+      padding: 0 10px;
+      font-weight: 900;
+      cursor:pointer;
+    }
+    #pvpPopupBody{ padding: 12px; color: rgba(255,255,255,0.86); font-size: 13px; }
+    .lbRow{
+      display:flex;
+      justify-content:space-between;
+      gap: 10px;
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.88);
+    }
+    .lbRow b{ color: rgba(255,255,255,0.96); }
+    .muted{ color: rgba(255,255,255,0.70); font-size: 12px; }
+  </style>
+</head>
+
+<body>
+  <canvas id="game"></canvas>
+  <div id="safe"></div>
+
+  <!-- TOP HUD -->
+  <div id="hudTop">
+    <div id="hudRow">
+      <div id="hudLeft" class="hudPanel">
+        <div class="line1" id="hudUsername">Player</div>
+        <div class="line2">
+          <img id="hudCoinIcon" src="./src/assets/yton.png" alt="coin" />
+          <div id="hudCoins">Coin: 0</div>
+        </div>
+        <div class="line3">
+          <span id="hudWeaponName">Silah Yok</span>
+          <small id="hudWeaponBonus"> +0%</small>
+        </div>
+      </div>
+
+      <div id="hudLogoWrap">
+        <img id="hudLogo" src="./src/assets/logo.png" alt="TonCrime" />
+      </div>
+
+      <div id="hudRight" class="hudPanel">
+        <div class="bar">
+          <div class="barFill" id="hudXpFill"></div>
+          <div class="barText" id="hudXpText">LVL 1 • XP 0/100</div>
+        </div>
+        <div class="bar">
+          <div class="barFill" id="hudEnergyFill"></div>
+          <div class="barText" id="hudEnergyText">ENERJİ 0/10 • --:--</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PVP LAYER -->
+  <div id="pvpLayer">
+    <div id="pvpWrap">
+
+      <!-- PvP MENU -->
+      <div id="pvpMenu">
+        <div id="pvpMenuCard">
+          <div id="pvpMenuHead">
+            <div id="pvpMenuTitle">PvP • Giriş Seç</div>
+            <button id="pvpMenuClose" type="button">Kapat</button>
+          </div>
+
+          <div id="pvpMenuBody">
+            <div class="menuGrid">
+              <button class="menuBtn" id="btnEnterAd" type="button">
+                <div class="t">1) Reklam izle gir</div>
+                <div class="d">Ücretsiz giriş • Enerji düşer • Kazanan: <b>+3 coin</b> • <b>+5 XP</b></div>
+              </button>
+
+              <button class="menuBtn" id="btnEnterCoin" type="button">
+                <div class="t">2) Coin ile gir</div>
+                <div class="d">Giriş: <b>-6 coin</b> • Enerji düşer • Kazanan: <b>+10 coin</b> • <b>+10 XP</b></div>
+              </button>
+
+              <button class="menuBtn" id="btnLeaderboard" type="button">
+                <div class="t">3) Leaderboard</div>
+                <div class="d">Son maçlara göre sıralama</div>
+              </button>
+
+              <button class="menuBtn" id="btnTournament" type="button">
+                <div class="t">4) Turnuva</div>
+                <div class="d">Popup turnuva ekranı</div>
+              </button>
+            </div>
+          </div>
+
+          <div id="pvpMenuFooter">
+            <span class="muted" id="pvpMenuWallet">Coin: -- • Enerji: --</span>
+            <span class="muted">Maç başlamaz, önce seçim yap.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup (Leaderboard / Turnuva) -->
+      <div id="pvpPopup">
+        <div id="pvpPopupCard">
+          <div id="pvpPopupHead">
+            <div id="pvpPopupTitle">Popup</div>
+            <button id="pvpPopupClose" type="button">Kapat</button>
+          </div>
+          <div id="pvpPopupBody"></div>
+        </div>
+      </div>
+
+      <!-- Arena Header -->
+      <div id="pvpHeader">
+        <div id="pvpLeftHead">
+          <div id="pvpStatus">PvP • Hazır</div>
+          <div id="pvpOpponentRow">
+            <span id="pvpSpinner" class="hidden"></span>
+            Rakip: <b id="pvpOpponent">—</b>
+          </div>
+        </div>
+
+        <div class="pvpBtns">
+          <button class="pvpBtn" id="pvpStart" type="button">Başlat</button>
+          <button class="pvpBtn" id="pvpStop" type="button">Durdur</button>
+          <button class="pvpBtn" id="pvpReset" type="button">Sıfırla</button>
+        </div>
+      </div>
+
+      <div id="pvpBars">
+        <div>
+          <div class="pvpBar"><div class="pvpFill" id="enemyFill"></div></div>
+          <div class="pvpBarLabel"><span>Düşman</span><span id="enemyHpText">100</span></div>
+        </div>
+        <div>
+          <div class="pvpBar"><div class="pvpFill" id="meFill"></div></div>
+          <div class="pvpBarLabel"><span>Sen</span><span id="meHpText">100</span></div>
+        </div>
+      </div>
+
+      <div id="arena"></div>
+    </div>
+  </div>
+
+  <button id="pvpFab" type="button">PvP</button>
+
+  <!-- CHAT -->
+  <div id="chatDrawer">
+    <div id="chatHeader">
+      <div id="chatTitle">💬 Sohbet</div>
+      <button id="chatToggle" type="button">Aç</button>
+    </div>
+    <div id="chatBody">
+      <div id="chatMessages"></div>
+      <div id="chatInputRow">
+        <input id="chatInput" type="text" placeholder="Mesaj yaz..." />
+        <button id="chatSend" type="button">Gönder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OYUN -->
+  <script type="module" src="./src/main.js"></script>
+
+  <!-- PVP (JS olmalı, HTML değil!) -->
+  <script src="./src/pvp.js" defer></script>
+
+  <script>
+document.addEventListener("DOMContentLoaded", () => {
+  // ------------------ UI refs ------------------
+  const wrap = document.getElementById("pvpWrap");
+  const fab  = document.getElementById("pvpFab");
+
+  const btnStart = document.getElementById("pvpStart");
+  const btnStop  = document.getElementById("pvpStop");
+  const btnReset = document.getElementById("pvpReset");
+
+  const oppEl  = document.getElementById("pvpOpponent");
+  const spinEl = document.getElementById("pvpSpinner");
+
+  // Toast
+  function showToast(msg){
+    let el = document.getElementById("pvpResultToast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "pvpResultToast";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.opacity = "1";
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = "0"; }, 1400);
+  }
+
+  function setPvpStatus(txt){
+    const status = document.getElementById("pvpStatus");
+    if (status) status.textContent = "PvP • " + txt;
+  }
+  function setOpponent(name){
+    if (oppEl) oppEl.textContent = name || "—";
+  }
+  function spinner(on){
+    if (!spinEl) return;
+    spinEl.classList.toggle("hidden", !on);
+  }
+
+  function openOverlay(){ wrap.classList.add("open"); }
+  function closeOverlay(){
+    wrap.classList.remove("open");
+    spinner(false);
+    setOpponent("—");
+    setPvpStatus("Hazır");
+    // pvp durdur
+    window.TonCrimePVP?.stop?.();
+    entering = false;
+  }
+
+  // ------------------ Store bridge ------------------
+  function getStore(){ return window.tcStore || null; }
+  function getState(){ return getStore()?.get?.() || null; }
+  function setState(patch){ getStore()?.set?.(patch); }
+
+  // store'dan güvenli okuma
+  function coinsOf(s){
+    const c = Number(s?.coins ?? NaN);
+    if (Number.isFinite(c)) return c;
+    const pc = Number(s?.player?.coins ?? NaN);
+    if (Number.isFinite(pc)) return pc;
+    const y = Number(s?.player?.yton ?? NaN);
+    if (Number.isFinite(y)) return y;
+    return 0;
+  }
+function energyOf(s){
+  // player.energy
+  let e = Number(s?.player?.energy ?? NaN);
+  if (Number.isFinite(e)) return e;
+
+  // bazı store yapılarında energy root'ta olabilir
+  e = Number(s?.energy ?? NaN);
+  if (Number.isFinite(e)) return e;
+
+  // localStorage fallback
+  const ls = Number(localStorage.getItem("energy") ?? NaN);
+  if (Number.isFinite(ls)) return ls;
+
+  return 0;
+}
+  function energyMaxOf(s){
+    const e = Number(s?.player?.energyMax ?? NaN);
+    return Number.isFinite(e) ? e : 10;
+  }
+  function xpOf(s){
+    const x = Number(s?.player?.xp ?? NaN);
+    return Number.isFinite(x) ? x : 0;
+  }
+
+  // ⚠️ coin/energy sıfırlanmasın: sadece eksikse doldur
+  function ensureDefaultsOnce(){
+    const st = getStore();
+    if (!st) return false;
+    const s = st.get() || {};
+    if (s.__pvpDefaultsOk) return true;
+
+    const p = s.player || {};
+    const patch = { __pvpDefaultsOk: true };
+
+    // coins yoksa 100 ver (sıfırsa bile EZME)
+    if (s.coins == null && p.coins == null && p.yton == null) patch.coins = 100;
+
+    // player yoksa veya energy/xp eksikse tamamla
+    const pPatch = { ...p };
+    let touched = false;
+
+    if (pPatch.username == null) { pPatch.username = "Player"; touched = true; }
+    if (pPatch.level == null)    { pPatch.level = 1; touched = true; }
+
+    if (pPatch.xp == null)       { pPatch.xp = 0; touched = true; }
+    if (pPatch.energy == null)   { pPatch.energy = 10; touched = true; }
+    if (pPatch.energyMax == null){ pPatch.energyMax = 100; touched = true; }
+    if (pPatch.lastEnergyAt == null) { pPatch.lastEnergyAt = Date.now(); touched = true; }
+    if (pPatch.energyIntervalMs == null) { pPatch.energyIntervalMs = 5 * 60 * 1000; touched = true; }
+
+    if (touched) patch.player = pPatch;
+
+    st.set(patch);
+    return true;
+  }
+
+  // ------------------ PvP init guarantee ------------------
+  function ensurePvpInit(){
+    if (!window.TonCrimePVP) return false;
+    if (ensurePvpInit._done) return true;
+    window.TonCrimePVP.init({
+      arenaId: "arena",
+      statusId: "pvpStatus",
+      enemyFillId: "enemyFill",
+      meFillId: "meFill",
+      enemyHpTextId: "enemyHpText",
+      meHpTextId: "meHpText",
+    });
+    ensurePvpInit._done = true;
+    return true;
+  }
+
+  function waitForPvp(maxMs = 2500){
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      (function tick(){
+        if (window.TonCrimePVP) return resolve(true);
+        if (Date.now() - t0 > maxMs) return resolve(false);
+        setTimeout(tick, 50);
+      })();
+    });
+  }
+
+  // ------------------ Matchmaking ------------------
+  function makeOpponentName(){
+    const first = ["Mert","Kerem","Deniz","Arda","Sena","Ece","Yusuf","Atlas","Baran","Eren","Kaan","Efe","Cem","Poyraz"];
+    const last  = ["Kara","Yılmaz","Demir","Kaya","Aslan","Koç","Çelik","Aydın","Şahin","Kaplan","Aksoy","Ersoy"];
+    const nick  = ["Noir","Raven","Shadow","Kobra","Viper","Ghost","Prime","Nova","Reaper","Bane"];
+    const mode = Math.random();
+    if (mode < 0.55) return first[Math.floor(Math.random()*first.length)] + " " + last[Math.floor(Math.random()*last.length)];
+    if (mode < 0.85) return nick[Math.floor(Math.random()*nick.length)] + "_" + (10 + Math.floor(Math.random()*89));
+    return first[Math.floor(Math.random()*first.length)] + nick[Math.floor(Math.random()*nick.length)];
+  }
+
+  async function findOpponent(){
+    spinner(true);
+    setOpponent("aranıyor…");
+
+    let dots = 0;
+    setPvpStatus("Rakip aranıyor");
+    const anim = setInterval(() => {
+      dots = (dots + 1) % 4;
+      setPvpStatus("Rakip aranıyor" + ".".repeat(dots));
+    }, 300);
+
+    const delay = 1200 + Math.floor(Math.random() * 1800);
+    await new Promise(r => setTimeout(r, delay));
+
+    clearInterval(anim);
+    spinner(false);
+    return { username: makeOpponentName(), isBot: true };
+  }
+
+  // ------------------ Economy rules ------------------
+  const ENERGY_COST = 10;
+
+  function hasEnergy(s){ return energyOf(s) >= ENERGY_COST; }
+  function hasCoinsForPaid(s){ return coinsOf(s) >= 6; }
+
+  function spendEnergy(s){
+    const p = s.player || {};
+    setState({ player: { ...p, energy: Math.max(0, energyOf(s) - ENERGY_COST) } });
+  }
+  function spendPaidCoins(s){
+    setState({ coins: coinsOf(s) - 6 });
+  }
+
+  // ödüller
+  function rewardWinPaid(){
+    const s = getState(); if (!s?.player) return;
+    setState({
+      coins: coinsOf(s) + 10,
+      player: { ...s.player, xp: xpOf(s) + 10 }
+    });
+  }
+  function rewardWinAd(){
+    const s = getState(); if (!s?.player) return;
+    setState({
+      coins: coinsOf(s) + 3,
+      player: { ...s.player, xp: xpOf(s) + 5 }
+    });
+  }
+  function applyLose(){
+    // kaybedene: coin -6 ve xp -5 (senin eski kuralın)
+    const s = getState(); if (!s?.player) return;
+    setState({
+      coins: coinsOf(s) - 6,
+      player: { ...s.player, xp: Math.max(0, xpOf(s) - 5) }
+    });
+  }
+
+  // ------------------ Lobby (Seçenek menüsü) ------------------
+  function ensureLobbyUI(){
+    if (document.getElementById("pvpLobby")) return;
+
+    const header = document.getElementById("pvpHeader");
+    if (!header) return;
+
+    const lobby = document.createElement("div");
+    lobby.id = "pvpLobby";
+    lobby.style.display = "grid";
+    lobby.style.gridTemplateColumns = "1fr 1fr";
+    lobby.style.gap = "8px";
+    lobby.style.padding = "10px";
+    lobby.style.borderBottom = "1px solid rgba(255,255,255,0.10)";
+
+    lobby.innerHTML = `
+      <button class="pvpBtn" id="pvpEnterAd" type="button">🎥 Reklam İzle Gir</button>
+      <button class="pvpBtn" id="pvpEnterPaid" type="button">🪙 6 Coin ile Gir</button>
+      <button class="pvpBtn" id="pvpLeaderboard" type="button">🏆 Leaderboard</button>
+      <button class="pvpBtn" id="pvpTournament" type="button">🎯 Turnuva</button>
+    `;
+
+    // Header altına (butonların üstüne değil) koymak daha stabil:
+    // pvpHeader'dan sonra ekleyelim
+    header.parentNode.insertBefore(lobby, header.nextSibling);
+
+    // Mevcut Start/Stop/Reset butonlarını lobide gereksiz yapıyoruz:
+    btnStart.style.display = "none";
+    btnStop.style.display  = "none";
+    // Reset kalsın (debug)
+  }
+
+  function showLobby(){
+    ensureLobbyUI();
+    const lobby = document.getElementById("pvpLobby");
+    if (lobby) lobby.style.display = "grid";
+    setPvpStatus("Lobi");
+    spinner(false);
+    setOpponent("—");
+  }
+
+  function hideLobby(){
+    const lobby = document.getElementById("pvpLobby");
+    if (lobby) lobby.style.display = "none";
+  }
+
+  // ------------------ Enter match flows ------------------
+  let entering = false;
+  let entryMode = null; // "ad" | "paid"
+
+  async function startMatch(mode){
+    if (entering) return;
+    entering = true;
+    entryMode = mode;
+
+    try {
+      openOverlay();
+      showLobby();        // önce lobi görünsün
+      hideLobby();        // maç başlayınca lobiyi kapatacağız
+
+      // hazırla
+      if (!getStore()) { showToast("Store yok (main.js)"); setPvpStatus("STORE YOK"); return; }
+      ensureDefaultsOnce();
+
+      const ok = await waitForPvp(3000);
+      if (!ok) { showToast("pvp.js yüklenmedi"); setPvpStatus("PVP YOK"); return; }
+      ensurePvpInit();
+
+      const s = getState();
+      const y = coinsOf(s);
+      const e = energyOf(s);
+
+console.log("ENERGY CHECK:", e, "COST:", ENERGY_COST);
+      // enerji şart
+      if (e < ENERGY_COST) {
+        setPvpStatus("Yetersiz Enerji");
+        showToast(`Yetersiz enerji (${e}/${ENERGY_COST})`);
+        showLobby();
+        return;
+      }
+
+      // coin şart (paid)
+      if (mode === "paid" && y < 6) {
+        setPvpStatus("Yetersiz Coin");
+        showToast(`Yetersiz coin (Coin:${y})`);
+        showLobby();
+        return;
+      }
+
+      // burada "reklam izleme" simülasyonu: 1.2sn bekletelim
+      if (mode === "ad") {
+        setPvpStatus("Reklam izleniyor...");
+        spinner(true);
+        await new Promise(r => setTimeout(r, 1200));
+        spinner(false);
+      }
+
+      // rakip ara
+      const opp = await findOpponent();
+      setOpponent(opp.username);
+      setPvpStatus("Rakip bulundu");
+
+      // kısa bekleme
+      await new Promise(r => setTimeout(r, 500));
+
+      // maliyetler
+      const s2 = getState();
+      spendEnergy(s2);
+      if (mode === "paid") spendPaidCoins(s2);
+
+      // başlat
+      window.TonCrimePVP.setOpponent?.(opp);
+      window.TonCrimePVP.reset?.();
+      window.TonCrimePVP.start?.();
+
+      setPvpStatus("Başladı");
+    } finally {
+      entering = false;
+    }
+  }
+
+  // ------------------ Wire actions ------------------
+  // Sağ alttaki PvP → lobi açsın
+  fab.onclick = () => {
+    openOverlay();
+    ensureDefaultsOnce();
+    ensureLobbyUI();
+    showLobby();
+  };
+
+  // Menü kartı event'i → lobi açsın (direkt başlamasın)
+  window.addEventListener("tc:openPvp", () => {
+    openOverlay();
+    ensureDefaultsOnce();
+    ensureLobbyUI();
+    showLobby();
+  });
+
+  // Reset: sadece oyun reset (lobiye dönmez)
+  btnReset.onclick = () => {
+    ensurePvpInit();
+    window.TonCrimePVP?.reset?.();
+    setOpponent("—");
+    spinner(false);
+    setPvpStatus("Hazır");
+    // lobi açık kalsın:
+    showLobby();
+  };
+
+  // Stop (eski buton görünmüyor ama güvenlik)
+  btnStop.onclick = () => {
+    window.TonCrimePVP?.stop?.();
+    setPvpStatus("Durduruldu");
+    showLobby();
+  };
+
+  // Lobby buton clickleri (delegation)
+  document.body.addEventListener("click", (e) => {
+    const id = e.target?.id;
+    if (!id) return;
+
+    if (id === "pvpEnterAd") {
+      startMatch("ad");
+    }
+    if (id === "pvpEnterPaid") {
+      startMatch("paid");
+    }
+    if (id === "pvpLeaderboard") {
+      showToast("Leaderboard yakında");
+      setPvpStatus("Leaderboard");
+    }
+    if (id === "pvpTournament") {
+      showToast("Turnuva yakında");
+      setPvpStatus("Turnuva");
+    }
+  });
+
+  // ------------------ Results ------------------
+  window.addEventListener("tc:pvp:win", () => {
+    if (entryMode === "ad") rewardWinAd();
+    else rewardWinPaid();
+
+    showToast("Kazandın!");
+    setPvpStatus("Bitti");
+    // maç bitince lobiyi göster
+    showLobby();
+  });
+
+  window.addEventListener("tc:pvp:lose", () => {
+    applyLose();
+    showToast("Kaybettin!");
+    setPvpStatus("Bitti");
+    showLobby();
+  });
+
+  // İlk durum
+  ensureDefaultsOnce();
+  ensureLobbyUI();
+  setPvpStatus("Hazır");
+  setOpponent("—");
+  spinner(false);
+});
+</script>
+</body>
+</html>
