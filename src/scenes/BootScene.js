@@ -7,6 +7,9 @@ export class BootScene {
 
   async onEnter() {
     await this.assets.loadImages([
+      // Intro / yapımcı logosu
+      { key: "tata", src: "./src/assets/tata.png" },
+
       // Genel / carousel
       { key: "weapons_bg", src: "./src/assets/weapons.png" },
       { key: "missions", src: "./src/assets/missions.jpg" },
@@ -16,7 +19,7 @@ export class BootScene {
       { key: "coffeeshop", src: "./src/assets/coffeeshop.jpg" },
       { key: "xxx", src: "./src/assets/xxx.jpg" },
 
-      // ✅ Ticaret kartı + background
+      // Ticaret kartı + background
       { key: "blackmarket", src: "./src/assets/BlackMarket.png" },
       { key: "blackmarket_bg", src: "./src/assets/BlackMarket.png" },
 
@@ -29,7 +32,7 @@ export class BootScene {
       { key: "coffeeshop_menu", src: "./src/assets/coffeeshop_menu.png" }
     ]);
 
-    this.scenes.go("home");
+    this.scenes.go("intro");
   }
 
   render(ctx, w, h) {
