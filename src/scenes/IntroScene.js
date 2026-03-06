@@ -1,43 +1,131 @@
-export class BootScene {
-  constructor({ assets, i18n, scenes }) {
-    this.assets = assets;
-    this.i18n = i18n;
+export class IntroScene {
+  constructor({ store, input, scenes, assets }) {
+    this.store = store;
+    this.input = input;
     this.scenes = scenes;
+    this.assets = assets;
+
+    this.stage = "splash";
+    this.lock = false;
   }
 
-  async onEnter() {
-    await this.assets.loadImages([
-      { key: "tata", src: "./src/assets/tata.png" },
+  onEnter() {
+    this.stage = "splash";
+    this.lock = false;
 
-      { key: "weapons_bg", src: "./src/assets/weapons.png" },
-      { key: "missions", src: "./src/assets/missions.jpg" },
-      { key: "pvp", src: "./src/assets/pvp.jpg" },
-      { key: "weapons", src: "./src/assets/weapons.jpg" },
-      { key: "nightclub", src: "./src/assets/nightclub.jpg" },
-      { key: "coffeeshop", src: "./src/assets/coffeeshop.jpg" },
-      { key: "xxx", src: "./src/assets/xxx.jpg" },
+    // HUD gizle
+    const hud = document.getElementById("hudTop");
+    if (hud) hud.style.display = "none";
+  }
 
-      { key: "blackmarket", src: "./src/assets/BlackMarket.png" },
-      { key: "blackmarket_bg", src: "./src/assets/BlackMarket.png" },
+  onExit() {
+    const hud = document.getElementById("hudTop");
+    if (hud) hud.style.display = "";
+  }
 
-      { key: "xxx_bg", src: "./src/assets/xxx.jpg" },
+  update() {
+    if (this.lock) return;
 
-      { key: "coffeeshop_bg", src: "./src/assets/coffeeshop.png" },
-      { key: "coffeeshop_book", src: "./src/assets/coffeeshop_book.png" },
-      { key: "coffeeshop_menu", src: "./src/assets/coffeeshop_menu.png" }
-    ]);
+    if (this.stage === "splash" && this.input.justPressed()) {
+      this.stage = "warning";
+      this.lock = true;
+      setTimeout(() => (this.lock = false), 200);
+      return;
+    }
 
-    this.scenes.go("intro");
+    if (this.stage === "warning" && this.input.justPressed()) {
+      this.lock = true;
+      this.startFlow();
+    }
+  }
+
+  startFlow() {
+    const age = Number(prompt("Yaşınızı girin:"));
+
+    if (!age || age < 18) {
+      alert("Bu oyun sadece 18+ kullanıcılar içindir.");
+      this.lock = false;
+      return;
+    }
+
+    let username = "";
+
+    try {
+      const tg = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      if (tg) {
+        username =
+          tg.username ||
+          [tg.first_name, tg.last_name].filter(Boolean).join(" ");
+      }
+    } catch {}
+
+    if (!username) {
+      username = prompt("Kullanıcı adı gir:");
+    }
+
+    if (!username) username = "Player";
+
+    const s = this.store.get();
+    const p = s.player || {};
+
+    this.store.set({
+      player: {
+        ...p,
+        username,
+        age,
+        level: p.level || 1,
+        energy: p.energy || 10,
+        energyMax: p.energyMax || 10,
+      },
+    });
+
+    this.scenes.go("home");
   }
 
   render(ctx, w, h) {
-    ctx.fillStyle = "#0b0b0f";
+    ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, w, h);
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "20px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(this.i18n.t("loading"), w / 2, h / 2);
+    if (this.stage === "splash") {
+      const img = this.assets.getImage("tata");
+
+      if (img) {
+        const scale = Math.min(w / img.width, h / img.height);
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+
+        ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      }
+
+      ctx.fillStyle = "white";
+      ctx.textAlign = "center";
+      ctx.font = "18px system-ui";
+      ctx.fillText("Devam etmek için dokun", w / 2, h - 60);
+      return;
+    }
+
+    if (this.stage === "warning") {
+      ctx.fillStyle = "#111";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center";
+
+      ctx.font = "28px system-ui";
+      ctx.fillText("+18 UYARI", w / 2, 150);
+
+      ctx.font = "16px system-ui";
+      ctx.fillText(
+        "Bu oyun cinsellik, şiddet ve yasaklı madde içerir.",
+        w / 2,
+        210
+      );
+
+      ctx.fillText(
+        "Devam etmek için ekrana dokun.",
+        w / 2,
+        250
+      );
+    }
   }
 }
