@@ -93,6 +93,7 @@ const defaultState = {
   player: {
     username: "",
     telegramId: "",
+    age: null,
     level: 1,
     xp: 30,
     xpToNext: 100,
@@ -194,12 +195,8 @@ setInterval(tickEnergy, 1000);
 /* ===== I18N ===== */
 const i18n = new I18n(store);
 i18n.register({
-  tr: {
-    loading: "Yükleniyor...",
-  },
-  en: {
-    loading: "Loading...",
-  },
+  tr: { loading: "Yükleniyor..." },
+  en: { loading: "Loading..." },
 });
 
 /* ===== ASSETS ===== */
@@ -243,28 +240,10 @@ window.tc.dev = {
     store.set({ player: { ...p, energy: next } });
     console.log("energy:", store.get().player.energy);
   },
-  win() {
-    window.dispatchEvent(
-      new CustomEvent("tc:pvp:win", { detail: { matchId: "dev_" + Date.now() } })
-    );
-  },
-  lose() {
-    window.dispatchEvent(
-      new CustomEvent("tc:pvp:lose", { detail: { matchId: "dev_" + Date.now() } })
-    );
-  },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
   },
-};
-
-window.dev = () => {
-  const s = store.get();
-  store.set({
-    coins: 999,
-    player: { ...(s.player || {}), energy: 10, energyMax: 10 },
-  });
 };
 
 /* ===== SCENES REGISTER ===== */
