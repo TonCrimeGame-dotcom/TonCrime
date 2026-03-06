@@ -4,15 +4,15 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { MissionsScene } from "./scenes/MissionsScene.js";
+
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import { BootScene } from "./scenes/BootScene.js";
+import { IntroScene } from "./scenes/IntroScene.js";
 import { HomeScene } from "./scenes/HomeScene.js";
 import { SimpleScreenScene } from "./scenes/SimpleScreenScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
@@ -84,8 +84,15 @@ const defaultState = {
   coins: 0,
   premium: false,
 
+  intro: {
+    splashSeen: false,
+    ageVerified: false,
+    profileCompleted: false,
+  },
+
   player: {
-    username: "Player",
+    username: "",
+    telegramId: "",
     level: 1,
     xp: 30,
     xpToNext: 100,
@@ -104,17 +111,6 @@ const defaultState = {
     twinBonusClaimed: {},
   },
 
-  trade: {
-    tonBalance: 0,
-    withdrawableTon: 0,
-    withdrawnTon: 0,
-    walletAddress: "",
-    lastWithdrawDayKey: null,
-    serverTreasuryBurned: 0,
-    buildings: [],
-    marketListings: [],
-  },
-
   ui: { safe: getSafeArea() },
 };
 
@@ -123,13 +119,34 @@ const initial = loaded
   ? {
       ...defaultState,
       ...loaded,
+      intro: { ...defaultState.intro, ...(loaded.intro || {}) },
       player: { ...defaultState.player, ...(loaded.player || {}) },
-      trade: { ...defaultState.trade, ...(loaded.trade || {}) },
+      stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       ui: { safe: getSafeArea() },
     }
   : defaultState;
 
 const store = new Store(initial);
+
+/* ===== TELEGRAM USER INIT ===== */
+try {
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  if (tgUser) {
+    const s = store.get();
+    const p = s.player || {};
+    store.set({
+      player: {
+        ...p,
+        telegramId: String(tgUser.id || p.telegramId || ""),
+        username:
+          p.username ||
+          tgUser.username ||
+          [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") ||
+          "Player",
+      },
+    });
+  }
+} catch (_) {}
 
 /* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
@@ -177,8 +194,12 @@ setInterval(tickEnergy, 1000);
 /* ===== I18N ===== */
 const i18n = new I18n(store);
 i18n.register({
-  tr: { loading: "Yükleniyor..." },
-  en: { loading: "Loading..." },
+  tr: {
+    loading: "Yükleniyor...",
+  },
+  en: {
+    loading: "Loading...",
+  },
 });
 
 /* ===== ASSETS ===== */
@@ -198,6 +219,7 @@ addImage("weapons", "./src/assets/weapons.jpg");
 addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("xxx", "./src/assets/xxx.jpg");
+addImage("tata", "./src/assets/tata.png");
 
 /* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
@@ -221,17 +243,6 @@ window.tc.dev = {
     store.set({ player: { ...p, energy: next } });
     console.log("energy:", store.get().player.energy);
   },
-  tradeTon(n = 500) {
-    const s = store.get();
-    const t = s.trade || {};
-    store.set({
-      trade: {
-        ...t,
-        tonBalance: Number(t.tonBalance || 0) + Number(n || 0),
-      },
-    });
-    console.log("trade ton:", store.get().trade?.tonBalance);
-  },
   win() {
     window.dispatchEvent(
       new CustomEvent("tc:pvp:win", { detail: { matchId: "dev_" + Date.now() } })
@@ -252,14 +263,13 @@ window.dev = () => {
   const s = store.get();
   store.set({
     coins: 999,
-    premium: true,
-    player: { ...(s.player || {}), level: 50, energy: 10, energyMax: 10 },
-    trade: { ...(s.trade || {}), tonBalance: 1000 },
+    player: { ...(s.player || {}), energy: 10, energyMax: 10 },
   });
 };
 
 /* ===== SCENES REGISTER ===== */
 scenes.register("boot", new BootScene({ assets, i18n, scenes }));
+scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 
 scenes.register(
@@ -277,15 +287,9 @@ scenes.register(
   new WeaponsScene({ store, input, assets, scenes })
 );
 
-scenes.register(
-  "trade",
-  new TradeScene({ store, scenes, assets })
-);
-scenes.register(
-  "missions",
-  new MissionsScene({ store, input, i18n, assets, scenes })
-);
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
+
+scenes.register("missions", new SimpleScreenScene({ i18n, titleKey: "Missions" }));
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 
