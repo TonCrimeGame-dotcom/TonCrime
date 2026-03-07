@@ -15,6 +15,7 @@ import { SimpleScreenScene } from "./scenes/SimpleScreenScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
+import { MissionsScene } from "./scenes/MissionsScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
@@ -167,6 +168,13 @@ function yesterdayKey() {
 
 function ensureDailyLoginState() {
   const s = store.get();
+
+  if (!s.weapons) {
+    store.set({
+      weapons: { owned: {}, equippedId: null },
+    });
+  }
+
   if (!s.dailyLogin) {
     store.set({
       dailyLogin: {
@@ -176,14 +184,6 @@ function ensureDailyLoginState() {
         lastRewardText: "",
         rewardToastUntil: 0,
         got30DayWeapon: false,
-      },
-    });
-  }
-  if (!s.weapons) {
-    store.set({
-      weapons: {
-        owned: {},
-        equippedId: null,
       },
     });
   }
@@ -212,10 +212,10 @@ function applyDailyLoginReward() {
 
   if (streak === 7) {
     coinReward += 30;
-    rewardText = `7 günlük bonus: +${coinReward} yton • Seri: 7 gün`;
+    rewardText = `7. gün bonusu: +40 yton • İlk 7 gün toplamı 100 yton`;
   }
 
-  const nextPatch = {
+  const patch = {
     coins: Number(s.coins || 0) + coinReward,
     dailyLogin: {
       ...dl,
@@ -227,41 +227,37 @@ function applyDailyLoginReward() {
     },
   };
 
-  let giveWeapon = false;
   if (streak >= 30 && !dl.got30DayWeapon) {
-    giveWeapon = true;
-    nextPatch.weapons = {
+    patch.weapons = {
       ...w,
       owned: {
         ...(w.owned || {}),
         mp5: true,
       },
     };
-    nextPatch.dailyLogin.got30DayWeapon = true;
+
+    patch.dailyLogin.got30DayWeapon = true;
+    patch.dailyLogin.lastRewardText =
+      `${rewardText} • 30 gün ödülü: HK MP5 kazandın!`;
 
     if (!p.weaponName || p.weaponName === "Silah Yok") {
-      nextPatch.player = {
+      patch.player = {
         ...p,
         weaponName: "HK MP5 (9×19mm)",
         weaponBonus: "+%28",
         weaponIconBonusPct: 28,
       };
-      nextPatch.weapons.equippedId = w.equippedId || "mp5";
+      patch.weapons.equippedId = w.equippedId || "mp5";
     }
-
-    nextPatch.dailyLogin.lastRewardText =
-      `${rewardText} • 30 gün ödülü: MP5 kazandın!`;
   }
 
-  store.set(nextPatch);
+  store.set(patch);
 
   setTimeout(() => {
     const latest = store.get();
-    const latestDl = latest.dailyLogin || {};
-    if (latestDl.lastRewardText) {
-      alert(latestDl.lastRewardText);
-    }
-  }, giveWeapon ? 200 : 100);
+    const txt = latest?.dailyLogin?.lastRewardText;
+    if (txt) alert(txt);
+  }, 120);
 }
 
 /* ===== TELEGRAM USER INIT ===== */
@@ -474,9 +470,12 @@ scenes.register(
   new WeaponsScene({ store, input, assets, scenes })
 );
 
-scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
+scenes.register(
+  "missions",
+  new MissionsScene({ store, input, assets, scenes })
+);
 
-scenes.register("missions", new SimpleScreenScene({ i18n, titleKey: "Missions" }));
+scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 
@@ -502,10 +501,5 @@ startPvpLobby();
 applyDailyLoginReward();
 
 /* ===== START ===== */
-const st = store.get();
-if (st?.intro?.profileCompleted) {
-  scenes.go("boot");
-} else {
-  scenes.go("intro");
-}
+scenes.go("boot");
 engine.start();
