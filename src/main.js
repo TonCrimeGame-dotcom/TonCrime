@@ -82,6 +82,14 @@ function saveStore(state) {
   } catch {}
 }
 
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 const defaultState = {
   lang: "tr",
   coins: 0,
@@ -130,6 +138,26 @@ const defaultState = {
     got30DayWeapon: false,
   },
 
+  missions: {
+    lastDayKey: todayKey(),
+    adsWatchedToday: 0,
+    adsRewardClaimedToday: false,
+
+    referrals: 0,
+    referralMilestonesClaimed: {},
+
+    pvpPlayedToday: 0,
+    pvpWinsToday: 0,
+    pvpPlayRewardClaimedToday: false,
+    pvpWinRewardClaimedToday: false,
+
+    energyRefillsToday: 0,
+    energyRewardClaimedToday: false,
+
+    levelRewardClaimed: {},
+    telegramJoinRewardClaimed: false,
+  },
+
   ui: { safe: getSafeArea() },
 };
 
@@ -143,15 +171,44 @@ const initial = loaded
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       weapons: { ...defaultState.weapons, ...(loaded.weapons || {}) },
       dailyLogin: { ...defaultState.dailyLogin, ...(loaded.dailyLogin || {}) },
+      missions: { ...defaultState.missions, ...(loaded.missions || {}) },
       ui: { safe: getSafeArea() },
     }
   : defaultState;
 
 const store = new Store(initial);
 
+function ensureMissionState() {
+  const s = store.get();
+  const m = s.missions || {};
+
+  const today = todayKey();
+  if (m.lastDayKey !== today) {
+    store.set({
+      missions: {
+        ...defaultState.missions,
+        ...m,
+        lastDayKey: today,
+        adsWatchedToday: 0,
+        adsRewardClaimedToday: false,
+        pvpPlayedToday: 0,
+        pvpWinsToday: 0,
+        pvpPlayRewardClaimedToday: false,
+        pvpWinRewardClaimedToday: false,
+        energyRefillsToday: 0,
+        energyRewardClaimedToday: false,
+      },
+    });
+    return;
+  }
+
+  if (!s.missions) {
+    store.set({ missions: { ...defaultState.missions } });
+  }
+}
+
 /* ===== DAILY LOGIN ===== */
-function todayKey() {
-  const d = new Date();
+function dayKeyFromDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -159,11 +216,7 @@ function todayKey() {
 }
 
 function yesterdayKey() {
-  const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return dayKeyFromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
 
 function ensureDailyLoginState() {
@@ -171,7 +224,10 @@ function ensureDailyLoginState() {
 
   if (!s.weapons) {
     store.set({
-      weapons: { owned: {}, equippedId: null },
+      weapons: {
+        owned: {},
+        equippedId: null,
+      },
     });
   }
 
@@ -187,6 +243,30 @@ function ensureDailyLoginState() {
       },
     });
   }
+}
+
+function giveMp5RewardIfNeeded(p, w) {
+  const nextWeapons = {
+    ...w,
+    owned: {
+      ...(w.owned || {}),
+      mp5: true,
+    },
+  };
+
+  let nextPlayer = null;
+
+  if (!p.weaponName || p.weaponName === "Silah Yok") {
+    nextPlayer = {
+      ...p,
+      weaponName: "HK MP5 (9×19mm)",
+      weaponBonus: "+%28",
+      weaponIconBonusPct: 28,
+    };
+    nextWeapons.equippedId = w.equippedId || "mp5";
+  }
+
+  return { nextWeapons, nextPlayer };
 }
 
 function applyDailyLoginReward() {
@@ -212,7 +292,7 @@ function applyDailyLoginReward() {
 
   if (streak === 7) {
     coinReward += 30;
-    rewardText = `7. gün bonusu: +40 yton • İlk 7 gün toplamı 100 yton`;
+    rewardText = "7. gün bonusu: +40 yton • İlk 7 gün toplamı 100 yton";
   }
 
   const patch = {
@@ -224,31 +304,16 @@ function applyDailyLoginReward() {
       totalClaims: Number(dl.totalClaims || 0) + 1,
       lastRewardText: rewardText,
       rewardToastUntil: Date.now() + 5000,
+      got30DayWeapon: !!dl.got30DayWeapon,
     },
   };
 
   if (streak >= 30 && !dl.got30DayWeapon) {
-    patch.weapons = {
-      ...w,
-      owned: {
-        ...(w.owned || {}),
-        mp5: true,
-      },
-    };
-
+    const { nextWeapons, nextPlayer } = giveMp5RewardIfNeeded(p, w);
+    patch.weapons = nextWeapons;
+    if (nextPlayer) patch.player = nextPlayer;
     patch.dailyLogin.got30DayWeapon = true;
-    patch.dailyLogin.lastRewardText =
-      `${rewardText} • 30 gün ödülü: HK MP5 kazandın!`;
-
-    if (!p.weaponName || p.weaponName === "Silah Yok") {
-      patch.player = {
-        ...p,
-        weaponName: "HK MP5 (9×19mm)",
-        weaponBonus: "+%28",
-        weaponIconBonusPct: 28,
-      };
-      patch.weapons.equippedId = w.equippedId || "mp5";
-    }
+    patch.dailyLogin.lastRewardText = `${rewardText} • 30 gün ödülü: HK MP5 kazandın!`;
   }
 
   store.set(patch);
@@ -407,7 +472,6 @@ addImage("weapons", "./src/assets/weapons.jpg");
 addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("xxx", "./src/assets/xxx.jpg");
-addImage("tata", "./src/assets/tata.png");
 addImage("blackmarket", "./src/assets/BlackMarket.png");
 addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
 
@@ -433,16 +497,107 @@ window.tc.dev = {
     store.set({ player: { ...p, energy: next } });
     console.log("energy:", store.get().player.energy);
   },
+  ad(n = 1) {
+    ensureMissionState();
+    const s = store.get();
+    const m = s.missions || {};
+    store.set({
+      missions: {
+        ...m,
+        adsWatchedToday: Math.min(20, Number(m.adsWatchedToday || 0) + Number(n || 1)),
+      },
+    });
+    console.log("adsWatchedToday:", store.get().missions.adsWatchedToday);
+  },
+  ref(n = 1) {
+    ensureMissionState();
+    const s = store.get();
+    const m = s.missions || {};
+    store.set({
+      missions: {
+        ...m,
+        referrals: Math.max(0, Number(m.referrals || 0) + Number(n || 1)),
+      },
+    });
+    console.log("referrals:", store.get().missions.referrals);
+  },
+  pvp(n = 1) {
+    ensureMissionState();
+    const s = store.get();
+    const m = s.missions || {};
+    store.set({
+      missions: {
+        ...m,
+        pvpPlayedToday: Math.max(0, Number(m.pvpPlayedToday || 0) + Number(n || 1)),
+      },
+    });
+    console.log("pvpPlayedToday:", store.get().missions.pvpPlayedToday);
+  },
+  pvpwin(n = 1) {
+    ensureMissionState();
+    const s = store.get();
+    const m = s.missions || {};
+    store.set({
+      missions: {
+        ...m,
+        pvpWinsToday: Math.max(0, Number(m.pvpWinsToday || 0) + Number(n || 1)),
+        pvpPlayedToday: Math.max(0, Number(m.pvpPlayedToday || 0) + Number(n || 1)),
+      },
+    });
+    console.log("pvpWinsToday:", store.get().missions.pvpWinsToday);
+  },
+  refill(n = 1) {
+    ensureMissionState();
+    const s = store.get();
+    const m = s.missions || {};
+    store.set({
+      missions: {
+        ...m,
+        energyRefillsToday: Math.max(0, Number(m.energyRefillsToday || 0) + Number(n || 1)),
+      },
+    });
+    console.log("energyRefillsToday:", store.get().missions.energyRefillsToday);
+  },
   level(n = 1) {
     const s = store.get();
     const p = s.player || {};
     store.set({ player: { ...p, level: Number(n || 1) } });
     console.log("level:", store.get().player.level);
   },
+  joingroup() {
+    ensureMissionState();
+    const s = store.get();
+    const m = s.missions || {};
+    store.set({
+      missions: {
+        ...m,
+        telegramJoinRewardClaimed: false,
+      },
+    });
+    console.log("telegram group reward ready");
+  },
+  win() {
+    window.dispatchEvent(
+      new CustomEvent("tc:pvp:win", { detail: { matchId: "dev_" + Date.now() } })
+    );
+  },
+  lose() {
+    window.dispatchEvent(
+      new CustomEvent("tc:pvp:lose", { detail: { matchId: "dev_" + Date.now() } })
+    );
+  },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
   },
+};
+
+window.dev = () => {
+  const s = store.get();
+  store.set({
+    coins: 999,
+    player: { ...(s.player || {}), energy: 10, energyMax: 10 },
+  });
 };
 
 /* ===== SCENES REGISTER ===== */
@@ -489,6 +644,34 @@ const engine = new Engine({ canvas, ctx, input, scenes });
   requestAnimationFrame(safeAreaLoop);
 })();
 
+/* ===== MISSION EVENT TRACKERS ===== */
+ensureMissionState();
+
+window.addEventListener("tc:pvp:win", () => {
+  ensureMissionState();
+  const s = store.get();
+  const m = s.missions || {};
+  store.set({
+    missions: {
+      ...m,
+      pvpPlayedToday: Number(m.pvpPlayedToday || 0) + 1,
+      pvpWinsToday: Number(m.pvpWinsToday || 0) + 1,
+    },
+  });
+});
+
+window.addEventListener("tc:pvp:lose", () => {
+  ensureMissionState();
+  const s = store.get();
+  const m = s.missions || {};
+  store.set({
+    missions: {
+      ...m,
+      pvpPlayedToday: Number(m.pvpPlayedToday || 0) + 1,
+    },
+  });
+});
+
 /* ===== UI ===== */
 startHud(store);
 startChat(store);
@@ -499,7 +682,13 @@ startPvpLobby();
 
 /* ===== DAILY LOGIN RUN ===== */
 applyDailyLoginReward();
+ensureMissionState();
 
 /* ===== START ===== */
-scenes.go("boot");
+const st = store.get();
+if (st?.intro?.profileCompleted) {
+  scenes.go("boot");
+} else {
+  scenes.go("intro");
+}
 engine.start();
