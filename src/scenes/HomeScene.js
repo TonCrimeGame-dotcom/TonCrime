@@ -46,6 +46,7 @@ export class HomeScene {
 
   onEnter() {
     const s = this.store.get();
+
     if (!s.player) {
       this.store.set({
         player: {
@@ -64,13 +65,17 @@ export class HomeScene {
       return;
     }
 
-    const p = s.player;
+    const p = s.player || {};
     const patch = {};
+
     if (p.energy == null) patch.energy = 10;
     if (p.energyMax == null) patch.energyMax = 10;
     if (p.energyIntervalMs == null) patch.energyIntervalMs = 5 * 60 * 1000;
     if (p.lastEnergyAt == null) patch.lastEnergyAt = Date.now();
-    if (Object.keys(patch).length) this.store.set({ player: { ...p, ...patch } });
+
+    if (Object.keys(patch).length) {
+      this.store.set({ player: { ...p, ...patch } });
+    }
   }
 
   _carouselItems() {
@@ -104,6 +109,7 @@ export class HomeScene {
       const dx = c.dragNowX - c.lastX;
       c.lastX = c.dragNowX;
       c.moved += Math.abs(dx);
+
       if (c.moved > 10) c.clickCandidate = false;
     }
 
@@ -112,45 +118,62 @@ export class HomeScene {
 
       const items = this._carouselItems();
       const dragDX = c.dragNowX - c.dragStartX;
-
       const threshold = 45;
-      if (dragDX > threshold) c.index = Math.max(0, c.index - 1);
-      else if (dragDX < -threshold) c.index = Math.min(items.length - 1, c.index + 1);
+
+      if (dragDX > threshold) {
+        c.index = Math.max(0, c.index - 1);
+      } else if (dragDX < -threshold) {
+        c.index = Math.min(items.length - 1, c.index + 1);
+      }
 
       if (c.clickCandidate && pointInRect(px, py, this._cardRect)) {
         const item = items[c.index];
 
+        // Görevler
+        if (item.sceneKey === "missions" || item.id === "missions") {
+          try {
+            this.scenes.go("missions");
+          } catch (err) {
+            console.error("Missions scene açılamadı:", err);
+          }
+          return;
+        }
+
+        // PvP overlay
         if (item.sceneKey === "pvp" || item.id === "pvp") {
           try {
             window.dispatchEvent(new Event("tc:openPvp"));
-          } catch {}
+          } catch (err) {
+            console.error("PvP overlay açılamadı:", err);
+          }
           return;
         }
 
+        // Silah Kaçakçısı
         if (item.sceneKey === "weapons" || item.id === "weapons") {
           try {
             this.scenes.go("weapons");
-          } catch (_) {
-            const s = this.store.get();
-            this.store.set({ coins: (s.coins ?? 0) + 1 });
+          } catch (err) {
+            console.error("Weapons scene açılamadı:", err);
           }
           return;
         }
 
+        // Ticaret
         if (item.sceneKey === "trade" || item.id === "blackmarket") {
           try {
             this.scenes.go("trade");
-          } catch (_) {
-            console.error("Trade scene açılamadı");
+          } catch (err) {
+            console.error("Trade scene açılamadı:", err);
           }
           return;
         }
 
+        // Diğer tüm sahneler
         try {
           this.scenes.go(item.sceneKey);
-        } catch (_) {
-          const s = this.store.get();
-          this.store.set({ coins: (s.coins ?? 0) + 1 });
+        } catch (err) {
+          console.error(`Scene açılamadı: ${item.sceneKey}`, err);
         }
       }
     }
@@ -160,9 +183,15 @@ export class HomeScene {
     const state = this.store.get();
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
 
-    const bg = this.assets.getImage("background");
-    if (bg) ctx.drawImage(bg, 0, 0, w, h);
-    else {
+    const bg =
+      (typeof this.assets.getImage === "function" && this.assets.getImage("background")) ||
+      (typeof this.assets.get === "function" && this.assets.get("background")) ||
+      this.assets.images?.background ||
+      null;
+
+    if (bg) {
+      ctx.drawImage(bg, 0, 0, w, h);
+    } else {
       ctx.fillStyle = "#0b0b0f";
       ctx.fillRect(0, 0, w, h);
     }
@@ -212,7 +241,12 @@ export class HomeScene {
       roundRectPath(ctx, x2, y2, w2, h2, 18);
       ctx.clip();
 
-      const img = this.assets.getImage(item.id);
+      const img =
+        (typeof this.assets.getImage === "function" && this.assets.getImage(item.id)) ||
+        (typeof this.assets.get === "function" && this.assets.get(item.id)) ||
+        this.assets.images?.[item.id] ||
+        null;
+
       if (img) {
         const s = Math.min(w2 / img.width, h2 / img.height);
         const dw = img.width * s;
@@ -220,6 +254,7 @@ export class HomeScene {
         const dx = x2 + (w2 - dw) / 2;
         const dy = y2 + (h2 - dh) / 2;
         ctx.drawImage(img, dx, dy, dw, dh);
+
         ctx.fillStyle = "rgba(0,0,0,0.18)";
         ctx.fillRect(x2, y2, w2, h2);
       }
@@ -231,8 +266,10 @@ export class HomeScene {
       strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
 
       const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
+
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
       ctx.font = dist === 0 ? "18px system-ui" : "16px system-ui";
       ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 22);
 
