@@ -15,7 +15,6 @@ import { SimpleScreenScene } from "./scenes/SimpleScreenScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
-import { MissionsScene } from "./scenes/MissionsScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
@@ -102,6 +101,7 @@ const defaultState = {
     xpToNext: 100,
     weaponName: "Silah Yok",
     weaponBonus: "+0%",
+    weaponIconBonusPct: 0,
     energy: 10,
     energyMax: 10,
     energyIntervalMs: 5 * 60 * 1000,
@@ -115,22 +115,18 @@ const defaultState = {
     twinBonusClaimed: {},
   },
 
-  missions: {
-    dayKey: "",
-    dailyAdsWatched: 0,
-    dailyAdsLimit: 20,
-    dailyPvpPlayed: 0,
-    dailyBuildingsUsed: 0,
-    invites: 0,
-    totalLevelUps: 0,
-    telegramGroupJoined: false,
-    telegramChannelJoined: false,
-    claimed: {},
-  },
-
   weapons: {
     owned: {},
     equippedId: null,
+  },
+
+  dailyLogin: {
+    lastClaimDay: null,
+    streak: 0,
+    totalClaims: 0,
+    lastRewardText: "",
+    rewardToastUntil: 0,
+    got30DayWeapon: false,
   },
 
   ui: { safe: getSafeArea() },
@@ -144,13 +140,129 @@ const initial = loaded
       intro: { ...defaultState.intro, ...(loaded.intro || {}) },
       player: { ...defaultState.player, ...(loaded.player || {}) },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
-      missions: { ...defaultState.missions, ...(loaded.missions || {}) },
       weapons: { ...defaultState.weapons, ...(loaded.weapons || {}) },
+      dailyLogin: { ...defaultState.dailyLogin, ...(loaded.dailyLogin || {}) },
       ui: { safe: getSafeArea() },
     }
   : defaultState;
 
 const store = new Store(initial);
+
+/* ===== DAILY LOGIN ===== */
+function todayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function yesterdayKey() {
+  const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function ensureDailyLoginState() {
+  const s = store.get();
+  if (!s.dailyLogin) {
+    store.set({
+      dailyLogin: {
+        lastClaimDay: null,
+        streak: 0,
+        totalClaims: 0,
+        lastRewardText: "",
+        rewardToastUntil: 0,
+        got30DayWeapon: false,
+      },
+    });
+  }
+  if (!s.weapons) {
+    store.set({
+      weapons: {
+        owned: {},
+        equippedId: null,
+      },
+    });
+  }
+}
+
+function applyDailyLoginReward() {
+  ensureDailyLoginState();
+
+  const s = store.get();
+  const dl = s.dailyLogin || {};
+  const p = s.player || {};
+  const w = s.weapons || { owned: {}, equippedId: null };
+
+  const today = todayKey();
+  const yesterday = yesterdayKey();
+
+  if (dl.lastClaimDay === today) return;
+
+  let streak = 1;
+  if (dl.lastClaimDay === yesterday) {
+    streak = Number(dl.streak || 0) + 1;
+  }
+
+  let coinReward = 10;
+  let rewardText = `Günlük giriş bonusu: +10 yton • Seri: ${streak} gün`;
+
+  if (streak === 7) {
+    coinReward += 30;
+    rewardText = `7 günlük bonus: +${coinReward} yton • Seri: 7 gün`;
+  }
+
+  const nextPatch = {
+    coins: Number(s.coins || 0) + coinReward,
+    dailyLogin: {
+      ...dl,
+      lastClaimDay: today,
+      streak,
+      totalClaims: Number(dl.totalClaims || 0) + 1,
+      lastRewardText: rewardText,
+      rewardToastUntil: Date.now() + 5000,
+    },
+  };
+
+  let giveWeapon = false;
+  if (streak >= 30 && !dl.got30DayWeapon) {
+    giveWeapon = true;
+    nextPatch.weapons = {
+      ...w,
+      owned: {
+        ...(w.owned || {}),
+        mp5: true,
+      },
+    };
+    nextPatch.dailyLogin.got30DayWeapon = true;
+
+    if (!p.weaponName || p.weaponName === "Silah Yok") {
+      nextPatch.player = {
+        ...p,
+        weaponName: "HK MP5 (9×19mm)",
+        weaponBonus: "+%28",
+        weaponIconBonusPct: 28,
+      };
+      nextPatch.weapons.equippedId = w.equippedId || "mp5";
+    }
+
+    nextPatch.dailyLogin.lastRewardText =
+      `${rewardText} • 30 gün ödülü: MP5 kazandın!`;
+  }
+
+  store.set(nextPatch);
+
+  setTimeout(() => {
+    const latest = store.get();
+    const latestDl = latest.dailyLogin || {};
+    if (latestDl.lastRewardText) {
+      alert(latestDl.lastRewardText);
+    }
+  }, giveWeapon ? 200 : 100);
+}
 
 /* ===== TELEGRAM USER INIT ===== */
 try {
@@ -299,6 +411,9 @@ addImage("weapons", "./src/assets/weapons.jpg");
 addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("xxx", "./src/assets/xxx.jpg");
+addImage("tata", "./src/assets/tata.png");
+addImage("blackmarket", "./src/assets/BlackMarket.png");
+addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
 
 /* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
@@ -328,28 +443,10 @@ window.tc.dev = {
     store.set({ player: { ...p, level: Number(n || 1) } });
     console.log("level:", store.get().player.level);
   },
-  win() {
-    window.dispatchEvent(
-      new CustomEvent("tc:pvp:win", { detail: { matchId: "dev_" + Date.now() } })
-    );
-  },
-  lose() {
-    window.dispatchEvent(
-      new CustomEvent("tc:pvp:lose", { detail: { matchId: "dev_" + Date.now() } })
-    );
-  },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
   },
-};
-
-window.dev = () => {
-  const s = store.get();
-  store.set({
-    coins: 999,
-    player: { ...(s.player || {}), energy: 10, energyMax: 10 },
-  });
 };
 
 /* ===== SCENES REGISTER ===== */
@@ -377,16 +474,9 @@ scenes.register(
   new WeaponsScene({ store, input, assets, scenes })
 );
 
-scenes.register(
-  "xxx",
-  new StarsScene({ store, input, i18n, assets, scenes })
-);
+scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
 
-scenes.register(
-  "missions",
-  new MissionsScene({ store, input, scenes })
-);
-
+scenes.register("missions", new SimpleScreenScene({ i18n, titleKey: "Missions" }));
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 
@@ -408,6 +498,14 @@ startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
 startPvpLobby();
 
+/* ===== DAILY LOGIN RUN ===== */
+applyDailyLoginReward();
+
 /* ===== START ===== */
-scenes.go("boot");
+const st = store.get();
+if (st?.intro?.profileCompleted) {
+  scenes.go("boot");
+} else {
+  scenes.go("intro");
+}
 engine.start();
