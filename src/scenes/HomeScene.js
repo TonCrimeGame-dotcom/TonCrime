@@ -80,10 +80,7 @@ export class HomeScene {
       { id: "weapons", titleTR: "Silah Kaçakçısı", titleEN: "Arms Dealer", sceneKey: "weapons" },
       { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
       { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
-
-      // ✅ Ticaret kartı
       { id: "blackmarket", titleTR: "Ticaret", titleEN: "Trade", sceneKey: "trade" },
-
       { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
     ];
   }
@@ -136,6 +133,15 @@ export class HomeScene {
           } catch (_) {
             const s = this.store.get();
             this.store.set({ coins: (s.coins ?? 0) + 1 });
+          }
+          return;
+        }
+
+        if (item.sceneKey === "trade" || item.id === "blackmarket") {
+          try {
+            this.scenes.go("trade");
+          } catch (_) {
+            console.error("Trade scene açılamadı");
           }
           return;
         }
@@ -230,7 +236,9 @@ export class HomeScene {
       ctx.font = dist === 0 ? "18px system-ui" : "16px system-ui";
       ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 22);
 
-      if (itemIndex === idx) this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
+      if (itemIndex === idx) {
+        this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
+      }
     };
 
     drawCard(idx - 1);
