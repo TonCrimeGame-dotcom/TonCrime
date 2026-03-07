@@ -5,6 +5,7 @@ import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
 import { supabase } from "./supabase.js";
+
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import { BootScene } from "./scenes/BootScene.js";
@@ -13,6 +14,7 @@ import { HomeScene } from "./scenes/HomeScene.js";
 import { SimpleScreenScene } from "./scenes/SimpleScreenScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
+import { TradeScene } from "./scenes/TradeScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
@@ -277,6 +279,8 @@ addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("xxx", "./src/assets/xxx.jpg");
 addImage("tata", "./src/assets/tata.png");
+addImage("blackmarket", "./src/assets/BlackMarket.png");
+addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
 
 /* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
@@ -316,6 +320,11 @@ window.tc.dev = {
 scenes.register("boot", new BootScene({ assets, i18n, scenes }));
 scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
+
+scenes.register(
+  "trade",
+  new TradeScene({ store, scenes, assets })
+);
 
 scenes.register(
   "coffeeshop",
