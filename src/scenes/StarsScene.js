@@ -13,7 +13,6 @@ export class StarsScene {
 
     this.hit = [];
 
-    // pointer drag (Input.js bağımsız)
     this._binded = false;
     this._down = false;
     this._pid = null;
@@ -21,9 +20,8 @@ export class StarsScene {
     this._downY = 0;
     this._startScroll = 0;
 
-    // cached layout
-    this._top = 70; // header altı başlangıç
-    this._bottomPad = 90; // chat/pvp alanı payı
+    this._top = 70;
+    this._bottomPad = 90;
   }
 
   onEnter() {
@@ -60,7 +58,6 @@ export class StarsScene {
     const c = this._canvas();
     if (!c) return;
 
-    // mobilde native scroll/zoom engelle (drag bizde)
     c.style.touchAction = "none";
 
     this._onPD = (e) => {
@@ -82,10 +79,9 @@ export class StarsScene {
       if (!this._down) return;
       if (this._pid != null && e.pointerId !== this._pid) return;
 
-      const { x, y } = this._toCanvasXY(e.clientX, e.clientY);
+      const { y } = this._toCanvasXY(e.clientX, e.clientY);
       const dy = y - this._downY;
 
-      // aşağı sürükle -> scroll azalır, yukarı sürükle -> scroll artar
       this.scrollY = this._clamp(this._startScroll - dy, 0, this.maxScroll);
       e.preventDefault();
     };
@@ -100,14 +96,12 @@ export class StarsScene {
       this._down = false;
       this._pid = null;
 
-      // küçük hareket = tap
       if (moved < 10) this.onTap(x, y);
 
       e.preventDefault();
     };
 
     this._onWheel = (e) => {
-      // desktop test için
       this.scrollY = this._clamp(this.scrollY + e.deltaY, 0, this.maxScroll);
       e.preventDefault();
     };
@@ -138,23 +132,14 @@ export class StarsScene {
   }
 
   _computeLayout(H) {
-    // Header her zaman 56px. HUD onun ÜSTÜNE biner zaten HTML overlay.
-    // Biz content'i header'ın ALTINDAN başlatıyoruz ve HUD'ın kapattığı alan için ekstra pad veriyoruz.
     const HEADER_H = 56;
 
     const hud = document.getElementById("hudTop");
     const chat = document.getElementById("chatDrawer");
 
     const hudH = hud ? hud.offsetHeight : 0;
-
-    // Content başlangıcı: header altı + HUD güvenlik payı
-    // hudH genelde 56-100 arası olur, buna 8-14px nefes ver.
     const top = Math.max(HEADER_H + 14, hudH + 14);
-
-    // Alt tarafta chat/pvp butonu var -> 90-120 px pay iyi
     const bottomPad = chat ? 110 : 90;
-
-    // Ekran çok küçükse minimum view kalsın
     const viewH = Math.max(120, H - top - bottomPad);
 
     this._top = top;
@@ -163,7 +148,6 @@ export class StarsScene {
     return { HEADER_H, top, bottomPad, viewH };
   }
 
-  // ✅ SATIN ALMA + ENERJİ/COIN GÜNCELLEME
   buyStar(star) {
     const s = this.store.get();
 
@@ -178,10 +162,8 @@ export class StarsScene {
       s.stars || { owned: {}, selectedId: null, lastClaimTs: {}, twinBonusClaimed: {} };
     const owned = starsState.owned || {};
 
-    if (owned[star.id]) return true; // zaten sahip
+    if (owned[star.id]) return true;
     if (coins < cost) {
-      console.log("Yetersiz coin", { coins, cost, starId: star.id });
-      // istersen burada toast event atarsın
       window.dispatchEvent(
         new CustomEvent("tc:toast", { detail: { text: "Yetersiz coin" } })
       );
@@ -189,8 +171,6 @@ export class StarsScene {
     }
 
     const gain = Number(star.energyGain || 0);
-
-    // Enerji sistemi: hem max artsın hem mevcut enerji artsın (max'e clamp)
     const newEnergyMax = energyMax + gain;
     const newEnergy = Math.min(newEnergyMax, energy + gain);
 
@@ -200,14 +180,11 @@ export class StarsScene {
       stars: { ...starsState, owned: { ...owned, [star.id]: true }, selectedId: star.id },
     });
 
-    // satın aldıktan sonra overlay aç (istersen)
     window.dispatchEvent(new CustomEvent("tc:stars:open", { detail: { starId: star.id } }));
-
     return true;
   }
 
   onTap(x, y) {
-    // back (header sol)
     if (y <= 56 && x <= 90) {
       this.scenes.go("home");
       return;
@@ -219,13 +196,11 @@ export class StarsScene {
         const owned = s.stars?.owned || {};
         const isOwned = !!owned[r.star.id];
 
-        // ✅ sahip değilse: tık = satın al
         if (!isOwned) {
           this.buyStar(r.star);
           return;
         }
 
-        // ✅ sahipse: tık = seç
         this.selectStar(r.star.id);
         return;
       }
@@ -238,9 +213,26 @@ export class StarsScene {
       s.stars || { owned: {}, selectedId: null, lastClaimTs: {}, twinBonusClaimed: {} };
 
     this.store.set({ stars: { ...starsState, selectedId: starId } });
-
-    // Overlay açmak için event
     window.dispatchEvent(new CustomEvent("tc:stars:open", { detail: { starId } }));
+  }
+
+  _fitText(ctx, text, maxW, startSize, minSize, weight = "700") {
+    let size = startSize;
+    while (size > minSize) {
+      ctx.font = `${weight} ${size}px sans-serif`;
+      if (ctx.measureText(text).width <= maxW) return size;
+      size -= 1;
+    }
+    return minSize;
+  }
+
+  _drawClampedText(ctx, text, x, y, maxW) {
+    let out = String(text || "");
+    while (out.length > 0 && ctx.measureText(out).width > maxW) {
+      out = out.slice(0, -1);
+    }
+    if (out !== text && out.length > 1) out = out.slice(0, -1) + "…";
+    ctx.fillText(out, x, y);
   }
 
   render(ctx) {
@@ -254,34 +246,31 @@ export class StarsScene {
     ctx.fillStyle = "#0b0b0b";
     ctx.fillRect(0, 0, W, H);
 
-    // header (canvas üst bar)
     ctx.fillStyle = "#121212";
     ctx.fillRect(0, 0, W, 56);
     ctx.fillStyle = "#fff";
     ctx.font = "20px sans-serif";
-    ctx.fillText("STARS", 110, 35);
+    ctx.fillText("GENEL EV", 110, 35);
     ctx.font = "16px sans-serif";
-    ctx.fillText("< Back", 16, 35);
+    ctx.fillText("< Geri", 16, 35);
 
     const s = this.store.get();
     const owned = s.stars?.owned || {};
     const selectedId = s.stars?.selectedId ?? null;
 
-    const pad = 12;
-    const cols = 3;
+    const pad = W <= 420 ? 10 : 12;
+    const cols = W <= 420 ? 2 : 3;
     const cardW = Math.floor((W - pad * (cols + 1)) / cols);
-    const cardH = 155;
+    const imgH = W <= 420 ? 96 : 84;
+    const cardH = W <= 420 ? 170 : 155;
 
     const rows = Math.ceil(stars.length / cols);
     const contentH = rows * (cardH + pad) + pad;
 
-    // scroll clamp: viewH üzerinden
     this.maxScroll = Math.max(0, contentH - viewH);
     this.scrollY = this._clamp(this.scrollY, 0, this.maxScroll);
 
     const contentY = top - this.scrollY;
-
-    // hit rects
     this.hit = [];
 
     for (let i = 0; i < stars.length; i++) {
@@ -292,7 +281,6 @@ export class StarsScene {
       const x = pad + col * (cardW + pad);
       const y = contentY + row * (cardH + pad);
 
-      // alttaki chat alanına girmesin
       if (y > H - bottomPad + 80 || y < -cardH - 80) continue;
 
       const isOwned = !!owned[star.id];
@@ -306,20 +294,22 @@ export class StarsScene {
         this.assets.images?.[star.image];
 
       if (img) {
-        ctx.drawImage(img, x + 8, y + 8, cardW - 16, 84);
+        ctx.drawImage(img, x + 8, y + 8, cardW - 16, imgH);
       } else {
         ctx.fillStyle = "#2b2b2b";
-        ctx.fillRect(x + 8, y + 8, cardW - 16, 84);
+        ctx.fillRect(x + 8, y + 8, cardW - 16, imgH);
       }
 
+      const titleMaxW = cardW - 20;
+      const titleSize = this._fitText(ctx, star.name, titleMaxW, W <= 420 ? 12 : 13, 10, "700");
       ctx.fillStyle = "#fff";
-      ctx.font = "13px sans-serif";
-      ctx.fillText(star.name, x + 10, y + 110);
+      ctx.font = `700 ${titleSize}px sans-serif`;
+      this._drawClampedText(ctx, star.name, x + 10, y + imgH + 26, titleMaxW);
 
       ctx.fillStyle = "#d9d9d9";
-      ctx.font = "12px sans-serif";
-      ctx.fillText(`+Energy: ${star.energyGain}`, x + 10, y + 130);
-      ctx.fillText(`Cost: ${star.coinValue} coin`, x + 10, y + 146);
+      ctx.font = `${W <= 420 ? 11 : 12}px sans-serif`;
+      this._drawClampedText(ctx, `+Enerji: ${star.energyGain}`, x + 10, y + imgH + 46, titleMaxW);
+      this._drawClampedText(ctx, `Fiyat: ${star.coinValue} coin`, x + 10, y + imgH + 62, titleMaxW);
 
       if (star.twinId) {
         ctx.fillStyle = "#ff4fd0";
@@ -336,7 +326,6 @@ export class StarsScene {
         ctx.font = "11px sans-serif";
         ctx.fillText("OWN", x + cardW - 44, y + 21);
       } else {
-        // ✅ satın alınabilir etiketi (istersen)
         ctx.fillStyle = "rgba(255,255,255,0.10)";
         ctx.fillRect(x + cardW - 64, y + 8, 56, 18);
         ctx.fillStyle = "#fff";
