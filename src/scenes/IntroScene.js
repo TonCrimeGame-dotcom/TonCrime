@@ -9,153 +9,94 @@ export class IntroScene {
 
     this.stage = "splash";
     this.lock = false;
-    this.errorText = "";
   }
 
-  onEnter() {
+  async onEnter() {
+    const s = this.store.get();
+
+    /* Eğer profil daha önce oluşturulduysa direkt oyuna gir */
+    if (s?.intro?.profileCompleted && s?.player?.username) {
+      this.scenes.go("home");
+      return;
+    }
+
     this.stage = "splash";
     this.lock = false;
-    this.errorText = "";
   }
 
   update() {
     if (this.lock) return;
 
+    /* Splash → +18 ekranı */
     if (this.stage === "splash" && this.input.justPressed()) {
       this.stage = "warning";
-      this.lock = true;
-      setTimeout(() => (this.lock = false), 200);
       return;
     }
 
+    /* +18 ekranından kullanıcı oluştur */
     if (this.stage === "warning" && this.input.justPressed()) {
-      this.lock = true;
-      this.createOrLoadUser();
+      this.createUser();
     }
   }
 
-  async createOrLoadUser() {
-    try {
-      const age = Number(prompt("Yaşınızı girin:"));
+  async createUser() {
+    this.lock = true;
 
-      if (!age || age < 18) {
-        alert("Bu oyun sadece 18+ kullanıcılar içindir.");
-        this.lock = false;
-        return;
-      }
-
-      let username = "";
-
-      try {
-        const tg = window.Telegram?.WebApp?.initDataUnsafe?.user;
-        if (tg) {
-          username =
-            tg.username ||
-            [tg.first_name, tg.last_name].filter(Boolean).join(" ");
-        }
-      } catch {}
-
-      if (!username) {
-        username = prompt("Kullanıcı adı gir:");
-      }
-
-      username = String(username || "Player").trim().slice(0, 24) || "Player";
-
-      const telegramIdRaw =
-        window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "test_user";
-
-      const telegramId = String(telegramIdRaw);
-
-      let { data: profile, error: selectError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("telegram_id", telegramId)
-        .maybeSingle();
-
-      if (selectError) {
-        console.error("Supabase select error:", selectError);
-      }
-
-      if (!profile) {
-        const { error: insertError } = await supabase
-          .from("profiles")
-          .insert({
-            telegram_id: telegramId,
-            username: username,
-            age: age
-          });
-
-        if (insertError) {
-          console.error("Supabase insert error:", insertError);
-          this.errorText = insertError.message || "Kayıt oluşturulamadı";
-
-          // Fallback: yine de local aç
-          const s = this.store.get();
-          const p = s.player || {};
-          this.store.set({
-            player: {
-              ...p,
-              telegramId,
-              username,
-              age,
-              level: Number(p.level || 1),
-              energy: Number(p.energy || 10),
-              energyMax: Number(p.energyMax || 10),
-            },
-          });
-
-          this.scenes.go("home");
-          return;
-        }
-
-        const { data: refetched, error: refetchError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("telegram_id", telegramId)
-          .single();
-
-        if (refetchError) {
-          console.error("Supabase refetch error:", refetchError);
-          this.errorText = refetchError.message || "Kayıt okunamadı";
-        } else {
-          profile = refetched;
-        }
-      }
-
-      if (!profile) {
-        // Son fallback
-        profile = {
-          telegram_id: telegramId,
-          username,
-          age,
-          level: 1,
-          energy: 10,
-          energy_max: 10,
-        };
-      }
-
-      const s = this.store.get();
-      const p = s.player || {};
-
-      this.store.set({
-        player: {
-          ...p,
-          telegramId: profile.telegram_id || telegramId,
-          username: profile.username || username,
-          age: profile.age ?? age,
-          level: Number(profile.level ?? p.level ?? 1),
-          energy: Number(profile.energy ?? p.energy ?? 10),
-          energyMax: Number(profile.energy_max ?? p.energyMax ?? 10),
-        },
-      });
-
-      this.scenes.go("home");
-    } catch (err) {
-      console.error("IntroScene createOrLoadUser fatal error:", err);
-      this.errorText = err?.message || "Bilinmeyen hata";
-      alert(`Giriş hatası: ${this.errorText}`);
+    const age = Number(prompt("Yaşınızı girin:", "18"));
+    if (!Number.isFinite(age) || age < 18) {
+      alert("Bu oyun sadece 18+ içindir.");
       this.lock = false;
+      return;
     }
+
+    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    const telegramId = String(tgUser?.id || "test_user");
+
+    let username =
+      tgUser?.username ||
+      prompt("Kullanıcı adı gir:", "Player") ||
+      "Player";
+
+    username = username.trim().slice(0, 24);
+
+    /* Supabase'e kayıt */
+    try {
+      await supabase.from("profiles").upsert({
+        telegram_id: telegramId,
+        username,
+        age,
+        level: 1,
+        coins: 0,
+        energy: 10,
+        energy_max: 10,
+      });
+    } catch (err) {
+      console.log("Supabase kayıt hatası", err);
+    }
+
+    const s = this.store.get();
+    const p = s.player || {};
+
+    /* LOCAL STORE'A KALICI YAZ */
+    this.store.set({
+      intro: {
+        splashSeen: true,
+        ageVerified: true,
+        profileCompleted: true,
+      },
+      player: {
+        ...p,
+        telegramId,
+        username,
+        age,
+        level: 1,
+        energy: 10,
+        energyMax: 10,
+      },
+    });
+
+    /* OYUNA GİR */
+    this.scenes.go("home");
   }
 
   render(ctx, w, h) {
@@ -176,7 +117,6 @@ export class IntroScene {
       ctx.textAlign = "center";
       ctx.font = "18px system-ui";
       ctx.fillText("Devam etmek için dokun", w / 2, h - 60);
-      return;
     }
 
     if (this.stage === "warning") {
@@ -195,13 +135,8 @@ export class IntroScene {
         w / 2,
         210
       );
-      ctx.fillText("Devam etmek için ekrana dokun.", w / 2, 250);
 
-      if (this.errorText) {
-        ctx.fillStyle = "#ff8a8a";
-        ctx.font = "14px system-ui";
-        ctx.fillText(this.errorText, w / 2, 320);
-      }
+      ctx.fillText("Devam etmek için dokun.", w / 2, 250);
     }
   }
 }
