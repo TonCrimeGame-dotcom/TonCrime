@@ -15,6 +15,7 @@ import { SimpleScreenScene } from "./scenes/SimpleScreenScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
+import { MissionsScene } from "./scenes/MissionsScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
@@ -114,6 +115,24 @@ const defaultState = {
     twinBonusClaimed: {},
   },
 
+  missions: {
+    dayKey: "",
+    dailyAdsWatched: 0,
+    dailyAdsLimit: 20,
+    dailyPvpPlayed: 0,
+    dailyBuildingsUsed: 0,
+    invites: 0,
+    totalLevelUps: 0,
+    telegramGroupJoined: false,
+    telegramChannelJoined: false,
+    claimed: {},
+  },
+
+  weapons: {
+    owned: {},
+    equippedId: null,
+  },
+
   ui: { safe: getSafeArea() },
 };
 
@@ -125,6 +144,8 @@ const initial = loaded
       intro: { ...defaultState.intro, ...(loaded.intro || {}) },
       player: { ...defaultState.player, ...(loaded.player || {}) },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
+      missions: { ...defaultState.missions, ...(loaded.missions || {}) },
+      weapons: { ...defaultState.weapons, ...(loaded.weapons || {}) },
       ui: { safe: getSafeArea() },
     }
   : defaultState;
@@ -278,9 +299,6 @@ addImage("weapons", "./src/assets/weapons.jpg");
 addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("xxx", "./src/assets/xxx.jpg");
-addImage("tata", "./src/assets/tata.png");
-addImage("blackmarket", "./src/assets/BlackMarket.png");
-addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
 
 /* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
@@ -310,10 +328,28 @@ window.tc.dev = {
     store.set({ player: { ...p, level: Number(n || 1) } });
     console.log("level:", store.get().player.level);
   },
+  win() {
+    window.dispatchEvent(
+      new CustomEvent("tc:pvp:win", { detail: { matchId: "dev_" + Date.now() } })
+    );
+  },
+  lose() {
+    window.dispatchEvent(
+      new CustomEvent("tc:pvp:lose", { detail: { matchId: "dev_" + Date.now() } })
+    );
+  },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
   },
+};
+
+window.dev = () => {
+  const s = store.get();
+  store.set({
+    coins: 999,
+    player: { ...(s.player || {}), energy: 10, energyMax: 10 },
+  });
 };
 
 /* ===== SCENES REGISTER ===== */
@@ -341,9 +377,16 @@ scenes.register(
   new WeaponsScene({ store, input, assets, scenes })
 );
 
-scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
+scenes.register(
+  "xxx",
+  new StarsScene({ store, input, i18n, assets, scenes })
+);
 
-scenes.register("missions", new SimpleScreenScene({ i18n, titleKey: "Missions" }));
+scenes.register(
+  "missions",
+  new MissionsScene({ store, input, scenes })
+);
+
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 
