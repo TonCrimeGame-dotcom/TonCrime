@@ -90,6 +90,11 @@ function todayKey() {
   return `${y}-${m}-${day}`;
 }
 
+function clampInt(n, min = 0) {
+  const v = Math.floor(Number(n) || 0);
+  return Math.max(min, v);
+}
+
 const defaultState = {
   lang: "tr",
   coins: 0,
@@ -142,18 +147,14 @@ const defaultState = {
     lastDayKey: todayKey(),
     adsWatchedToday: 0,
     adsRewardClaimedToday: false,
-
     referrals: 0,
     referralMilestonesClaimed: {},
-
     pvpPlayedToday: 0,
     pvpWinsToday: 0,
     pvpPlayRewardClaimedToday: false,
     pvpWinRewardClaimedToday: false,
-
     energyRefillsToday: 0,
     energyRewardClaimedToday: false,
-
     levelRewardClaimed: {},
     telegramJoinRewardClaimed: false,
   },
@@ -178,11 +179,55 @@ const initial = loaded
 
 const store = new Store(initial);
 
+/* ===== TELEGRAM USER INIT ===== */
+function getTelegramUser() {
+  try {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+  } catch {
+    return null;
+  }
+}
+
+function getTelegramId() {
+  const tgUser = getTelegramUser();
+  const storeId = String(store.get()?.player?.telegramId || "");
+  return String(tgUser?.id || storeId || "");
+}
+
+function bootstrapTelegramUser() {
+  try {
+    const tgUser = getTelegramUser();
+    if (!tgUser) return;
+
+    const s = store.get();
+    const p = s.player || {};
+    store.set({
+      player: {
+        ...p,
+        telegramId: String(tgUser.id || p.telegramId || ""),
+        username:
+          p.username ||
+          tgUser.username ||
+          [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") ||
+          "Player",
+      },
+    });
+  } catch (_) {}
+}
+
+bootstrapTelegramUser();
+
+/* ===== MISSION STATE ===== */
 function ensureMissionState() {
   const s = store.get();
   const m = s.missions || {};
-
   const today = todayKey();
+
+  if (!s.missions) {
+    store.set({ missions: { ...defaultState.missions } });
+    return;
+  }
+
   if (m.lastDayKey !== today) {
     store.set({
       missions: {
@@ -199,11 +244,6 @@ function ensureMissionState() {
         energyRewardClaimedToday: false,
       },
     });
-    return;
-  }
-
-  if (!s.missions) {
-    store.set({ missions: { ...defaultState.missions } });
   }
 }
 
@@ -296,7 +336,7 @@ function applyDailyLoginReward() {
   }
 
   const patch = {
-    coins: Number(s.coins || 0) + coinReward,
+    coins: clampInt(Number(s.coins || 0) + coinReward),
     dailyLogin: {
       ...dl,
       lastClaimDay: today,
@@ -325,53 +365,99 @@ function applyDailyLoginReward() {
   }, 120);
 }
 
-/* ===== TELEGRAM USER INIT ===== */
-try {
-  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-  if (tgUser) {
-    const s = store.get();
-    const p = s.player || {};
-    store.set({
-      player: {
-        ...p,
-        telegramId: String(tgUser.id || p.telegramId || ""),
-        username:
-          p.username ||
-          tgUser.username ||
-          [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") ||
-          "Player",
-      },
-    });
-  }
-} catch (_) {}
-
-/* ===== SUPABASE PROFILE SYNC ===== */
+/* ===== SUPABASE REMOTE PLAYER STATE ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
+let _profileHydrated = false;
 
-async function syncProfileToSupabase() {
-  if (_profileSyncBusy) return;
-
+function buildProfilePayload() {
   const s = store.get();
   const p = s.player || {};
-  const telegramId = String(
-    p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  );
+  const telegramId = getTelegramId();
 
-  if (!telegramId) return;
-  if (!s?.intro?.profileCompleted) return;
+  if (!telegramId) return null;
 
-  const payload = {
+  return {
     telegram_id: telegramId,
     username: String(p.username || "Player"),
     age: p.age ?? null,
-    level: Number(p.level || 1),
-    coins: Number(s.coins || 0),
-    energy: Number(p.energy || 10),
-    energy_max: Number(p.energyMax || 10),
+    level: clampInt(p.level || 1, 1),
+    coins: clampInt(s.coins || 0),
+    energy: clampInt(p.energy || 10),
+    energy_max: clampInt(p.energyMax || 10, 1),
     updated_at: new Date().toISOString(),
   };
+}
+
+async function hydrateProfileFromSupabase() {
+  const telegramId = getTelegramId();
+  if (!telegramId) return false;
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("telegram_id, username, age, level, coins, energy, energy_max")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Supabase profile load error:", error);
+      return false;
+    }
+
+    if (!data) {
+      const payload = buildProfilePayload();
+      if (!payload) return false;
+
+      const { error: insertError } = await supabase
+        .from("profiles")
+        .upsert(payload, { onConflict: "telegram_id" });
+
+      if (insertError) {
+        console.error("Supabase profile bootstrap insert error:", insertError);
+        return false;
+      }
+
+      _profileHydrated = true;
+      _lastProfilePayload = JSON.stringify(payload);
+      return true;
+    }
+
+    const s = store.get();
+    const p = s.player || {};
+
+    store.set({
+      coins: clampInt(data.coins ?? s.coins ?? 0),
+      player: {
+        ...p,
+        username: String(data.username || p.username || "Player"),
+        telegramId: telegramId,
+        age: data.age ?? p.age ?? null,
+        level: clampInt(data.level ?? p.level ?? 1, 1),
+        energy: clampInt(data.energy ?? p.energy ?? 10),
+        energyMax: clampInt(data.energy_max ?? p.energyMax ?? 10, 1),
+      },
+    });
+
+    _profileHydrated = true;
+    _lastProfilePayload = JSON.stringify(buildProfilePayload() || {});
+    return true;
+  } catch (err) {
+    console.error("Supabase profile hydrate fatal:", err);
+    return false;
+  }
+}
+
+async function syncProfileToSupabase() {
+  if (_profileSyncBusy) return;
+  if (!_profileHydrated) return;
+
+  const s = store.get();
+  if (!s?.intro?.profileCompleted) return;
+
+  const payload = buildProfilePayload();
+  if (!payload) return;
 
   const payloadKey = JSON.stringify(payload);
   if (payloadKey === _lastProfilePayload) return;
@@ -399,10 +485,10 @@ async function syncProfileToSupabase() {
 
 (function profileSyncLoop() {
   const now = Date.now();
-  if (now - _lastProfileSyncAt > 1500) {
+  if (now - _lastProfileSyncAt > 2000) {
     syncProfileToSupabase();
   }
-  setTimeout(profileSyncLoop, 1500);
+  setTimeout(profileSyncLoop, 2000);
 })();
 
 /* ===== AUTOSAVE ===== */
@@ -486,7 +572,11 @@ window.tc = window.tc || {};
 window.tc.dev = {
   coin(n = 100) {
     const s = store.get();
-    store.set({ coins: (Number(s.coins) || 0) + Number(n || 0) });
+    store.set({ coins: clampInt((Number(s.coins) || 0) + Number(n || 0)) });
+    console.log("coins:", store.get().coins);
+  },
+  setcoin(n = 1000) {
+    store.set({ coins: clampInt(n) });
     console.log("coins:", store.get().coins);
   },
   energy(n = 10) {
@@ -494,8 +584,21 @@ window.tc.dev = {
     const p = s.player || {};
     const maxE = Math.max(1, Number(p.energyMax || 10));
     const next = Math.min(maxE, (Number(p.energy) || 0) + Number(n || 0));
-    store.set({ player: { ...p, energy: next } });
+    store.set({ player: { ...p, energy: clampInt(next) } });
     console.log("energy:", store.get().player.energy);
+  },
+  setenergy(n = 10) {
+    const s = store.get();
+    const p = s.player || {};
+    const maxE = Math.max(1, Number(p.energyMax || 10));
+    store.set({ player: { ...p, energy: Math.min(maxE, clampInt(n)) } });
+    console.log("energy:", store.get().player.energy);
+  },
+  level(n = 1) {
+    const s = store.get();
+    const p = s.player || {};
+    store.set({ player: { ...p, level: clampInt(n, 1) } });
+    console.log("level:", store.get().player.level);
   },
   ad(n = 1) {
     ensureMissionState();
@@ -558,33 +661,8 @@ window.tc.dev = {
     });
     console.log("energyRefillsToday:", store.get().missions.energyRefillsToday);
   },
-  level(n = 1) {
-    const s = store.get();
-    const p = s.player || {};
-    store.set({ player: { ...p, level: Number(n || 1) } });
-    console.log("level:", store.get().player.level);
-  },
-  joingroup() {
-    ensureMissionState();
-    const s = store.get();
-    const m = s.missions || {};
-    store.set({
-      missions: {
-        ...m,
-        telegramJoinRewardClaimed: false,
-      },
-    });
-    console.log("telegram group reward ready");
-  },
-  win() {
-    window.dispatchEvent(
-      new CustomEvent("tc:pvp:win", { detail: { matchId: "dev_" + Date.now() } })
-    );
-  },
-  lose() {
-    window.dispatchEvent(
-      new CustomEvent("tc:pvp:lose", { detail: { matchId: "dev_" + Date.now() } })
-    );
+  syncnow() {
+    syncProfileToSupabase();
   },
   reset() {
     localStorage.removeItem(STORE_KEY);
@@ -680,15 +758,24 @@ startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
 startPvpLobby();
 
-/* ===== DAILY LOGIN RUN ===== */
-applyDailyLoginReward();
-ensureMissionState();
+/* ===== STARTUP ===== */
+async function startGame() {
+  ensureMissionState();
+  ensureDailyLoginState();
 
-/* ===== START ===== */
-const st = store.get();
-if (st?.intro?.profileCompleted) {
-  scenes.go("boot");
-} else {
-  scenes.go("intro");
+  await hydrateProfileFromSupabase();
+
+  ensureMissionState();
+  applyDailyLoginReward();
+
+  const st = store.get();
+  if (st?.intro?.profileCompleted) {
+    scenes.go("boot");
+  } else {
+    scenes.go("intro");
+  }
+
+  engine.start();
 }
-engine.start();
+
+startGame();
