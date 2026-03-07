@@ -149,6 +149,66 @@ try {
   }
 } catch (_) {}
 
+/* ===== SUPABASE PROFILE SYNC ===== */
+let _lastProfileSyncAt = 0;
+let _profileSyncBusy = false;
+let _lastProfilePayload = "";
+
+async function syncProfileToSupabase() {
+  if (_profileSyncBusy) return;
+
+  const s = store.get();
+  const p = s.player || {};
+  const telegramId = String(
+    p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
+  );
+
+  if (!telegramId) return;
+  if (!s?.intro?.profileCompleted) return;
+
+  const payload = {
+    telegram_id: telegramId,
+    username: String(p.username || "Player"),
+    age: p.age ?? null,
+    level: Number(p.level || 1),
+    coins: Number(s.coins || 0),
+    energy: Number(p.energy || 10),
+    energy_max: Number(p.energyMax || 10),
+    updated_at: new Date().toISOString(),
+  };
+
+  const payloadKey = JSON.stringify(payload);
+  if (payloadKey === _lastProfilePayload) return;
+
+  _profileSyncBusy = true;
+
+  try {
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(payload, { onConflict: "telegram_id" });
+
+    if (error) {
+      console.error("Supabase profile sync error:", error);
+      return;
+    }
+
+    _lastProfilePayload = payloadKey;
+    _lastProfileSyncAt = Date.now();
+  } catch (err) {
+    console.error("Supabase profile sync fatal:", err);
+  } finally {
+    _profileSyncBusy = false;
+  }
+}
+
+(function profileSyncLoop() {
+  const now = Date.now();
+  if (now - _lastProfileSyncAt > 1500) {
+    syncProfileToSupabase();
+  }
+  setTimeout(profileSyncLoop, 1500);
+})();
+
 /* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
 (function autosaveLoop() {
@@ -239,6 +299,12 @@ window.tc.dev = {
     const next = Math.min(maxE, (Number(p.energy) || 0) + Number(n || 0));
     store.set({ player: { ...p, energy: next } });
     console.log("energy:", store.get().player.energy);
+  },
+  level(n = 1) {
+    const s = store.get();
+    const p = s.player || {};
+    store.set({ player: { ...p, level: Number(n || 1) } });
+    console.log("level:", store.get().player.level);
   },
   reset() {
     localStorage.removeItem(STORE_KEY);
