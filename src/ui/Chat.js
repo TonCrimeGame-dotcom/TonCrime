@@ -1,67 +1,128 @@
-export function startHud(store) {
-  const hudTop = document.getElementById("hudTop");
-  const elUsername = document.getElementById("hudUsername");
-  const elCoins = document.getElementById("hudCoins");
-  const elWeaponName = document.getElementById("hudWeaponName");
-  const elWeaponBonus = document.getElementById("hudWeaponBonus");
-  const elXpFill = document.getElementById("hudXpFill");
-  const elXpText = document.getElementById("hudXpText");
-  const elEnergyFill = document.getElementById("hudEnergyFill");
-  const elEnergyText = document.getElementById("hudEnergyText");
+export function startChat(store) {
+  const KEY_MSG = "toncrime_chat_messages_v1";
+  const KEY_OPEN = "toncrime_chat_open_v1";
 
-  if (
-    !hudTop ||
-    !elUsername ||
-    !elCoins ||
-    !elWeaponName ||
-    !elWeaponBonus ||
-    !elXpFill ||
-    !elXpText ||
-    !elEnergyFill ||
-    !elEnergyText
-  ) {
-    console.warn("[HUD] index.html HUD elementleri bulunamadı");
+  const drawer = document.getElementById("chatDrawer");
+  const header = document.getElementById("chatHeader");
+  const toggleBtn = document.getElementById("chatToggle");
+  const msgBox = document.getElementById("chatMessages");
+  const input = document.getElementById("chatInput");
+  const sendBtn = document.getElementById("chatSend");
+
+  if (!drawer || !header || !toggleBtn || !msgBox || !input || !sendBtn) {
+    console.warn("[CHAT] index.html chat elementleri bulunamadı");
     return;
   }
 
-  const clamp01 = (n) => Math.max(0, Math.min(1, n));
+  const username = () => store.get()?.player?.username ?? "Player";
 
-  function fmtMMSS(ms) {
-    const totalSec = Math.max(0, Math.ceil(ms / 1000));
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  function loadMessages() {
+    try {
+      const raw = localStorage.getItem(KEY_MSG);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
   }
 
-  function loop() {
-    const s = store.get();
-    const p = s.player || {};
+  function saveMessages(arr) {
+    try {
+      localStorage.setItem(KEY_MSG, JSON.stringify(arr));
+    } catch {}
+  }
+
+  function renderMessages() {
+    const msgs = loadMessages();
+    msgBox.innerHTML = "";
+    for (const m of msgs) {
+      const row = document.createElement("div");
+      row.className = "msg";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = m.time ?? "--:--";
+
+      const text = document.createElement("div");
+      text.textContent = `${m.user ?? "?"}: ${m.text ?? ""}`;
+
+      row.appendChild(meta);
+      row.appendChild(text);
+      msgBox.appendChild(row);
+    }
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  function setOpen(isOpen) {
+    if (isOpen) {
+      drawer.classList.add("open");
+      toggleBtn.textContent = "Kapat";
+    } else {
+      drawer.classList.remove("open");
+      toggleBtn.textContent = "Aç";
+    }
+    try {
+      localStorage.setItem(KEY_OPEN, isOpen ? "1" : "0");
+    } catch {}
+  }
+
+  function getOpen() {
+    try {
+      return localStorage.getItem(KEY_OPEN) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function nowHHMM() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function send() {
+    const text = (input.value || "").trim();
+    if (!text) return;
+
+    const msgs = loadMessages();
+    msgs.push({ user: username(), text, time: nowHHMM() });
+    if (msgs.length > 200) msgs.splice(0, msgs.length - 200);
+
+    saveMessages(msgs);
+    input.value = "";
+    renderMessages();
+  }
+
+  function hardBindPointer(el, handler) {
+    el.addEventListener(
+      "pointerdown",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handler(e);
+      },
+      { capture: true }
+    );
+  }
+
+  hardBindPointer(toggleBtn, () => setOpen(!drawer.classList.contains("open")));
+  hardBindPointer(header, (e) => {
+    if (e.target === toggleBtn) return;
+    setOpen(!drawer.classList.contains("open"));
+  });
+  hardBindPointer(sendBtn, () => send());
+
+  input.addEventListener("pointerdown", (e) => e.stopPropagation(), { capture: true });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") send();
+  });
+
+  function visLoop() {
     const currentScene = window.tcScenes?._currentKey || "";
-
-    hudTop.style.display = currentScene === "profile" ? "none" : "";
-
-    elUsername.textContent = p.username ?? "Player";
-    elCoins.textContent = `Coin: ${s.coins ?? 0}`;
-    elWeaponName.textContent = p.weaponName ?? "Silah Yok";
-    elWeaponBonus.textContent = ` ${p.weaponBonus ?? "+0%"}`;
-
-    const xp = Math.max(0, Number(p.xp || 0));
-    const xpToNext = Math.max(1, Number(p.xpToNext || 100));
-    elXpFill.style.width = `${Math.max(2, clamp01(xp / xpToNext) * 100)}%`;
-    elXpText.textContent = `LVL ${p.level ?? 1} • XP ${xp}/${xpToNext}`;
-
-    const e = Math.max(0, Number(p.energy || 0));
-    const eMax = Math.max(1, Number(p.energyMax || 10));
-    elEnergyFill.style.width = `${Math.max(2, clamp01(e / eMax) * 100)}%`;
-
-    const interval = Math.max(10_000, Number(p.energyIntervalMs || 300000));
-    const lastAt = Number(p.lastEnergyAt || Date.now());
-    const now = Date.now();
-    const untilNext = e >= eMax ? 0 : Math.max(0, interval - (now - lastAt));
-    elEnergyText.textContent = `ENERJİ ${e}/${eMax} • ${e >= eMax ? "FULL" : fmtMMSS(untilNext)}`;
-
-    requestAnimationFrame(loop);
+    drawer.style.display = currentScene === "profile" ? "none" : "";
+    requestAnimationFrame(visLoop);
   }
 
-  loop();
+  renderMessages();
+  setOpen(getOpen());
+  visLoop();
 }
