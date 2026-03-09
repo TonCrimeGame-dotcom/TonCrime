@@ -106,7 +106,7 @@ const defaultState = {
     energy: 10,
     energyMax: 10,
     energyIntervalMs: 5 * 60 * 1000,
-    lastEnergyAt: Date.now()
+    lastEnergyAt: Date.now(),
   },
 
   profile: {
@@ -118,14 +118,14 @@ const defaultState = {
     walletAddress: "",
     premiumType: "none",
     premiumUntil: 0,
-    joinedAt: Date.now()
+    joinedAt: Date.now(),
   },
 
   leaderboard: {
     rankGlobal: 0,
     rankWeekly: 0,
     pvpWins: 0,
-    pvpLosses: 0
+    pvpLosses: 0,
   },
 
   finance: {
@@ -135,7 +135,7 @@ const defaultState = {
     totalExpenseTon: 0,
     totalIncomeYton: 0,
     totalExpenseYton: 0,
-    history: []
+    history: [],
   },
 
   pvpHistory: [],
@@ -144,15 +144,15 @@ const defaultState = {
     owned: {},
     selectedId: null,
     lastClaimTs: {},
-    twinBonusClaimed: {}
+    twinBonusClaimed: {},
   },
 
   weapons: {
     owned: {},
-    equippedId: null
+    equippedId: null,
   },
 
-  ui: { safe: getSafeArea() }
+  ui: { safe: getSafeArea() },
 };
 
 const loaded = loadStore();
@@ -166,12 +166,12 @@ const initial = loaded
       finance: {
         ...defaultState.finance,
         ...(loaded.finance || {}),
-        history: Array.isArray(loaded.finance?.history) ? loaded.finance.history : []
+        history: Array.isArray(loaded.finance?.history) ? loaded.finance.history : [],
       },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       weapons: { ...defaultState.weapons, ...(loaded.weapons || {}) },
       pvpHistory: Array.isArray(loaded.pvpHistory) ? loaded.pvpHistory : [],
-      ui: { safe: getSafeArea() }
+      ui: { safe: getSafeArea() },
     }
   : defaultState;
 
@@ -205,7 +205,7 @@ function normalizeProfileState() {
         tgUser?.username ||
         [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
         "Player",
-      telegramId: String(p.telegramId || tgUser?.id || "")
+      telegramId: String(p.telegramId || tgUser?.id || ""),
     },
     profile: {
       ...profile,
@@ -214,8 +214,8 @@ function normalizeProfileState() {
       avatar: profile.avatar || "😈",
       bio: profile.bio || "TonCrime sokaklarında aktif.",
       premiumType: s.premium ? "premium" : profile.premiumType || "none",
-      joinedAt: Number(profile.joinedAt || Date.now())
-    }
+      joinedAt: Number(profile.joinedAt || Date.now()),
+    },
   });
 }
 normalizeProfileState();
@@ -270,10 +270,10 @@ window.addEventListener("tc:pvp:win", (ev) => {
         opponentId: opp.id || "",
         rewardCoin,
         rewardXp,
-        playedAt: Date.now()
+        playedAt: Date.now(),
       },
-      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : [])
-    ].slice(0, 30)
+      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : []),
+    ].slice(0, 30),
   });
 
   applyXp(rewardXp);
@@ -282,14 +282,15 @@ window.addEventListener("tc:pvp:win", (ev) => {
   store.set({
     finance: {
       ...fin,
-      totalIncomeYton: Number(fin.totalIncomeYton || 0) + rewardCoin
-    }
+      totalIncomeYton: Number(fin.totalIncomeYton || 0) + rewardCoin,
+    },
   });
+
   pushFinanceHistory({
     type: "pvp_win",
     label: "PvP galibiyeti",
     amount: rewardCoin,
-    unit: "coin"
+    unit: "coin",
   });
 });
 
@@ -308,18 +309,19 @@ window.addEventListener("tc:pvp:lose", (ev) => {
         opponentId: opp.id || "",
         rewardCoin: 0,
         rewardXp,
-        playedAt: Date.now()
+        playedAt: Date.now(),
       },
-      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : [])
-    ].slice(0, 30)
+      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : []),
+    ].slice(0, 30),
   });
 
   applyXp(rewardXp);
+
   pushFinanceHistory({
     type: "pvp_lose",
     label: "PvP mağlubiyeti",
     amount: 0,
-    unit: "coin"
+    unit: "coin",
   });
 });
 
@@ -348,8 +350,8 @@ function tickEnergy() {
     player: {
       ...p,
       energy: newE,
-      lastEnergyAt: newLast
-    }
+      lastEnergyAt: newLast,
+    },
   });
 }
 setInterval(tickEnergy, 1000);
@@ -357,7 +359,7 @@ setInterval(tickEnergy, 1000);
 const i18n = new I18n(store);
 i18n.register({
   tr: { loading: "Yükleniyor..." },
-  en: { loading: "Loading..." }
+  en: { loading: "Loading..." },
 });
 
 const assets = new Assets();
@@ -406,8 +408,8 @@ function initTonWallet() {
       store.set({
         profile: {
           ...profile,
-          walletAddress: String(accountAddress || "")
-        }
+          walletAddress: String(accountAddress || ""),
+        },
       });
     });
 
@@ -438,8 +440,8 @@ window.tcWallet = {
       store.set({
         profile: {
           ...(s.profile || {}),
-          walletAddress: ""
-        }
+          walletAddress: "",
+        },
       });
     } catch (err) {
       console.warn("[Wallet] disconnect error:", err);
@@ -447,7 +449,7 @@ window.tcWallet = {
   },
   address() {
     return String(store.get()?.profile?.walletAddress || "");
-  }
+  },
 };
 
 window.tc = window.tc || {};
@@ -459,7 +461,7 @@ window.tc.dev = {
       type: "dev_coin",
       label: "Dev coin",
       amount: Number(n || 0),
-      unit: "coin"
+      unit: "coin",
     });
   },
   energy(n = 10) {
@@ -475,21 +477,21 @@ window.tc.dev = {
   win() {
     window.dispatchEvent(
       new CustomEvent("tc:pvp:win", {
-        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } }
+        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } },
       })
     );
   },
   lose() {
     window.dispatchEvent(
       new CustomEvent("tc:pvp:lose", {
-        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } }
+        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } },
       })
     );
   },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
-  }
+  },
 };
 
 scenes.register("boot", new BootScene({ assets, i18n, scenes }));
