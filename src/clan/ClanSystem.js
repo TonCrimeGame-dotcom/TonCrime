@@ -1,274 +1,149 @@
-import {
-  shallowClone,
-  makeId,
-  now,
-  getUpgradeCost,
-  getMaxMembersFromUpgrade,
-  getVaultCapacity,
-  getIncomeBonusPercent,
-  getAttackBonus,
-  getDefenseBonus,
-} from "./ClanUtils.js";
+import { ClanSystem } from "../clan/ClanSystem.js";
 
-function readStoreState(store) {
-  if (!store) return {};
-  if (typeof store.get === "function") return store.get() || {};
-  if (typeof store.getState === "function") return store.getState() || {};
-  return store.state || {};
-}
+export class ClanScene {
+  constructor({ store, input, assets, scenes, i18n }) {
+    this.store = store;
+    this.input = input;
+    this.assets = assets;
+    this.scenes = scenes;
+    this.i18n = i18n;
 
-function writeStoreState(store, nextState) {
-  if (!store) return nextState;
-  if (typeof store.set === "function") {
-    store.set(nextState);
-    return nextState;
-  }
-  if (typeof store.setState === "function") {
-    store.setState(nextState);
-    return nextState;
-  }
-  store.state = nextState;
-  return nextState;
-}
-
-function updateStoreState(store, updater) {
-  const prev = readStoreState(store);
-  const base = shallowClone(prev);
-  const next = updater(base) || base;
-  return writeStoreState(store, next);
-}
-
-function ensureRootClan(state) {
-  if (!state.clan) state.clan = null;
-  if (!state.player) state.player = {};
-  if (!state.player.name) state.player.name = "Player";
-  if (typeof state.player.cash !== "number") state.player.cash = 50000;
-  return state;
-}
-
-function recomputeClan(clan) {
-  if (!clan) return null;
-
-  clan.limits.members = getMaxMembersFromUpgrade(clan.upgrades.memberCap || 0);
-  clan.limits.vaultCapacity = getVaultCapacity(clan.upgrades.vault || 0);
-
-  const membersPower = (clan.members || []).reduce((sum, m) => sum + Number(m.power || 0), 0);
-  const attackBonus = getAttackBonus(clan.upgrades.attack || 0);
-  const defenseBonus = getDefenseBonus(clan.upgrades.defense || 0);
-  const incomeBonusPercent = getIncomeBonusPercent(clan.upgrades.income || 0);
-
-  clan.power = membersPower + attackBonus * 10 + defenseBonus * 10;
-  clan.dailyIncome = Math.floor(2500 + clan.level * 500 + membersPower * 2 + (2500 * incomeBonusPercent) / 100);
-
-  if (clan.bank > clan.limits.vaultCapacity) {
-    clan.bank = clan.limits.vaultCapacity;
+    this.root = null;
   }
 
-  return clan;
-}
+  onEnter() {
+    const state = this.store.get();
+    const clan = ClanSystem.getClan(state);
 
-function addLog(clan, type, text) {
-  clan.logs = clan.logs || [];
-  clan.logs.unshift({
-    id: makeId("log"),
-    type,
-    text,
-    time: now(),
-  });
+    this.root = document.createElement("div");
+    this.root.id = "clanScene";
+    this.root.style.position = "fixed";
+    this.root.style.left = "0";
+    this.root.style.top = "0";
+    this.root.style.width = "100%";
+    this.root.style.height = "100%";
+    this.root.style.background = "#0b0b0f";
+    this.root.style.color = "white";
+    this.root.style.zIndex = "50";
+    this.root.style.overflowY = "auto";
+    this.root.style.fontFamily = "system-ui";
 
-  if (clan.logs.length > 50) {
-    clan.logs.length = 50;
+    this.root.innerHTML = `
+      <div style="padding:20px;max-width:900px;margin:auto">
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h1 style="margin:0">${clan.name}</h1>
+          <button id="clanBackBtn">← Ana Menü</button>
+        </div>
+
+        <div style="background:#14141a;padding:16px;border-radius:12px;margin-bottom:20px">
+          <div><b>Tag:</b> ${clan.tag}</div>
+          <div><b>Seviye:</b> ${clan.level}</div>
+          <div><b>Üye:</b> ${clan.members.length}/${clan.maxMembers}</div>
+          <div><b>Kasa:</b> ${clan.bank || 0} TON</div>
+        </div>
+
+        <h2>Üyeler</h2>
+        <div id="clanMembers"></div>
+
+        <h2 style="margin-top:30px">Bağış</h2>
+        <div style="display:flex;gap:10px;margin-bottom:20px">
+          <button id="donate10">+10 TON</button>
+          <button id="donate100">+100 TON</button>
+        </div>
+
+        <h2>Yükseltmeler</h2>
+        <div style="display:flex;gap:10px;margin-bottom:20px">
+          <button id="upgradeMembers">Üye Limiti +5</button>
+          <button id="upgradeBank">Kasa Bonus</button>
+        </div>
+
+        <h2>Aktivite</h2>
+        <div id="clanLog" style="background:#14141a;padding:12px;border-radius:10px"></div>
+
+      </div>
+    `;
+
+    document.body.appendChild(this.root);
+
+    this.renderMembers(clan);
+    this.renderLog(clan);
+
+    document.getElementById("clanBackBtn").onclick = () => {
+      this.scenes.go("home");
+    };
+
+    document.getElementById("donate10").onclick = () => {
+      ClanSystem.donate(this.store, 10);
+      this.refresh();
+    };
+
+    document.getElementById("donate100").onclick = () => {
+      ClanSystem.donate(this.store, 100);
+      this.refresh();
+    };
+
+    document.getElementById("upgradeMembers").onclick = () => {
+      ClanSystem.upgradeMembers(this.store);
+      this.refresh();
+    };
+
+    document.getElementById("upgradeBank").onclick = () => {
+      ClanSystem.upgradeBank(this.store);
+      this.refresh();
+    };
   }
-}
 
-export class ClanSystem {
-  static hasClan(store) {
-    const state = ensureRootClan(readStoreState(store));
-    return !!state.clan;
-  }
+  renderMembers(clan) {
+    const el = document.getElementById("clanMembers");
+    el.innerHTML = "";
 
-  static getClan(store) {
-    const state = ensureRootClan(readStoreState(store));
-    return state.clan || null;
-  }
+    clan.members.forEach((m) => {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.justifyContent = "space-between";
+      row.style.background = "#14141a";
+      row.style.padding = "10px";
+      row.style.marginBottom = "6px";
+      row.style.borderRadius = "8px";
 
-  static createClan(store, payload = {}) {
-    return updateStoreState(store, (state) => {
-      ensureRootClan(state);
+      row.innerHTML = `
+        <div>
+          <b>${m.name}</b>
+          <div style="font-size:12px;opacity:.7">${m.role}</div>
+        </div>
+        <div>Lv.${m.level}</div>
+      `;
 
-      if (state.clan) return state;
-
-      const playerName = state.player?.name || "Player";
-      const clanName = String(payload.name || "NEW CLAN").trim().slice(0, 24);
-      const clanTag = String(payload.tag || "NWC").trim().slice(0, 5).toUpperCase();
-      const description = String(payload.description || "Yeni clan.").trim().slice(0, 120);
-
-      state.clan = {
-        id: makeId("clan"),
-        name: clanName || "NEW CLAN",
-        tag: clanTag || "NWC",
-        level: 1,
-        xp: 0,
-        xpNext: 500,
-        logo: "default",
-        description,
-        rank: 999,
-        power: 0,
-        territoryCount: 0,
-        bank: 0,
-        dailyIncome: 2500,
-
-        upgrades: {
-          memberCap: 0,
-          vault: 0,
-          income: 0,
-          attack: 0,
-          defense: 0,
-        },
-
-        limits: {
-          members: 10,
-          vaultCapacity: 50000,
-        },
-
-        members: [
-          {
-            id: "player_main",
-            name: playerName,
-            role: "leader",
-            level: Number(state.player?.level || 1),
-            power: Number(state.player?.power || 100),
-            online: true,
-            lastSeen: now(),
-            contribution: 0,
-          },
-        ],
-
-        joinRequests: [],
-        logs: [],
-        wars: {
-          active: [],
-          history: [],
-        },
-      };
-
-      addLog(state.clan, "system", `${clanName} clan kuruldu.`);
-      recomputeClan(state.clan);
-      return state;
+      el.appendChild(row);
     });
   }
 
-  static leaveClan(store) {
-    return updateStoreState(store, (state) => {
-      ensureRootClan(state);
-      const clan = state.clan;
-      if (!clan) return state;
+  renderLog(clan) {
+    const log = document.getElementById("clanLog");
+    log.innerHTML = "";
 
-      const me = clan.members.find((m) => m.id === "player_main");
-      if (me && me.role === "leader" && clan.members.length > 1) {
-        return state;
-      }
-
-      state.clan = null;
-      return state;
+    (clan.log || []).slice(-10).reverse().forEach((l) => {
+      const row = document.createElement("div");
+      row.style.fontSize = "13px";
+      row.style.opacity = ".8";
+      row.style.marginBottom = "4px";
+      row.textContent = l;
+      log.appendChild(row);
     });
   }
 
-  static donateToClan(store, amount) {
-    return updateStoreState(store, (state) => {
-      ensureRootClan(state);
-      const clan = state.clan;
-      if (!clan) return state;
-
-      const value = Math.max(0, Math.floor(Number(amount || 0)));
-      if (!value) return state;
-      if ((state.player.cash || 0) < value) return state;
-
-      const freeSpace = clan.limits.vaultCapacity - clan.bank;
-      const finalAmount = Math.min(value, freeSpace);
-      if (finalAmount <= 0) return state;
-
-      state.player.cash -= finalAmount;
-      clan.bank += finalAmount;
-
-      const me = clan.members.find((m) => m.id === "player_main");
-      if (me) {
-        me.contribution = Number(me.contribution || 0) + finalAmount;
-      }
-
-      addLog(clan, "donation", `${state.player.name || "Player"} clan kasasına $${finalAmount.toLocaleString("tr-TR")} yatırdı.`);
-      recomputeClan(clan);
-      return state;
-    });
+  refresh() {
+    const state = this.store.get();
+    const clan = ClanSystem.getClan(state);
+    this.renderMembers(clan);
+    this.renderLog(clan);
   }
 
-  static upgrade(store, type) {
-    return updateStoreState(store, (state) => {
-      ensureRootClan(state);
-      const clan = state.clan;
-      if (!clan) return state;
-
-      const currentLevel = Number(clan.upgrades?.[type] || 0);
-      const cost = getUpgradeCost(type, currentLevel);
-
-      if (clan.bank < cost) return state;
-
-      clan.bank -= cost;
-      clan.upgrades[type] = currentLevel + 1;
-
-      addLog(clan, "upgrade", `${type} geliştirmesi seviye ${currentLevel + 1} oldu.`);
-      recomputeClan(clan);
-      return state;
-    });
-  }
-
-  static addMockMember(store) {
-    return updateStoreState(store, (state) => {
-      ensureRootClan(state);
-      const clan = state.clan;
-      if (!clan) return state;
-      if (clan.members.length >= clan.limits.members) return state;
-
-      const names = ["Efe", "Arda", "Kerem", "Bora", "Emir", "Tuna", "Deniz", "Yiğit"];
-      const pick = names[Math.floor(Math.random() * names.length)];
-
-      clan.members.push({
-        id: makeId("member"),
-        name: `${pick}_${Math.floor(Math.random() * 99)}`,
-        role: "member",
-        level: 1 + Math.floor(Math.random() * 10),
-        power: 40 + Math.floor(Math.random() * 120),
-        online: Math.random() > 0.5,
-        lastSeen: now() - Math.floor(Math.random() * 1000 * 60 * 60),
-        contribution: Math.floor(Math.random() * 4000),
-      });
-
-      addLog(clan, "member", "Yeni üye clan'a katıldı.");
-      recomputeClan(clan);
-      return state;
-    });
-  }
-
-  static kickMember(store, memberId) {
-    return updateStoreState(store, (state) => {
-      ensureRootClan(state);
-      const clan = state.clan;
-      if (!clan) return state;
-      if (memberId === "player_main") return state;
-
-      const index = clan.members.findIndex((m) => m.id === memberId);
-      if (index === -1) return state;
-
-      const removed = clan.members[index];
-      clan.members.splice(index, 1);
-
-      addLog(clan, "member", `${removed.name} clan'dan çıkarıldı.`);
-      recomputeClan(clan);
-      return state;
-    });
-  }
-
-  static getTabList() {
-    return ["genel", "uyeler", "kasa", "gelistirme", "log"];
+  onExit() {
+    if (this.root) {
+      this.root.remove();
+      this.root = null;
+    }
   }
 }
