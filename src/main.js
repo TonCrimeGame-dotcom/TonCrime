@@ -14,6 +14,10 @@ import { HomeScene } from "./scenes/HomeScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
+import { ClanScene } from "./scenes/ClanScene.js";
+import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
+
+import { ClanSystem } from "./systems/clan/ClanSystem.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
@@ -104,6 +108,8 @@ const defaultState = {
     energyMax: 100,
     energyIntervalMs: 5 * 60 * 1000,
     lastEnergyAt: Date.now(),
+    cash: 50000,
+    power: 140,
   },
 
   stars: {
@@ -136,6 +142,8 @@ const defaultState = {
     lastDailyKey: "",
   },
 
+  clan: null,
+
   ui: { safe: getSafeArea() },
 };
 
@@ -148,6 +156,7 @@ const initial = loaded
       player: { ...defaultState.player, ...(loaded.player || {}) },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       missions: { ...defaultState.missions, ...(loaded.missions || {}) },
+      clan: loaded.clan ?? defaultState.clan,
       ui: { safe: getSafeArea() },
     }
   : defaultState;
@@ -389,6 +398,7 @@ HomeScene.prototype._carouselItems = function () {
     { id: "blackmarket", titleTR: "Black Market", titleEN: "Black Market", sceneKey: "trade" },
     { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
     { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
+    { id: "clan", titleTR: "Clan", titleEN: "Clan", sceneKey: "clanhub" },
     { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
   ];
 };
@@ -478,33 +488,30 @@ HomeScene.prototype.render = function (ctx, w, h) {
     roundRectPath(ctx, x2, y2, w2, h2, 18);
     ctx.clip();
 
-  const img = getImg(item);
-if (img) {
-  const iw = img.width || 1;
-  const ih = img.height || 1;
+    const img = getImg(item);
+    if (img) {
+      const iw = img.width || 1;
+      const ih = img.height || 1;
 
-  // Resmi tek kez çiz: tamamı görünsün
-  const padImg = dist === 0 ? 8 : 10;
-  const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
-  const fitW = iw * fitScale;
-  const fitH = ih * fitScale;
-  const fitX = x2 + (w2 - fitW) / 2;
-  const fitY = y2 + (h2 - fitH) / 2;
+      const padImg = dist === 0 ? 8 : 10;
+      const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
+      const fitW = iw * fitScale;
+      const fitH = ih * fitScale;
+      const fitX = x2 + (w2 - fitW) / 2;
+      const fitY = y2 + (h2 - fitH) / 2;
 
-  // Kart zemini
-  ctx.fillStyle = "rgba(0,0,0,0.30)";
-  ctx.fillRect(x2, y2, w2, h2);
+      ctx.fillStyle = "rgba(0,0,0,0.30)";
+      ctx.fillRect(x2, y2, w2, h2);
 
-  // Tek görsel
-  ctx.drawImage(img, fitX, fitY, fitW, fitH);
+      ctx.drawImage(img, fitX, fitY, fitW, fitH);
 
-  // Hafif karartma
-  ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
-  ctx.fillRect(x2, y2, w2, h2);
-} else {
-  ctx.fillStyle = "rgba(255,255,255,0.08)";
-  ctx.fillRect(x2, y2, w2, h2);
-}
+      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
+      ctx.fillRect(x2, y2, w2, h2);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fillRect(x2, y2, w2, h2);
+    }
+
     const grad = ctx.createLinearGradient(0, y2 + h2 * 0.42, 0, y2 + h2);
     grad.addColorStop(0, "rgba(0,0,0,0)");
     grad.addColorStop(1, "rgba(0,0,0,0.76)");
@@ -1001,6 +1008,80 @@ class MissionsScene {
   }
 }
 
+/* ===== CLAN ADAPTER / HUB SCENES ===== */
+class ClanSceneAdapter extends ClanScene {
+  constructor(opts) {
+    super(opts);
+    this.scenes = opts.scenes;
+    this.sceneManager = opts.scenes;
+  }
+
+  onEnter() {
+    if (typeof this.enter === "function") this.enter();
+  }
+
+  onExit() {
+    if (typeof this.exit === "function") this.exit();
+  }
+
+  update(dt) {
+    if (super.update) return super.update(dt);
+  }
+
+  render(ctx, w, h) {
+    if (super.render) return super.render(ctx, w, h);
+  }
+}
+
+class ClanCreateSceneAdapter extends ClanCreateScene {
+  constructor(opts) {
+    super(opts);
+    this.scenes = opts.scenes;
+    this.sceneManager = opts.scenes;
+  }
+
+  onEnter() {
+    if (typeof this.enter === "function") this.enter();
+  }
+
+  onExit() {
+    if (typeof this.exit === "function") this.exit();
+  }
+
+  update(dt) {
+    if (super.update) return super.update(dt);
+  }
+
+  render(ctx, w, h) {
+    if (super.render) return super.render(ctx, w, h);
+  }
+}
+
+class ClanHubScene {
+  constructor({ scenes, store }) {
+    this.scenes = scenes;
+    this.store = store;
+    this._redirected = false;
+  }
+
+  onEnter() {
+    this._redirected = false;
+  }
+
+  update() {
+    if (this._redirected) return;
+    this._redirected = true;
+
+    if (ClanSystem.hasClan(this.store)) {
+      this.scenes.go("clan");
+    } else {
+      this.scenes.go("clan_create");
+    }
+  }
+
+  render() {}
+}
+
 /* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
 const scenes = new SceneManager();
@@ -1039,6 +1120,29 @@ window.tc.dev = {
     const m = s.missions || {};
     store.set({ missions: { ...m, referrals: Number(n || 0) } });
   },
+  clanCreate() {
+    if (ClanSystem.hasClan(store)) {
+      console.log("Zaten clan var.");
+      return;
+    }
+
+    ClanSystem.createClan(store, {
+      name: "OTTOMAN",
+      tag: "OTT",
+      description: "Şehirde güç kurmak isteyen düzenli ve aktif ekip.",
+    });
+
+    console.log("Clan oluşturuldu:", store.get().clan);
+  },
+  clanReset() {
+    const s = store.get();
+    store.set({ ...s, clan: null });
+    console.log("Clan sıfırlandı.");
+  },
+  clanAddMember() {
+    ClanSystem.addMockMember(store);
+    console.log("Üye eklendi:", store.get().clan?.members?.length || 0);
+  },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
@@ -1069,6 +1173,34 @@ scenes.register(
 
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
 scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
+
+scenes.register("clanhub", new ClanHubScene({ store, scenes }));
+
+scenes.register(
+  "clan",
+  new ClanSceneAdapter({
+    store,
+    input,
+    i18n,
+    assets,
+    scenes,
+    sceneManager: scenes,
+    engine: null,
+  })
+);
+
+scenes.register(
+  "clan_create",
+  new ClanCreateSceneAdapter({
+    store,
+    input,
+    i18n,
+    assets,
+    scenes,
+    sceneManager: scenes,
+    engine: null,
+  })
+);
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
