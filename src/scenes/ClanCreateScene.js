@@ -60,6 +60,28 @@ export class ClanCreateScene {
     }
   }
 
+  getPointer() {
+    return (
+      this.input?.pointer ||
+      this.input?.p ||
+      this.input?.mouse ||
+      this.input?.state?.pointer ||
+      { x: 0, y: 0 }
+    );
+  }
+
+  isPressed() {
+    if (typeof this.input?.justPressed === "function") return !!this.input.justPressed();
+    if (typeof this.input?.isJustPressed === "function") {
+      return (
+        !!this.input.isJustPressed("pointer") ||
+        !!this.input.isJustPressed("mouseLeft") ||
+        !!this.input.isJustPressed("touch")
+      );
+    }
+    return !!this.input?._justPressed || !!this.input?.mousePressed;
+  }
+
   bindKeyboard() {
     this._keyHandler = (e) => {
       if (e.key === "1") {
@@ -91,16 +113,12 @@ export class ClanCreateScene {
   }
 
   update() {
-    const pointer = this.input?.pointer || { x: 0, y: 0 };
-    const pressed =
-      (typeof this.input?.justPressed === "function" && this.input.justPressed()) ||
-      this.input?._justPressed ||
-      false;
-
+    const pointer = this.getPointer();
+    const pressed = this.isPressed();
     if (!pressed) return;
 
-    const px = pointer.x;
-    const py = pointer.y;
+    const px = Number(pointer.x || 0);
+    const py = Number(pointer.y || 0);
 
     for (const btn of this.buttons) {
       if (px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h) {
