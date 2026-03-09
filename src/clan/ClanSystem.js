@@ -1,567 +1,726 @@
-// src/clan/ClanSystem.js
+import {
+  shallowClone,
+  makeId,
+  now,
+  getUpgradeCost,
+  getMaxMembersFromUpgrade,
+  getVaultCapacity,
+  getIncomeBonusPercent,
+  getAttackBonus,
+  getDefenseBonus,
+} from "./ClanUtils.js";
 
-function randCode(len = 6) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < len; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
+function readStoreState(store) {
+  if (!store) return {};
+  if (typeof store.get === "function") return store.get() || {};
+  if (typeof store.getState === "function") return store.getState() || {};
+  return store.state || {};
+}
+
+function writeStoreState(store, nextState) {
+  if (!store) return nextState;
+  if (typeof store.set === "function") {
+    store.set(nextState);
+    return nextState;
   }
-  return out;
+  if (typeof store.setState === "function") {
+    store.setState(nextState);
+    return nextState;
+  }
+  store.state = nextState;
+  return nextState;
 }
 
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
+function updateStoreState(store, updater) {
+  const prev = readStoreState(store);
+  const base = shallowClone(prev);
+  const next = updater(base) || base;
+  return writeStoreState(store, next);
 }
 
-function safePlayer(state) {
-  const p = state?.player || {};
+function ensureRootClan(state) {
+  if (!state.clan) state.clan = null;
+  if (!state.player) state.player = {};
+  if (!state.player.name && state.player.username) state.player.name = state.player.username;
+  if (!state.player.name) state.player.name = "Player";
+  if (typeof state.player.cash !== "number") state.player.cash = 50000;
+  if (typeof state.player.energy !== "number") state.player.energy = 100;
+  if (typeof state.player.energyMax !== "number") state.player.energyMax = 100;
+  if (typeof state.coins !== "number") state.coins = 0;
+  return state;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function dayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function addLog(clan, type, text) {
+  clan.logs = clan.logs || [];
+  clan.logs.unshift({
+    id: makeId("log"),
+    type,
+    text,
+    time: now(),
+  });
+
+  if (clan.logs.length > 60) {
+    clan.logs.length = 60;
+  }
+}
+
+function createDefaultBossState(clanLevel = 1) {
+  const hpBase = 12000 + Math.max(0, clanLevel - 1) * 3500;
+  const startedAt = now();
+  const endsAt = startedAt + 24 * 60 * 60 * 1000;
+
   return {
-    id: String(p.id || p.telegramId || "player"),
-    name: String(p.username || p.name || "Leader"),
-    level: Number(p.level || 1),
-    power: Number(p.power || 100),
+    season: 1,
+    raidId: makeId("bossraid"),
+    name: "SOKAK KRALI",
+    title: "Clan Boss",
+    status: "active", // idle | active | defeated | expired
+    level: Math.max(1, clanLevel),
+    maxHp: hpBase,
+    hp: hpBase,
+    startedAt,
+    endsAt,
+    totalDamage: 0,
+    totalSpins: 0,
+    dailySpinLimit: 5,
+    energyPerSpin: 6,
+    lastResult: null,
+    recentResults: [],
+    participants: {},
+    rewards: {
+      killCash: 25000,
+      killCoins: 250,
+      contributionCashPer100: 150,
+      contributionXpPer100: 8,
+    },
   };
 }
 
-function ensureClanShape(clan, state) {
-  const me = safePlayer(state);
+function ensureBossState(clan) {
+  if (!clan) return null;
 
-  if (!clan || typeof clan !== "object") return null;
-
-  clan.id = clan.id || `clan_${Date.now()}`;
-  clan.name = clan.name || "New Clan";
-  clan.tag = clan.tag || "CLN";
-  clan.description = clan.description || "No description yet.";
-  clan.level = Number(clan.level || 1);
-  clan.xp = Number(clan.xp || 0);
-  clan.bank = Number(clan.bank || 0);
-  clan.ytonBank = Number(clan.ytonBank || 0);
-  clan.energyBank = Number(clan.energyBank || 0);
-  clan.maxMembers = Number(clan.maxMembers || 20);
-  clan.inviteCode = clan.inviteCode || randCode();
-
-  if (!Array.isArray(clan.members)) clan.members = [];
-  if (clan.members.length === 0) {
-    clan.members.push({
-      id: me.id,
-      name: me.name,
-      role: "Leader",
-      level: me.level,
-      power: me.power,
-      lastActiveAt: Date.now(),
-      contribution: 0,
-    });
+  if (!clan.boss) {
+    clan.boss = {
+      season: 0,
+      raidId: null,
+      name: "SOKAK KRALI",
+      title: "Clan Boss",
+      status: "idle",
+      level: 1,
+      maxHp: 0,
+      hp: 0,
+      startedAt: 0,
+      endsAt: 0,
+      totalDamage: 0,
+      totalSpins: 0,
+      dailySpinLimit: 5,
+      energyPerSpin: 6,
+      lastResult: null,
+      recentResults: [],
+      participants: {},
+      rewards: {
+        killCash: 25000,
+        killCoins: 250,
+        contributionCashPer100: 150,
+        contributionXpPer100: 8,
+      },
+    };
   }
 
-  if (!Array.isArray(clan.applications)) clan.applications = [];
-  if (!Array.isArray(clan.chat)) clan.chat = [];
-  if (!Array.isArray(clan.log)) clan.log = [];
-  if (!Array.isArray(clan.market)) clan.market = [];
+  if (!clan.boss.participants) clan.boss.participants = {};
+  if (!Array.isArray(clan.boss.recentResults)) clan.boss.recentResults = [];
+  if (!clan.boss.rewards) {
+    clan.boss.rewards = {
+      killCash: 25000,
+      killCoins: 250,
+      contributionCashPer100: 150,
+      contributionXpPer100: 8,
+    };
+  }
 
-  clan.upgrades = clan.upgrades || {};
-  clan.upgrades.memberCap = Number(clan.upgrades.memberCap || 0);
-  clan.upgrades.pvpBonus = Number(clan.upgrades.pvpBonus || 0);
-  clan.upgrades.energyBonus = Number(clan.upgrades.energyBonus || 0);
-  clan.upgrades.tradeBonus = Number(clan.upgrades.tradeBonus || 0);
-  clan.upgrades.xpBonus = Number(clan.upgrades.xpBonus || 0);
+  const boss = clan.boss;
 
-  clan.stats = clan.stats || {};
-  clan.stats.totalDonations = Number(clan.stats.totalDonations || 0);
-  clan.stats.totalPvP = Number(clan.stats.totalPvP || 0);
-  clan.stats.totalWarWins = Number(clan.stats.totalWarWins || 0);
-  clan.stats.totalBossKills = Number(clan.stats.totalBossKills || 0);
+  if (boss.status === "active" && boss.endsAt > 0 && now() > boss.endsAt && boss.hp > 0) {
+    boss.status = "expired";
+  }
 
-  clan.boss = clan.boss || {};
-  clan.boss.hp = Number(clan.boss.hp || 500000);
-  clan.boss.maxHp = Number(clan.boss.maxHp || 500000);
-  clan.boss.damage = clan.boss.damage || {};
+  return boss;
+}
 
-  if (clan.war == null) clan.war = null;
+function ensureBossParticipant(clan, playerId = "player_main", playerName = "Player") {
+  const boss = ensureBossState(clan);
+  if (!boss.participants[playerId]) {
+    boss.participants[playerId] = {
+      playerId,
+      name: playerName,
+      totalDamage: 0,
+      spinsToday: 0,
+      lastSpinDay: dayKey(),
+      bestHit: 0,
+      bestCombo: "-",
+      lastSymbols: [],
+      rewardClaimedSeasons: [],
+    };
+  }
+
+  const p = boss.participants[playerId];
+  const today = dayKey();
+  if (p.lastSpinDay !== today) {
+    p.spinsToday = 0;
+    p.lastSpinDay = today;
+  }
+
+  return p;
+}
+
+function getBossDamageMultiplierByCombo(symbols) {
+  const joined = symbols.join("|");
+
+  const allSame = symbols[0] === symbols[1] && symbols[1] === symbols[2];
+  if (allSame) {
+    switch (symbols[0]) {
+      case "punch":
+        return { combo: "ÜÇLÜ YUMRUK", multiplier: 2.0, flat: 10, stun: false };
+      case "kick":
+        return { combo: "ÜÇLÜ TEKME", multiplier: 2.2, flat: 14, stun: false };
+      case "slap":
+        return { combo: "ÜÇLÜ TOKAT", multiplier: 1.8, flat: 8, stun: false };
+      case "head":
+        return { combo: "ÜÇLÜ KAFA", multiplier: 2.5, flat: 18, stun: true };
+      default:
+        return { combo: "ÜÇLÜ KOMBO", multiplier: 1.8, flat: 0, stun: false };
+    }
+  }
+
+  if (joined === "punch|kick|head" || joined === "head|kick|punch") {
+    return { combo: "KOMBO DARBE", multiplier: 1.35, flat: 12, stun: false };
+  }
+
+  if (joined === "slap|punch|kick" || joined === "kick|punch|slap") {
+    return { combo: "SOKAK KOMBOSU", multiplier: 1.25, flat: 8, stun: false };
+  }
+
+  if (joined === "head|head|punch" || joined === "punch|head|head") {
+    return { combo: "KRİTİK KAFA", multiplier: 1.65, flat: 20, stun: true };
+  }
+
+  if (joined === "punch|punch|head" || joined === "head|punch|punch") {
+    return { combo: "KEMİK KIRAN", multiplier: 1.55, flat: 16, stun: false };
+  }
+
+  if (joined === "kick|kick|punch" || joined === "punch|kick|kick") {
+    return { combo: "ZIRH KIRMA", multiplier: 1.60, flat: 15, stun: false };
+  }
+
+  if (joined === "slap|head|slap" || joined === "head|slap|head") {
+    return { combo: "SERSEMLETME", multiplier: 1.40, flat: 10, stun: true };
+  }
+
+  const uniqueCount = new Set(symbols).size;
+  if (uniqueCount === 3) {
+    return { combo: "KARIŞIK SALDIRI", multiplier: 1.15, flat: 4, stun: false };
+  }
+
+  return { combo: "NORMAL VURUŞ", multiplier: 1.0, flat: 0, stun: false };
+}
+
+function rollBossSymbols() {
+  const pool = [
+    { key: "punch", weight: 32 },
+    { key: "kick", weight: 27 },
+    { key: "slap", weight: 24 },
+    { key: "head", weight: 17 },
+  ];
+
+  const total = pool.reduce((sum, item) => sum + item.weight, 0);
+
+  function pickOne() {
+    let r = Math.random() * total;
+    for (const item of pool) {
+      r -= item.weight;
+      if (r <= 0) return item.key;
+    }
+    return pool[0].key;
+  }
+
+  return [pickOne(), pickOne(), pickOne()];
+}
+
+function symbolBaseDamage(key) {
+  switch (key) {
+    case "slap":
+      return 8;
+    case "punch":
+      return 12;
+    case "kick":
+      return 14;
+    case "head":
+      return 16;
+    default:
+      return 5;
+  }
+}
+
+function recomputeClan(clan) {
+  if (!clan) return null;
+
+  clan.limits.members = getMaxMembersFromUpgrade(clan.upgrades.memberCap || 0);
+  clan.limits.vaultCapacity = getVaultCapacity(clan.upgrades.vault || 0);
+
+  const membersPower = (clan.members || []).reduce((sum, m) => sum + Number(m.power || 0), 0);
+  const attackBonus = getAttackBonus(clan.upgrades.attack || 0);
+  const defenseBonus = getDefenseBonus(clan.upgrades.defense || 0);
+  const incomeBonusPercent = getIncomeBonusPercent(clan.upgrades.income || 0);
+
+  clan.power = membersPower + attackBonus * 10 + defenseBonus * 10;
+  clan.dailyIncome = Math.floor(2500 + clan.level * 500 + membersPower * 2 + (2500 * incomeBonusPercent) / 100);
+
+  if (clan.bank > clan.limits.vaultCapacity) {
+    clan.bank = clan.limits.vaultCapacity;
+  }
+
+  ensureBossState(clan);
 
   return clan;
 }
 
-function saveClan(store, clan) {
-  store.set({ clan });
+function giveBossKillRewards(state, clan) {
+  const boss = ensureBossState(clan);
+  if (!boss || boss.status !== "defeated") return;
+
+  const participants = Object.values(boss.participants || {});
+  const my = participants.find((p) => p.playerId === "player_main");
+  const myDamage = Number(my?.totalDamage || 0);
+
+  const contributionCash = Math.floor((myDamage / 100) * boss.rewards.contributionCashPer100);
+  const contributionXp = Math.floor((myDamage / 100) * boss.rewards.contributionXpPer100);
+
+  state.player.cash = Number(state.player.cash || 0) + contributionCash;
+  state.coins = Number(state.coins || 0) + Number(boss.rewards.killCoins || 0);
+
+  clan.bank = clamp(
+    Number(clan.bank || 0) + Number(boss.rewards.killCash || 0),
+    0,
+    clan.limits.vaultCapacity
+  );
+
+  const currentXp = Number(clan.xp || 0) + contributionXp + 150;
+  clan.xp = currentXp;
+
+  while (clan.xp >= clan.xpNext) {
+    clan.xp -= clan.xpNext;
+    clan.level += 1;
+    clan.xpNext = Math.floor(clan.xpNext * 1.35);
+  }
+
+  addLog(
+    clan,
+    "boss",
+    `${boss.name} indirildi! Clan kasasına $${Number(boss.rewards.killCash || 0).toLocaleString("tr-TR")} ve oyuncuya ${Number(
+      boss.rewards.killCoins || 0
+    ).toLocaleString("tr-TR")} coin verildi.`
+  );
 }
 
-export const ClanSystem = {
-  hasClan(store) {
-    const s = store.get();
-    return !!s.clan;
-  },
+export class ClanSystem {
+  static hasClan(store) {
+    const state = ensureRootClan(readStoreState(store));
+    return !!state.clan;
+  }
 
-  getClan(state) {
-    return ensureClanShape(state?.clan || null, state);
-  },
+  static getClan(store) {
+    const state = ensureRootClan(readStoreState(store));
+    if (!state.clan) return null;
+    ensureBossState(state.clan);
+    return state.clan;
+  }
 
-  createClan(store, name, tag) {
-    const s = store.get();
-    const me = safePlayer(s);
+  static getBossState(store) {
+    const clan = this.getClan(store);
+    if (!clan) return null;
+    return ensureBossState(clan);
+  }
 
-    let clanName = name;
-    let clanTag = tag;
-    let description = "Şehirde güç kurmak isteyen aktif ekip.";
+  static createClan(store, payload = {}) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
 
-    if (name && typeof name === "object") {
-      clanName = name.name || "New Clan";
-      clanTag = name.tag || "CLN";
-      description = name.description || description;
-    }
+      if (state.clan) return state;
 
-    clanName = String(clanName || "New Clan").trim();
-    clanTag = String(clanTag || "CLN").trim().toUpperCase().slice(0, 5);
+      const playerName = state.player?.name || state.player?.username || "Player";
+      const clanName = String(payload.name || "NEW CLAN").trim().slice(0, 24);
+      const clanTag = String(payload.tag || "NWC").trim().slice(0, 5).toUpperCase();
+      const description = String(payload.description || "Yeni clan.").trim().slice(0, 120);
 
-    const clan = ensureClanShape(
-      {
-        id: `clan_${Date.now()}`,
-        name: clanName,
-        tag: clanTag,
-        description,
+      state.clan = {
+        id: makeId("clan"),
+        name: clanName || "NEW CLAN",
+        tag: clanTag || "NWC",
         level: 1,
         xp: 0,
+        xpNext: 500,
+        logo: "default",
+        description,
+        rank: 999,
+        power: 0,
+        territoryCount: 0,
         bank: 0,
-        ytonBank: 0,
-        energyBank: 0,
-        maxMembers: 20,
-        inviteCode: randCode(),
+        dailyIncome: 2500,
+
+        upgrades: {
+          memberCap: 0,
+          vault: 0,
+          income: 0,
+          attack: 0,
+          defense: 0,
+        },
+
+        limits: {
+          members: 10,
+          vaultCapacity: 50000,
+        },
+
         members: [
           {
-            id: me.id,
-            name: me.name,
-            role: "Leader",
-            level: me.level,
-            power: me.power,
-            lastActiveAt: Date.now(),
+            id: "player_main",
+            name: playerName,
+            role: "leader",
+            level: Number(state.player?.level || 1),
+            power: Number(state.player?.power || 100),
+            online: true,
+            lastSeen: now(),
             contribution: 0,
           },
         ],
-        applications: [],
-        upgrades: {
-          memberCap: 0,
-          pvpBonus: 0,
-          energyBonus: 0,
-          tradeBonus: 0,
-          xpBonus: 0,
+
+        joinRequests: [],
+        logs: [],
+        wars: {
+          active: [],
+          history: [],
         },
-        chat: [],
-        log: [`Clan kuruldu: ${clanName}`],
+
         boss: {
-          hp: 500000,
-          maxHp: 500000,
-          damage: {},
+          season: 0,
+          raidId: null,
+          name: "SOKAK KRALI",
+          title: "Clan Boss",
+          status: "idle",
+          level: 1,
+          maxHp: 0,
+          hp: 0,
+          startedAt: 0,
+          endsAt: 0,
+          totalDamage: 0,
+          totalSpins: 0,
+          dailySpinLimit: 5,
+          energyPerSpin: 6,
+          lastResult: null,
+          recentResults: [],
+          participants: {},
+          rewards: {
+            killCash: 25000,
+            killCoins: 250,
+            contributionCashPer100: 150,
+            contributionXpPer100: 8,
+          },
         },
-        market: [],
-        stats: {
-          totalDonations: 0,
-          totalPvP: 0,
-          totalWarWins: 0,
-          totalBossKills: 0,
-        },
-        war: null,
-      },
-      s
+      };
+
+      addLog(state.clan, "system", `${clanName} clan kuruldu.`);
+      recomputeClan(state.clan);
+      return state;
+    });
+  }
+
+  static leaveClan(store) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+
+      const me = clan.members.find((m) => m.id === "player_main");
+      if (me && me.role === "leader" && clan.members.length > 1) {
+        return state;
+      }
+
+      state.clan = null;
+      return state;
+    });
+  }
+
+  static donateToClan(store, amount) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+
+      const value = Math.max(0, Math.floor(Number(amount || 0)));
+      if (!value) return state;
+      if ((state.player.cash || 0) < value) return state;
+
+      const freeSpace = clan.limits.vaultCapacity - clan.bank;
+      const finalAmount = Math.min(value, freeSpace);
+      if (finalAmount <= 0) return state;
+
+      state.player.cash -= finalAmount;
+      clan.bank += finalAmount;
+
+      const me = clan.members.find((m) => m.id === "player_main");
+      if (me) {
+        me.contribution = Number(me.contribution || 0) + finalAmount;
+      }
+
+      addLog(clan, "donation", `${state.player.name || "Player"} clan kasasına $${finalAmount.toLocaleString("tr-TR")} yatırdı.`);
+      recomputeClan(clan);
+      return state;
+    });
+  }
+
+  static upgrade(store, type) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+
+      const currentLevel = Number(clan.upgrades?.[type] || 0);
+      const cost = getUpgradeCost(type, currentLevel);
+
+      if (clan.bank < cost) return state;
+
+      clan.bank -= cost;
+      clan.upgrades[type] = currentLevel + 1;
+
+      addLog(clan, "upgrade", `${type} geliştirmesi seviye ${currentLevel + 1} oldu.`);
+      recomputeClan(clan);
+      return state;
+    });
+  }
+
+  static addMockMember(store) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+      if (clan.members.length >= clan.limits.members) return state;
+
+      const names = ["Efe", "Arda", "Kerem", "Bora", "Emir", "Tuna", "Deniz", "Yiğit"];
+      const pick = names[Math.floor(Math.random() * names.length)];
+
+      clan.members.push({
+        id: makeId("member"),
+        name: `${pick}_${Math.floor(Math.random() * 99)}`,
+        role: "member",
+        level: 1 + Math.floor(Math.random() * 10),
+        power: 40 + Math.floor(Math.random() * 120),
+        online: Math.random() > 0.5,
+        lastSeen: now() - Math.floor(Math.random() * 1000 * 60 * 60),
+        contribution: Math.floor(Math.random() * 4000),
+      });
+
+      addLog(clan, "member", "Yeni üye clan'a katıldı.");
+      recomputeClan(clan);
+      return state;
+    });
+  }
+
+  static kickMember(store, memberId) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+      if (memberId === "player_main") return state;
+
+      const index = clan.members.findIndex((m) => m.id === memberId);
+      if (index === -1) return state;
+
+      const removed = clan.members[index];
+      clan.members.splice(index, 1);
+
+      addLog(clan, "member", `${removed.name} clan'dan çıkarıldı.`);
+      recomputeClan(clan);
+      return state;
+    });
+  }
+
+  static startBossRaid(store) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+
+      ensureBossState(clan);
+
+      const nextSeason = Number(clan.boss?.season || 0) + 1;
+      clan.boss = createDefaultBossState(clan.level || 1);
+      clan.boss.season = nextSeason;
+      clan.boss.name = `SOKAK KRALI ${nextSeason}`;
+
+      addLog(clan, "boss", `${clan.boss.name} clan boss savaşı başladı.`);
+      recomputeClan(clan);
+      return state;
+    });
+  }
+
+  static spinBoss(store) {
+    return updateStoreState(store, (state) => {
+      ensureRootClan(state);
+      const clan = state.clan;
+      if (!clan) return state;
+
+      const boss = ensureBossState(clan);
+      const playerName = state.player?.name || state.player?.username || "Player";
+      const playerEnergy = Number(state.player?.energy || 0);
+
+      if (boss.status === "idle" || boss.status === "expired") {
+        clan.boss = createDefaultBossState(clan.level || 1);
+        clan.boss.season = Number(boss.season || 0) + 1;
+        clan.boss.name = `SOKAK KRALI ${clan.boss.season}`;
+      }
+
+      if (clan.boss.status !== "active") return state;
+
+      const me = ensureBossParticipant(clan, "player_main", playerName);
+
+      if (me.spinsToday >= Number(clan.boss.dailySpinLimit || 5)) {
+        clan.boss.lastResult = {
+          ok: false,
+          reason: "DAILY_LIMIT",
+          message: "Günlük boss spin limitin doldu.",
+        };
+        return state;
+      }
+
+      if (playerEnergy < Number(clan.boss.energyPerSpin || 6)) {
+        clan.boss.lastResult = {
+          ok: false,
+          reason: "NO_ENERGY",
+          message: "Yeterli enerjin yok.",
+        };
+        return state;
+      }
+
+      const symbols = rollBossSymbols();
+      const base = symbols.reduce((sum, s) => sum + symbolBaseDamage(s), 0);
+      const comboData = getBossDamageMultiplierByCombo(symbols);
+
+      const clanAttackBonus = Number(getAttackBonus(clan.upgrades.attack || 0));
+      const memberPower = Number(
+        clan.members.find((m) => m.id === "player_main")?.power || state.player?.power || 100
+      );
+      const powerBonus = 1 + clamp(memberPower / 1000, 0, 0.35);
+      const attackBonus = 1 + clanAttackBonus / 100;
+      const stunBonus = comboData.stun ? 1.1 : 1.0;
+
+      const rawDamage = (base + comboData.flat) * comboData.multiplier * powerBonus * attackBonus * stunBonus;
+      const damage = Math.max(1, Math.floor(rawDamage));
+
+      state.player.energy = Math.max(0, playerEnergy - Number(clan.boss.energyPerSpin || 6));
+      clan.boss.hp = Math.max(0, Number(clan.boss.hp || 0) - damage);
+      clan.boss.totalDamage = Number(clan.boss.totalDamage || 0) + damage;
+      clan.boss.totalSpins = Number(clan.boss.totalSpins || 0) + 1;
+
+      me.spinsToday += 1;
+      me.totalDamage = Number(me.totalDamage || 0) + damage;
+      me.bestHit = Math.max(Number(me.bestHit || 0), damage);
+      me.bestCombo =
+        damage >= Number(me.bestHit || 0) ? comboData.combo : me.bestCombo || comboData.combo;
+      me.lastSymbols = symbols.slice();
+
+      clan.boss.lastResult = {
+        ok: true,
+        symbols,
+        combo: comboData.combo,
+        damage,
+        bossHp: clan.boss.hp,
+        bossMaxHp: clan.boss.maxHp,
+        spinsLeft: Math.max(0, Number(clan.boss.dailySpinLimit || 5) - me.spinsToday),
+        energyLeft: state.player.energy,
+        stun: !!comboData.stun,
+      };
+
+      clan.boss.recentResults.unshift({
+        id: makeId("bossspin"),
+        playerId: "player_main",
+        name: playerName,
+        symbols,
+        combo: comboData.combo,
+        damage,
+        time: now(),
+      });
+
+      if (clan.boss.recentResults.length > 12) {
+        clan.boss.recentResults.length = 12;
+      }
+
+      addLog(clan, "boss", `${playerName} ${comboData.combo} ile boss'a ${damage.toLocaleString("tr-TR")} hasar vurdu.`);
+
+      const gainedXp = Math.max(5, Math.floor(damage / 12));
+      clan.xp = Number(clan.xp || 0) + gainedXp;
+
+      while (clan.xp >= clan.xpNext) {
+        clan.xp -= clan.xpNext;
+        clan.level += 1;
+        clan.xpNext = Math.floor(clan.xpNext * 1.35);
+      }
+
+      if (clan.boss.hp <= 0 && clan.boss.status === "active") {
+        clan.boss.hp = 0;
+        clan.boss.status = "defeated";
+        giveBossKillRewards(state, clan);
+      }
+
+      recomputeClan(clan);
+      return state;
+    });
+  }
+
+  static getBossLeaderboard(store) {
+    const clan = this.getClan(store);
+    if (!clan) return [];
+    const boss = ensureBossState(clan);
+
+    return Object.values(boss.participants || {})
+      .sort((a, b) => Number(b.totalDamage || 0) - Number(a.totalDamage || 0))
+      .slice(0, 10);
+  }
+
+  static getBossSpinStatus(store) {
+    const clan = this.getClan(store);
+    if (!clan) return null;
+
+    const boss = ensureBossState(clan);
+    const me = ensureBossParticipant(
+      clan,
+      "player_main",
+      readStoreState(store)?.player?.name || readStoreState(store)?.player?.username || "Player"
     );
 
-    saveClan(store, clan);
-    return clan;
-  },
-
-  leaveClan(store, playerId) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return;
-
-    const pid = String(playerId || safePlayer(s).id);
-    const leaving = clan.members.find((m) => String(m.id) === pid);
-    clan.members = clan.members.filter((m) => String(m.id) !== pid);
-
-    clan.log.push(
-      leaving ? `${leaving.name} klanı terk etti` : "Bir üye klanı terk etti"
-    );
-
-    if (clan.members.length === 0) {
-      store.set({ clan: null });
-      return;
-    }
-
-    const hasLeader = clan.members.some((m) => m.role === "Leader");
-    if (!hasLeader) clan.members[0].role = "Leader";
-
-    saveClan(store, clan);
-  },
-
-  addMember(store, player) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan || !player) return false;
-    if (clan.members.length >= clan.maxMembers) return false;
-
-    const id = String(player.id || player.telegramId || `p_${Date.now()}`);
-    if (clan.members.some((m) => String(m.id) === id)) return false;
-
-    clan.members.push({
-      id,
-      name: String(player.name || player.username || "Member"),
-      role: String(player.role || "Member"),
-      level: Number(player.level || 1),
-      power: Number(player.power || 100),
-      lastActiveAt: Date.now(),
-      contribution: Number(player.contribution || 0),
-    });
-
-    clan.log.push(`${player.name || player.username || "Bir üye"} klana katıldı`);
-    saveClan(store, clan);
-    return true;
-  },
-
-  promote(store, playerId) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return;
-
-    const m = clan.members.find((x) => String(x.id) === String(playerId));
-    if (!m) return;
-
-    m.role = "Officer";
-    clan.log.push(`${m.name} terfi etti`);
-    saveClan(store, clan);
-  },
-
-  kick(store, playerId) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return;
-
-    const m = clan.members.find((x) => String(x.id) === String(playerId));
-    clan.members = clan.members.filter((x) => String(x.id) !== String(playerId));
-
-    clan.log.push(m ? `${m.name} klandan atıldı` : "Bir üye klandan atıldı");
-
-    if (clan.members.length > 0 && !clan.members.some((x) => x.role === "Leader")) {
-      clan.members[0].role = "Leader";
-    }
-
-    saveClan(store, clan);
-  },
-
-  donate(store, amount, type = "ton") {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const val = Number(amount || 0);
-    if (val <= 0) return false;
-
-    const kind = String(type || "ton").toLowerCase();
-
-    if (kind === "ton") clan.bank += val;
-    else if (kind === "yton") clan.ytonBank += val;
-    else if (kind === "energy") clan.energyBank += val;
-    else clan.bank += val;
-
-    const xpBonusMul = 1 + clan.upgrades.xpBonus * 0.1;
-    const gainedXp = Math.round(val * xpBonusMul);
-
-    clan.stats.totalDonations += val;
-    clan.xp += gainedXp;
-
-    const me = safePlayer(s);
-    const member = clan.members.find((m) => String(m.id) === me.id);
-    if (member) {
-      member.contribution = Number(member.contribution || 0) + val;
-      member.lastActiveAt = Date.now();
-    }
-
-    clan.log.push(`+${val} ${kind.toUpperCase()} bağış yapıldı`);
-
-    while (clan.xp >= clan.level * 1000) {
-      clan.xp -= clan.level * 1000;
-      clan.level += 1;
-      clan.log.push(`Clan level up → ${clan.level}`);
-    }
-
-    saveClan(store, clan);
-    return true;
-  },
-
-  upgradeMembers(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const cost = clan.level * 500 + clan.upgrades.memberCap * 250;
-    if (clan.bank < cost) return false;
-
-    clan.bank -= cost;
-    clan.maxMembers += 5;
-    clan.upgrades.memberCap += 1;
-    clan.log.push("Üye limiti yükseltildi");
-    saveClan(store, clan);
-    return true;
-  },
-
-  upgradePvP(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const cost = 800 + clan.upgrades.pvpBonus * 400;
-    if (clan.bank < cost) return false;
-
-    clan.bank -= cost;
-    clan.upgrades.pvpBonus += 1;
-    clan.log.push("PvP bonusu yükseldi");
-    saveClan(store, clan);
-    return true;
-  },
-
-  upgradeEnergy(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const cost = 600 + clan.upgrades.energyBonus * 300;
-    if (clan.bank < cost) return false;
-
-    clan.bank -= cost;
-    clan.upgrades.energyBonus += 1;
-    clan.log.push("Enerji bonusu yükseldi");
-    saveClan(store, clan);
-    return true;
-  },
-
-  upgradeTrade(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const cost = 900 + clan.upgrades.tradeBonus * 450;
-    if (clan.bank < cost) return false;
-
-    clan.bank -= cost;
-    clan.upgrades.tradeBonus += 1;
-    clan.log.push("Trade bonusu yükseldi");
-    saveClan(store, clan);
-    return true;
-  },
-
-  generateInvite(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return "";
-
-    clan.inviteCode = randCode();
-    saveClan(store, clan);
-    return clan.inviteCode;
-  },
-
-  applyClan(store, player) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan || !player) return false;
-
-    const id = String(player.id || player.telegramId || `app_${Date.now()}`);
-    if (clan.applications.some((x) => String(x.id) === id)) return false;
-
-    clan.applications.push({
-      id,
-      name: String(player.name || player.username || "Applicant"),
-      level: Number(player.level || 1),
-      power: Number(player.power || 100),
-    });
-
-    clan.log.push(`${player.name || player.username || "Bir oyuncu"} başvurdu`);
-    saveClan(store, clan);
-    return true;
-  },
-
-  acceptApplication(store, playerId) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const idx = clan.applications.findIndex(
-      (x) => String(x.id) === String(playerId)
-    );
-    if (idx < 0) return false;
-    if (clan.members.length >= clan.maxMembers) return false;
-
-    const p = clan.applications[idx];
-    clan.applications.splice(idx, 1);
-
-    clan.members.push({
-      id: p.id,
-      name: p.name,
-      role: "Member",
-      level: Number(p.level || 1),
-      power: Number(p.power || 100),
-      lastActiveAt: Date.now(),
-      contribution: 0,
-    });
-
-    clan.log.push(`${p.name} kabul edildi`);
-    saveClan(store, clan);
-    return true;
-  },
-
-  sendChat(store, msg) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const text = String(msg || "").trim();
-    if (!text) return false;
-
-    const me = safePlayer(s);
-    clan.chat.push({
-      id: `chat_${Date.now()}`,
-      name: me.name,
-      msg: text,
-      ts: Date.now(),
-    });
-
-    if (clan.chat.length > 100) clan.chat.shift();
-
-    saveClan(store, clan);
-    return true;
-  },
-
-  calcPower(clanLike) {
-    const clan = ensureClanShape(clanLike, { player: {} });
-    if (!clan) return 0;
-
-    let total = 0;
-    clan.members.forEach((m) => {
-      total += Number(m.level || 1) * 100 + Number(m.power || 0);
-    });
-
-    total += clan.level * 1000;
-    total += Math.floor(clan.stats.totalDonations);
-    total += clan.upgrades.pvpBonus * 500;
-    total += clan.upgrades.energyBonus * 300;
-    total += clan.upgrades.tradeBonus * 400;
-    total += clan.stats.totalWarWins * 1500;
-    total += clan.stats.totalBossKills * 1000;
-
-    return total;
-  },
-
-  leaderboard(store) {
-    const s = store.get();
-    const myClan = s.clan ? [ensureClanShape(s.clan, s)] : [];
-    const other = Array.isArray(s.allClans) ? s.allClans.slice() : [];
-
-    const list = [...myClan, ...other].filter(Boolean);
-
-    list.sort((a, b) => this.calcPower(b) - this.calcPower(a));
-    return list.slice(0, 50);
-  },
-
-  attackBoss(store, dmg = 1000) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const damage = clamp(Number(dmg || 0), 1, 100000);
-    const me = safePlayer(s);
-
-    clan.boss.hp -= damage;
-    clan.boss.damage[me.id] = Number(clan.boss.damage[me.id] || 0) + damage;
-
-    if (clan.boss.hp <= 0) {
-      clan.log.push("Clan boss öldürüldü");
-      clan.bank += 1000;
-      clan.stats.totalBossKills += 1;
-      clan.boss.hp = clan.boss.maxHp;
-      clan.boss.damage = {};
-    }
-
-    saveClan(store, clan);
-    return true;
-  },
-
-  addMarketItem(store, item) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan || !item) return false;
-
-    clan.market.push({
-      id: `market_${Date.now()}`,
-      name: String(item.name || "Unknown Item"),
-      price: Number(item.price || 0),
-      seller: String(item.seller || safePlayer(s).name),
-      qty: Number(item.qty || 1),
-    });
-
-    clan.log.push("Market item eklendi");
-    saveClan(store, clan);
-    return true;
-  },
-
-  buyMarketItem(store, index) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    const idx = Number(index);
-    const item = clan.market[idx];
-    if (!item) return false;
-
-    clan.bank += Number(item.price || 0);
-    clan.market.splice(idx, 1);
-    clan.log.push("Market item satıldı");
-    saveClan(store, clan);
-    return true;
-  },
-
-  startWar(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    clan.war = {
-      enemy: "Shadow Syndicate",
-      power: 200000,
-      reward: 1200,
-      progress: 0,
-      target: 10000,
-      status: "active",
-      startedAt: Date.now(),
+    return {
+      bossStatus: boss.status,
+      bossHp: boss.hp,
+      bossMaxHp: boss.maxHp,
+      dailySpinLimit: boss.dailySpinLimit,
+      spinsUsedToday: me.spinsToday,
+      spinsLeft: Math.max(0, Number(boss.dailySpinLimit || 5) - Number(me.spinsToday || 0)),
+      energyPerSpin: boss.energyPerSpin,
+      totalDamage: me.totalDamage || 0,
+      bestHit: me.bestHit || 0,
+      bestCombo: me.bestCombo || "-",
+      lastResult: boss.lastResult || null,
     };
+  }
 
-    clan.log.push("Clan war başladı");
-    saveClan(store, clan);
-    return true;
-  },
-
-  attackWar(store, amount = 500) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan || !clan.war || clan.war.status !== "active") return false;
-
-    const hit = clamp(Number(amount || 0), 1, 100000);
-    clan.war.progress += hit;
-
-    if (clan.war.progress >= clan.war.target) {
-      clan.war.status = "won";
-      clan.bank += Number(clan.war.reward || 0);
-      clan.stats.totalWarWins += 1;
-      clan.log.push(`Clan war kazanıldı (+${clan.war.reward} TON)`);
-    }
-
-    saveClan(store, clan);
-    return true;
-  },
-
-  resetWar(store) {
-    const s = store.get();
-    const clan = ensureClanShape(s.clan, s);
-    if (!clan) return false;
-
-    clan.war = null;
-    clan.log.push("Clan war sıfırlandı");
-    saveClan(store, clan);
-    return true;
-  },
-};
+  static getTabList() {
+    return ["genel", "uyeler", "kasa", "gelistirme", "boss", "log"];
+  }
+}
