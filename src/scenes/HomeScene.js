@@ -231,7 +231,7 @@ export class HomeScene {
 
       ctx.save();
       ctx.globalAlpha = dist === 0 ? 1 : 0.92;
-
+ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = "rgba(0,0,0,0.56)";
       fillRoundRect(ctx, x2, y2, w2, h2, 18);
 
