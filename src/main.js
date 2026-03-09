@@ -530,10 +530,17 @@ HomeScene.prototype.render = function (ctx, w, h) {
     }
   };
 
-  drawCard(idx - 1);
-  drawCard(idx);
-  drawCard(idx + 1);
+const visibleCards = [idx - 1, idx, idx + 1]
+  .filter((i) => i >= 0 && i < items.length)
+  .sort((a, b) => {
+    const aDepth = Math.abs((a - idx) * spacing + dragDX);
+    const bDepth = Math.abs((b - idx) * spacing + dragDX);
 
+    // uzakta olan önce çizilsin, yakında olan en son çizilsin
+    return bDepth - aDepth;
+  });
+
+visibleCards.forEach(drawCard);
   const dotsY = Math.min(carouselBottom - 10, cy + cardH / 2 + 18);
   const dotGap = 10;
   const total = (items.length - 1) * dotGap;
