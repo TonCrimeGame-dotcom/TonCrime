@@ -1,6 +1,9 @@
-// src/clan/ClanSystem.js
-
 export const ClanSystem = {
+
+  hasClan(store) {
+    const s = store.get();
+    return !!s.clan;
+  },
 
   getClan(state) {
     return state.clan || null;
@@ -33,7 +36,6 @@ export const ClanSystem = {
   donate(store, amount) {
     const s = store.get();
     const clan = s.clan;
-
     if (!clan) return;
 
     clan.bank += amount;
@@ -52,17 +54,15 @@ export const ClanSystem = {
   upgradeMembers(store) {
     const s = store.get();
     const clan = s.clan;
-
     if (!clan) return;
 
     const cost = clan.level * 500;
-
     if (clan.bank < cost) return;
 
     clan.bank -= cost;
     clan.maxMembers += 5;
 
-    clan.log.push(`Üye limiti arttı (+5)`);
+    clan.log.push(`Üye limiti +5`);
 
     store.set({ clan });
   },
@@ -70,15 +70,12 @@ export const ClanSystem = {
   upgradeBank(store) {
     const s = store.get();
     const clan = s.clan;
-
     if (!clan) return;
 
     const cost = clan.level * 300;
-
     if (clan.bank < cost) return;
 
     clan.bank -= cost;
-
     clan.log.push(`Clan kasa bonusu yükseltildi`);
 
     store.set({ clan });
@@ -87,7 +84,6 @@ export const ClanSystem = {
   addMember(store, player) {
     const s = store.get();
     const clan = s.clan;
-
     if (!clan) return;
 
     if (clan.members.length >= clan.maxMembers) return;
@@ -102,7 +98,6 @@ export const ClanSystem = {
   leaveClan(store, playerId) {
     const s = store.get();
     const clan = s.clan;
-
     if (!clan) return;
 
     clan.members = clan.members.filter(m => m.id !== playerId);
