@@ -12,10 +12,12 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
+
 function fillRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.fill();
 }
+
 function strokeRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.stroke();
@@ -44,6 +46,7 @@ export class HomeScene {
 
   onEnter() {
     const s = this.store.get();
+
     if (!s.player) {
       this.store.set({
         player: {
@@ -62,21 +65,24 @@ export class HomeScene {
       return;
     }
 
-    const p = s.player;
+    const p = s.player || {};
     const patch = {};
     if (p.energy == null) patch.energy = 10;
     if (p.energyMax == null) patch.energyMax = 10;
     if (p.energyIntervalMs == null) patch.energyIntervalMs = 5 * 60 * 1000;
     if (p.lastEnergyAt == null) patch.lastEnergyAt = Date.now();
-    if (Object.keys(patch).length) this.store.set({ player: { ...p, ...patch } });
+
+    if (Object.keys(patch).length) {
+      this.store.set({ player: { ...p, ...patch } });
+    }
   }
 
   _carouselItems() {
     return [
-      { id: "profile", titleTR: "Profil", titleEN: "Profile", sceneKey: "profile" },
       { id: "missions", titleTR: "Görevler", titleEN: "Missions", sceneKey: "missions" },
       { id: "pvp", titleTR: "PvP", titleEN: "PvP", sceneKey: "pvp" },
       { id: "weapons", titleTR: "Silah Kaçakçısı", titleEN: "Arms Dealer", sceneKey: "weapons" },
+      { id: "blackmarket", titleTR: "Black Market", titleEN: "Black Market", sceneKey: "trade" },
       { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
       { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
       { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
@@ -112,8 +118,11 @@ export class HomeScene {
       const dragDX = c.dragNowX - c.dragStartX;
       const threshold = 45;
 
-      if (dragDX > threshold) c.index = Math.max(0, c.index - 1);
-      else if (dragDX < -threshold) c.index = Math.min(items.length - 1, c.index + 1);
+      if (dragDX > threshold) {
+        c.index = Math.max(0, c.index - 1);
+      } else if (dragDX < -threshold) {
+        c.index = Math.min(items.length - 1, c.index + 1);
+      }
 
       if (c.clickCandidate && pointInRect(px, py, this._cardRect)) {
         const item = items[c.index];
@@ -121,7 +130,7 @@ export class HomeScene {
         if (item.sceneKey === "pvp" || item.id === "pvp") {
           try {
             window.dispatchEvent(new Event("tc:openPvp"));
-          } catch {}
+          } catch (_) {}
           return;
         }
 
@@ -140,8 +149,14 @@ export class HomeScene {
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
 
     const bg = this.assets.getImage("background");
-    if (bg) ctx.drawImage(bg, 0, 0, w, h);
-    else {
+    if (bg) {
+      const scale = Math.max(w / bg.width, h / bg.height);
+      const dw = bg.width * scale;
+      const dh = bg.height * scale;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      ctx.drawImage(bg, dx, dy, dw, dh);
+    } else {
       ctx.fillStyle = "#0b0b0f";
       ctx.fillRect(0, 0, w, h);
     }
@@ -160,15 +175,25 @@ export class HomeScene {
     const cy = carouselTop + areaH / 2;
 
     const items = this._carouselItems();
-    const idx = this.carousel.index;
+    const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
+    this.carousel.index = idx;
 
     const cardW = Math.min(safe.w * 0.82, 390);
-    const cardH = Math.min(areaH * 0.78, 290);
+    const cardH = Math.min(areaH * 0.78, 310);
 
     const spacing = cardW + 28;
     const dragDX = this.carousel.dragging
       ? this.carousel.dragNowX - this.carousel.dragStartX
       : 0;
+
+    const getCardImage = (item) => {
+      return (
+        this.assets.getImage(item.id) ||
+        this.assets.getImage(item.sceneKey) ||
+        this.assets.getImage(`${item.id}_bg`) ||
+        this.assets.getImage("background")
+      );
+    };
 
     const drawCard = (itemIndex) => {
       if (itemIndex < 0 || itemIndex >= items.length) return;
@@ -190,18 +215,33 @@ export class HomeScene {
       roundRectPath(ctx, x2, y2, w2, h2, 18);
       ctx.clip();
 
-      const img = this.assets.getImage(item.id) || this.assets.getImage("background");
+      const img = getCardImage(item);
       if (img) {
-        const s = Math.max(w2 / img.width, h2 / img.height);
-        const dw = img.width * s;
-        const dh = img.height * s;
+        const iw = img.width || 1;
+        const ih = img.height || 1;
+
+        const cover = Math.max(w2 / iw, h2 / ih);
+        const zoom = 1.02;
+        const dw = iw * cover * zoom;
+        const dh = ih * cover * zoom;
         const dx = x2 + (w2 - dw) / 2;
         const dy = y2 + (h2 - dh) / 2;
+
         ctx.drawImage(img, dx, dy, dw, dh);
 
-        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.20)" : "rgba(0,0,0,0.34)";
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.24)";
+        ctx.fillRect(x2, y2, w2, h2);
+      } else {
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
         ctx.fillRect(x2, y2, w2, h2);
       }
+
+      const grad = ctx.createLinearGradient(0, y2 + h2 * 0.45, 0, y2 + h2);
+      grad.addColorStop(0, "rgba(0,0,0,0.00)");
+      grad.addColorStop(1, "rgba(0,0,0,0.72)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(x2, y2, w2, h2);
+
       ctx.restore();
 
       ctx.strokeStyle =
@@ -211,23 +251,18 @@ export class HomeScene {
       const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
-      ctx.font = dist === 0 ? "bold 18px system-ui" : "16px system-ui";
-      ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 24);
+      ctx.textBaseline = "middle";
+      ctx.font = dist === 0 ? "700 18px system-ui" : "700 16px system-ui";
 
-      if (item.id === "profile") {
-        const p = state.player || {};
-        ctx.font = "13px system-ui";
-        ctx.fillStyle = "rgba(255,255,255,0.92)";
-        ctx.fillText(p.username || "Player", x2 + w2 / 2, y2 + 38);
-        ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.fillText(
-          `LVL ${p.level || 1} • ${state.premium ? "PREMIUM" : "STANDARD"}`,
-          x2 + w2 / 2,
-          y2 + 58
-        );
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 10;
+      ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 28);
+      ctx.restore();
+
+      if (itemIndex === idx) {
+        this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
       }
-
-      if (itemIndex === idx) this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
     };
 
     drawCard(idx - 1);
