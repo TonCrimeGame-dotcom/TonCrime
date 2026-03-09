@@ -478,42 +478,33 @@ HomeScene.prototype.render = function (ctx, w, h) {
     roundRectPath(ctx, x2, y2, w2, h2, 18);
     ctx.clip();
 
-    const img = getImg(item);
-    if (img) {
-      const iw = img.width || 1;
-      const ih = img.height || 1;
+  const img = getImg(item);
+if (img) {
+  const iw = img.width || 1;
+  const ih = img.height || 1;
 
- /* resmin tamamını ortalayarak çiz */
-const padImg = dist === 0 ? 8 : 10;
-const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
-const fitW = iw * fitScale;
-const fitH = ih * fitScale;
-const fitX = x2 + (w2 - fitW) / 2;
-const fitY = y2 + (h2 - fitH) / 2;
+  // Resmi tek kez çiz: tamamı görünsün
+  const padImg = dist === 0 ? 8 : 10;
+  const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
+  const fitW = iw * fitScale;
+  const fitH = ih * fitScale;
+  const fitX = x2 + (w2 - fitW) / 2;
+  const fitY = y2 + (h2 - fitH) / 2;
 
-ctx.drawImage(img, fitX, fitY, fitW, fitH);
+  // Kart zemini
+  ctx.fillStyle = "rgba(0,0,0,0.30)";
+  ctx.fillRect(x2, y2, w2, h2);
 
-/* hafif karartma */
-ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
-ctx.fillRect(x2, y2, w2, h2);
+  // Tek görsel
+  ctx.drawImage(img, fitX, fitY, fitW, fitH);
 
-      /* 3) Resmin tamamını önde göster */
-      const padImg = dist === 0 ? 8 : 10;
-      const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
-      const fitW = iw * fitScale;
-      const fitH = ih * fitScale;
-      const fitX = x2 + (w2 - fitW) / 2;
-      const fitY = y2 + (h2 - fitH) / 2;
-      ctx.drawImage(img, fitX, fitY, fitW, fitH);
-
-      /* 4) Hafif üst katman */
-      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.18)";
-      ctx.fillRect(x2, y2, w2, h2);
-    } else {
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fillRect(x2, y2, w2, h2);
-    }
-
+  // Hafif karartma
+  ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
+  ctx.fillRect(x2, y2, w2, h2);
+} else {
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(x2, y2, w2, h2);
+}
     const grad = ctx.createLinearGradient(0, y2 + h2 * 0.42, 0, y2 + h2);
     grad.addColorStop(0, "rgba(0,0,0,0)");
     grad.addColorStop(1, "rgba(0,0,0,0.76)");
