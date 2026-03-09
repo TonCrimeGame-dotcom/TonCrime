@@ -480,28 +480,32 @@ HomeScene.prototype.render = function (ctx, w, h) {
 
     const img = getImg(item);
     if (img) {
-     const iw = img.width || 1;
-const ih = img.height || 1;
+      const iw = img.width || 1;
+      const ih = img.height || 1;
 
-const imgRatio = iw / ih;
-const cardRatio = w2 / h2;
+      /* 1) Arka planı kartı doldursun */
+      const bgScale = Math.max(w2 / iw, h2 / ih);
+      const bgW = iw * bgScale;
+      const bgH = ih * bgScale;
+      const bgX = x2 + (w2 - bgW) / 2;
+      const bgY = y2 + (h2 - bgH) / 2;
+      ctx.drawImage(img, bgX, bgY, bgW, bgH);
 
-let sx = 0;
-let sy = 0;
-let sw = iw;
-let sh = ih;
+      /* 2) Arka planı biraz karart */
+      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.42)";
+      ctx.fillRect(x2, y2, w2, h2);
 
-if (imgRatio > cardRatio) {
-  sw = ih * cardRatio;
-  sx = (iw - sw) / 2;
-} else {
-  sh = iw / cardRatio;
-  sy = (ih - sh) / 2;
-}
+      /* 3) Resmin tamamını önde göster */
+      const padImg = dist === 0 ? 8 : 10;
+      const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
+      const fitW = iw * fitScale;
+      const fitH = ih * fitScale;
+      const fitX = x2 + (w2 - fitW) / 2;
+      const fitY = y2 + (h2 - fitH) / 2;
+      ctx.drawImage(img, fitX, fitY, fitW, fitH);
 
-ctx.drawImage(img, sx, sy, sw, sh, x2, y2, w2, h2);
-
-      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.32)";
+      /* 4) Hafif üst katman */
+      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.18)";
       ctx.fillRect(x2, y2, w2, h2);
     } else {
       ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -542,17 +546,16 @@ ctx.drawImage(img, sx, sy, sw, sh, x2, y2, w2, h2);
     }
   };
 
-const visibleCards = [idx - 1, idx, idx + 1]
-  .filter((i) => i >= 0 && i < items.length)
-  .sort((a, b) => {
-    const aDepth = Math.abs((a - idx) * spacing + dragDX);
-    const bDepth = Math.abs((b - idx) * spacing + dragDX);
+  const visibleCards = [idx - 1, idx, idx + 1]
+    .filter((i) => i >= 0 && i < items.length)
+    .sort((a, b) => {
+      const aDepth = Math.abs((a - idx) * spacing + dragDX);
+      const bDepth = Math.abs((b - idx) * spacing + dragDX);
+      return bDepth - aDepth;
+    });
 
-    // uzakta olan önce çizilsin, yakında olan en son çizilsin
-    return bDepth - aDepth;
-  });
+  visibleCards.forEach(drawCard);
 
-visibleCards.forEach(drawCard);
   const dotsY = Math.min(carouselBottom - 10, cy + cardH / 2 + 18);
   const dotGap = 10;
   const total = (items.length - 1) * dotGap;
@@ -623,10 +626,13 @@ class MissionsScene {
     if (type === "dailyAd" && m.dailyAdWatched >= 20 && !m.dailyAdClaimed) {
       m.dailyAdClaimed = true;
       this.store.set({ missions: m });
-      this._grantCoins(0);
       const s2 = this.store.get();
       this.store.set({
-        player: { ...(s2.player || {}), weaponName: "Reklam Ustası", weaponBonus: "+2%" },
+        player: {
+          ...(s2.player || {}),
+          weaponName: "Reklam Ustası",
+          weaponBonus: "+2%",
+        },
       });
       return;
     }
@@ -636,7 +642,11 @@ class MissionsScene {
       this.store.set({ missions: m });
       const s2 = this.store.get();
       this.store.set({
-        player: { ...(s2.player || {}), weaponName: "Başlangıç Bıçağı", weaponBonus: "+3%" },
+        player: {
+          ...(s2.player || {}),
+          weaponName: "Başlangıç Bıçağı",
+          weaponBonus: "+3%",
+        },
       });
       return;
     }
@@ -646,7 +656,11 @@ class MissionsScene {
       this.store.set({ missions: m });
       const s2 = this.store.get();
       this.store.set({
-        player: { ...(s2.player || {}), weaponName: "Orta Seviye Silah", weaponBonus: "+8%" },
+        player: {
+          ...(s2.player || {}),
+          weaponName: "Orta Seviye Silah",
+          weaponBonus: "+8%",
+        },
       });
       return;
     }
@@ -656,7 +670,11 @@ class MissionsScene {
       this.store.set({ missions: m });
       const s2 = this.store.get();
       this.store.set({
-        player: { ...(s2.player || {}), weaponName: "En Güçlü Silah", weaponBonus: "+18%" },
+        player: {
+          ...(s2.player || {}),
+          weaponName: "En Güçlü Silah",
+          weaponBonus: "+18%",
+        },
       });
       return;
     }
@@ -788,7 +806,10 @@ class MissionsScene {
     const m = s.missions || {};
     const safe = s?.ui?.safe ?? { x: 0, y: 0, w, h };
 
-    const bg = getAssetImageSafe(this.assets, "missions") || getAssetImageSafe(this.assets, "background");
+    const bg =
+      getAssetImageSafe(this.assets, "missions") ||
+      getAssetImageSafe(this.assets, "background");
+
     if (bg) {
       const scale = Math.max(w / bg.width, h / bg.height);
       const dw = bg.width * scale;
@@ -834,7 +855,11 @@ class MissionsScene {
         desc: "Her reklam izleme testi ile ilerler. 20 olunca ödül alınır.",
         reward: m.dailyAdClaimed ? "Alındı" : "Ödül: özel silah bonusu",
         leftBtn: { text: "İlerle +1", action: "watchAd" },
-        rightBtn: { text: m.dailyAdClaimed ? "Alındı" : "Ödülü Al", action: "claim:dailyAd", disabled: m.dailyAdClaimed || (m.dailyAdWatched || 0) < 20 },
+        rightBtn: {
+          text: m.dailyAdClaimed ? "Alındı" : "Ödülü Al",
+          action: "claim:dailyAd",
+          disabled: m.dailyAdClaimed || (m.dailyAdWatched || 0) < 20,
+        },
       },
       {
         title: `Arkadaş Davet (${m.referrals || 0})`,
@@ -848,43 +873,78 @@ class MissionsScene {
         desc: "3 maç simülasyonu sonrası ödül alınır.",
         reward: m.pvpClaimed ? "Alındı" : "Ödül: +15 coin +20 XP",
         leftBtn: { text: "Maç +1", action: "simulatePvp" },
-        rightBtn: { text: m.pvpClaimed ? "Alındı" : "Ödülü Al", action: "claim:pvp", disabled: m.pvpClaimed || (m.pvpPlayed || 0) < 3 },
+        rightBtn: {
+          text: m.pvpClaimed ? "Alındı" : "Ödülü Al",
+          action: "claim:pvp",
+          disabled: m.pvpClaimed || (m.pvpPlayed || 0) < 3,
+        },
       },
       {
         title: `Enerji Doldur (${m.energyRefillUsed || 0}/1)`,
         desc: "Bir kez enerji dolumu simülasyonu yap.",
         reward: m.energyClaimed ? "Alındı" : "Ödül: +10 coin +10 enerji",
         leftBtn: { text: "Dolum Yap", action: "simulateEnergy" },
-        rightBtn: { text: m.energyClaimed ? "Alındı" : "Ödülü Al", action: "claim:energy", disabled: m.energyClaimed || (m.energyRefillUsed || 0) < 1 },
+        rightBtn: {
+          text: m.energyClaimed ? "Alındı" : "Ödülü Al",
+          action: "claim:energy",
+          disabled: m.energyClaimed || (m.energyRefillUsed || 0) < 1,
+        },
       },
       {
         title: `Level Görevi (Seviye ${Number(p.level || 1)}/55)`,
         desc: "55 level ve üstü ödül açılır.",
         reward: m.levelClaimedAt === 55 ? "Alındı" : "Ödül: +50 coin +25 XP",
         leftBtn: { text: "Seviye Bilgisi", action: "", disabled: true },
-        rightBtn: { text: m.levelClaimedAt === 55 ? "Alındı" : "Ödülü Al", action: "claim:level", disabled: m.levelClaimedAt === 55 || Number(p.level || 1) < 55 },
+        rightBtn: {
+          text: m.levelClaimedAt === 55 ? "Alındı" : "Ödülü Al",
+          action: "claim:level",
+          disabled: m.levelClaimedAt === 55 || Number(p.level || 1) < 55,
+        },
       },
       {
         title: `Telegram Grubuna Katıl`,
         desc: "Katılım simülasyonu ile açılır.",
         reward: m.telegramClaimed ? "Alındı" : "Ödül: +20 coin",
         leftBtn: { text: "Katıldım", action: "joinTelegram" },
-        rightBtn: { text: m.telegramClaimed ? "Alındı" : "Ödülü Al", action: "claim:telegram", disabled: m.telegramClaimed || !m.telegramJoined },
+        rightBtn: {
+          text: m.telegramClaimed ? "Alındı" : "Ödülü Al",
+          action: "claim:telegram",
+          disabled: m.telegramClaimed || !m.telegramJoined,
+        },
       },
       {
         title: "Davet Eşik Ödülleri",
         desc: "Aşağıdaki butonlardan uygun olanı al.",
-        reward: [
-          !m.referralClaim10 ? "10" : null,
-          !m.referralClaim100 ? "100" : null,
-          !m.referralClaim1000 ? "1000" : null,
-          !m.referralClaim5000 ? "5000" : null,
-        ].filter(Boolean).join(" / ") || "Hepsi alındı",
-        leftBtn: { text: m.referralClaim10 ? "10 Alındı" : "10 Ödülü", action: "claim:ref10", disabled: m.referralClaim10 || (m.referrals || 0) < 10 },
-        rightBtn: { text: m.referralClaim100 ? "100 Alındı" : "100 Ödülü", action: "claim:ref100", disabled: m.referralClaim100 || (m.referrals || 0) < 100 },
+        reward:
+          [
+            !m.referralClaim10 ? "10" : null,
+            !m.referralClaim100 ? "100" : null,
+            !m.referralClaim1000 ? "1000" : null,
+            !m.referralClaim5000 ? "5000" : null,
+          ]
+            .filter(Boolean)
+            .join(" / ") || "Hepsi alındı",
+        leftBtn: {
+          text: m.referralClaim10 ? "10 Alındı" : "10 Ödülü",
+          action: "claim:ref10",
+          disabled: m.referralClaim10 || (m.referrals || 0) < 10,
+        },
+        rightBtn: {
+          text: m.referralClaim100 ? "100 Alındı" : "100 Ödülü",
+          action: "claim:ref100",
+          disabled: m.referralClaim100 || (m.referrals || 0) < 100,
+        },
         extraBtns: [
-          { text: m.referralClaim1000 ? "1000 Alındı" : "1000 Ödülü", action: "claim:ref1000", disabled: m.referralClaim1000 || (m.referrals || 0) < 1000 },
-          { text: m.referralClaim5000 ? "5000 Alındı" : "5000 Ödülü", action: "claim:ref5000", disabled: m.referralClaim5000 || (m.referrals || 0) < 5000 },
+          {
+            text: m.referralClaim1000 ? "1000 Alındı" : "1000 Ödülü",
+            action: "claim:ref1000",
+            disabled: m.referralClaim1000 || (m.referrals || 0) < 1000,
+          },
+          {
+            text: m.referralClaim5000 ? "5000 Alındı" : "5000 Ödülü",
+            action: "claim:ref5000",
+            disabled: m.referralClaim5000 || (m.referrals || 0) < 5000,
+          },
         ],
       },
     ];
