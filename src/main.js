@@ -188,31 +188,75 @@ function getTelegramUser() {
   }
 }
 
+function makeTestTelegramId() {
+  try {
+    const saved = localStorage.getItem("tc_test_telegram_id");
+    if (saved) return saved;
+
+    const id = "test_" + Math.random().toString(36).slice(2, 12);
+    localStorage.setItem("tc_test_telegram_id", id);
+    return id;
+  } catch {
+    return "test_" + Math.random().toString(36).slice(2, 12);
+  }
+}
+
 function getTelegramId() {
   const tgUser = getTelegramUser();
-  const storeId = String(store.get()?.player?.telegramId || "");
-  return String(tgUser?.id || storeId || "");
+  if (tgUser?.id) return String(tgUser.id);
+
+  try {
+    const storeId = String(store.get()?.player?.telegramId || "");
+    if (storeId) return storeId;
+  } catch (_) {}
+
+  return makeTestTelegramId();
+}
+
+function getTelegramUsername() {
+  const tgUser = getTelegramUser();
+
+  if (tgUser?.username) return String(tgUser.username);
+
+  const fullName = [tgUser?.first_name, tgUser?.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (fullName) return fullName;
+
+  try {
+    const storeName = String(store.get()?.player?.username || "").trim();
+    if (storeName && storeName !== "Player") return storeName;
+  } catch (_) {}
+
+  return "test_user";
 }
 
 function bootstrapTelegramUser() {
   try {
-    const tgUser = getTelegramUser();
-    if (!tgUser) return;
-
     const s = store.get();
     const p = s.player || {};
+
+    const telegramId = getTelegramId();
+    const username = getTelegramUsername();
+
     store.set({
       player: {
         ...p,
-        telegramId: String(tgUser.id || p.telegramId || ""),
-        username:
-          p.username ||
-          tgUser.username ||
-          [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") ||
-          "Player",
+        telegramId,
+        username,
       },
     });
-  } catch (_) {}
+
+    console.log("[TG INIT]", {
+      telegramId,
+      username,
+      telegramUser: getTelegramUser(),
+    });
+  } catch (err) {
+    console.error("[TG INIT ERROR]", err);
+  }
 }
 
 bootstrapTelegramUser();
