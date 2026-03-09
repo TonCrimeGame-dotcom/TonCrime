@@ -376,7 +376,7 @@ HomeScene.prototype.render = function (ctx, w, h) {
   const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
   this.carousel.index = idx;
 
-  const cardW = Math.min(safe.w * 0.82, 390);
+  const cardW = Math.min(safe.w * 0.58, 410);
   const cardH = Math.min(areaH * 0.78, 290);
 
   const spacing = cardW + 28;
