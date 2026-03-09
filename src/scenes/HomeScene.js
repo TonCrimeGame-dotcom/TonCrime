@@ -297,10 +297,10 @@ export class HomeScene {
         this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
       }
     };
+drawCard(idx - 1);
+drawCard(idx + 1);
+drawCard(idx);
 
-    drawCard(idx - 1);
-    drawCard(idx);
-    drawCard(idx + 1);
 
     const dotsY = Math.min(carouselBottom - 10, cy + cardH / 2 + 18);
     const dotGap = 10;
