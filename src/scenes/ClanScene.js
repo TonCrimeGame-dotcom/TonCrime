@@ -23,17 +23,18 @@ const clan=s.clan
 this.root=document.createElement("div")
 this.root.id="clanScene"
 
-this.root.style.position="fixed"
-this.root.style.left="0"
-this.root.style.top="0"
-this.root.style.width="100%"
-this.root.style.height="100%"
-this.root.style.zIndex="60"
-this.root.style.color="white"
-this.root.style.background="rgba(10,10,15,.92)"
-this.root.style.backdropFilter="blur(10px)"
-this.root.style.overflowY="auto"
-this.root.style.fontFamily="system-ui"
+Object.assign(this.root.style,{
+position:"fixed",
+left:"0",
+top:"0",
+width:"100%",
+height:"100%",
+zIndex:"70",
+background:"#0b0b0f",
+color:"#fff",
+fontFamily:"system-ui",
+overflowY:"auto"
+})
 
 document.body.appendChild(this.root)
 
@@ -48,32 +49,94 @@ const clan=s.clan
 
 this.root.innerHTML=`
 
+<style>
+
+.clanPanel{
+background:#14141a;
+border-radius:14px;
+padding:16px;
+border:1px solid rgba(255,255,255,.06);
+margin-bottom:14px;
+}
+
+.clanBtn{
+background:#1c1c22;
+border:1px solid rgba(255,255,255,.08);
+padding:10px 14px;
+border-radius:10px;
+color:white;
+cursor:pointer;
+}
+
+.clanBtn:hover{
+transform:scale(1.03)
+}
+
+.clanTabBar{
+display:flex;
+gap:8px;
+flex-wrap:wrap;
+margin-bottom:20px
+}
+
+.memberRow{
+display:flex;
+justify-content:space-between;
+background:#1a1a20;
+padding:10px;
+border-radius:10px;
+margin-bottom:6px
+}
+
+.chatBox{
+height:220px;
+overflow:auto;
+background:#14141a;
+padding:10px;
+border-radius:10px;
+margin-bottom:10px
+}
+
+</style>
+
 <div style="max-width:900px;margin:auto;padding:24px">
 
-<h1 style="margin-bottom:10px">${clan.name}</h1>
+<div class="clanPanel">
 
-<div style="opacity:.7;margin-bottom:20px">
+<h2 style="margin:0">${clan.name}</h2>
 
-Tag ${clan.tag} • Seviye ${clan.level} • Üye ${clan.members.length}/${clan.maxMembers}
+<div style="opacity:.7;font-size:13px">
+
+TAG ${clan.tag} • LEVEL ${clan.level}
 
 </div>
 
-<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+<div style="margin-top:10px">
 
-<button id="tab_overview">Genel</button>
-<button id="tab_members">Üyeler</button>
-<button id="tab_donate">Bağış</button>
-<button id="tab_upgrade">Yükseltme</button>
-<button id="tab_chat">Chat</button>
-<button id="tab_missions">Görevler</button>
+Members ${clan.members.length}/${clan.maxMembers}  
+Bank ${clan.bank} TON  
+XP ${clan.xp}
+
+</div>
+
+</div>
+
+<div class="clanTabBar">
+
+<button class="clanBtn" id="tab_overview">GENEL</button>
+<button class="clanBtn" id="tab_members">ÜYELER</button>
+<button class="clanBtn" id="tab_donate">BAĞIŞ</button>
+<button class="clanBtn" id="tab_upgrade">YÜKSELTME</button>
+<button class="clanBtn" id="tab_chat">CHAT</button>
+<button class="clanBtn" id="tab_war">SAVAŞ</button>
 
 </div>
 
 <div id="clanContent"></div>
 
-<div style="margin-top:30px">
+<div style="margin-top:20px">
 
-<button id="clanBack">← Geri</button>
+<button class="clanBtn" id="clanBack">← Geri</button>
 
 </div>
 
@@ -91,7 +154,7 @@ document.getElementById("tab_members").onclick=()=>{this.tab="members";this.draw
 document.getElementById("tab_donate").onclick=()=>{this.tab="donate";this.draw()}
 document.getElementById("tab_upgrade").onclick=()=>{this.tab="upgrade";this.draw()}
 document.getElementById("tab_chat").onclick=()=>{this.tab="chat";this.draw()}
-document.getElementById("tab_missions").onclick=()=>{this.tab="missions";this.draw()}
+document.getElementById("tab_war").onclick=()=>{this.tab="war";this.draw()}
 
 this.draw()
 
@@ -107,28 +170,24 @@ if(this.tab==="overview"){
 
 el.innerHTML=`
 
-<div style="background:#14141a;padding:16px;border-radius:12px">
+<div class="clanPanel">
 
-<div>Kasa: ${clan.bank} TON</div>
-<div>Clan XP: ${clan.xp}</div>
-
-</div>
-
-<h3 style="margin-top:20px">Log</h3>
+<h3>Clan Log</h3>
 
 <div id="clanLog"></div>
+
+</div>
 
 `
 
 const log=document.getElementById("clanLog")
 
-clan.log.slice(-10).reverse().forEach(l=>{
+clan.log.slice(-12).reverse().forEach(l=>{
 
 const row=document.createElement("div")
-row.textContent=l
-row.style.opacity=".7"
 row.style.fontSize="13px"
-row.style.marginBottom="4px"
+row.style.opacity=".7"
+row.textContent=l
 
 log.appendChild(row)
 
@@ -138,31 +197,34 @@ log.appendChild(row)
 
 if(this.tab==="members"){
 
-el.innerHTML=`<h3>Üyeler</h3><div id="members"></div>`
+el.innerHTML=`<div id="memberList"></div>`
 
-const list=document.getElementById("members")
+const list=document.getElementById("memberList")
 
 clan.members.forEach(m=>{
 
 const row=document.createElement("div")
-
-row.style.display="flex"
-row.style.justifyContent="space-between"
-row.style.background="#14141a"
-row.style.padding="10px"
-row.style.marginBottom="6px"
-row.style.borderRadius="8px"
+row.className="memberRow"
 
 row.innerHTML=`
 
 <div>
 
 <b>${m.name}</b>
-<div style="font-size:12px;opacity:.6">${m.role}</div>
+
+<div style="font-size:12px;opacity:.6">
+
+${m.role}
 
 </div>
 
-<div>Lv.${m.level}</div>
+</div>
+
+<div>
+
+Lv ${m.level}
+
+</div>
 
 `
 
@@ -176,16 +238,28 @@ if(this.tab==="donate"){
 
 el.innerHTML=`
 
-<h3>Bağış</h3>
+<div class="clanPanel">
 
-<button id="d10">+10 TON</button>
-<button id="d100">+100 TON</button>
+<h3>Bağış Yap</h3>
+
+<button class="clanBtn" id="d10">+10 TON</button>
+<button class="clanBtn" id="d50">+50 TON</button>
+<button class="clanBtn" id="d100">+100 TON</button>
+
+</div>
 
 `
 
 document.getElementById("d10").onclick=()=>{
 
 ClanSystem.donate(this.store,10)
+this.refresh()
+
+}
+
+document.getElementById("d50").onclick=()=>{
+
+ClanSystem.donate(this.store,50)
 this.refresh()
 
 }
@@ -203,21 +277,26 @@ if(this.tab==="upgrade"){
 
 el.innerHTML=`
 
-<h3>Clan Yükseltme</h3>
+<div class="clanPanel">
 
-<button id="up_members">Üye Limiti +5</button>
-<button id="up_bank">Kasa Bonus</button>
+<h3>Clan Upgrade</h3>
+
+<button class="clanBtn" id="upMembers">Üye Limiti +5</button>
+
+<button class="clanBtn" id="upBank">Kasa Bonus</button>
+
+</div>
 
 `
 
-document.getElementById("up_members").onclick=()=>{
+document.getElementById("upMembers").onclick=()=>{
 
 ClanSystem.upgradeMembers(this.store)
 this.refresh()
 
 }
 
-document.getElementById("up_bank").onclick=()=>{
+document.getElementById("upBank").onclick=()=>{
 
 ClanSystem.upgradeBank(this.store)
 this.refresh()
@@ -232,11 +311,11 @@ const chat=clan.chat||[]
 
 el.innerHTML=`
 
-<div id="chatBox" style="background:#14141a;padding:12px;border-radius:10px;height:200px;overflow:auto"></div>
+<div class="chatBox" id="chatBox"></div>
 
-<input id="chatInput" placeholder="Mesaj yaz"/>
+<input id="chatInput" placeholder="mesaj yaz..." style="width:70%">
 
-<button id="chatSend">Gönder</button>
+<button class="clanBtn" id="sendMsg">Gönder</button>
 
 `
 
@@ -245,13 +324,13 @@ const box=document.getElementById("chatBox")
 chat.forEach(m=>{
 
 const row=document.createElement("div")
-row.textContent=`${m.name}: ${m.msg}`
+row.textContent=m.name+" : "+m.msg
 
 box.appendChild(row)
 
 })
 
-document.getElementById("chatSend").onclick=()=>{
+document.getElementById("sendMsg").onclick=()=>{
 
 const txt=document.getElementById("chatInput").value
 
@@ -277,16 +356,37 @@ this.refresh()
 
 }
 
-if(this.tab==="missions"){
+if(this.tab==="war"){
 
 el.innerHTML=`
 
-<h3>Clan Görevleri</h3>
+<div class="clanPanel">
 
-<div>Toplam PvP: ${clan.pvp || 0}/50</div>
-<div>Bağış: ${clan.donation || 0}/500</div>
+<h3>Clan War</h3>
+
+Enemy Clan: Shadow Syndicate
+
+Power: 240000
+
+<br><br>
+
+<button class="clanBtn" id="startWar">Savaşı Başlat</button>
+
+</div>
 
 `
+
+document.getElementById("startWar").onclick=()=>{
+
+const clan=this.store.get().clan
+
+clan.log.push("Clan savaşı başlatıldı")
+
+this.store.set({clan})
+
+this.refresh()
+
+}
 
 }
 
