@@ -242,7 +242,7 @@ function tickEnergy() {
   const now = Date.now();
   const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
   const maxE = Math.max(1, Number(p.energyMax || 10));
-  const e = Math.max(0, Math.min(maxE, Number(p.energy || 0)));
+  const e = Math.max(0, Math.min(maxE, Numbcer(p.energy || 0)));
 
   if (e >= maxE) return;
 
@@ -376,7 +376,7 @@ HomeScene.prototype.render = function (ctx, w, h) {
   const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
   this.carousel.index = idx;
 
-  const cardW = Math.min(safe.w * 0.58, 410);
+  const cardW = Math.min(safe.w * 0.48, 420);
   const cardH = Math.min(areaH * 0.78, 290);
 
   const spacing = cardW + 28;
