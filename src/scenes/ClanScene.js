@@ -1,10 +1,10 @@
-import { ClanSystem } from "../systems/clan/ClanSystem.js";
+import { ClanSystem } from "../clan/ClanSystem.js";
 import {
   formatMoney,
   getRoleLabel,
   getUpgradeCost,
   getUpgradeLabel,
-} from "../systems/clan/ClanUtils.js";
+} from "../clan/ClanUtils.js";
 
 export class ClanScene {
   constructor({ engine, sceneManager, assets, input, store, i18n, scenes }) {
@@ -41,7 +41,6 @@ export class ClanScene {
     }
     if (this.sceneManager && typeof this.sceneManager.goTo === "function") {
       this.sceneManager.goTo(key);
-      return;
     }
   }
 
@@ -608,7 +607,7 @@ export class ClanScene {
     ctx.textAlign = "center";
     ctx.fillText(
       `${formatMoney(bossHp)} / ${formatMoney(bossMaxHp)} HP`,
-      60 + 235,
+      295,
       537
     );
     ctx.textAlign = "start";
