@@ -480,14 +480,26 @@ HomeScene.prototype.render = function (ctx, w, h) {
 
     const img = getImg(item);
     if (img) {
-      const iw = img.width || 1;
-      const ih = img.height || 1;
-      const cover = Math.max(w2 / iw, h2 / ih);
-      const dw = iw * cover;
-      const dh = ih * cover;
-      const dx = x2 + (w2 - dw) / 2;
-      const dy = y2 + (h2 - dh) / 2;
-      ctx.drawImage(img, dx, dy, dw, dh);
+     const iw = img.width || 1;
+const ih = img.height || 1;
+
+const imgRatio = iw / ih;
+const cardRatio = w2 / h2;
+
+let sx = 0;
+let sy = 0;
+let sw = iw;
+let sh = ih;
+
+if (imgRatio > cardRatio) {
+  sw = ih * cardRatio;
+  sx = (iw - sw) / 2;
+} else {
+  sh = iw / cardRatio;
+  sy = (ih - sh) / 2;
+}
+
+ctx.drawImage(img, sx, sy, sw, sh, x2, y2, w2, h2);
 
       ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.32)";
       ctx.fillRect(x2, y2, w2, h2);
