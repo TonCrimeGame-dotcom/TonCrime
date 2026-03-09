@@ -7,9 +7,10 @@ import {
 } from "../systems/clan/ClanUtils.js";
 
 export class ClanScene {
-  constructor({ engine, sceneManager, assets, input, store, i18n }) {
+  constructor({ engine, sceneManager, assets, input, store, i18n, scenes }) {
     this.engine = engine;
-    this.sceneManager = sceneManager;
+    this.sceneManager = sceneManager || scenes;
+    this.scenes = scenes || sceneManager;
     this.assets = assets;
     this.input = input;
     this.store = store;
@@ -18,16 +19,53 @@ export class ClanScene {
     this.buttons = [];
     this.tabButtons = [];
     this.activeTab = "genel";
-
     this.bossKickFlash = 0;
   }
 
-  enter() {
+  onEnter() {
     this.activeTab = "genel";
+    this.bossKickFlash = 0;
     this.rebuildUi();
   }
 
-  exit() {}
+  onExit() {}
+
+  goScene(key) {
+    if (this.sceneManager && typeof this.sceneManager.go === "function") {
+      this.sceneManager.go(key);
+      return;
+    }
+    if (this.scenes && typeof this.scenes.go === "function") {
+      this.scenes.go(key);
+      return;
+    }
+    if (this.sceneManager && typeof this.sceneManager.goTo === "function") {
+      this.sceneManager.goTo(key);
+      return;
+    }
+  }
+
+  getPointer() {
+    return (
+      this.input?.pointer ||
+      this.input?.p ||
+      this.input?.mouse ||
+      this.input?.state?.pointer ||
+      { x: 0, y: 0 }
+    );
+  }
+
+  isPressed() {
+    if (typeof this.input?.justPressed === "function") return !!this.input.justPressed();
+    if (typeof this.input?.isJustPressed === "function") {
+      return (
+        !!this.input.isJustPressed("pointer") ||
+        !!this.input.isJustPressed("mouseLeft") ||
+        !!this.input.isJustPressed("touch")
+      );
+    }
+    return !!this.input?._justPressed || !!this.input?.mousePressed;
+  }
 
   rebuildUi() {
     this.buttons = [
@@ -38,7 +76,7 @@ export class ClanScene {
         w: 130,
         h: 42,
         text: "GERİ",
-        onClick: () => this.goHome(),
+        onClick: () => this.goScene("home"),
       },
       {
         id: "leave",
@@ -52,7 +90,7 @@ export class ClanScene {
           if (ClanSystem.hasClan(this.store)) {
             this.rebuildUi();
           } else {
-            this.goClanCreate();
+            this.goScene("clan_create");
           }
         },
       },
@@ -228,22 +266,18 @@ export class ClanScene {
   update() {
     const clan = ClanSystem.getClan(this.store);
     if (!clan) {
-      this.goClanCreate();
+      this.goScene("clan_create");
       return;
     }
 
     if (this.bossKickFlash > 0) this.bossKickFlash -= 1;
 
-    const pointer = this.input?.pointer || this.input?.mouse || null;
-    const pressed =
-      this.input?.isJustPressed?.("pointer") ||
-      this.input?.isJustPressed?.("mouseLeft") ||
-      this.input?.mousePressed;
+    const pointer = this.getPointer();
+    const pressed = this.isPressed();
+    if (!pressed) return;
 
-    if (!pointer || !pressed) return;
-
-    const px = pointer.x;
-    const py = pointer.y;
+    const px = Number(pointer.x || 0);
+    const py = Number(pointer.y || 0);
 
     for (const btn of [...this.buttons, ...this.tabButtons]) {
       if (btn.disabled) continue;
@@ -345,10 +379,10 @@ export class ClanScene {
     cards.forEach((card, i) => {
       const x = 40 + i * 190;
       const y = 210;
-      const w = 170;
-      const h = 88;
+      const cw = 170;
+      const ch = 88;
 
-      this.drawPanel(ctx, x, y, w, h, 16, "#16213c");
+      this.drawPanel(ctx, x, y, cw, ch, 16, "#16213c");
       ctx.fillStyle = "#8ea7d4";
       ctx.font = "18px Arial";
       ctx.fillText(card.label, x + 18, y + 30);
@@ -402,7 +436,9 @@ export class ClanScene {
     )[0];
 
     ctx.fillText(
-      `En çok katkı: ${topContributor ? `${topContributor.name} ($${formatMoney(topContributor.contribution)})` : "-"}`,
+      `En çok katkı: ${
+        topContributor ? `${topContributor.name} ($${formatMoney(topContributor.contribution)})` : "-"
+      }`,
       540,
       545
     );
@@ -564,8 +600,7 @@ export class ClanScene {
 
     ctx.fillStyle = "#26324f";
     ctx.fillRect(60, 520, 470, 22);
-    ctx.fillStyle =
-      hpRatio > 0.5 ? "#44c36b" : hpRatio > 0.2 ? "#f1b84b" : "#de4a5f";
+    ctx.fillStyle = hpRatio > 0.5 ? "#44c36b" : hpRatio > 0.2 ? "#f1b84b" : "#de4a5f";
     ctx.fillRect(60, 520, 470 * hpRatio, 22);
 
     ctx.fillStyle = "#ffffff";
@@ -694,8 +729,7 @@ export class ClanScene {
   drawBossVisual(ctx, x, y, w, h, boss, spin) {
     this.drawPanel(ctx, x, y, w, h, 18, "#1b1628");
 
-    const flash = this.bossKickFlash > 0;
-    if (flash) {
+    if (this.bossKickFlash > 0) {
       this.drawPanel(ctx, x + 2, y + 2, w - 4, h - 4, 16, "rgba(255,90,90,0.35)");
     }
 
@@ -789,21 +823,9 @@ export class ClanScene {
   formatRemainingTime(endsAt) {
     const ms = Math.max(0, Number(endsAt || 0) - Date.now());
     const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
-
-  goHome() {
-    if (this.sceneManager?.goTo) return this.sceneManager.goTo("home");
-    if (this.sceneManager?.go) return this.sceneManager.go("home");
-    if (this.sceneManager?.set) return this.sceneManager.set("home");
-  }
-
-  goClanCreate() {
-    if (this.sceneManager?.goTo) return this.sceneManager.goTo("clan_create");
-    if (this.sceneManager?.go) return this.sceneManager.go("clan_create");
-    if (this.sceneManager?.set) return this.sceneManager.set("clan_create");
+    const hh = Math.floor(totalSec / 3600);
+    const mm = Math.floor((totalSec % 3600) / 60);
+    const ss = totalSec % 60;
+    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
   }
 }
