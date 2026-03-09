@@ -218,7 +218,6 @@
     }
     #pvpWrap.open { display:block; }
 
-    /* --- PvP MENU (giriş ekranı) --- */
     #pvpMenu {
       position: absolute;
       inset: 0;
@@ -300,7 +299,6 @@
       font-size: 12px;
     }
 
-    /* --- PvP Arena header --- */
     #pvpHeader{
       display:flex;
       align-items:flex-start;
@@ -372,17 +370,14 @@
       margin-top: 6px;
     }
 
- #arena{
-  /* ✅ absolute KALDIR */
-  position: relative;
-
-
-  border-radius: 14px;
-  border: 0px solid rgba(255,255,255,0.10);
-  background: rgba(0,0,0,0.92);
-  overflow: hidden;
-  touch-action: manipulation;
-}
+    #arena{
+      position: relative;
+      border-radius: 14px;
+      border: 0px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.92);
+      overflow: hidden;
+      touch-action: manipulation;
+    }
 
     #pvpFab {
       position: fixed;
@@ -422,7 +417,6 @@
       transition: opacity 160ms ease;
     }
 
-    /* leaderboard / turnuva popup */
     #pvpPopup {
       position: absolute;
       inset: 0;
@@ -515,8 +509,6 @@
   <!-- PVP LAYER -->
   <div id="pvpLayer">
     <div id="pvpWrap">
-
-      <!-- PvP MENU -->
       <div id="pvpMenu">
         <div id="pvpMenuCard">
           <div id="pvpMenuHead">
@@ -555,7 +547,6 @@
         </div>
       </div>
 
-      <!-- Popup (Leaderboard / Turnuva) -->
       <div id="pvpPopup">
         <div id="pvpPopupCard">
           <div id="pvpPopupHead">
@@ -566,7 +557,6 @@
         </div>
       </div>
 
-      <!-- Arena Header -->
       <div id="pvpHeader">
         <div id="pvpLeftHead">
           <div id="pvpStatus">PvP • Hazır</div>
@@ -615,435 +605,421 @@
     </div>
   </div>
 
-  <!-- OYUN -->
+  <!-- SCRIPT SIRASI: TONCONNECT -> MAIN -> PVP -->
+  <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
   <script type="module" src="./src/main.js"></script>
-
-  <!-- PVP (JS olmalı, HTML değil!) -->
-  <script src="./src/pvp.js" defer></script>
+  <script defer src="./src/pvp.js"></script>
 
   <script>
-document.addEventListener("DOMContentLoaded", () => {
-  // ------------------ UI refs ------------------
-  const wrap = document.getElementById("pvpWrap");
-  const fab  = document.getElementById("pvpFab");
+    document.addEventListener("DOMContentLoaded", () => {
+      const wrap = document.getElementById("pvpWrap");
+      const fab  = document.getElementById("pvpFab");
 
-  const btnStart = document.getElementById("pvpStart");
-  const btnStop  = document.getElementById("pvpStop");
-  const btnReset = document.getElementById("pvpReset");
+      const btnStart = document.getElementById("pvpStart");
+      const btnStop  = document.getElementById("pvpStop");
+      const btnReset = document.getElementById("pvpReset");
 
-  const oppEl  = document.getElementById("pvpOpponent");
-  const spinEl = document.getElementById("pvpSpinner");
+      const oppEl  = document.getElementById("pvpOpponent");
+      const spinEl = document.getElementById("pvpSpinner");
 
-  // Toast
-  function showToast(msg){
-    let el = document.getElementById("pvpResultToast");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "pvpResultToast";
-      document.body.appendChild(el);
-    }
-    el.textContent = msg;
-    el.style.opacity = "1";
-    clearTimeout(el._t);
-    el._t = setTimeout(() => { el.style.opacity = "0"; }, 1400);
-  }
-
-  function setPvpStatus(txt){
-    const status = document.getElementById("pvpStatus");
-    if (status) status.textContent = "PvP • " + txt;
-  }
-  function setOpponent(name){
-    if (oppEl) oppEl.textContent = name || "—";
-  }
-  function spinner(on){
-    if (!spinEl) return;
-    spinEl.classList.toggle("hidden", !on);
-  }
-
-  function openOverlay(){ wrap.classList.add("open"); }
-  function closeOverlay(){
-    wrap.classList.remove("open");
-    spinner(false);
-    setOpponent("—");
-    setPvpStatus("Hazır");
-    // pvp durdur
-    window.TonCrimePVP?.stop?.();
-    entering = false;
-  }
-
-  // ------------------ Store bridge ------------------
-  function getStore(){ return window.tcStore || null; }
-  function getState(){ return getStore()?.get?.() || null; }
-  function setState(patch){ getStore()?.set?.(patch); }
-
-  // store'dan güvenli okuma
-  function coinsOf(s){
-    const c = Number(s?.coins ?? NaN);
-    if (Number.isFinite(c)) return c;
-    const pc = Number(s?.player?.coins ?? NaN);
-    if (Number.isFinite(pc)) return pc;
-    const y = Number(s?.player?.yton ?? NaN);
-    if (Number.isFinite(y)) return y;
-    return 0;
-  }
-function energyOf(s){
-  // player.energy
-  let e = Number(s?.player?.energy ?? NaN);
-  if (Number.isFinite(e)) return e;
-
-  // bazı store yapılarında energy root'ta olabilir
-  e = Number(s?.energy ?? NaN);
-  if (Number.isFinite(e)) return e;
-
-  // localStorage fallback
-  const ls = Number(localStorage.getItem("energy") ?? NaN);
-  if (Number.isFinite(ls)) return ls;
-
-  return 0;
-}
-  function energyMaxOf(s){
-    const e = Number(s?.player?.energyMax ?? NaN);
-    return Number.isFinite(e) ? e : 10;
-  }
-  function xpOf(s){
-    const x = Number(s?.player?.xp ?? NaN);
-    return Number.isFinite(x) ? x : 0;
-  }
-
-  // ⚠️ coin/energy sıfırlanmasın: sadece eksikse doldur
-  function ensureDefaultsOnce(){
-    const st = getStore();
-    if (!st) return false;
-    const s = st.get() || {};
-    if (s.__pvpDefaultsOk) return true;
-
-    const p = s.player || {};
-    const patch = { __pvpDefaultsOk: true };
-
-    // coins yoksa 100 ver (sıfırsa bile EZME)
-    if (s.coins == null && p.coins == null && p.yton == null) patch.coins = 100;
-
-    // player yoksa veya energy/xp eksikse tamamla
-    const pPatch = { ...p };
-    let touched = false;
-
-    if (pPatch.username == null) { pPatch.username = "Player"; touched = true; }
-    if (pPatch.level == null)    { pPatch.level = 1; touched = true; }
-
-    if (pPatch.xp == null)       { pPatch.xp = 0; touched = true; }
-    if (pPatch.energy == null)   { pPatch.energy = 10; touched = true; }
-    if (pPatch.energyMax == null){ pPatch.energyMax = 100; touched = true; }
-    if (pPatch.lastEnergyAt == null) { pPatch.lastEnergyAt = Date.now(); touched = true; }
-    if (pPatch.energyIntervalMs == null) { pPatch.energyIntervalMs = 5 * 60 * 1000; touched = true; }
-
-    if (touched) patch.player = pPatch;
-
-    st.set(patch);
-    return true;
-  }
-
-  // ------------------ PvP init guarantee ------------------
-  function ensurePvpInit(){
-    if (!window.TonCrimePVP) return false;
-    if (ensurePvpInit._done) return true;
-    window.TonCrimePVP.init({
-      arenaId: "arena",
-      statusId: "pvpStatus",
-      enemyFillId: "enemyFill",
-      meFillId: "meFill",
-      enemyHpTextId: "enemyHpText",
-      meHpTextId: "meHpText",
-    });
-    ensurePvpInit._done = true;
-    return true;
-  }
-
-  function waitForPvp(maxMs = 2500){
-    return new Promise((resolve) => {
-      const t0 = Date.now();
-      (function tick(){
-        if (window.TonCrimePVP) return resolve(true);
-        if (Date.now() - t0 > maxMs) return resolve(false);
-        setTimeout(tick, 50);
-      })();
-    });
-  }
-
-  // ------------------ Matchmaking ------------------
-  function makeOpponentName(){
-    const first = ["Mert","Kerem","Deniz","Arda","Sena","Ece","Yusuf","Atlas","Baran","Eren","Kaan","Efe","Cem","Poyraz"];
-    const last  = ["Kara","Yılmaz","Demir","Kaya","Aslan","Koç","Çelik","Aydın","Şahin","Kaplan","Aksoy","Ersoy"];
-    const nick  = ["Noir","Raven","Shadow","Kobra","Viper","Ghost","Prime","Nova","Reaper","Bane"];
-    const mode = Math.random();
-    if (mode < 0.55) return first[Math.floor(Math.random()*first.length)] + " " + last[Math.floor(Math.random()*last.length)];
-    if (mode < 0.85) return nick[Math.floor(Math.random()*nick.length)] + "_" + (10 + Math.floor(Math.random()*89));
-    return first[Math.floor(Math.random()*first.length)] + nick[Math.floor(Math.random()*nick.length)];
-  }
-
-  async function findOpponent(){
-    spinner(true);
-    setOpponent("aranıyor…");
-
-    let dots = 0;
-    setPvpStatus("Rakip aranıyor");
-    const anim = setInterval(() => {
-      dots = (dots + 1) % 4;
-      setPvpStatus("Rakip aranıyor" + ".".repeat(dots));
-    }, 300);
-
-    const delay = 1200 + Math.floor(Math.random() * 1800);
-    await new Promise(r => setTimeout(r, delay));
-
-    clearInterval(anim);
-    spinner(false);
-    return { username: makeOpponentName(), isBot: true };
-  }
-
-  // ------------------ Economy rules ------------------
-  const ENERGY_COST = 10;
-
-  function hasEnergy(s){ return energyOf(s) >= ENERGY_COST; }
-  function hasCoinsForPaid(s){ return coinsOf(s) >= 6; }
-
-  function spendEnergy(s){
-    const p = s.player || {};
-    setState({ player: { ...p, energy: Math.max(0, energyOf(s) - ENERGY_COST) } });
-  }
-  function spendPaidCoins(s){
-    setState({ coins: coinsOf(s) - 6 });
-  }
-
-  // ödüller
-  function rewardWinPaid(){
-    const s = getState(); if (!s?.player) return;
-    setState({
-      coins: coinsOf(s) + 10,
-      player: { ...s.player, xp: xpOf(s) + 10 }
-    });
-  }
-  function rewardWinAd(){
-    const s = getState(); if (!s?.player) return;
-    setState({
-      coins: coinsOf(s) + 3,
-      player: { ...s.player, xp: xpOf(s) + 5 }
-    });
-  }
-  function applyLose(){
-    // kaybedene: coin -6 ve xp -5 (senin eski kuralın)
-    const s = getState(); if (!s?.player) return;
-    setState({
-      coins: coinsOf(s) - 6,
-      player: { ...s.player, xp: Math.max(0, xpOf(s) - 5) }
-    });
-  }
-
-  // ------------------ Lobby (Seçenek menüsü) ------------------
-  function ensureLobbyUI(){
-    if (document.getElementById("pvpLobby")) return;
-
-    const header = document.getElementById("pvpHeader");
-    if (!header) return;
-
-    const lobby = document.createElement("div");
-    lobby.id = "pvpLobby";
-    lobby.style.display = "grid";
-    lobby.style.gridTemplateColumns = "1fr 1fr";
-    lobby.style.gap = "8px";
-    lobby.style.padding = "10px";
-    lobby.style.borderBottom = "1px solid rgba(255,255,255,0.10)";
-
-    lobby.innerHTML = `
-      <button class="pvpBtn" id="pvpEnterAd" type="button">🎥 Reklam İzle Gir</button>
-      <button class="pvpBtn" id="pvpEnterPaid" type="button">🪙 6 Coin ile Gir</button>
-      <button class="pvpBtn" id="pvpLeaderboard" type="button">🏆 Leaderboard</button>
-      <button class="pvpBtn" id="pvpTournament" type="button">🎯 Turnuva</button>
-    `;
-
-    // Header altına (butonların üstüne değil) koymak daha stabil:
-    // pvpHeader'dan sonra ekleyelim
-    header.parentNode.insertBefore(lobby, header.nextSibling);
-
-    // Mevcut Start/Stop/Reset butonlarını lobide gereksiz yapıyoruz:
-    btnStart.style.display = "none";
-    btnStop.style.display  = "none";
-    // Reset kalsın (debug)
-  }
-
-  function showLobby(){
-    ensureLobbyUI();
-    const lobby = document.getElementById("pvpLobby");
-    if (lobby) lobby.style.display = "grid";
-    setPvpStatus("Lobi");
-    spinner(false);
-    setOpponent("—");
-  }
-
-  function hideLobby(){
-    const lobby = document.getElementById("pvpLobby");
-    if (lobby) lobby.style.display = "none";
-  }
-
-  // ------------------ Enter match flows ------------------
-  let entering = false;
-  let entryMode = null; // "ad" | "paid"
-
-  async function startMatch(mode){
-    if (entering) return;
-    entering = true;
-    entryMode = mode;
-
-    try {
-      openOverlay();
-      showLobby();        // önce lobi görünsün
-      hideLobby();        // maç başlayınca lobiyi kapatacağız
-
-      // hazırla
-      if (!getStore()) { showToast("Store yok (main.js)"); setPvpStatus("STORE YOK"); return; }
-      ensureDefaultsOnce();
-
-      const ok = await waitForPvp(3000);
-      if (!ok) { showToast("pvp.js yüklenmedi"); setPvpStatus("PVP YOK"); return; }
-      ensurePvpInit();
-
-      const s = getState();
-      const y = coinsOf(s);
-      const e = energyOf(s);
-
-console.log("ENERGY CHECK:", e, "COST:", ENERGY_COST);
-      // enerji şart
-      if (e < ENERGY_COST) {
-        setPvpStatus("Yetersiz Enerji");
-        showToast(`Yetersiz enerji (${e}/${ENERGY_COST})`);
-        showLobby();
-        return;
+      function showToast(msg){
+        let el = document.getElementById("pvpResultToast");
+        if (!el) {
+          el = document.createElement("div");
+          el.id = "pvpResultToast";
+          document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.opacity = "1";
+        clearTimeout(el._t);
+        el._t = setTimeout(() => { el.style.opacity = "0"; }, 1400);
       }
 
-      // coin şart (paid)
-      if (mode === "paid" && y < 6) {
-        setPvpStatus("Yetersiz Coin");
-        showToast(`Yetersiz coin (Coin:${y})`);
-        showLobby();
-        return;
+      function setPvpStatus(txt){
+        const status = document.getElementById("pvpStatus");
+        if (status) status.textContent = "PvP • " + txt;
       }
 
-      // burada "reklam izleme" simülasyonu: 1.2sn bekletelim
-      if (mode === "ad") {
-        setPvpStatus("Reklam izleniyor...");
-        spinner(true);
-        await new Promise(r => setTimeout(r, 1200));
+      function setOpponent(name){
+        if (oppEl) oppEl.textContent = name || "—";
+      }
+
+      function spinner(on){
+        if (!spinEl) return;
+        spinEl.classList.toggle("hidden", !on);
+      }
+
+      function openOverlay(){
+        wrap.classList.add("open");
+      }
+
+      function closeOverlay(){
+        wrap.classList.remove("open");
         spinner(false);
+        setOpponent("—");
+        setPvpStatus("Hazır");
+        window.TonCrimePVP?.stop?.();
+        entering = false;
       }
 
-      // rakip ara
-      const opp = await findOpponent();
-      setOpponent(opp.username);
-      setPvpStatus("Rakip bulundu");
+      function getStore(){ return window.tcStore || null; }
+      function getState(){ return getStore()?.get?.() || null; }
+      function setState(patch){ getStore()?.set?.(patch); }
 
-      // kısa bekleme
-      await new Promise(r => setTimeout(r, 500));
+      function coinsOf(s){
+        const c = Number(s?.coins ?? NaN);
+        if (Number.isFinite(c)) return c;
 
-      // maliyetler
-      const s2 = getState();
-      spendEnergy(s2);
-      if (mode === "paid") spendPaidCoins(s2);
+        const pc = Number(s?.player?.coins ?? NaN);
+        if (Number.isFinite(pc)) return pc;
 
-      // başlat
-      window.TonCrimePVP.setOpponent?.(opp);
-      window.TonCrimePVP.reset?.();
-      window.TonCrimePVP.start?.();
+        const y = Number(s?.player?.yton ?? NaN);
+        if (Number.isFinite(y)) return y;
 
-      setPvpStatus("Başladı");
-    } finally {
-      entering = false;
-    }
-  }
+        return 0;
+      }
 
-  // ------------------ Wire actions ------------------
-  // Sağ alttaki PvP → lobi açsın
-  fab.onclick = () => {
-    openOverlay();
-    ensureDefaultsOnce();
-    ensureLobbyUI();
-    showLobby();
-  };
+      function energyOf(s){
+        let e = Number(s?.player?.energy ?? NaN);
+        if (Number.isFinite(e)) return e;
 
-  // Menü kartı event'i → lobi açsın (direkt başlamasın)
-  window.addEventListener("tc:openPvp", () => {
-    openOverlay();
-    ensureDefaultsOnce();
-    ensureLobbyUI();
-    showLobby();
-  });
+        e = Number(s?.energy ?? NaN);
+        if (Number.isFinite(e)) return e;
 
-  // Reset: sadece oyun reset (lobiye dönmez)
-  btnReset.onclick = () => {
-    ensurePvpInit();
-    window.TonCrimePVP?.reset?.();
-    setOpponent("—");
-    spinner(false);
-    setPvpStatus("Hazır");
-    // lobi açık kalsın:
-    showLobby();
-  };
+        const ls = Number(localStorage.getItem("energy") ?? NaN);
+        if (Number.isFinite(ls)) return ls;
 
-  // Stop (eski buton görünmüyor ama güvenlik)
-  btnStop.onclick = () => {
-    window.TonCrimePVP?.stop?.();
-    setPvpStatus("Durduruldu");
-    showLobby();
-  };
+        return 0;
+      }
 
-  // Lobby buton clickleri (delegation)
-  document.body.addEventListener("click", (e) => {
-    const id = e.target?.id;
-    if (!id) return;
+      function xpOf(s){
+        const x = Number(s?.player?.xp ?? NaN);
+        return Number.isFinite(x) ? x : 0;
+      }
 
-    if (id === "pvpEnterAd") {
-      startMatch("ad");
-    }
-    if (id === "pvpEnterPaid") {
-      startMatch("paid");
-    }
-    if (id === "pvpLeaderboard") {
-      showToast("Leaderboard yakında");
-      setPvpStatus("Leaderboard");
-    }
-    if (id === "pvpTournament") {
-      showToast("Turnuva yakında");
-      setPvpStatus("Turnuva");
-    }
-  });
+      function ensureDefaultsOnce(){
+        const st = getStore();
+        if (!st) return false;
 
-  // ------------------ Results ------------------
-  window.addEventListener("tc:pvp:win", () => {
-    if (entryMode === "ad") rewardWinAd();
-    else rewardWinPaid();
+        const s = st.get() || {};
+        if (s.__pvpDefaultsOk) return true;
 
-    showToast("Kazandın!");
-    setPvpStatus("Bitti");
-    // maç bitince lobiyi göster
-    showLobby();
-  });
+        const p = s.player || {};
+        const patch = { __pvpDefaultsOk: true };
+        const pPatch = { ...p };
+        let touched = false;
 
-  window.addEventListener("tc:pvp:lose", () => {
-    applyLose();
-    showToast("Kaybettin!");
-    setPvpStatus("Bitti");
-    showLobby();
-  });
+        if (s.coins == null && p.coins == null && p.yton == null) patch.coins = 100;
+        if (pPatch.username == null) { pPatch.username = "Player"; touched = true; }
+        if (pPatch.level == null) { pPatch.level = 1; touched = true; }
+        if (pPatch.xp == null) { pPatch.xp = 0; touched = true; }
+        if (pPatch.energy == null) { pPatch.energy = 10; touched = true; }
+        if (pPatch.energyMax == null) { pPatch.energyMax = 100; touched = true; }
+        if (pPatch.lastEnergyAt == null) { pPatch.lastEnergyAt = Date.now(); touched = true; }
+        if (pPatch.energyIntervalMs == null) { pPatch.energyIntervalMs = 5 * 60 * 1000; touched = true; }
 
-  // İlk durum
-  ensureDefaultsOnce();
-  ensureLobbyUI();
-  setPvpStatus("Hazır");
-  setOpponent("—");
-  spinner(false);
-});
-</script>
-<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
-<script type="module" src="./src/main.js"></script>
-<script defer src="./src/pvp.js"></script>
+        if (touched) patch.player = pPatch;
+        st.set(patch);
+        return true;
+      }
+
+      function ensurePvpInit(){
+        if (!window.TonCrimePVP) return false;
+        if (ensurePvpInit._done) return true;
+
+        window.TonCrimePVP.init({
+          arenaId: "arena",
+          statusId: "pvpStatus",
+          enemyFillId: "enemyFill",
+          meFillId: "meFill",
+          enemyHpTextId: "enemyHpText",
+          meHpTextId: "meHpText",
+        });
+
+        ensurePvpInit._done = true;
+        return true;
+      }
+
+      function waitForPvp(maxMs = 2500){
+        return new Promise((resolve) => {
+          const t0 = Date.now();
+          (function tick(){
+            if (window.TonCrimePVP) return resolve(true);
+            if (Date.now() - t0 > maxMs) return resolve(false);
+            setTimeout(tick, 50);
+          })();
+        });
+      }
+
+      function makeOpponentName(){
+        const first = ["Mert","Kerem","Deniz","Arda","Sena","Ece","Yusuf","Atlas","Baran","Eren","Kaan","Efe","Cem","Poyraz"];
+        const last  = ["Kara","Yılmaz","Demir","Kaya","Aslan","Koç","Çelik","Aydın","Şahin","Kaplan","Aksoy","Ersoy"];
+        const nick  = ["Noir","Raven","Shadow","Kobra","Viper","Ghost","Prime","Nova","Reaper","Bane"];
+        const mode = Math.random();
+
+        if (mode < 0.55) return first[Math.floor(Math.random()*first.length)] + " " + last[Math.floor(Math.random()*last.length)];
+        if (mode < 0.85) return nick[Math.floor(Math.random()*nick.length)] + "_" + (10 + Math.floor(Math.random()*89));
+        return first[Math.floor(Math.random()*first.length)] + nick[Math.floor(Math.random()*nick.length)];
+      }
+
+      async function findOpponent(){
+        spinner(true);
+        setOpponent("aranıyor…");
+
+        let dots = 0;
+        setPvpStatus("Rakip aranıyor");
+        const anim = setInterval(() => {
+          dots = (dots + 1) % 4;
+          setPvpStatus("Rakip aranıyor" + ".".repeat(dots));
+        }, 300);
+
+        const delay = 1200 + Math.floor(Math.random() * 1800);
+        await new Promise(r => setTimeout(r, delay));
+
+        clearInterval(anim);
+        spinner(false);
+        return { username: makeOpponentName(), isBot: true };
+      }
+
+      const ENERGY_COST = 10;
+
+      function spendEnergy(s){
+        const p = s.player || {};
+        setState({
+          player: {
+            ...p,
+            energy: Math.max(0, energyOf(s) - ENERGY_COST)
+          }
+        });
+      }
+
+      function spendPaidCoins(s){
+        setState({ coins: Math.max(0, coinsOf(s) - 6) });
+      }
+
+      function rewardWinPaid(){
+        const s = getState();
+        if (!s?.player) return;
+
+        setState({
+          coins: coinsOf(s) + 10,
+          player: { ...s.player, xp: xpOf(s) + 10 }
+        });
+      }
+
+      function rewardWinAd(){
+        const s = getState();
+        if (!s?.player) return;
+
+        setState({
+          coins: coinsOf(s) + 3,
+          player: { ...s.player, xp: xpOf(s) + 5 }
+        });
+      }
+
+      function applyLose(){
+        const s = getState();
+        if (!s?.player) return;
+
+        setState({
+          coins: Math.max(0, coinsOf(s) - 6),
+          player: { ...s.player, xp: Math.max(0, xpOf(s) - 5) }
+        });
+      }
+
+      function ensureLobbyUI(){
+        if (document.getElementById("pvpLobby")) return;
+
+        const header = document.getElementById("pvpHeader");
+        if (!header) return;
+
+        const lobby = document.createElement("div");
+        lobby.id = "pvpLobby";
+        lobby.style.display = "grid";
+        lobby.style.gridTemplateColumns = "1fr 1fr";
+        lobby.style.gap = "8px";
+        lobby.style.padding = "10px";
+        lobby.style.borderBottom = "1px solid rgba(255,255,255,0.10)";
+
+        lobby.innerHTML = `
+          <button class="pvpBtn" id="pvpEnterAd" type="button">🎥 Reklam İzle Gir</button>
+          <button class="pvpBtn" id="pvpEnterPaid" type="button">🪙 6 Coin ile Gir</button>
+          <button class="pvpBtn" id="pvpLeaderboard" type="button">🏆 Leaderboard</button>
+          <button class="pvpBtn" id="pvpTournament" type="button">🎯 Turnuva</button>
+        `;
+
+        header.parentNode.insertBefore(lobby, header.nextSibling);
+
+        if (btnStart) btnStart.style.display = "none";
+        if (btnStop) btnStop.style.display = "none";
+      }
+
+      function showLobby(){
+        ensureLobbyUI();
+        const lobby = document.getElementById("pvpLobby");
+        if (lobby) lobby.style.display = "grid";
+        setPvpStatus("Lobi");
+        spinner(false);
+        setOpponent("—");
+      }
+
+      function hideLobby(){
+        const lobby = document.getElementById("pvpLobby");
+        if (lobby) lobby.style.display = "none";
+      }
+
+      let entering = false;
+      let entryMode = null;
+
+      async function startMatch(mode){
+        if (entering) return;
+        entering = true;
+        entryMode = mode;
+
+        try {
+          openOverlay();
+          showLobby();
+          hideLobby();
+
+          if (!getStore()) {
+            showToast("Store yok");
+            setPvpStatus("STORE YOK");
+            return;
+          }
+
+          ensureDefaultsOnce();
+
+          const ok = await waitForPvp(3000);
+          if (!ok) {
+            showToast("pvp.js yüklenmedi");
+            setPvpStatus("PVP YOK");
+            showLobby();
+            return;
+          }
+
+          ensurePvpInit();
+
+          const s = getState();
+          const y = coinsOf(s);
+          const e = energyOf(s);
+
+          if (e < ENERGY_COST) {
+            setPvpStatus("Yetersiz Enerji");
+            showToast(`Yetersiz enerji (${e}/${ENERGY_COST})`);
+            showLobby();
+            return;
+          }
+
+          if (mode === "paid" && y < 6) {
+            setPvpStatus("Yetersiz Coin");
+            showToast(`Yetersiz coin (${y})`);
+            showLobby();
+            return;
+          }
+
+          if (mode === "ad") {
+            setPvpStatus("Reklam izleniyor...");
+            spinner(true);
+            await new Promise(r => setTimeout(r, 1200));
+            spinner(false);
+          }
+
+          const opp = await findOpponent();
+          setOpponent(opp.username);
+          setPvpStatus("Rakip bulundu");
+
+          await new Promise(r => setTimeout(r, 500));
+
+          const s2 = getState();
+          spendEnergy(s2);
+          if (mode === "paid") spendPaidCoins(s2);
+
+          window.TonCrimePVP.setOpponent?.(opp);
+          window.TonCrimePVP.reset?.();
+          window.TonCrimePVP.start?.();
+
+          setPvpStatus("Başladı");
+        } finally {
+          entering = false;
+        }
+      }
+
+      if (fab) {
+        fab.onclick = () => {
+          openOverlay();
+          ensureDefaultsOnce();
+          ensureLobbyUI();
+          showLobby();
+        };
+      }
+
+      window.addEventListener("tc:openPvp", () => {
+        openOverlay();
+        ensureDefaultsOnce();
+        ensureLobbyUI();
+        showLobby();
+      });
+
+      if (btnReset) {
+        btnReset.onclick = () => {
+          ensurePvpInit();
+          window.TonCrimePVP?.reset?.();
+          setOpponent("—");
+          spinner(false);
+          setPvpStatus("Hazır");
+          showLobby();
+        };
+      }
+
+      if (btnStop) {
+        btnStop.onclick = () => {
+          window.TonCrimePVP?.stop?.();
+          setPvpStatus("Durduruldu");
+          showLobby();
+        };
+      }
+
+      document.body.addEventListener("click", (e) => {
+        const id = e.target?.id;
+        if (!id) return;
+
+        if (id === "pvpEnterAd") startMatch("ad");
+        if (id === "pvpEnterPaid") startMatch("paid");
+        if (id === "pvpLeaderboard") {
+          showToast("Leaderboard yakında");
+          setPvpStatus("Leaderboard");
+        }
+        if (id === "pvpTournament") {
+          showToast("Turnuva yakında");
+          setPvpStatus("Turnuva");
+        }
+        if (id === "pvpMenuClose") {
+          closeOverlay();
+        }
+      });
+
+      window.addEventListener("tc:pvp:win", () => {
+        if (entryMode === "ad") rewardWinAd();
+        else rewardWinPaid();
+
+        showToast("Kazandın!");
+        setPvpStatus("Bitti");
+        showLobby();
+      });
+
+      window.addEventListener("tc:pvp:lose", () => {
+        applyLose();
+        showToast("Kaybettin!");
+        setPvpStatus("Bitti");
+        showLobby();
+      });
+
+      ensureDefaultsOnce();
+      ensureLobbyUI();
+      setPvpStatus("Hazır");
+      setOpponent("—");
+      spinner(false);
+    });
+  </script>
 </body>
 </html>
-
-
