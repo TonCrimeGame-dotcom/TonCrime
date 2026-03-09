@@ -1,5 +1,5 @@
 function pointInRect(px, py, r) {
-  return px >= r.x && px <= r.x + r.w && py <= r.y + r.h && py >= r.y;
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -178,10 +178,19 @@ export class HomeScene {
     const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
     this.carousel.index = idx;
 
-    const cardW = Math.min(safe.w * 0.82, 390);
-    const cardH = Math.min(areaH * 0.78, 310);
+    /* EKRANA SIĞACAK ÖLÇÜLER */
+    const cardW = Math.min(safe.w * 0.58, 410);
+    const cardH = Math.min(areaH * 0.72, 310);
+    const sideScale = 0.72;
+    const sideW = cardW * sideScale;
 
-    const spacing = cardW + 28;
+    /* yan kartların ekrana taşmaması için spacing güvenli hesap */
+    const maxSpacingByScreen = Math.max(
+      cardW * 0.56,
+      (safe.w / 2) - (sideW / 2) - 8
+    );
+    const spacing = Math.min(cardW * 0.88, maxSpacingByScreen);
+
     const dragDX = this.carousel.dragging
       ? this.carousel.dragNowX - this.carousel.dragStartX
       : 0;
@@ -201,12 +210,17 @@ export class HomeScene {
       const item = items[itemIndex];
       const offset = (itemIndex - idx) * spacing + dragDX;
       const dist = Math.abs(itemIndex - idx);
-      const scale = dist === 0 ? 1 : 0.92;
+      const scale = dist === 0 ? 1 : sideScale;
 
       const w2 = cardW * scale;
       const h2 = cardH * scale;
-      const x2 = cx - w2 / 2 + offset;
+      let x2 = cx - w2 / 2 + offset;
       const y2 = cy - h2 / 2;
+
+      /* son güvenlik: kart ekran dışına taşmasın */
+      const minX = safe.x + 4;
+      const maxX = safe.x + safe.w - w2 - 4;
+      x2 = Math.max(minX, Math.min(maxX, x2));
 
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       fillRoundRect(ctx, x2, y2, w2, h2, 18);
@@ -221,15 +235,14 @@ export class HomeScene {
         const ih = img.height || 1;
 
         const cover = Math.max(w2 / iw, h2 / ih);
-        const zoom = 1.02;
-        const dw = iw * cover * zoom;
-        const dh = ih * cover * zoom;
+        const dw = iw * cover;
+        const dh = ih * cover;
         const dx = x2 + (w2 - dw) / 2;
         const dy = y2 + (h2 - dh) / 2;
 
         ctx.drawImage(img, dx, dy, dw, dh);
 
-        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.24)";
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.30)";
         ctx.fillRect(x2, y2, w2, h2);
       } else {
         ctx.fillStyle = "rgba(255,255,255,0.06)";
@@ -237,8 +250,8 @@ export class HomeScene {
       }
 
       const grad = ctx.createLinearGradient(0, y2 + h2 * 0.45, 0, y2 + h2);
-      grad.addColorStop(0, "rgba(0,0,0,0.00)");
-      grad.addColorStop(1, "rgba(0,0,0,0.72)");
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(1, "rgba(0,0,0,0.74)");
       ctx.fillStyle = grad;
       ctx.fillRect(x2, y2, w2, h2);
 
@@ -252,10 +265,10 @@ export class HomeScene {
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = dist === 0 ? "700 18px system-ui" : "700 16px system-ui";
+      ctx.font = dist === 0 ? "700 18px system-ui" : "700 15px system-ui";
 
       ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowColor = "rgba(0,0,0,0.80)";
       ctx.shadowBlur = 10;
       ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 28);
       ctx.restore();
