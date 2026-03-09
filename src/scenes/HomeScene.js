@@ -23,6 +23,13 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
   ctx.stroke();
 }
 
+function getImgSafe(assets, key) {
+  if (!assets || !key) return null;
+  if (typeof assets.getImage === "function") return assets.getImage(key) || null;
+  if (typeof assets.get === "function") return assets.get(key) || null;
+  return assets.images?.[key] || null;
+}
+
 export class HomeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.assets = assets;
@@ -148,11 +155,13 @@ export class HomeScene {
     const state = this.store.get();
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
 
-    const bg = this.assets.getImage("background");
+    const bg = getImgSafe(this.assets, "background");
     if (bg) {
-      const scale = Math.max(w / bg.width, h / bg.height);
-      const dw = bg.width * scale;
-      const dh = bg.height * scale;
+      const iw = bg.width || 1;
+      const ih = bg.height || 1;
+      const scale = Math.max(w / iw, h / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
       const dx = (w - dw) / 2;
       const dy = (h - dh) / 2;
       ctx.drawImage(bg, dx, dy, dw, dh);
@@ -161,7 +170,7 @@ export class HomeScene {
       ctx.fillRect(0, 0, w, h);
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
     ctx.fillRect(0, 0, w, h);
 
     const HUD_TOP_RESERVED = 96;
@@ -178,16 +187,14 @@ export class HomeScene {
     const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
     this.carousel.index = idx;
 
-    /* EKRANA SIĞACAK ÖLÇÜLER */
     const cardW = Math.min(safe.w * 0.58, 410);
     const cardH = Math.min(areaH * 0.72, 310);
     const sideScale = 0.72;
     const sideW = cardW * sideScale;
 
-    /* yan kartların ekrana taşmaması için spacing güvenli hesap */
     const maxSpacingByScreen = Math.max(
       cardW * 0.56,
-      (safe.w / 2) - (sideW / 2) - 8
+      safe.w / 2 - sideW / 2 - 8
     );
     const spacing = Math.min(cardW * 0.88, maxSpacingByScreen);
 
@@ -197,10 +204,10 @@ export class HomeScene {
 
     const getCardImage = (item) => {
       return (
-        this.assets.getImage(item.id) ||
-        this.assets.getImage(item.sceneKey) ||
-        this.assets.getImage(`${item.id}_bg`) ||
-        this.assets.getImage("background")
+        getImgSafe(this.assets, item.id) ||
+        getImgSafe(this.assets, item.sceneKey) ||
+        getImgSafe(this.assets, `${item.id}_bg`) ||
+        getImgSafe(this.assets, "background")
       );
     };
 
@@ -208,8 +215,9 @@ export class HomeScene {
       if (itemIndex < 0 || itemIndex >= items.length) return;
 
       const item = items[itemIndex];
-      const offset = (itemIndex - idx) * spacing + dragDX;
-      const dist = Math.abs(itemIndex - idx);
+      const rel = itemIndex - idx;
+      const offset = rel * spacing + dragDX;
+      const dist = Math.abs(rel);
       const scale = dist === 0 ? 1 : sideScale;
 
       const w2 = cardW * scale;
@@ -217,12 +225,14 @@ export class HomeScene {
       let x2 = cx - w2 / 2 + offset;
       const y2 = cy - h2 / 2;
 
-      /* son güvenlik: kart ekran dışına taşmasın */
       const minX = safe.x + 4;
       const maxX = safe.x + safe.w - w2 - 4;
       x2 = Math.max(minX, Math.min(maxX, x2));
 
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.save();
+      ctx.globalAlpha = dist === 0 ? 1 : 0.92;
+
+      ctx.fillStyle = "rgba(0,0,0,0.56)";
       fillRoundRect(ctx, x2, y2, w2, h2, 18);
 
       ctx.save();
@@ -233,44 +243,47 @@ export class HomeScene {
       if (img) {
         const iw = img.width || 1;
         const ih = img.height || 1;
-
         const cover = Math.max(w2 / iw, h2 / ih);
         const dw = iw * cover;
         const dh = ih * cover;
         const dx = x2 + (w2 - dw) / 2;
         const dy = y2 + (h2 - dh) / 2;
-
         ctx.drawImage(img, dx, dy, dw, dh);
 
-        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.30)";
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.32)";
         ctx.fillRect(x2, y2, w2, h2);
       } else {
-        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
         ctx.fillRect(x2, y2, w2, h2);
       }
 
-      const grad = ctx.createLinearGradient(0, y2 + h2 * 0.45, 0, y2 + h2);
+      const grad = ctx.createLinearGradient(0, y2 + h2 * 0.42, 0, y2 + h2);
       grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(1, "rgba(0,0,0,0.74)");
+      grad.addColorStop(1, "rgba(0,0,0,0.76)");
       ctx.fillStyle = grad;
       ctx.fillRect(x2, y2, w2, h2);
 
       ctx.restore();
 
       ctx.strokeStyle =
-        dist === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.18)";
+        dist === 0 ? "rgba(255,255,255,0.34)" : "rgba(255,255,255,0.14)";
       strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
+
+      if (dist !== 0) {
+        ctx.fillStyle = "rgba(0,0,0,0.12)";
+        fillRoundRect(ctx, x2, y2, w2, h2, 18);
+      }
 
       const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = dist === 0 ? "700 18px system-ui" : "700 15px system-ui";
-
-      ctx.save();
       ctx.shadowColor = "rgba(0,0,0,0.80)";
       ctx.shadowBlur = 10;
       ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 28);
+      ctx.shadowBlur = 0;
+
       ctx.restore();
 
       if (itemIndex === idx) {
@@ -293,7 +306,7 @@ export class HomeScene {
       ctx.arc(dx, dotsY, 3, 0, Math.PI * 2);
       ctx.closePath();
       ctx.fillStyle =
-        i === idx ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)";
+        i === idx ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.28)";
       ctx.fill();
     }
   }
