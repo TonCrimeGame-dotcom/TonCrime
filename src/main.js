@@ -26,9 +26,7 @@ const ctx = canvas.getContext("2d", { alpha: false });
 
 function getSafeArea() {
   const safe = document.getElementById("safe");
-  if (!safe) {
-    return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
-  }
+  if (!safe) return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
   const r = safe.getBoundingClientRect();
   return { x: r.left, y: r.top, w: r.width, h: r.height };
 }
@@ -57,7 +55,6 @@ try {
 
 fitCanvas();
 
-/* ===== STORE ===== */
 const STORE_KEY = "toncrime_store_v1";
 
 function loadStore() {
@@ -79,14 +76,27 @@ function saveStore(state) {
   } catch {}
 }
 
+function getTelegramUser() {
+  try {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+  } catch {
+    return null;
+  }
+}
+
+const tgUser = getTelegramUser();
+
 const defaultState = {
   lang: "tr",
   coins: 0,
   premium: false,
 
   player: {
-    username: "Player",
-    telegramId: "",
+    username:
+      tgUser?.username ||
+      [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+      "Player",
+    telegramId: String(tgUser?.id || ""),
     level: 1,
     xp: 30,
     xpToNext: 100,
@@ -96,7 +106,7 @@ const defaultState = {
     energy: 10,
     energyMax: 10,
     energyIntervalMs: 5 * 60 * 1000,
-    lastEnergyAt: Date.now(),
+    lastEnergyAt: Date.now()
   },
 
   profile: {
@@ -104,18 +114,18 @@ const defaultState = {
     avatar: "😈",
     bio: "TonCrime sokaklarında aktif.",
     isPublic: true,
-    telegramId: "",
+    telegramId: String(tgUser?.id || ""),
     walletAddress: "",
     premiumType: "none",
     premiumUntil: 0,
-    joinedAt: Date.now(),
+    joinedAt: Date.now()
   },
 
   leaderboard: {
     rankGlobal: 0,
     rankWeekly: 0,
     pvpWins: 0,
-    pvpLosses: 0,
+    pvpLosses: 0
   },
 
   finance: {
@@ -125,7 +135,7 @@ const defaultState = {
     totalExpenseTon: 0,
     totalIncomeYton: 0,
     totalExpenseYton: 0,
-    history: [],
+    history: []
   },
 
   pvpHistory: [],
@@ -134,15 +144,15 @@ const defaultState = {
     owned: {},
     selectedId: null,
     lastClaimTs: {},
-    twinBonusClaimed: {},
+    twinBonusClaimed: {}
   },
 
   weapons: {
     owned: {},
-    equippedId: null,
+    equippedId: null
   },
 
-  ui: { safe: getSafeArea() },
+  ui: { safe: getSafeArea() }
 };
 
 const loaded = loadStore();
@@ -156,18 +166,17 @@ const initial = loaded
       finance: {
         ...defaultState.finance,
         ...(loaded.finance || {}),
-        history: Array.isArray(loaded.finance?.history) ? loaded.finance.history : [],
+        history: Array.isArray(loaded.finance?.history) ? loaded.finance.history : []
       },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       weapons: { ...defaultState.weapons, ...(loaded.weapons || {}) },
       pvpHistory: Array.isArray(loaded.pvpHistory) ? loaded.pvpHistory : [],
-      ui: { safe: getSafeArea() },
+      ui: { safe: getSafeArea() }
     }
   : defaultState;
 
 const store = new Store(initial);
 
-/* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
 (function autosaveLoop() {
   const now = Date.now();
@@ -189,15 +198,24 @@ function normalizeProfileState() {
       .slice(0, 10) || "PLAYER";
 
   store.set({
+    player: {
+      ...p,
+      username:
+        p.username ||
+        tgUser?.username ||
+        [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+        "Player",
+      telegramId: String(p.telegramId || tgUser?.id || "")
+    },
     profile: {
       ...profile,
       id: profile.id || `TC-${baseId}`,
+      telegramId: String(p.telegramId || tgUser?.id || profile.telegramId || ""),
       avatar: profile.avatar || "😈",
       bio: profile.bio || "TonCrime sokaklarında aktif.",
       premiumType: s.premium ? "premium" : profile.premiumType || "none",
-      telegramId: String(p.telegramId || profile.telegramId || ""),
-      joinedAt: Number(profile.joinedAt || Date.now()),
-    },
+      joinedAt: Number(profile.joinedAt || Date.now())
+    }
   });
 }
 normalizeProfileState();
@@ -252,10 +270,10 @@ window.addEventListener("tc:pvp:win", (ev) => {
         opponentId: opp.id || "",
         rewardCoin,
         rewardXp,
-        playedAt: Date.now(),
+        playedAt: Date.now()
       },
-      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : []),
-    ].slice(0, 30),
+      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : [])
+    ].slice(0, 30)
   });
 
   applyXp(rewardXp);
@@ -264,14 +282,14 @@ window.addEventListener("tc:pvp:win", (ev) => {
   store.set({
     finance: {
       ...fin,
-      totalIncomeYton: Number(fin.totalIncomeYton || 0) + rewardCoin,
-    },
+      totalIncomeYton: Number(fin.totalIncomeYton || 0) + rewardCoin
+    }
   });
   pushFinanceHistory({
     type: "pvp_win",
     label: "PvP galibiyeti",
     amount: rewardCoin,
-    unit: "coin",
+    unit: "coin"
   });
 });
 
@@ -290,10 +308,10 @@ window.addEventListener("tc:pvp:lose", (ev) => {
         opponentId: opp.id || "",
         rewardCoin: 0,
         rewardXp,
-        playedAt: Date.now(),
+        playedAt: Date.now()
       },
-      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : []),
-    ].slice(0, 30),
+      ...(Array.isArray(s.pvpHistory) ? s.pvpHistory : [])
+    ].slice(0, 30)
   });
 
   applyXp(rewardXp);
@@ -301,11 +319,10 @@ window.addEventListener("tc:pvp:lose", (ev) => {
     type: "pvp_lose",
     label: "PvP mağlubiyeti",
     amount: 0,
-    unit: "coin",
+    unit: "coin"
   });
 });
 
-/* ===== ENERGY REGEN ===== */
 function tickEnergy() {
   const s = store.get();
   const p = s.player;
@@ -331,20 +348,18 @@ function tickEnergy() {
     player: {
       ...p,
       energy: newE,
-      lastEnergyAt: newLast,
-    },
+      lastEnergyAt: newLast
+    }
   });
 }
 setInterval(tickEnergy, 1000);
 
-/* ===== I18N ===== */
 const i18n = new I18n(store);
 i18n.register({
   tr: { loading: "Yükleniyor..." },
-  en: { loading: "Loading..." },
+  en: { loading: "Loading..." }
 });
 
-/* ===== ASSETS ===== */
 const assets = new Assets();
 
 function addImage(key, url) {
@@ -363,12 +378,77 @@ addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("xxx", "./src/assets/xxx.jpg");
 
-/* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
 const scenes = new SceneManager();
 
 window.tcStore = store;
 window.tcScenes = scenes;
+
+function initTonWallet() {
+  try {
+    const TonConnectUI = window.TON_CONNECT_UI?.TonConnectUI;
+    if (!TonConnectUI) {
+      console.warn("[Wallet] TON Connect UI yüklenmedi");
+      return null;
+    }
+
+    const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
+    const tonConnectUI = new TonConnectUI({ manifestUrl });
+
+    tonConnectUI.onStatusChange((wallet) => {
+      const s = store.get();
+      const profile = s.profile || {};
+      const accountAddress =
+        wallet?.account?.address ||
+        wallet?.account?.addressRaw ||
+        "";
+
+      store.set({
+        profile: {
+          ...profile,
+          walletAddress: String(accountAddress || "")
+        }
+      });
+    });
+
+    return tonConnectUI;
+  } catch (err) {
+    console.warn("[Wallet] init error:", err);
+    return null;
+  }
+}
+
+const tonConnectUI = initTonWallet();
+
+window.tcWallet = {
+  ui: tonConnectUI,
+  async open() {
+    try {
+      if (!tonConnectUI) return;
+      await tonConnectUI.openModal();
+    } catch (err) {
+      console.warn("[Wallet] openModal error:", err);
+    }
+  },
+  async disconnect() {
+    try {
+      if (!tonConnectUI) return;
+      await tonConnectUI.disconnect();
+      const s = store.get();
+      store.set({
+        profile: {
+          ...(s.profile || {}),
+          walletAddress: ""
+        }
+      });
+    } catch (err) {
+      console.warn("[Wallet] disconnect error:", err);
+    }
+  },
+  address() {
+    return String(store.get()?.profile?.walletAddress || "");
+  }
+};
 
 window.tc = window.tc || {};
 window.tc.dev = {
@@ -379,9 +459,8 @@ window.tc.dev = {
       type: "dev_coin",
       label: "Dev coin",
       amount: Number(n || 0),
-      unit: "coin",
+      unit: "coin"
     });
-    console.log("coins:", store.get().coins);
   },
   energy(n = 10) {
     const s = store.get();
@@ -389,7 +468,6 @@ window.tc.dev = {
     const maxE = Math.max(1, Number(p.energyMax || 10));
     const next = Math.min(maxE, (Number(p.energy) || 0) + Number(n || 0));
     store.set({ player: { ...p, energy: next } });
-    console.log("energy:", store.get().player.energy);
   },
   profile() {
     scenes.go("profile");
@@ -397,68 +475,42 @@ window.tc.dev = {
   win() {
     window.dispatchEvent(
       new CustomEvent("tc:pvp:win", {
-        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } },
+        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } }
       })
     );
   },
   lose() {
     window.dispatchEvent(
       new CustomEvent("tc:pvp:lose", {
-        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } },
+        detail: { matchId: "dev_" + Date.now(), opponent: { username: "Bot" } }
       })
     );
   },
   reset() {
     localStorage.removeItem(STORE_KEY);
     location.reload();
-  },
+  }
 };
 
-window.dev = () => {
-  const s = store.get();
-  store.set({
-    coins: 999,
-    player: { ...(s.player || {}), energy: 10, energyMax: 10 },
-  });
-};
-
-/* ===== SCENES REGISTER ===== */
 scenes.register("boot", new BootScene({ assets, i18n, scenes }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("profile", new ProfileScene({ store, input, assets, scenes }));
-
-scenes.register(
-  "coffeeshop",
-  new CoffeeShopScene({ store, input, i18n, assets, scenes })
-);
-
-scenes.register(
-  "nightclub",
-  new NightclubScene({ store, input, i18n, assets, scenes })
-);
-
-scenes.register(
-  "weapons",
-  new WeaponsScene({ store, input, assets, scenes })
-);
-
+scenes.register("coffeeshop", new CoffeeShopScene({ store, input, i18n, assets, scenes }));
+scenes.register("nightclub", new NightclubScene({ store, input, i18n, assets, scenes }));
+scenes.register("weapons", new WeaponsScene({ store, input, assets, scenes }));
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
-
 scenes.register("missions", new SimpleScreenScene({ i18n, titleKey: "Missions" }));
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 
-/* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
 
-/* ===== KEEP SAFE AREA UPDATED ===== */
 (function safeAreaLoop() {
   const s = store.get();
   store.set({ ui: { ...(s.ui || {}), safe: getSafeArea() } });
   requestAnimationFrame(safeAreaLoop);
 })();
 
-/* ===== UI ===== */
 startHud(store);
 startChat(store);
 startMenu(store);
@@ -466,6 +518,5 @@ startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
 startPvpLobby();
 
-/* ===== START ===== */
 scenes.go("boot");
 engine.start();
