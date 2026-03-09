@@ -7,6 +7,10 @@ function fmtTon(n) {
   return `${v.toFixed(2)} TON`;
 }
 
+function fmtYton(n) {
+  return `${Math.floor(Number(n || 0))} yton`;
+}
+
 function dayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -17,7 +21,11 @@ function nowTs() {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const BUILDING_PRICE_TON = 100;
+
+const YTON_TO_TON = 0.05;              // 1 yton = 0.05 TON
+const BUILDING_PRICE_TON = 100;        // bina fiyatı TON karşılığı
+const BUILDING_PRICE_YTON = Math.round(BUILDING_PRICE_TON / YTON_TO_TON); // 2000 yton
+
 const DAILY_PRODUCTION = 50;
 
 const BUILDING_TYPES = [
@@ -153,6 +161,15 @@ export class TradeScene {
     this.store.set({ trade: nextTrade });
   }
 
+  _getYtonBalance() {
+    const s = this._getState();
+    return Math.max(0, Math.floor(Number(s.coins || 0)));
+  }
+
+  _setYtonBalance(next) {
+    this.store.set({ coins: Math.max(0, Math.floor(Number(next || 0))) });
+  }
+
   _canOwnBusiness() {
     const s = this._getState();
     const level = Number(s.player?.level || 0);
@@ -170,6 +187,37 @@ export class TradeScene {
     if (!products.length) return building.productName || "Ürün";
     const idx = Math.max(0, products.indexOf(building.productName));
     return products[(idx + 1) % products.length];
+  }
+
+  _makeBuilding(typeId) {
+    const s = this._getState();
+    const trade = s.trade;
+    const meta = this._getBuildingTypeMeta(typeId);
+    const countSame = (trade.buildings || []).filter((x) => x.typeId === typeId).length + 1;
+
+    const venueName =
+      meta.id === "brothel"
+        ? `Genel Ev ${countSame}`
+        : meta.id === "coffeeshop"
+        ? `Coffeeshop ${countSame}`
+        : `Nightclub ${countSame}`;
+
+    return {
+      id: `b_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+      typeId: meta.id,
+      typeName: meta.name,
+      venueName,
+      ownerUsername: s.player?.username || "Player",
+      productName: meta.products[0],
+      priceTon: 1.0,
+      stockPerDay: DAILY_PRODUCTION,
+      unclaimedQty: DAILY_PRODUCTION,
+      burnedTotal: 0,
+      collectedTotal: 0,
+      soldTotal: 0,
+      createdAt: Date.now(),
+      lastProductionAt: Date.now(),
+    };
   }
 
   _tickTrade() {
@@ -239,7 +287,7 @@ export class TradeScene {
     });
   }
 
-  _buyBuilding(typeId) {
+  _buyBuilding(typeId, currency = "ton") {
     const s = this._getState();
     const trade = s.trade;
 
@@ -248,37 +296,29 @@ export class TradeScene {
       return;
     }
 
-    if (Number(trade.tonBalance || 0) < BUILDING_PRICE_TON) {
-      alert("Yetersiz TONcoin. Bina fiyatı 100 TON.");
+    const building = this._makeBuilding(typeId);
+
+    if (currency === "yton") {
+      const yton = this._getYtonBalance();
+
+      if (yton < BUILDING_PRICE_YTON) {
+        alert(`Yetersiz yton. Bina fiyatı ${BUILDING_PRICE_YTON} yton.`);
+        return;
+      }
+
+      this._setYtonBalance(yton - BUILDING_PRICE_YTON);
+      this._setTrade({
+        ...trade,
+        buildings: [...(trade.buildings || []), building],
+      });
+      this._render();
       return;
     }
 
-    const meta = this._getBuildingTypeMeta(typeId);
-    const countSame = (trade.buildings || []).filter((x) => x.typeId === typeId).length + 1;
-
-    const venueName =
-      meta.id === "brothel"
-        ? `Genel Ev ${countSame}`
-        : meta.id === "coffeeshop"
-        ? `Coffeeshop ${countSame}`
-        : `Nightclub ${countSame}`;
-
-    const building = {
-      id: `b_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
-      typeId: meta.id,
-      typeName: meta.name,
-      venueName,
-      ownerUsername: s.player?.username || "Player",
-      productName: meta.products[0],
-      priceTon: 1.0,
-      stockPerDay: DAILY_PRODUCTION,
-      unclaimedQty: DAILY_PRODUCTION,
-      burnedTotal: 0,
-      collectedTotal: 0,
-      soldTotal: 0,
-      createdAt: Date.now(),
-      lastProductionAt: Date.now(),
-    };
+    if (Number(trade.tonBalance || 0) < BUILDING_PRICE_TON) {
+      alert(`Yetersiz TONcoin. Bina fiyatı ${BUILDING_PRICE_TON} TON.`);
+      return;
+    }
 
     this._setTrade({
       ...trade,
@@ -453,23 +493,36 @@ export class TradeScene {
     this._render();
   }
 
+  _seedYtonForDev() {
+    this._setYtonBalance(this._getYtonBalance() + 5000);
+    this._render();
+  }
+
   _businessHtml() {
     const s = this._getState();
     const trade = s.trade;
     const level = Number(s.player?.level || 0);
     const premium = !!s.premium;
     const canOwn = this._canOwnBusiness();
+    const ytonBalance = this._getYtonBalance();
 
     const buildingCards = BUILDING_TYPES.map(
       (b) => `
         <div class="tcTradeCard">
           <div class="tcTradeCardTitle">${b.name}</div>
-          <div class="tcTradeMuted">Fiyat: <b>100 TON</b></div>
-          <div class="tcTradeMuted">Günlük üretim: <b>50 adet</b></div>
+          <div class="tcTradeMuted">Fiyat: <b>${BUILDING_PRICE_TON} TON</b> / <b>${BUILDING_PRICE_YTON} yton</b></div>
+          <div class="tcTradeMuted">1 yton = ${YTON_TO_TON} TON</div>
+          <div class="tcTradeMuted">Günlük üretim: <b>${DAILY_PRODUCTION} adet</b></div>
           <div class="tcTradeMuted">Sadece kendi ürününü satar</div>
-          <button class="tcTradeBtn" data-act="buy-building" data-type="${b.id}">
-            Satın Al
-          </button>
+
+          <div class="tcTradeActions">
+            <button class="tcTradeBtn tcTradeBtnGold" data-act="buy-building" data-type="${b.id}" data-currency="ton">
+              TON ile Al
+            </button>
+            <button class="tcTradeBtn" data-act="buy-building" data-type="${b.id}" data-currency="yton">
+              yton ile Al
+            </button>
+          </div>
         </div>
       `
     ).join("");
@@ -520,9 +573,19 @@ export class TradeScene {
           </div>
 
           <div class="tcTradeInfoBox">
-            <div class="tcTradeInfoTitle">TON Bakiye</div>
-            <div class="tcTradeInfoText">${fmtTon(trade.tonBalance || 0)}</div>
-            <button class="tcTradeBtn" data-act="dev-ton">Test için +500 TON</button>
+            <div class="tcTradeInfoTitle">Bakiyeler</div>
+            <div class="tcTradeInfoText">TON: ${fmtTon(trade.tonBalance || 0)}</div>
+            <div class="tcTradeInfoText">yton: ${fmtYton(ytonBalance)}</div>
+            <div class="tcTradeActions">
+              <button class="tcTradeBtn" data-act="dev-ton">Test için +500 TON</button>
+              <button class="tcTradeBtn" data-act="dev-yton">Test için +5000 yton</button>
+            </div>
+          </div>
+
+          <div class="tcTradeInfoBox">
+            <div class="tcTradeInfoTitle">Bina Kur Oranı</div>
+            <div class="tcTradeInfoText">1 yton = ${YTON_TO_TON} TON</div>
+            <div class="tcTradeInfoText">1 bina = ${BUILDING_PRICE_TON} TON = ${BUILDING_PRICE_YTON} yton</div>
           </div>
 
           <div class="tcTradeInfoBox">
@@ -603,7 +666,7 @@ export class TradeScene {
           <div class="tcTradeInfoBox">
             <div class="tcTradeInfoTitle">Kurallar</div>
             <div class="tcTradeInfoText">• Bina limiti yok</div>
-            <div class="tcTradeInfoText">• Bina fiyatı 100 TON</div>
+            <div class="tcTradeInfoText">• Bina fiyatı ${BUILDING_PRICE_TON} TON / ${BUILDING_PRICE_YTON} yton</div>
             <div class="tcTradeInfoText">• 24 saat içinde toplanmayan üretim yanar</div>
           </div>
         </div>
@@ -626,12 +689,14 @@ export class TradeScene {
 
     const body = this.root.querySelector("#tcTradeBody");
     const tonEl = this.root.querySelector("#tcTradeTon");
+    const ytonEl = this.root.querySelector("#tcTradeYton");
     const wEl = this.root.querySelector("#tcTradeWithdrawable");
     const titleEl = this.root.querySelector("#tcTradeTabTitle");
     const tabBusiness = this.root.querySelector('[data-tab="business"]');
     const tabMarket = this.root.querySelector('[data-tab="market"]');
 
     if (tonEl) tonEl.textContent = fmtTon(trade.tonBalance || 0);
+    if (ytonEl) ytonEl.textContent = fmtYton(this._getYtonBalance());
     if (wEl) wEl.textContent = fmtTon(trade.withdrawableTon || 0);
     if (titleEl) titleEl.textContent = this.activeTab === "business" ? "İş Hayatım" : "Açık Pazar";
 
@@ -866,6 +931,7 @@ export class TradeScene {
 
         <div class="tcTradeHeadStats">
           <div class="tcTradeChip">TON: <b id="tcTradeTon">0 TON</b></div>
+          <div class="tcTradeChip">YTON: <b id="tcTradeYton">0 yton</b></div>
           <div class="tcTradeChip">Çekilebilir: <b id="tcTradeWithdrawable">0 TON</b></div>
           <button class="tcTradeClose" id="tcTradeBackBtn" type="button">Geri</button>
         </div>
@@ -902,8 +968,9 @@ export class TradeScene {
       const act = target.getAttribute("data-act");
       const id = target.getAttribute("data-id");
       const type = target.getAttribute("data-type");
+      const currency = target.getAttribute("data-currency") || "ton";
 
-      if (act === "buy-building" && type) this._buyBuilding(type);
+      if (act === "buy-building" && type) this._buyBuilding(type, currency);
       if (act === "rename" && id) this._renameBuilding(id);
       if (act === "change-product" && id) this._changeProduct(id);
       if (act === "set-price" && id) this._setPrice(id);
@@ -911,6 +978,7 @@ export class TradeScene {
       if (act === "set-wallet") this._setWallet();
       if (act === "withdraw") this._withdraw();
       if (act === "dev-ton") this._seedTonForDev();
+      if (act === "dev-yton") this._seedYtonForDev();
     });
   }
 }
