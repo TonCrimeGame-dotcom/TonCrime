@@ -483,17 +483,19 @@ HomeScene.prototype.render = function (ctx, w, h) {
       const iw = img.width || 1;
       const ih = img.height || 1;
 
-      /* 1) Arka planı kartı doldursun */
-      const bgScale = Math.max(w2 / iw, h2 / ih);
-      const bgW = iw * bgScale;
-      const bgH = ih * bgScale;
-      const bgX = x2 + (w2 - bgW) / 2;
-      const bgY = y2 + (h2 - bgH) / 2;
-      ctx.drawImage(img, bgX, bgY, bgW, bgH);
+ /* resmin tamamını ortalayarak çiz */
+const padImg = dist === 0 ? 8 : 10;
+const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
+const fitW = iw * fitScale;
+const fitH = ih * fitScale;
+const fitX = x2 + (w2 - fitW) / 2;
+const fitY = y2 + (h2 - fitH) / 2;
 
-      /* 2) Arka planı biraz karart */
-      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.42)";
-      ctx.fillRect(x2, y2, w2, h2);
+ctx.drawImage(img, fitX, fitY, fitW, fitH);
+
+/* hafif karartma */
+ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
+ctx.fillRect(x2, y2, w2, h2);
 
       /* 3) Resmin tamamını önde göster */
       const padImg = dist === 0 ? 8 : 10;
