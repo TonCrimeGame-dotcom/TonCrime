@@ -16,7 +16,8 @@ import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
-
+import { ClanScene } from "./scenes/ClanScene.js";
+import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
 import { startChat } from "./ui/Chat.js";
@@ -1727,7 +1728,6 @@ scenes.register(
   "clan_create",
   new ClanCreateSceneLocal({ store, input, assets, scenes })
 );
-
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
 
