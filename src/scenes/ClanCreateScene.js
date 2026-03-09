@@ -1,4 +1,4 @@
-import { ClanSystem } from "../systems/clan/ClanSystem.js";
+import { ClanSystem } from "../clan/ClanSystem.js";
 
 export class ClanCreateScene {
   constructor({ engine, sceneManager, assets, input, store, i18n, scenes }) {
