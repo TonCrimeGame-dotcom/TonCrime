@@ -3,31 +3,42 @@ export class BootScene {
     this.assets = assets;
     this.i18n = i18n;
     this.scenes = scenes;
+    this._started = false;
   }
 
   async onEnter() {
-    await this.assets.loadImages([
-      { key: "tata", src: "./src/assets/tata.png" },
+    if (this._started) return;
+    this._started = true;
 
-      { key: "weapons_bg", src: "./src/assets/weapons.png" },
-      { key: "missions", src: "./src/assets/missions.jpg" },
-      { key: "pvp", src: "./src/assets/pvp.jpg" },
-      { key: "weapons", src: "./src/assets/weapons.jpg" },
-      { key: "nightclub", src: "./src/assets/nightclub.jpg" },
-      { key: "coffeeshop", src: "./src/assets/coffeeshop.jpg" },
-      { key: "xxx", src: "./src/assets/xxx.jpg" },
+    try {
+      await this.assets.loadImages([
+        // Genel / carousel
+        { key: "background", src: "./src/assets/ui/background.jpg" },
+        { key: "profile", src: "./src/assets/ui/background.jpg" },
+        { key: "missions", src: "./src/assets/missions.jpg" },
+        { key: "pvp", src: "./src/assets/pvp.jpg" },
+        { key: "weapons", src: "./src/assets/weapons.jpg" },
+        { key: "nightclub", src: "./src/assets/nightclub.jpg" },
+        { key: "coffeeshop", src: "./src/assets/coffeeshop.jpg" },
+        { key: "xxx", src: "./src/assets/xxx.jpg" },
 
-      { key: "blackmarket", src: "./src/assets/BlackMarket.png" },
-      { key: "blackmarket_bg", src: "./src/assets/BlackMarket.png" },
+        // Silah sayfası
+        { key: "weapons_bg", src: "./src/assets/weapons.png" },
 
-      { key: "xxx_bg", src: "./src/assets/xxx.jpg" },
+        // XXX / stars
+        { key: "xxx_bg", src: "./src/assets/xxx.jpg" },
 
-      { key: "coffeeshop_bg", src: "./src/assets/coffeeshop.png" },
-      { key: "coffeeshop_book", src: "./src/assets/coffeeshop_book.png" },
-      { key: "coffeeshop_menu", src: "./src/assets/coffeeshop_menu.png" }
-    ]);
+        // CoffeeShop
+        { key: "coffeeshop_bg", src: "./src/assets/coffeeshop.png" },
+        { key: "coffeeshop_book", src: "./src/assets/coffeeshop_book.png" },
+        { key: "coffeeshop_menu", src: "./src/assets/coffeeshop_menu.png" },
+      ]);
+    } catch (err) {
+      console.error("BootScene asset load error:", err);
+    }
 
-    this.scenes.go("intro");
+    // intro YOK -> direkt home'a geç
+    this.scenes.go("home");
   }
 
   render(ctx, w, h) {
@@ -35,9 +46,8 @@ export class BootScene {
     ctx.fillRect(0, 0, w, h);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "20px system-ui";
     ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(this.i18n.t("loading"), w / 2, h / 2);
+    ctx.font = "bold 22px system-ui";
+    ctx.fillText(this.i18n?.t?.("loading") || "Yükleniyor...", w / 2, h / 2);
   }
 }
