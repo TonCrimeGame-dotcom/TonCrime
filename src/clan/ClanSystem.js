@@ -90,7 +90,25 @@ export const ClanSystem = {
 
     store.set({ clan });
   },
+startWar(store){
 
+  const s = store.get()
+  const clan = s.clan
+
+  if(!clan) return
+
+  clan.war = {
+    enemy: "Shadow Syndicate",
+    power: 200000,
+    reward: 1200,
+    status: "active"
+  }
+
+  clan.log.push("Clan war başladı")
+
+  store.set({ clan })
+
+},
   /* -------------------------------
      MEMBERS
   --------------------------------*/
