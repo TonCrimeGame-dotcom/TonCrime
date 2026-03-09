@@ -243,14 +243,21 @@ export class HomeScene {
       if (img) {
         const iw = img.width || 1;
         const ih = img.height || 1;
-        const cover = Math.max(w2 / iw, h2 / ih);
-        const dw = iw * cover;
-        const dh = ih * cover;
+
+        /* TAM GÖRÜNSÜN: contain */
+        const contain = Math.min((w2 - 12) / iw, (h2 - 12) / ih);
+        const dw = iw * contain;
+        const dh = ih * contain;
         const dx = x2 + (w2 - dw) / 2;
         const dy = y2 + (h2 - dh) / 2;
+
+        /* kart içi arka dolgu */
+        ctx.fillStyle = "rgba(0,0,0,0.30)";
+        ctx.fillRect(x2, y2, w2, h2);
+
         ctx.drawImage(img, dx, dy, dw, dh);
 
-        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.32)";
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
         ctx.fillRect(x2, y2, w2, h2);
       } else {
         ctx.fillStyle = "rgba(255,255,255,0.08)";
