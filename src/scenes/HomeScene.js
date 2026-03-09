@@ -1,5 +1,5 @@
 function pointInRect(px, py, r) {
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  return px >= r.x && px <= r.x + r.w && py <= r.y + r.h && py >= r.y;
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -12,12 +12,10 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
-
 function fillRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.fill();
 }
-
 function strokeRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.stroke();
@@ -46,7 +44,6 @@ export class HomeScene {
 
   onEnter() {
     const s = this.store.get();
-
     if (!s.player) {
       this.store.set({
         player: {
@@ -65,27 +62,23 @@ export class HomeScene {
       return;
     }
 
-    const p = s.player || {};
+    const p = s.player;
     const patch = {};
-
     if (p.energy == null) patch.energy = 10;
     if (p.energyMax == null) patch.energyMax = 10;
     if (p.energyIntervalMs == null) patch.energyIntervalMs = 5 * 60 * 1000;
     if (p.lastEnergyAt == null) patch.lastEnergyAt = Date.now();
-
-    if (Object.keys(patch).length) {
-      this.store.set({ player: { ...p, ...patch } });
-    }
+    if (Object.keys(patch).length) this.store.set({ player: { ...p, ...patch } });
   }
 
   _carouselItems() {
     return [
+      { id: "profile", titleTR: "Profil", titleEN: "Profile", sceneKey: "profile" },
       { id: "missions", titleTR: "Görevler", titleEN: "Missions", sceneKey: "missions" },
       { id: "pvp", titleTR: "PvP", titleEN: "PvP", sceneKey: "pvp" },
       { id: "weapons", titleTR: "Silah Kaçakçısı", titleEN: "Arms Dealer", sceneKey: "weapons" },
       { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
       { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
-      { id: "blackmarket", titleTR: "Ticaret", titleEN: "Trade", sceneKey: "trade" },
       { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
     ];
   }
@@ -109,7 +102,6 @@ export class HomeScene {
       const dx = c.dragNowX - c.lastX;
       c.lastX = c.dragNowX;
       c.moved += Math.abs(dx);
-
       if (c.moved > 10) c.clickCandidate = false;
     }
 
@@ -120,60 +112,24 @@ export class HomeScene {
       const dragDX = c.dragNowX - c.dragStartX;
       const threshold = 45;
 
-      if (dragDX > threshold) {
-        c.index = Math.max(0, c.index - 1);
-      } else if (dragDX < -threshold) {
-        c.index = Math.min(items.length - 1, c.index + 1);
-      }
+      if (dragDX > threshold) c.index = Math.max(0, c.index - 1);
+      else if (dragDX < -threshold) c.index = Math.min(items.length - 1, c.index + 1);
 
       if (c.clickCandidate && pointInRect(px, py, this._cardRect)) {
         const item = items[c.index];
 
-        // Görevler
-        if (item.sceneKey === "missions" || item.id === "missions") {
-          try {
-            this.scenes.go("missions");
-          } catch (err) {
-            console.error("Missions scene açılamadı:", err);
-          }
-          return;
-        }
-
-        // PvP overlay
         if (item.sceneKey === "pvp" || item.id === "pvp") {
           try {
             window.dispatchEvent(new Event("tc:openPvp"));
-          } catch (err) {
-            console.error("PvP overlay açılamadı:", err);
-          }
+          } catch {}
           return;
         }
 
-        // Silah Kaçakçısı
-        if (item.sceneKey === "weapons" || item.id === "weapons") {
-          try {
-            this.scenes.go("weapons");
-          } catch (err) {
-            console.error("Weapons scene açılamadı:", err);
-          }
-          return;
-        }
-
-        // Ticaret
-        if (item.sceneKey === "trade" || item.id === "blackmarket") {
-          try {
-            this.scenes.go("trade");
-          } catch (err) {
-            console.error("Trade scene açılamadı:", err);
-          }
-          return;
-        }
-
-        // Diğer tüm sahneler
         try {
           this.scenes.go(item.sceneKey);
-        } catch (err) {
-          console.error(`Scene açılamadı: ${item.sceneKey}`, err);
+        } catch (_) {
+          const s = this.store.get();
+          this.store.set({ coins: (s.coins ?? 0) + 1 });
         }
       }
     }
@@ -183,15 +139,9 @@ export class HomeScene {
     const state = this.store.get();
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
 
-    const bg =
-      (typeof this.assets.getImage === "function" && this.assets.getImage("background")) ||
-      (typeof this.assets.get === "function" && this.assets.get("background")) ||
-      this.assets.images?.background ||
-      null;
-
-    if (bg) {
-      ctx.drawImage(bg, 0, 0, w, h);
-    } else {
+    const bg = this.assets.getImage("background");
+    if (bg) ctx.drawImage(bg, 0, 0, w, h);
+    else {
       ctx.fillStyle = "#0b0b0f";
       ctx.fillRect(0, 0, w, h);
     }
@@ -225,7 +175,6 @@ export class HomeScene {
 
       const item = items[itemIndex];
       const offset = (itemIndex - idx) * spacing + dragDX;
-
       const dist = Math.abs(itemIndex - idx);
       const scale = dist === 0 ? 1 : 0.92;
 
@@ -241,24 +190,18 @@ export class HomeScene {
       roundRectPath(ctx, x2, y2, w2, h2, 18);
       ctx.clip();
 
-      const img =
-        (typeof this.assets.getImage === "function" && this.assets.getImage(item.id)) ||
-        (typeof this.assets.get === "function" && this.assets.get(item.id)) ||
-        this.assets.images?.[item.id] ||
-        null;
-
+      const img = this.assets.getImage(item.id) || this.assets.getImage("background");
       if (img) {
-        const s = Math.min(w2 / img.width, h2 / img.height);
+        const s = Math.max(w2 / img.width, h2 / img.height);
         const dw = img.width * s;
         const dh = img.height * s;
         const dx = x2 + (w2 - dw) / 2;
         const dy = y2 + (h2 - dh) / 2;
         ctx.drawImage(img, dx, dy, dw, dh);
 
-        ctx.fillStyle = "rgba(0,0,0,0.18)";
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.20)" : "rgba(0,0,0,0.34)";
         ctx.fillRect(x2, y2, w2, h2);
       }
-
       ctx.restore();
 
       ctx.strokeStyle =
@@ -266,16 +209,25 @@ export class HomeScene {
       strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
 
       const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
-
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
-      ctx.textBaseline = "alphabetic";
-      ctx.font = dist === 0 ? "18px system-ui" : "16px system-ui";
-      ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 22);
+      ctx.font = dist === 0 ? "bold 18px system-ui" : "16px system-ui";
+      ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 24);
 
-      if (itemIndex === idx) {
-        this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
+      if (item.id === "profile") {
+        const p = state.player || {};
+        ctx.font = "13px system-ui";
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillText(p.username || "Player", x2 + w2 / 2, y2 + 38);
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.fillText(
+          `LVL ${p.level || 1} • ${state.premium ? "PREMIUM" : "STANDARD"}`,
+          x2 + w2 / 2,
+          y2 + 58
+        );
       }
+
+      if (itemIndex === idx) this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
     };
 
     drawCard(idx - 1);
