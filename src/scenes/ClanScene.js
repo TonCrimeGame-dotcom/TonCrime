@@ -1,511 +1,312 @@
-import { ClanSystem } from "../systems/clan/ClanSystem.js";
-import {
-  formatMoney,
-  getRoleLabel,
-  getUpgradeCost,
-  getUpgradeLabel,
-} from "../systems/clan/ClanUtils.js";
+import { ClanSystem } from "../clan/ClanSystem.js";
 
 export class ClanScene {
-  constructor({ engine, sceneManager, assets, input, store, i18n }) {
-    this.engine = engine;
-    this.sceneManager = sceneManager;
-    this.assets = assets;
-    this.input = input;
-    this.store = store;
-    this.i18n = i18n;
-
-    this.buttons = [];
-    this.tabButtons = [];
-    this.activeTab = "genel";
-  }
-
-  enter() {
-    this.activeTab = "genel";
-    this.rebuildUi();
-  }
-
-  exit() {}
-
-  rebuildUi() {
-    this.buttons = [
-      {
-        id: "back",
-        x: 30,
-        y: 24,
-        w: 130,
-        h: 42,
-        text: "GERİ",
-        onClick: () => this.sceneManager.goTo("home"),
-      },
-      {
-        id: "leave",
-        x: 830,
-        y: 24,
-        w: 160,
-        h: 42,
-        text: "CLAN'DAN ÇIK",
-        onClick: () => {
-          ClanSystem.leaveClan(this.store);
-          if (ClanSystem.hasClan(this.store)) {
-            this.rebuildUi();
-          } else {
-            this.sceneManager.goTo("clan_create");
-          }
-        },
-      },
-    ];
-
-    const tabs = ClanSystem.getTabList();
-    this.tabButtons = tabs.map((tab, i) => ({
-      id: `tab_${tab}`,
-      tab,
-      x: 40 + i * 190,
-      y: 150,
-      w: 170,
-      h: 42,
-      text: this.getTabLabel(tab),
-      onClick: () => {
-        this.activeTab = tab;
-        this.rebuildUi();
-      },
-    }));
-
-    const clan = ClanSystem.getClan(this.store);
-    if (!clan) return;
-
-    if (this.activeTab === "kasa") {
-      this.buttons.push(
-        {
-          id: "donate_1000",
-          x: 60,
-          y: 560,
-          w: 180,
-          h: 50,
-          text: "$1.000 YATIR",
-          onClick: () => {
-            ClanSystem.donateToClan(this.store, 1000);
-            this.rebuildUi();
-          },
-        },
-        {
-          id: "donate_5000",
-          x: 260,
-          y: 560,
-          w: 180,
-          h: 50,
-          text: "$5.000 YATIR",
-          onClick: () => {
-            ClanSystem.donateToClan(this.store, 5000);
-            this.rebuildUi();
-          },
-        },
-        {
-          id: "donate_10000",
-          x: 460,
-          y: 560,
-          w: 200,
-          h: 50,
-          text: "$10.000 YATIR",
-          onClick: () => {
-            ClanSystem.donateToClan(this.store, 10000);
-            this.rebuildUi();
-          },
-        }
-      );
-    }
-
-    if (this.activeTab === "gelistirme") {
-      const upgradeTypes = ["memberCap", "vault", "income", "attack", "defense"];
-      upgradeTypes.forEach((type, i) => {
-        const row = i % 3;
-        const col = Math.floor(i / 3);
-        const x = 60 + row * 300;
-        const y = 320 + col * 100;
-
-        this.buttons.push({
-          id: `upgrade_${type}`,
-          x,
-          y,
-          w: 240,
-          h: 56,
-          text: `${getUpgradeLabel(type)} YÜKSELT`,
-          onClick: () => {
-            ClanSystem.upgrade(this.store, type);
-            this.rebuildUi();
-          },
-        });
-      });
-    }
-
-    if (this.activeTab === "uyeler") {
-      this.buttons.push({
-        id: "add_mock_member",
-        x: 760,
-        y: 560,
-        w: 220,
-        h: 50,
-        text: "ÖRNEK ÜYE EKLE",
-        onClick: () => {
-          ClanSystem.addMockMember(this.store);
-          this.rebuildUi();
-        },
-      });
-    }
-  }
-
-  getTabLabel(tab) {
-    switch (tab) {
-      case "genel":
-        return "GENEL";
-      case "uyeler":
-        return "ÜYELER";
-      case "kasa":
-        return "KASA";
-      case "gelistirme":
-        return "GELİŞTİRME";
-      case "log":
-        return "LOG";
-      default:
-        return tab.toUpperCase();
-    }
-  }
-
-  update() {
-    const clan = ClanSystem.getClan(this.store);
-    if (!clan) {
-      this.sceneManager.goTo("clan_create");
-      return;
-    }
-
-    const pointer = this.input?.pointer || this.input?.mouse || null;
-    const pressed =
-      this.input?.isJustPressed?.("pointer") ||
-      this.input?.isJustPressed?.("mouseLeft") ||
-      this.input?.mousePressed;
-
-    if (pointer && pressed) {
-      const px = pointer.x;
-      const py = pointer.y;
-
-      for (const btn of [...this.buttons, ...this.tabButtons]) {
-        if (px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h) {
-          btn.onClick?.();
-          return;
-        }
-      }
-
-      if (this.activeTab === "uyeler") {
-        const member = this.findKickTarget(px, py);
-        if (member) {
-          ClanSystem.kickMember(this.store, member.id);
-          this.rebuildUi();
-          return;
-        }
-      }
-    }
-  }
-
-  findKickTarget(px, py) {
-    const clan = ClanSystem.getClan(this.store);
-    if (!clan) return null;
-
-    const startX = 60;
-    const startY = 240;
-    const rowH = 52;
-
-    for (let i = 0; i < clan.members.length; i++) {
-      const y = startY + i * rowH;
-      const kickX = 850;
-      const kickY = y + 8;
-      const kickW = 110;
-      const kickH = 34;
-
-      if (px >= kickX && px <= kickX + kickW && py >= kickY && py <= kickY + kickH) {
-        return clan.members[i];
-      }
-    }
-
-    return null;
-  }
-
-  render(ctx) {
-    const clan = ClanSystem.getClan(this.store);
-    if (!clan) return;
-
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
-
-    ctx.fillStyle = "#09101d";
-    ctx.fillRect(0, 0, w, h);
-
-    this.drawPanel(ctx, 20, 18, w - 40, 100, 22, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 34px Arial";
-    ctx.fillText(`${clan.name} [${clan.tag}]`, 50, 62);
-
-    ctx.fillStyle = "#9cb2d9";
-    ctx.font = "20px Arial";
-    ctx.fillText(clan.description, 50, 95);
-
-    for (const btn of this.buttons) {
-      this.drawButton(ctx, btn, btn.id === "leave" ? "#8d2f3c" : btn.id === "back" ? "#2c3d63" : "#1d8f5a");
-    }
-
-    for (const tab of this.tabButtons) {
-      const active = this.activeTab === tab.tab;
-      this.drawButton(ctx, tab, active ? "#365a98" : "#1b2743");
-    }
-
-    this.drawTopStats(ctx, clan);
-
-    if (this.activeTab === "genel") this.renderGeneral(ctx, clan);
-    if (this.activeTab === "uyeler") this.renderMembers(ctx, clan);
-    if (this.activeTab === "kasa") this.renderBank(ctx, clan);
-    if (this.activeTab === "gelistirme") this.renderUpgrades(ctx, clan);
-    if (this.activeTab === "log") this.renderLogs(ctx, clan);
-  }
-
-  drawTopStats(ctx, clan) {
-    const cards = [
-      { label: "Seviye", value: String(clan.level) },
-      { label: "Güç", value: String(clan.power) },
-      { label: "Üye", value: `${clan.members.length}/${clan.limits.members}` },
-      { label: "Kasa", value: `$${formatMoney(clan.bank)}` },
-      { label: "Günlük Gelir", value: `$${formatMoney(clan.dailyIncome)}` },
-    ];
-
-    cards.forEach((card, i) => {
-      const x = 40 + i * 190;
-      const y = 210;
-      const w = 170;
-      const h = 88;
-
-      this.drawPanel(ctx, x, y, w, h, 16, "#16213c");
-      ctx.fillStyle = "#8ea7d4";
-      ctx.font = "18px Arial";
-      ctx.fillText(card.label, x + 18, y + 30);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 26px Arial";
-      ctx.fillText(card.value, x + 18, y + 66);
-    });
-  }
-
-  renderGeneral(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 450, 300, 18, "#121b31");
-    this.drawPanel(ctx, 520, 320, 460, 300, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Clan Bilgisi", 60, 360);
-
-    ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Sıralama: #${clan.rank}`, 60, 405);
-    ctx.fillText(`Bölge Sayısı: ${clan.territoryCount}`, 60, 440);
-    ctx.fillText(`XP: ${clan.xp} / ${clan.xpNext}`, 60, 475);
-    ctx.fillText(`Savaş Aktif: ${clan.wars.active.length}`, 60, 510);
-    ctx.fillText(`Geçmiş Savaş: ${clan.wars.history.length}`, 60, 545);
-
-    ctx.fillStyle = "#25365f";
-    ctx.fillRect(60, 570, 360, 18);
-    ctx.fillStyle = "#4f7dd1";
-    const ratio = clan.xpNext > 0 ? Math.max(0, Math.min(1, clan.xp / clan.xpNext)) : 0;
-    ctx.fillRect(60, 570, 360 * ratio, 18);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Rol Dağılımı", 540, 360);
-
-    const leaderCount = clan.members.filter((m) => m.role === "leader").length;
-    const officerCount = clan.members.filter((m) => m.role === "officer").length;
-    const memberCount = clan.members.filter((m) => m.role === "member").length;
-    const onlineCount = clan.members.filter((m) => m.online).length;
-
-    ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Lider: ${leaderCount}`, 540, 405);
-    ctx.fillText(`Yardımcı: ${officerCount}`, 540, 440);
-    ctx.fillText(`Üye: ${memberCount}`, 540, 475);
-    ctx.fillText(`Online: ${onlineCount}`, 540, 510);
-
-    const topContributor = [...clan.members].sort((a, b) => (b.contribution || 0) - (a.contribution || 0))[0];
-    ctx.fillText(
-      `En çok katkı: ${topContributor ? `${topContributor.name} ($${formatMoney(topContributor.contribution)})` : "-"}`,
-      540,
-      545
-    );
-  }
-
-  renderMembers(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 940, 300, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Üyeler", 60, 360);
-
-    ctx.fillStyle = "#8ea7d4";
-    ctx.font = "18px Arial";
-    ctx.fillText("İsim", 60, 400);
-    ctx.fillText("Rol", 260, 400);
-    ctx.fillText("Seviye", 400, 400);
-    ctx.fillText("Güç", 520, 400);
-    ctx.fillText("Katkı", 650, 400);
-    ctx.fillText("Durum", 790, 400);
-
-    const startY = 425;
-    const rowH = 52;
-
-    clan.members.forEach((member, i) => {
-      const y = startY + i * rowH;
-
-      ctx.fillStyle = i % 2 === 0 ? "#182444" : "#14203a";
-      ctx.fillRect(55, y - 24, 910, 42);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "18px Arial";
-      ctx.fillText(member.name, 60, y);
-      ctx.fillText(getRoleLabel(member.role), 260, y);
-      ctx.fillText(String(member.level || 1), 400, y);
-      ctx.fillText(String(member.power || 0), 520, y);
-      ctx.fillText(`$${formatMoney(member.contribution || 0)}`, 650, y);
-      ctx.fillText(member.online ? "Online" : "Offline", 790, y);
-
-      if (member.id !== "player_main") {
-        this.drawButton(
-          ctx,
-          {
-            x: 850,
-            y: y - 18,
-            w: 110,
-            h: 34,
-            text: "AT",
-          },
-          "#8d2f3c",
-          16
-        );
-      }
-    });
-  }
-
-  renderBank(ctx, clan) {
-    const state = this.store?.get?.() || this.store?.state || {};
-    const playerCash = Number(state.player?.cash || 0);
-
-    this.drawPanel(ctx, 40, 320, 420, 220, 18, "#121b31");
-    this.drawPanel(ctx, 490, 320, 490, 220, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Kasa Durumu", 60, 360);
-
-    ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Clan Kasası: $${formatMoney(clan.bank)}`, 60, 405);
-    ctx.fillText(`Kasa Kapasitesi: $${formatMoney(clan.limits.vaultCapacity)}`, 60, 440);
-    ctx.fillText(`Oyuncu Parası: $${formatMoney(playerCash)}`, 60, 475);
-
-    ctx.fillStyle = "#25365f";
-    ctx.fillRect(60, 500, 320, 18);
-    ctx.fillStyle = "#53a96f";
-    const ratio = clan.limits.vaultCapacity > 0 ? clan.bank / clan.limits.vaultCapacity : 0;
-    ctx.fillRect(60, 500, 320 * Math.max(0, Math.min(1, ratio)), 18);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Bilgi", 510, 360);
-
-    ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText("Kasadaki para geliştirmeler için kullanılır.", 510, 405);
-    ctx.fillText("Aşağıdaki butonlarla hızlı bağış yapabilirsin.", 510, 440);
-    ctx.fillText("Kasa doluysa fazla para yatırılmaz.", 510, 475);
-
-    for (const btn of this.buttons.filter((b) => b.id.startsWith("donate_"))) {
-      this.drawButton(ctx, btn, "#1d8f5a");
-    }
-  }
-
-  renderUpgrades(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 940, 300, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Geliştirmeler", 60, 360);
-
-    const upgradeTypes = ["memberCap", "vault", "income", "attack", "defense"];
-
-    upgradeTypes.forEach((type, i) => {
-      const row = i % 3;
-      const col = Math.floor(i / 3);
-      const x = 60 + row * 300;
-      const y = 390 + col * 100;
-      const level = clan.upgrades[type] || 0;
-      const cost = getUpgradeCost(type, level);
-
-      this.drawPanel(ctx, x, y, 240, 76, 14, "#182444");
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 20px Arial";
-      ctx.fillText(getUpgradeLabel(type), x + 16, y + 26);
-
-      ctx.fillStyle = "#b8c8ea";
-      ctx.font = "18px Arial";
-      ctx.fillText(`Seviye: ${level}`, x + 16, y + 50);
-      ctx.fillText(`Maliyet: $${formatMoney(cost)}`, x + 16, y + 72);
-    });
-
-    for (const btn of this.buttons.filter((b) => b.id.startsWith("upgrade_"))) {
-      this.drawButton(ctx, btn, "#315fbe");
-    }
-  }
-
-  renderLogs(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 940, 300, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Son İşlemler", 60, 360);
-
-    const logs = clan.logs || [];
-    const visible = logs.slice(0, 8);
-
-    visible.forEach((log, i) => {
-      const y = 400 + i * 28;
-      ctx.fillStyle = "#d5e1f8";
-      ctx.font = "18px Arial";
-      ctx.fillText(`• ${log.text}`, 60, y);
-    });
-
-    if (!visible.length) {
-      ctx.fillStyle = "#d5e1f8";
-      ctx.font = "18px Arial";
-      ctx.fillText("Henüz log yok.", 60, 400);
-    }
-  }
-
-  drawButton(ctx, btn, color = "#2c3d63", fontSize = 18) {
-    this.drawPanel(ctx, btn.x, btn.y, btn.w, btn.h, 12, color);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${fontSize}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
-    ctx.textAlign = "start";
-    ctx.textBaseline = "alphabetic";
-  }
-
-  drawPanel(ctx, x, y, w, h, r, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-    ctx.fill();
-  }
+
+constructor({store,input,assets,scenes,i18n}){
+
+this.store=store
+this.input=input
+this.assets=assets
+this.scenes=scenes
+this.i18n=i18n
+
+this.root=null
+this.tab="overview"
+
+}
+
+onEnter(){
+
+const s=this.store.get()
+const clan=s.clan
+
+this.root=document.createElement("div")
+this.root.id="clanScene"
+
+this.root.style.position="fixed"
+this.root.style.left="0"
+this.root.style.top="0"
+this.root.style.width="100%"
+this.root.style.height="100%"
+this.root.style.zIndex="60"
+this.root.style.color="white"
+this.root.style.background="rgba(10,10,15,.92)"
+this.root.style.backdropFilter="blur(10px)"
+this.root.style.overflowY="auto"
+this.root.style.fontFamily="system-ui"
+
+document.body.appendChild(this.root)
+
+this.render()
+
+}
+
+render(){
+
+const s=this.store.get()
+const clan=s.clan
+
+this.root.innerHTML=`
+
+<div style="max-width:900px;margin:auto;padding:24px">
+
+<h1 style="margin-bottom:10px">${clan.name}</h1>
+
+<div style="opacity:.7;margin-bottom:20px">
+
+Tag ${clan.tag} • Seviye ${clan.level} • Üye ${clan.members.length}/${clan.maxMembers}
+
+</div>
+
+<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+
+<button id="tab_overview">Genel</button>
+<button id="tab_members">Üyeler</button>
+<button id="tab_donate">Bağış</button>
+<button id="tab_upgrade">Yükseltme</button>
+<button id="tab_chat">Chat</button>
+<button id="tab_missions">Görevler</button>
+
+</div>
+
+<div id="clanContent"></div>
+
+<div style="margin-top:30px">
+
+<button id="clanBack">← Geri</button>
+
+</div>
+
+</div>
+`
+
+document.getElementById("clanBack").onclick=()=>{
+
+this.scenes.go("home")
+
+}
+
+document.getElementById("tab_overview").onclick=()=>{this.tab="overview";this.draw()}
+document.getElementById("tab_members").onclick=()=>{this.tab="members";this.draw()}
+document.getElementById("tab_donate").onclick=()=>{this.tab="donate";this.draw()}
+document.getElementById("tab_upgrade").onclick=()=>{this.tab="upgrade";this.draw()}
+document.getElementById("tab_chat").onclick=()=>{this.tab="chat";this.draw()}
+document.getElementById("tab_missions").onclick=()=>{this.tab="missions";this.draw()}
+
+this.draw()
+
+}
+
+draw(){
+
+const s=this.store.get()
+const clan=s.clan
+const el=document.getElementById("clanContent")
+
+if(this.tab==="overview"){
+
+el.innerHTML=`
+
+<div style="background:#14141a;padding:16px;border-radius:12px">
+
+<div>Kasa: ${clan.bank} TON</div>
+<div>Clan XP: ${clan.xp}</div>
+
+</div>
+
+<h3 style="margin-top:20px">Log</h3>
+
+<div id="clanLog"></div>
+
+`
+
+const log=document.getElementById("clanLog")
+
+clan.log.slice(-10).reverse().forEach(l=>{
+
+const row=document.createElement("div")
+row.textContent=l
+row.style.opacity=".7"
+row.style.fontSize="13px"
+row.style.marginBottom="4px"
+
+log.appendChild(row)
+
+})
+
+}
+
+if(this.tab==="members"){
+
+el.innerHTML=`<h3>Üyeler</h3><div id="members"></div>`
+
+const list=document.getElementById("members")
+
+clan.members.forEach(m=>{
+
+const row=document.createElement("div")
+
+row.style.display="flex"
+row.style.justifyContent="space-between"
+row.style.background="#14141a"
+row.style.padding="10px"
+row.style.marginBottom="6px"
+row.style.borderRadius="8px"
+
+row.innerHTML=`
+
+<div>
+
+<b>${m.name}</b>
+<div style="font-size:12px;opacity:.6">${m.role}</div>
+
+</div>
+
+<div>Lv.${m.level}</div>
+
+`
+
+list.appendChild(row)
+
+})
+
+}
+
+if(this.tab==="donate"){
+
+el.innerHTML=`
+
+<h3>Bağış</h3>
+
+<button id="d10">+10 TON</button>
+<button id="d100">+100 TON</button>
+
+`
+
+document.getElementById("d10").onclick=()=>{
+
+ClanSystem.donate(this.store,10)
+this.refresh()
+
+}
+
+document.getElementById("d100").onclick=()=>{
+
+ClanSystem.donate(this.store,100)
+this.refresh()
+
+}
+
+}
+
+if(this.tab==="upgrade"){
+
+el.innerHTML=`
+
+<h3>Clan Yükseltme</h3>
+
+<button id="up_members">Üye Limiti +5</button>
+<button id="up_bank">Kasa Bonus</button>
+
+`
+
+document.getElementById("up_members").onclick=()=>{
+
+ClanSystem.upgradeMembers(this.store)
+this.refresh()
+
+}
+
+document.getElementById("up_bank").onclick=()=>{
+
+ClanSystem.upgradeBank(this.store)
+this.refresh()
+
+}
+
+}
+
+if(this.tab==="chat"){
+
+const chat=clan.chat||[]
+
+el.innerHTML=`
+
+<div id="chatBox" style="background:#14141a;padding:12px;border-radius:10px;height:200px;overflow:auto"></div>
+
+<input id="chatInput" placeholder="Mesaj yaz"/>
+
+<button id="chatSend">Gönder</button>
+
+`
+
+const box=document.getElementById("chatBox")
+
+chat.forEach(m=>{
+
+const row=document.createElement("div")
+row.textContent=`${m.name}: ${m.msg}`
+
+box.appendChild(row)
+
+})
+
+document.getElementById("chatSend").onclick=()=>{
+
+const txt=document.getElementById("chatInput").value
+
+if(!txt)return
+
+const s=this.store.get()
+const clan=s.clan
+
+clan.chat=clan.chat||[]
+
+clan.chat.push({
+
+name:s.player.username,
+msg:txt
+
+})
+
+this.store.set({clan})
+
+this.refresh()
+
+}
+
+}
+
+if(this.tab==="missions"){
+
+el.innerHTML=`
+
+<h3>Clan Görevleri</h3>
+
+<div>Toplam PvP: ${clan.pvp || 0}/50</div>
+<div>Bağış: ${clan.donation || 0}/500</div>
+
+`
+
+}
+
+}
+
+refresh(){
+
+this.render()
+
+}
+
+onExit(){
+
+if(this.root){
+
+this.root.remove()
+this.root=null
+
+}
+
+}
+
 }
