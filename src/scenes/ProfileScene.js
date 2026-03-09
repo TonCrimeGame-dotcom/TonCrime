@@ -20,33 +20,27 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.stroke();
 }
-
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
-
 function shortAddr(addr) {
   const s = String(addr || "").trim();
   if (!s) return "Bağlı değil";
-  if (s.length <= 12) return s;
-  return `${s.slice(0, 6)}...${s.slice(-4)}`;
+  if (s.length <= 14) return s;
+  return `${s.slice(0, 6)}...${s.slice(-6)}`;
 }
-
 function fmtNum(n) {
   return Number(n || 0).toLocaleString("tr-TR");
 }
-
 function fmtDate(ts) {
   const n = Number(ts || 0);
   if (!n) return "-";
   const d = new Date(n);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("tr-TR");
+  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("tr-TR");
 }
-
 function calcWinRate(w, l) {
   const total = Number(w || 0) + Number(l || 0);
-  if (total <= 0) return 0;
+  if (!total) return 0;
   return Math.round((Number(w || 0) / total) * 100);
 }
 
@@ -56,7 +50,6 @@ export class ProfileScene {
     this.input = input;
     this.assets = assets;
     this.scenes = scenes;
-
     this.mode = "owner";
     this.tab = "general";
     this.hit = [];
@@ -65,10 +58,10 @@ export class ProfileScene {
   onEnter(data = {}) {
     this.mode = data?.mode === "public" ? "public" : "owner";
     this.tab = data?.tab || "general";
-    this._ensureProfileState();
+    this.ensureState();
   }
 
-  _ensureProfileState() {
+  ensureState() {
     const s = this.store.get();
     const p = s.player || {};
     const profile = s.profile || {};
@@ -78,11 +71,9 @@ export class ProfileScene {
     const weapons = s.weapons || { owned: {}, equippedId: null };
     const stars = s.stars || { owned: {}, selectedId: null };
 
-    const username = String(p.username || "Player");
     const tgId = String(p.telegramId || profile.telegramId || "");
-    const generatedId = `TC-${String(
-      tgId || username.replace(/\s+/g, "").toUpperCase()
-    ).slice(0, 10) || "PLAYER"}`;
+    const username = String(p.username || "Player");
+    const generatedId = `TC-${String(tgId || username.replace(/\s+/g, "").toUpperCase()).slice(0, 10) || "PLAYER"}`;
 
     this.store.set({
       profile: {
@@ -94,13 +85,13 @@ export class ProfileScene {
         walletAddress: profile.walletAddress || "",
         premiumType: profile.premiumType || (s.premium ? "premium" : "none"),
         premiumUntil: Number(profile.premiumUntil || 0),
-        joinedAt: Number(profile.joinedAt || Date.now()),
+        joinedAt: Number(profile.joinedAt || Date.now())
       },
       leaderboard: {
         rankGlobal: Number(leaderboard.rankGlobal || 0),
         rankWeekly: Number(leaderboard.rankWeekly || 0),
         pvpWins: Number(leaderboard.pvpWins || 0),
-        pvpLosses: Number(leaderboard.pvpLosses || 0),
+        pvpLosses: Number(leaderboard.pvpLosses || 0)
       },
       finance: {
         tonBalance: Number(finance.tonBalance || 0),
@@ -109,15 +100,15 @@ export class ProfileScene {
         totalExpenseTon: Number(finance.totalExpenseTon || 0),
         totalIncomeYton: Number(finance.totalIncomeYton || 0),
         totalExpenseYton: Number(finance.totalExpenseYton || 0),
-        history: Array.isArray(finance.history) ? finance.history : [],
+        history: Array.isArray(finance.history) ? finance.history : []
       },
       pvpHistory,
       weapons,
-      stars,
+      stars
     });
   }
 
-  _tabs() {
+  tabs() {
     return [
       { key: "general", label: "Genel" },
       { key: "inventory", label: "Envanter" },
@@ -125,7 +116,7 @@ export class ProfileScene {
       { key: "wallet", label: "Cüzdan" },
       { key: "premium", label: "Premium" },
       { key: "finance", label: "Finans" },
-      { key: "pvp", label: "PvP" },
+      { key: "pvp", label: "PvP" }
     ];
   }
 
@@ -157,30 +148,32 @@ export class ProfileScene {
       if (h.type === "premium") {
         const s = this.store.get();
         const pr = s.profile || {};
-        const nextPremium = !s.premium;
+        const next = !s.premium;
         this.store.set({
-          premium: nextPremium,
+          premium: next,
           profile: {
             ...pr,
-            premiumType: nextPremium ? "premium" : "none",
-            premiumUntil: nextPremium
-              ? Date.now() + 30 * 24 * 60 * 60 * 1000
-              : 0,
-          },
+            premiumType: next ? "premium" : "none",
+            premiumUntil: next ? Date.now() + 30 * 24 * 60 * 60 * 1000 : 0
+          }
         });
+        return;
+      }
+      if (h.type === "walletConnect") {
+        window.tcWallet?.open?.();
+        return;
+      }
+      if (h.type === "walletDisconnect") {
+        window.tcWallet?.disconnect?.();
         return;
       }
     }
   }
 
-  _drawChip(ctx, rect, label, value, active = false) {
-    ctx.fillStyle = active
-      ? "rgba(242,211,107,0.18)"
-      : "rgba(255,255,255,0.06)";
+  drawChip(ctx, rect, label, value, active = false) {
+    ctx.fillStyle = active ? "rgba(242,211,107,0.18)" : "rgba(255,255,255,0.06)";
     fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 14);
-    ctx.strokeStyle = active
-      ? "rgba(242,211,107,0.42)"
-      : "rgba(255,255,255,0.10)";
+    ctx.strokeStyle = active ? "rgba(242,211,107,0.42)" : "rgba(255,255,255,0.10)";
     strokeRoundRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, 14);
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
@@ -193,7 +186,7 @@ export class ProfileScene {
     ctx.fillText(value, rect.x + 12, rect.y + 40);
   }
 
-  _drawRow(ctx, x, y, w, label, value) {
+  drawRow(ctx, x, y, w, label, value) {
     ctx.fillStyle = "rgba(255,255,255,0.05)";
     fillRoundRect(ctx, x, y, w, 44, 12);
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
@@ -221,14 +214,14 @@ export class ProfileScene {
     const pvpHistory = Array.isArray(s.pvpHistory) ? s.pvpHistory : [];
     const weapons = s.weapons || { owned: {}, equippedId: null };
     const stars = s.stars || { owned: {}, selectedId: null };
-
     const bg = this.assets?.getImage?.("background");
+
     if (bg) ctx.drawImage(bg, 0, 0, w, h);
     else {
       ctx.fillStyle = "#0b0b0f";
       ctx.fillRect(0, 0, w, h);
     }
-    ctx.fillStyle = "rgba(5,7,12,0.82)";
+    ctx.fillStyle = "rgba(4,6,12,0.82)";
     ctx.fillRect(0, 0, w, h);
 
     const panelX = safe.x + 14;
@@ -236,7 +229,7 @@ export class ProfileScene {
     const panelW = safe.w - 28;
     const panelH = safe.h - 28;
 
-    ctx.fillStyle = "rgba(0,0,0,0.52)";
+    ctx.fillStyle = "rgba(0,0,0,0.48)";
     fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22);
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 22);
@@ -253,11 +246,7 @@ export class ProfileScene {
     ctx.textAlign = "center";
     ctx.font = "bold 14px system-ui";
     ctx.fillText("← Geri", backRect.x + backRect.w / 2, backRect.y + 22);
-    ctx.fillText(
-      this.mode === "owner" ? "Açık Profil" : "Sahip Görünümü",
-      modeRect.x + modeRect.w / 2,
-      modeRect.y + 22
-    );
+    ctx.fillText(this.mode === "owner" ? "Açık Profil" : "Sahip Görünümü", modeRect.x + modeRect.w / 2, modeRect.y + 22);
 
     const avatarSize = clamp(panelW * 0.18, 74, 104);
     const avatarX = panelX + 18;
@@ -274,7 +263,6 @@ export class ProfileScene {
     ctx.fillText(profile.avatar || "😈", avatarX + avatarSize / 2, avatarY + avatarSize * 0.66);
 
     const infoX = avatarX + avatarSize + 16;
-    const infoW = panelW - (infoX - panelX) - 18;
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#fff";
@@ -286,67 +274,31 @@ export class ProfileScene {
     ctx.fillText(profile.id || "TC-PLAYER", infoX, avatarY + 50);
     ctx.fillText(profile.bio || "-", infoX, avatarY + 70);
 
-    const premiumText = s.premium ? "PREMIUM" : "STANDARD";
-    const premiumW = 96;
     const premiumRect = {
-      x: panelX + panelW - premiumW - 18,
+      x: panelX + panelW - 116,
       y: avatarY + 8,
-      w: premiumW,
-      h: 28,
+      w: 98,
+      h: 28
     };
-
-    ctx.fillStyle = s.premium
-      ? "rgba(242,211,107,0.18)"
-      : "rgba(255,255,255,0.08)";
+    ctx.fillStyle = s.premium ? "rgba(242,211,107,0.18)" : "rgba(255,255,255,0.08)";
     fillRoundRect(ctx, premiumRect.x, premiumRect.y, premiumRect.w, premiumRect.h, 999);
-
-    ctx.strokeStyle = s.premium
-      ? "rgba(242,211,107,0.40)"
-      : "rgba(255,255,255,0.12)";
-    strokeRoundRect(
-      ctx,
-      premiumRect.x + 0.5,
-      premiumRect.y + 0.5,
-      premiumRect.w - 1,
-      premiumRect.h - 1,
-      999
-    );
-
+    ctx.strokeStyle = s.premium ? "rgba(242,211,107,0.40)" : "rgba(255,255,255,0.12)";
+    strokeRoundRect(ctx, premiumRect.x + 0.5, premiumRect.y + 0.5, premiumRect.w - 1, premiumRect.h - 1, 999);
     ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
     ctx.font = "bold 12px system-ui";
-    ctx.fillText(
-      premiumText,
-      premiumRect.x + premiumRect.w / 2,
-      premiumRect.y + 18
-    );
+    ctx.fillText(s.premium ? "PREMIUM" : "STANDARD", premiumRect.x + premiumRect.w / 2, premiumRect.y + 18);
 
     const chipY = avatarY + avatarSize + 14;
     const chipGap = 10;
     const chipW = Math.floor((panelW - 36 - chipGap * 2) / 3);
 
-    this._drawChip(
-      ctx,
-      { x: panelX + 18, y: chipY, w: chipW, h: 52 },
-      "Level",
-      String(player.level || 1),
-      true
-    );
-    this._drawChip(
-      ctx,
-      { x: panelX + 18 + chipW + chipGap, y: chipY, w: chipW, h: 52 },
-      "Coin",
-      fmtNum(s.coins || 0)
-    );
-    this._drawChip(
-      ctx,
-      { x: panelX + 18 + (chipW + chipGap) * 2, y: chipY, w: chipW, h: 52 },
-      "PvP",
-      `${fmtNum(lb.pvpWins || 0)}W / ${fmtNum(lb.pvpLosses || 0)}L`
-    );
+    this.drawChip(ctx, { x: panelX + 18, y: chipY, w: chipW, h: 52 }, "Level", String(player.level || 1), true);
+    this.drawChip(ctx, { x: panelX + 18 + chipW + chipGap, y: chipY, w: chipW, h: 52 }, "Coin", fmtNum(s.coins || 0));
+    this.drawChip(ctx, { x: panelX + 18 + (chipW + chipGap) * 2, y: chipY, w: chipW, h: 52 }, "PvP", `${fmtNum(lb.pvpWins || 0)}W / ${fmtNum(lb.pvpLosses || 0)}L`);
 
     const tabsY = chipY + 66;
-    const tabs = this._tabs();
+    const tabs = this.tabs();
     const tabGap = 8;
     const tabW = Math.floor((panelW - 36 - tabGap * (tabs.length - 1)) / tabs.length);
 
@@ -355,20 +307,13 @@ export class ProfileScene {
         x: panelX + 18 + i * (tabW + tabGap),
         y: tabsY,
         w: tabW,
-        h: 34,
+        h: 34
       };
       this.hit.push({ type: "tab", key: tab.key, rect: r });
 
-      ctx.fillStyle =
-        this.tab === tab.key
-          ? "rgba(242,211,107,0.20)"
-          : "rgba(255,255,255,0.06)";
+      ctx.fillStyle = this.tab === tab.key ? "rgba(242,211,107,0.20)" : "rgba(255,255,255,0.06)";
       fillRoundRect(ctx, r.x, r.y, r.w, r.h, 12);
-
-      ctx.strokeStyle =
-        this.tab === tab.key
-          ? "rgba(242,211,107,0.42)"
-          : "rgba(255,255,255,0.10)";
+      ctx.strokeStyle = this.tab === tab.key ? "rgba(242,211,107,0.42)" : "rgba(255,255,255,0.10)";
       strokeRoundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 12);
 
       ctx.fillStyle = "#fff";
@@ -387,74 +332,28 @@ export class ProfileScene {
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
     strokeRoundRect(ctx, contentX + 0.5, contentY + 0.5, contentW - 1, contentH - 1, 16);
 
-    const publicMode = this.mode === "public";
     const rowX = contentX + 14;
     const rowW = contentW - 28;
+    const publicMode = this.mode === "public";
 
     if (this.tab === "general") {
-      this._drawRow(ctx, rowX, contentY + 14, rowW, "Oyuncu ID", profile.id || "-");
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 66,
-        rowW,
-        "Seviye / XP",
-        `LVL ${player.level || 1} • ${fmtNum(player.xp || 0)}/${fmtNum(
-          player.xpToNext || 100
-        )} XP`
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 118,
-        rowW,
-        "Seçili Silah",
-        player.weaponName || "Silah Yok"
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 170,
-        rowW,
-        "Leaderboard",
-        `Global #${fmtNum(lb.rankGlobal || 0)} • Haftalık #${fmtNum(
-          lb.rankWeekly || 0
-        )}`
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 222,
-        rowW,
-        "Profil Görünürlüğü",
-        (profile.isPublic ? "Herkese Açık" : "Gizli") +
-          (publicMode ? " • Public görünüm" : " • Sahip görünüm")
-      );
+      this.drawRow(ctx, rowX, contentY + 14, rowW, "Oyuncu ID", profile.id || "-");
+      this.drawRow(ctx, rowX, contentY + 66, rowW, "Seviye / XP", `LVL ${player.level || 1} • ${fmtNum(player.xp || 0)}/${fmtNum(player.xpToNext || 100)} XP`);
+      this.drawRow(ctx, rowX, contentY + 118, rowW, "Seçili Silah", player.weaponName || "Silah Yok");
+      this.drawRow(ctx, rowX, contentY + 170, rowW, "Leaderboard", `Global #${fmtNum(lb.rankGlobal || 0)} • Haftalık #${fmtNum(lb.rankWeekly || 0)}`);
+      this.drawRow(ctx, rowX, contentY + 222, rowW, "Profil Görünürlüğü", `${profile.isPublic ? "Herkese Açık" : "Gizli"} • ${publicMode ? "Public görünüm" : "Sahip görünüm"}`);
 
       if (!publicMode) {
         const toggleRect = { x: rowX, y: contentY + 278, w: rowW, h: 40 };
         this.hit.push({ type: "togglePublic", rect: toggleRect });
-
         ctx.fillStyle = "rgba(242,211,107,0.16)";
         fillRoundRect(ctx, toggleRect.x, toggleRect.y, toggleRect.w, toggleRect.h, 12);
         ctx.strokeStyle = "rgba(242,211,107,0.36)";
-        strokeRoundRect(
-          ctx,
-          toggleRect.x + 0.5,
-          toggleRect.y + 0.5,
-          toggleRect.w - 1,
-          toggleRect.h - 1,
-          12
-        );
-
+        strokeRoundRect(ctx, toggleRect.x + 0.5, toggleRect.y + 0.5, toggleRect.w - 1, toggleRect.h - 1, 12);
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.font = "bold 14px system-ui";
-        ctx.fillText(
-          profile.isPublic ? "Profili Gizliye Al" : "Profili Herkese Aç",
-          toggleRect.x + toggleRect.w / 2,
-          toggleRect.y + 25
-        );
+        ctx.fillText(profile.isPublic ? "Profili Gizliye Al" : "Profili Herkese Aç", toggleRect.x + toggleRect.w / 2, toggleRect.y + 25);
       }
     }
 
@@ -462,108 +361,54 @@ export class ProfileScene {
       const weaponCount = Object.keys(weapons.owned || {}).length;
       const starCount = Object.keys(stars.owned || {}).length;
 
-      this._drawRow(ctx, rowX, contentY + 14, rowW, "Avatar", profile.avatar || "😈");
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 66,
-        rowW,
-        "Silah Envanteri",
-        `${weaponCount} adet • Seçili: ${player.weaponName || "Silah Yok"}`
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 118,
-        rowW,
-        "Yıldız / Genel Ev Koleksiyonu",
-        `${starCount} adet • Seçili: ${stars.selectedId || "Yok"}`
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 170,
-        rowW,
-        "Enerji",
-        `${fmtNum(player.energy || 0)} / ${fmtNum(player.energyMax || 10)}`
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 222,
-        rowW,
-        "Premium İçerik",
-        s.premium ? "Açık" : "Kapalı"
-      );
-
-      if (publicMode) {
-        ctx.fillStyle = "rgba(255,255,255,0.58)";
-        ctx.textAlign = "left";
-        ctx.font = "12px system-ui";
-        ctx.fillText(
-          "Public görünümde yalnızca temel envanter özeti görünür.",
-          rowX,
-          contentY + contentH - 16
-        );
-      }
+      this.drawRow(ctx, rowX, contentY + 14, rowW, "Avatar", profile.avatar || "😈");
+      this.drawRow(ctx, rowX, contentY + 66, rowW, "Silah Envanteri", `${weaponCount} adet • Seçili: ${player.weaponName || "Silah Yok"}`);
+      this.drawRow(ctx, rowX, contentY + 118, rowW, "Yıldız / Koleksiyon", `${starCount} adet • Seçili: ${stars.selectedId || "Yok"}`);
+      this.drawRow(ctx, rowX, contentY + 170, rowW, "Enerji", `${fmtNum(player.energy || 0)} / ${fmtNum(player.energyMax || 10)}`);
+      this.drawRow(ctx, rowX, contentY + 222, rowW, "Premium İçerik", s.premium ? "Açık" : "Kapalı");
     }
 
     if (this.tab === "leaderboard") {
       const wins = Number(lb.pvpWins || 0);
       const losses = Number(lb.pvpLosses || 0);
 
-      this._drawRow(ctx, rowX, contentY + 14, rowW, "Global Sıra", `#${fmtNum(lb.rankGlobal || 0)}`);
-      this._drawRow(ctx, rowX, contentY + 66, rowW, "Haftalık Sıra", `#${fmtNum(lb.rankWeekly || 0)}`);
-      this._drawRow(ctx, rowX, contentY + 118, rowW, "Galibiyet", fmtNum(wins));
-      this._drawRow(ctx, rowX, contentY + 170, rowW, "Mağlubiyet", fmtNum(losses));
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 222,
-        rowW,
-        "Kazanma Oranı",
-        `%${calcWinRate(wins, losses)}`
-      );
+      this.drawRow(ctx, rowX, contentY + 14, rowW, "Global Sıra", `#${fmtNum(lb.rankGlobal || 0)}`);
+      this.drawRow(ctx, rowX, contentY + 66, rowW, "Haftalık Sıra", `#${fmtNum(lb.rankWeekly || 0)}`);
+      this.drawRow(ctx, rowX, contentY + 118, rowW, "Galibiyet", fmtNum(wins));
+      this.drawRow(ctx, rowX, contentY + 170, rowW, "Mağlubiyet", fmtNum(losses));
+      this.drawRow(ctx, rowX, contentY + 222, rowW, "Kazanma Oranı", `%${calcWinRate(wins, losses)}`);
     }
 
     if (this.tab === "wallet") {
       if (publicMode) {
-        this._drawRow(ctx, rowX, contentY + 14, rowW, "Cüzdan", "Gizli");
-        this._drawRow(ctx, rowX, contentY + 66, rowW, "Durum", "Sadece profil sahibi görür");
+        this.drawRow(ctx, rowX, contentY + 14, rowW, "Cüzdan", "Gizli");
+        this.drawRow(ctx, rowX, contentY + 66, rowW, "Durum", "Sadece profil sahibi görür");
       } else {
-        this._drawRow(ctx, rowX, contentY + 14, rowW, "Bağlı Adres", shortAddr(profile.walletAddress));
-        this._drawRow(ctx, rowX, contentY + 66, rowW, "TON Bakiye", `${finance.tonBalance || 0} TON`);
-        this._drawRow(ctx, rowX, contentY + 118, rowW, "YTON Bakiye", `${finance.ytonBalance || 0} YTON`);
-        this._drawRow(
-          ctx,
-          rowX,
-          contentY + 170,
-          rowW,
-          "Çekim Durumu",
-          profile.walletAddress ? "Cüzdan bağlı" : "Cüzdan bağlantısı bekleniyor"
-        );
+        this.drawRow(ctx, rowX, contentY + 14, rowW, "Bağlı Adres", shortAddr(profile.walletAddress));
+        this.drawRow(ctx, rowX, contentY + 66, rowW, "TON Bakiye", `${finance.tonBalance || 0} TON`);
+        this.drawRow(ctx, rowX, contentY + 118, rowW, "YTON Bakiye", `${finance.ytonBalance || 0} YTON`);
+        this.drawRow(ctx, rowX, contentY + 170, rowW, "Çekim Durumu", profile.walletAddress ? "Cüzdan bağlı" : "Cüzdan bağlantısı bekleniyor");
+
+        const connectRect = { x: rowX, y: contentY + 226, w: rowW, h: 42 };
+        this.hit.push({ type: profile.walletAddress ? "walletDisconnect" : "walletConnect", rect: connectRect });
+
+        ctx.fillStyle = "rgba(242,211,107,0.16)";
+        fillRoundRect(ctx, connectRect.x, connectRect.y, connectRect.w, connectRect.h, 12);
+        ctx.strokeStyle = "rgba(242,211,107,0.36)";
+        strokeRoundRect(ctx, connectRect.x + 0.5, connectRect.y + 0.5, connectRect.w - 1, connectRect.h - 1, 12);
+
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 14px system-ui";
+        ctx.fillText(profile.walletAddress ? "Cüzdan Bağlantısını Kaldır" : "TON Cüzdanı Bağla", connectRect.x + connectRect.w / 2, connectRect.y + 26);
       }
     }
 
     if (this.tab === "premium") {
-      this._drawRow(ctx, rowX, contentY + 14, rowW, "Paket", s.premium ? "Premium" : "Standart");
-      this._drawRow(ctx, rowX, contentY + 66, rowW, "Durum", s.premium ? "Aktif" : "Kapalı");
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 118,
-        rowW,
-        "Bitiş",
-        s.premium ? fmtDate(profile.premiumUntil) : "-"
-      );
-      this._drawRow(
-        ctx,
-        rowX,
-        contentY + 170,
-        rowW,
-        "Açıklama",
-        s.premium ? "Premium ayrıcalıkları açık." : "Premium satın alınabilir."
-      );
+      this.drawRow(ctx, rowX, contentY + 14, rowW, "Paket", s.premium ? "Premium" : "Standart");
+      this.drawRow(ctx, rowX, contentY + 66, rowW, "Durum", s.premium ? "Aktif" : "Kapalı");
+      this.drawRow(ctx, rowX, contentY + 118, rowW, "Bitiş", s.premium ? fmtDate(profile.premiumUntil) : "-");
+      this.drawRow(ctx, rowX, contentY + 170, rowW, "Açıklama", s.premium ? "Premium ayrıcalıkları açık." : "Premium satın alınabilir.");
 
       if (!publicMode) {
         const btnRect = { x: rowX, y: contentY + 224, w: rowW, h: 42 };
@@ -572,56 +417,27 @@ export class ProfileScene {
         ctx.fillStyle = "rgba(242,211,107,0.16)";
         fillRoundRect(ctx, btnRect.x, btnRect.y, btnRect.w, btnRect.h, 12);
         ctx.strokeStyle = "rgba(242,211,107,0.36)";
-        strokeRoundRect(
-          ctx,
-          btnRect.x + 0.5,
-          btnRect.y + 0.5,
-          btnRect.w - 1,
-          btnRect.h - 1,
-          12
-        );
+        strokeRoundRect(ctx, btnRect.x + 0.5, btnRect.y + 0.5, btnRect.w - 1, btnRect.h - 1, 12);
 
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.font = "bold 14px system-ui";
-        ctx.fillText(
-          s.premium ? "Premium'u Kapat (Test)" : "Premium'u Aç (Test)",
-          btnRect.x + btnRect.w / 2,
-          btnRect.y + 26
-        );
+        ctx.fillText(s.premium ? "Premium'u Kapat (Test)" : "Premium'u Aç (Test)", btnRect.x + btnRect.w / 2, btnRect.y + 26);
       }
     }
 
     if (this.tab === "finance") {
       if (publicMode) {
-        this._drawRow(ctx, rowX, contentY + 14, rowW, "Finans", "Gizli");
-        this._drawRow(
-          ctx,
-          rowX,
-          contentY + 66,
-          rowW,
-          "Not",
-          "Gelir-gider detayları sadece profil sahibine görünür."
-        );
+        this.drawRow(ctx, rowX, contentY + 14, rowW, "Finans", "Gizli");
+        this.drawRow(ctx, rowX, contentY + 66, rowW, "Not", "Gelir-gider detayları sadece profil sahibine görünür.");
       } else {
-        this._drawRow(ctx, rowX, contentY + 14, rowW, "Toplam TON Gelir", `${finance.totalIncomeTon || 0} TON`);
-        this._drawRow(ctx, rowX, contentY + 66, rowW, "Toplam TON Gider", `${finance.totalExpenseTon || 0} TON`);
-        this._drawRow(ctx, rowX, contentY + 118, rowW, "Toplam YTON Gelir", `${finance.totalIncomeYton || 0} YTON`);
-        this._drawRow(ctx, rowX, contentY + 170, rowW, "Toplam YTON Gider", `${finance.totalExpenseYton || 0} YTON`);
+        this.drawRow(ctx, rowX, contentY + 14, rowW, "Toplam TON Gelir", `${finance.totalIncomeTon || 0} TON`);
+        this.drawRow(ctx, rowX, contentY + 66, rowW, "Toplam TON Gider", `${finance.totalExpenseTon || 0} TON`);
+        this.drawRow(ctx, rowX, contentY + 118, rowW, "Toplam YTON Gelir", `${finance.totalIncomeYton || 0} YTON`);
+        this.drawRow(ctx, rowX, contentY + 170, rowW, "Toplam YTON Gider", `${finance.totalExpenseYton || 0} YTON`);
 
-        const last =
-          Array.isArray(finance.history) && finance.history.length
-            ? finance.history[0]
-            : null;
-
-        this._drawRow(
-          ctx,
-          rowX,
-          contentY + 222,
-          rowW,
-          "Son Hareket",
-          last ? `${last.label || last.type || "İşlem"} • ${fmtDate(last.ts)}` : "Henüz kayıt yok"
-        );
+        const last = Array.isArray(finance.history) && finance.history.length ? finance.history[0] : null;
+        this.drawRow(ctx, rowX, contentY + 222, rowW, "Son Hareket", last ? `${last.label || last.type || "İşlem"} • ${fmtDate(last.ts)}` : "Henüz kayıt yok");
       }
     }
 
@@ -630,33 +446,15 @@ export class ProfileScene {
       const visible = pvpHistory.slice(0, rows);
 
       if (!visible.length) {
-        this._drawRow(ctx, rowX, contentY + 14, rowW, "Kayıt", "Henüz PvP geçmişi yok");
+        this.drawRow(ctx, rowX, contentY + 14, rowW, "Kayıt", "Henüz PvP geçmişi yok");
       } else {
         visible.forEach((match, i) => {
           const result = match.result === "win" ? "Kazandı" : "Kaybetti";
           const opp = match.opponentName || "Rakip";
           const reward = match.rewardCoin ? ` • +${match.rewardCoin} coin` : "";
-          this._drawRow(
-            ctx,
-            rowX,
-            contentY + 14 + i * 52,
-            rowW,
-            `${i + 1}. Maç`,
-            `${result} • ${opp}${reward}`
-          );
+          this.drawRow(ctx, rowX, contentY + 14 + i * 52, rowW, `${i + 1}. Maç`, `${result} • ${opp}${reward}`);
         });
       }
-
-      ctx.fillStyle = "rgba(255,255,255,0.56)";
-      ctx.textAlign = "left";
-      ctx.font = "12px system-ui";
-      ctx.fillText(
-        publicMode
-          ? "Public görünümde son maç özetleri görünür."
-          : "Sahip görünümünde daha fazla maç detayı gösterilir.",
-        rowX,
-        contentY + contentH - 16
-      );
     }
   }
 }
