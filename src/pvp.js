@@ -9,7 +9,6 @@
     window.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
-  // ---- Layout helpers (CSS yerine JS ile boyutlandırma) ----
   function injectBaseStyleOnce(arenaId) {
     const styleId = "tc-pvp-style";
     if (document.getElementById(styleId)) return;
@@ -22,15 +21,142 @@
   user-select:none !important;
   -webkit-user-select:none !important;
 
-  /* arena panel içinde boşluğu doldursun */
+  width:100% !important;
   flex:1 1 auto !important;
-  min-height:0 !important;
-  height:auto !important;
+  min-height:280px !important;
+  height:100% !important;
 
-  /* ikinci glass hissini azalt */
-  background:transparent !important;
+  border-radius:14px !important;
+  border:1px solid rgba(255,255,255,0.08) !important;
+
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255,140,40,0.10) 0%, rgba(255,120,20,0.04) 18%, rgba(0,0,0,0.00) 38%),
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.00) 48%),
+    linear-gradient(180deg, rgba(8,10,16,0.94) 0%, rgba(3,4,8,0.98) 100%) !important;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.03),
+    inset 0 -30px 70px rgba(0,0,0,0.55),
+    inset 0 20px 40px rgba(255,255,255,0.02),
+    0 10px 30px rgba(0,0,0,0.35) !important;
 }
-#${arenaId} .action{ box-sizing:border-box; touch-action:manipulation; }
+
+#${arenaId}::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border-radius:inherit;
+  z-index:0;
+  background:
+    radial-gradient(circle at center, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.015) 20%, rgba(255,255,255,0) 55%),
+    linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.00) 24%, rgba(0,0,0,0.18) 100%);
+}
+
+#${arenaId}::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border-radius:inherit;
+  z-index:0;
+  background:
+    radial-gradient(circle at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.22) 74%, rgba(0,0,0,0.42) 100%);
+}
+
+#${arenaId} .tc-pvp-stage{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+}
+
+#${arenaId} .tc-pvp-stage .tc-pvp-glow{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:220px;
+  height:220px;
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:
+    radial-gradient(circle, rgba(255,140,40,0.14) 0%, rgba(255,120,10,0.06) 35%, rgba(255,120,10,0.00) 70%);
+  filter: blur(10px);
+  opacity:.9;
+}
+
+#${arenaId} .tc-pvp-stage .tc-pvp-grid{
+  position:absolute;
+  inset:0;
+  opacity:.10;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 44px 44px, 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.05), rgba(0,0,0,.5), rgba(0,0,0,.85));
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.05), rgba(0,0,0,.5), rgba(0,0,0,.85));
+}
+
+#${arenaId} .tc-pvp-hitflash{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border-radius:inherit;
+  opacity:0;
+  transition: opacity 120ms ease;
+  z-index:2;
+}
+
+#${arenaId} .tc-pvp-hitflash.on{
+  opacity:1;
+}
+
+#${arenaId} .tc-pvp-hitflash.enemy{
+  background: radial-gradient(circle at 50% 45%, rgba(255,70,70,0.16) 0%, rgba(255,70,70,0.06) 25%, rgba(255,70,70,0.00) 58%);
+}
+
+#${arenaId} .tc-pvp-hitflash.me{
+  background: radial-gradient(circle at 50% 55%, rgba(100,180,255,0.14) 0%, rgba(100,180,255,0.06) 25%, rgba(100,180,255,0.00) 58%);
+}
+
+#${arenaId} .action{
+  box-sizing:border-box;
+  touch-action:manipulation;
+  z-index:3;
+  box-shadow:
+    0 8px 24px rgba(0,0,0,.35),
+    inset 0 1px 0 rgba(255,255,255,.12);
+}
+
+#${arenaId} .action .emoji{
+  filter: drop-shadow(0 3px 10px rgba(0,0,0,.45));
+}
+
+#${arenaId} .tc-pvp-fx{
+  position:absolute;
+  pointer-events:none;
+  z-index:4;
+  width:22px;
+  height:22px;
+  left:0;
+  top:0;
+  border-radius:50%;
+  background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,170,80,.75) 35%, rgba(255,120,20,0) 70%);
+  transform: translate(-50%, -50%) scale(.4);
+  opacity:0;
+  animation: tcPvpFx .28s ease-out forwards;
+}
+
+@keyframes tcPvpFx{
+  0%{
+    opacity:.95;
+    transform: translate(-50%, -50%) scale(.35);
+  }
+  100%{
+    opacity:0;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+}
 `;
     const st = document.createElement("style");
     st.id = styleId;
@@ -38,95 +164,78 @@
     document.head.appendChild(st);
   }
 
-  function isLikelyGlass(el) {
-    if (!el) return false;
-    const cs = getComputedStyle(el);
-    const bg = cs.backgroundColor || "";
-    const bf = cs.backdropFilter || cs.webkitBackdropFilter || "";
-    const br = cs.borderTopColor || "";
-    const hasTransBg =
-      bg.includes("rgba") && !bg.includes("rgba(0, 0, 0, 0)") && !bg.includes("rgba(0,0,0,0)");
-    const hasBlur = bf && bf !== "none";
-    const hasBorder = br && br !== "transparent";
-    return hasTransBg || hasBlur || hasBorder;
-  }
-
-  function killGlass(el) {
-    if (!el) return;
-    el.style.background = "transparent";
-    el.style.border = "0";
-    el.style.boxShadow = "none";
-    el.style.backdropFilter = "none";
-    el.style.webkitBackdropFilter = "none";
-  }
-
-  function enforceFlexColumn(panelEl) {
-    if (!panelEl) return;
-    const cs = getComputedStyle(panelEl);
-    const isFlex = cs.display.includes("flex");
-    if (!isFlex) panelEl.style.display = "flex";
-    panelEl.style.flexDirection = "column";
-    // flex çocuklarında taşma bug fix
-    Array.from(panelEl.children).forEach((ch) => {
-      if (ch && ch.style) ch.style.minHeight = "0";
-    });
-  }
-
-  function findAncestor(el, maxHops, predicate) {
-    let cur = el;
-    for (let i = 0; i < maxHops && cur; i++) {
-      if (predicate(cur)) return cur;
-      cur = cur.parentElement;
-    }
-    return null;
-  }
-
-  function applyArenaLayout(arena, opts = {}) {
+  function ensureArenaDecor(arena) {
     if (!arena) return;
 
-    // arena kesin
-    arena.style.position = "relative";
-    arena.style.overflow = "hidden";
-    arena.style.flex = "1 1 auto";
-    arena.style.minHeight = "0";
-    arena.style.height = "auto";
-    arena.style.background = "transparent";
-
-    // (A) Arena wrap (arena'nın bir üstü) varsa: ikinci transparanı öldür
-    let arenaWrap = null;
-    if (opts.arenaWrapId) arenaWrap = $(opts.arenaWrapId);
-    if (!arenaWrap) arenaWrap = arena.parentElement;
-
-    // Eğer wrap gerçekten glass ise kapat (çift transparan çözümü)
-    if (arenaWrap && isLikelyGlass(arenaWrap)) {
-      killGlass(arenaWrap);
+    let stage = arena.querySelector(".tc-pvp-stage");
+    if (!stage) {
+      stage = document.createElement("div");
+      stage.className = "tc-pvp-stage";
+      stage.innerHTML = `
+        <div class="tc-pvp-glow"></div>
+        <div class="tc-pvp-grid"></div>
+      `;
+      arena.appendChild(stage);
     }
 
-    // (B) Panel (wrap'ın üstü) flex-column olmalı ki arena boşluğu doldursun
-    let panel = null;
-    if (opts.panelId) panel = $(opts.panelId);
-
-    if (!panel) {
-      // id/class içinde "pvp" geçen ilk mantıklı container’ı yakala
-      panel = findAncestor(arena, 8, (x) => {
-        if (!x || !x.id) return false;
-        const id = (x.id || "").toLowerCase();
-        const cls = (x.className || "").toString().toLowerCase();
-        return id.includes("pvp") || cls.includes("pvp");
-      });
+    let flashEnemy = arena.querySelector(".tc-pvp-hitflash.enemy");
+    if (!flashEnemy) {
+      flashEnemy = document.createElement("div");
+      flashEnemy.className = "tc-pvp-hitflash enemy";
+      arena.appendChild(flashEnemy);
     }
 
-    // panel bulamazsa, wrap’ın parent’ını panel kabul et
-    if (!panel && arenaWrap) panel = arenaWrap.parentElement;
-
-    if (panel) enforceFlexColumn(panel);
-
-    // (C) Eğer hem panel hem wrap glass ise, glass sadece panelde kalsın:
-    // wrap’ı zaten öldürdük; paneli elleme (ana glass kalsın).
-    // Ama tersiyse: panel değil wrap glass ise, wrap’ı ana panel sayıp paneli öldürme yok.
+    let flashMe = arena.querySelector(".tc-pvp-hitflash.me");
+    if (!flashMe) {
+      flashMe = document.createElement("div");
+      flashMe.className = "tc-pvp-hitflash me";
+      arena.appendChild(flashMe);
+    }
   }
 
-  // ---- PVP core ----
+  function forceArenaLayout(arena) {
+    if (!arena) return;
+
+    const wrap = arena.parentElement;
+    if (!wrap) {
+      arena.style.minHeight = "280px";
+      arena.style.height = "280px";
+      ensureArenaDecor(arena);
+      return;
+    }
+
+    // ÖNEMLİ: pvpWrap'ı bozma, sadece layout ver
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.alignItems = "stretch";
+
+    const totalH = wrap.clientHeight || wrap.getBoundingClientRect().height || 0;
+
+    const siblings = Array.from(wrap.children).filter((el) => el !== arena);
+    let usedH = 0;
+
+    for (const el of siblings) {
+      const cs = getComputedStyle(el);
+      if (cs.display === "none") continue;
+      usedH += el.offsetHeight;
+      usedH += parseFloat(cs.marginTop || 0);
+      usedH += parseFloat(cs.marginBottom || 0);
+    }
+
+    const wrapCs = getComputedStyle(wrap);
+    const padTop = parseFloat(wrapCs.paddingTop || 0);
+    const padBottom = parseFloat(wrapCs.paddingBottom || 0);
+
+    const freeH = Math.max(280, Math.floor(totalH - usedH - padTop - padBottom - 8));
+
+    arena.style.flex = "1 1 auto";
+    arena.style.width = "100%";
+    arena.style.minHeight = freeH + "px";
+    arena.style.height = freeH + "px";
+
+    ensureArenaDecor(arena);
+  }
+
   const PVP = {
     _inited: false,
     _els: null,
@@ -137,7 +246,6 @@
     _meHp: 100,
     _enemyHp: 100,
     _lastZone: -1,
-    _layoutOpts: null,
 
     init(opts = {}) {
       const ids = {
@@ -161,23 +269,19 @@
         return;
       }
 
-      this._layoutOpts = {
-        panelId: opts.panelId || null,
-        arenaWrapId: opts.arenaWrapId || null,
-      };
-
       injectBaseStyleOnce(ids.arenaId);
 
       this._els = { arena, status, enemyFill, meFill, enemyHpText, meHpText };
       this._inited = true;
 
-      arena.innerHTML = "";
-      arena.style.userSelect = "none";
-
-      // init anında layout zorla (çift transparan + taşma fix)
-      applyArenaLayout(arena, this._layoutOpts);
-
+      forceArenaLayout(arena);
       this.reset();
+
+      window.addEventListener("resize", () => {
+        if (!this._els?.arena) return;
+        forceArenaLayout(this._els.arena);
+      });
+
       console.log("[TonCrimePVP] init OK");
     },
 
@@ -188,49 +292,50 @@
     },
 
     start() {
-      if (!this._inited) return;
-      if (this._running) return;
+      if (!this._inited || this._running) return;
 
       this.reset();
+      forceArenaLayout(this._els.arena);
 
-      this._running = true;
-      this._setStatus("Savaş • " + this._opp.username);
+      requestAnimationFrame(() => {
+        forceArenaLayout(this._els.arena);
+        this._running = true;
+        this._setStatus("Savaş • " + this._opp.username);
+        this._spawnActions();
+        this._enemyLoop();
+      });
+    },
 
-      this._spawnActions();
+    _enemyLoop() {
+      if (!this._running) return;
 
-      const tick = () => {
+      const botDelay = 850 + Math.floor(Math.random() * 350);
+
+      clearTimeout(this._tickT);
+      this._tickT = setTimeout(() => {
         if (!this._running) return;
 
-        const botDelay = 850 + Math.floor(Math.random() * 350);
+        const dmg = 6 + Math.floor(Math.random() * 7);
+        this._meHp = clamp(this._meHp - dmg, 0, 100);
+        this._renderBars();
+        this._flashDamage("me");
 
-        clearTimeout(this._tickT);
-        this._tickT = setTimeout(() => {
-          if (!this._running) return;
+        if (this._meHp <= 0) {
+          this._finish("lose");
+          return;
+        }
 
-          const dmg = 6 + Math.floor(Math.random() * 7);
-
-          this._meHp = clamp(this._meHp - dmg, 0, 100);
-          this._renderBars();
-
-          if (this._meHp <= 0) {
-            this._finish("lose");
-            return;
-          }
-
-          tick();
-        }, botDelay);
-      };
-
-      tick();
+        this._enemyLoop();
+      }, botDelay);
     },
 
     stop() {
       this._running = false;
       clearTimeout(this._tickT);
       this._tickT = null;
-
       this._clearActions();
       this._setStatus("Durduruldu");
+      forceArenaLayout(this._els.arena);
     },
 
     reset() {
@@ -238,13 +343,14 @@
 
       this._running = false;
       clearTimeout(this._tickT);
+      this._tickT = null;
 
       this._meHp = 100;
       this._enemyHp = 100;
-
       this._lastZone = -1;
 
       this._clearActions();
+      forceArenaLayout(this._els.arena);
       this._renderBars();
       this._setStatus("Hazır");
     },
@@ -256,7 +362,6 @@
 
     _renderBars() {
       const e = this._els;
-
       const me = clamp(this._meHp, 0, 100);
       const en = clamp(this._enemyHp, 0, 100);
 
@@ -269,11 +374,10 @@
 
     _finish(result) {
       this._running = false;
-
       clearTimeout(this._tickT);
       this._tickT = null;
-
       this._clearActions();
+      forceArenaLayout(this._els.arena);
 
       if (result === "win") {
         this._setStatus("Kazandın");
@@ -290,46 +394,71 @@
       clearTimeout(this._flashT);
       this._flashT = null;
 
-      this._els.arena.innerHTML = "";
+      const arena = this._els.arena;
+      arena.querySelectorAll(".action, .tc-pvp-fx").forEach((el) => el.remove());
+      ensureArenaDecor(arena);
+      forceArenaLayout(arena);
+    },
+
+    _flashDamage(side) {
+      const arena = this._els?.arena;
+      if (!arena) return;
+
+      const el =
+        side === "enemy"
+          ? arena.querySelector(".tc-pvp-hitflash.enemy")
+          : arena.querySelector(".tc-pvp-hitflash.me");
+
+      if (!el) return;
+
+      el.classList.remove("on");
+      void el.offsetWidth;
+      el.classList.add("on");
+
+      clearTimeout(el._offT);
+      el._offT = setTimeout(() => el.classList.remove("on"), 120);
+    },
+
+    _spawnFx(x, y) {
+      const arena = this._els?.arena;
+      if (!arena) return;
+
+      const fx = document.createElement("div");
+      fx.className = "tc-pvp-fx";
+      fx.style.left = `${x}px`;
+      fx.style.top = `${y}px`;
+      arena.appendChild(fx);
+
+      setTimeout(() => fx.remove(), 320);
     },
 
     _spawnActions() {
       const arena = this._els.arena;
 
-      // her start’ta layout tekrar uygula (bazı overlay aç/kapa akışlarında DOM style resetleniyor)
-      applyArenaLayout(arena, this._layoutOpts);
-
-      arena.style.position = "relative";
-      arena.style.overflow = "hidden";
-      arena.innerHTML = "";
+      forceArenaLayout(arena);
+      this._clearActions();
 
       const actions = [
         { key: "punch", emoji: "👊", dmg: [10, 16] },
-        { key: "kick",  emoji: "🦵", dmg: [8, 18] },
-        { key: "head",  emoji: "🧠", dmg: [12, 14] },
-        { key: "slap",  emoji: "🖐️", dmg: [7, 13] },
+        { key: "kick", emoji: "🦵", dmg: [8, 18] },
+        { key: "head", emoji: "🧠", dmg: [12, 14] },
+        { key: "slap", emoji: "🖐️", dmg: [7, 13] },
       ];
 
-const size = 64;
-
-const s = window.tcStore?.get?.() ?? {};
-const pct = Number(s.player?.weaponIconBonusPct ?? 0);
-
-// ikon süresi (base 500ms)
-const showMs = Math.round(500 * (1 + Math.max(0, Math.min(200, pct)) / 100));
-
-const gapMs = 120;
-const pad = 12;
+      const size = 64;
+      const s = window.tcStore?.get?.() ?? {};
+      const pct = Number(s.player?.weaponIconBonusPct ?? 0);
+      const showMs = Math.round(500 * (1 + Math.max(0, Math.min(200, pct)) / 100));
+      const gapMs = 120;
+      const pad = 12;
 
       const zones = [
         { x0: 0.05, x1: 0.33, y0: 0.05, y1: 0.33 },
         { x0: 0.33, x1: 0.66, y0: 0.05, y1: 0.33 },
         { x0: 0.66, x1: 0.95, y0: 0.05, y1: 0.33 },
-
         { x0: 0.05, x1: 0.33, y0: 0.33, y1: 0.66 },
         { x0: 0.33, x1: 0.66, y0: 0.33, y1: 0.66 },
         { x0: 0.66, x1: 0.95, y0: 0.33, y1: 0.66 },
-
         { x0: 0.05, x1: 0.33, y0: 0.66, y1: 0.95 },
         { x0: 0.33, x1: 0.66, y0: 0.66, y1: 0.95 },
         { x0: 0.66, x1: 0.95, y0: 0.66, y1: 0.95 },
@@ -348,7 +477,8 @@ const pad = 12;
       const spawnOnce = () => {
         if (!this._running) return;
 
-        arena.innerHTML = "";
+        arena.querySelectorAll(".action").forEach((el) => el.remove());
+        forceArenaLayout(arena);
 
         const W = arena.clientWidth || arena.getBoundingClientRect().width;
         const H = arena.clientHeight || arena.getBoundingClientRect().height;
@@ -369,7 +499,6 @@ const pad = 12;
 
         const minX = clamp(zx0 + pad, pad, Math.max(pad, W - pad - size));
         const maxX = clamp(zx1 - pad - size, minX, Math.max(minX, W - pad - size));
-
         const minY = clamp(zy0 + pad, pad, Math.max(pad, H - pad - size));
         const maxY = clamp(zy1 - pad - size, minY, Math.max(minY, H - pad - size));
 
@@ -389,15 +518,16 @@ const pad = 12;
         d.style.alignItems = "center";
         d.style.justifyContent = "center";
         d.style.cursor = "pointer";
-        d.style.borderRadius = "14px";
-
-        // ikon kutusu mini-glass kalabilir
-        d.style.background = "rgba(0,0,0,.22)";
+        d.style.borderRadius = "16px";
+        d.style.background = `
+          radial-gradient(circle at 30% 25%, rgba(255,255,255,.14) 0%, rgba(255,255,255,.04) 24%, rgba(255,255,255,0) 54%),
+          linear-gradient(180deg, rgba(30,34,44,.82) 0%, rgba(8,10,16,.92) 100%)
+        `;
         d.style.backdropFilter = "blur(6px)";
         d.style.webkitBackdropFilter = "blur(6px)";
         d.style.border = "1px solid rgba(255,255,255,.14)";
         d.style.transform = "translateZ(0)";
-
+        d.style.transition = "transform 90ms ease, opacity 90ms ease";
         d.innerHTML = `<div class="emoji" style="font-size:34px; line-height:1;">${a.emoji}</div>`;
 
         const hit = (ev) => {
@@ -408,11 +538,18 @@ const pad = 12;
           const dmg = a.dmg[0] + Math.floor(Math.random() * (a.dmg[1] - a.dmg[0] + 1));
           this._enemyHp = clamp(this._enemyHp - dmg, 0, 100);
           this._renderBars();
+          this._flashDamage("enemy");
+          this._spawnFx(x + size / 2, y + size / 2);
 
-          d.style.transform = "scale(0.96) translateZ(0)";
-          setTimeout(() => (d.style.transform = "translateZ(0)"), 90);
+          d.style.transform = "scale(0.92) translateZ(0)";
+          setTimeout(() => {
+            d.style.transform = "translateZ(0)";
+          }, 90);
 
-          if (this._enemyHp <= 0) this._finish("win");
+          if (this._enemyHp <= 0) {
+            this._finish("win");
+            return;
+          }
         };
 
         d.addEventListener("click", hit, { passive: false });
@@ -423,8 +560,14 @@ const pad = 12;
         clearTimeout(this._flashT);
         this._flashT = setTimeout(() => {
           if (!this._running) return;
-          arena.innerHTML = "";
-          this._flashT = setTimeout(spawnOnce, gapMs);
+
+          d.style.opacity = "0";
+          d.style.transform = "scale(0.92) translateZ(0)";
+
+          setTimeout(() => {
+            d.remove();
+            this._flashT = setTimeout(spawnOnce, gapMs);
+          }, 90);
         }, showMs);
       };
 
