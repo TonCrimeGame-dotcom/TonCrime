@@ -1,4 +1,5 @@
 export function startHud(store) {
+  const hudTop = document.getElementById("hudTop");
   const elUsername = document.getElementById("hudUsername");
   const elCoins = document.getElementById("hudCoins");
   const elWeaponName = document.getElementById("hudWeaponName");
@@ -9,6 +10,7 @@ export function startHud(store) {
   const elEnergyText = document.getElementById("hudEnergyText");
 
   if (
+    !hudTop ||
     !elUsername ||
     !elCoins ||
     !elWeaponName ||
@@ -34,6 +36,9 @@ export function startHud(store) {
   function loop() {
     const s = store.get();
     const p = s.player || {};
+    const currentScene = window.tcScenes?._currentKey || "";
+
+    hudTop.style.display = currentScene === "profile" ? "none" : "";
 
     elUsername.textContent = p.username ?? "Player";
     elCoins.textContent = `Coin: ${s.coins ?? 0}`;
@@ -59,4 +64,4 @@ export function startHud(store) {
   }
 
   loop();
-      }
+}
