@@ -108,46 +108,86 @@ function createDefaultBossState(clanLevel = 1) {
 function ensureBossState(clan) {
   if (!clan) return null;
 
-  if (!clan.boss) {
-    clan.boss = {
-      season: 0,
-      raidId: null,
-      name: "SOKAK KRALI",
-      title: "Clan Boss",
-      status: "idle",
-      level: 1,
-      maxHp: 0,
-      hp: 0,
-      startedAt: 0,
-      endsAt: 0,
-      totalDamage: 0,
-      totalSpins: 0,
-      dailySpinLimit: 5,
-      energyPerSpin: 6,
-      lastResult: null,
-      recentResults: [],
-      participants: {},
-      rewards: {
-        killCash: 25000,
-        killCoins: 250,
-        contributionCashPer100: 150,
-        contributionXpPer100: 8,
-      },
-    };
-  }
-
-  if (!clan.boss.participants) clan.boss.participants = {};
-  if (!Array.isArray(clan.boss.recentResults)) clan.boss.recentResults = [];
-  if (!clan.boss.rewards) {
-    clan.boss.rewards = {
+  const fallback = {
+    season: 0,
+    raidId: null,
+    name: "SOKAK KRALI",
+    title: "Clan Boss",
+    status: "idle",
+    level: 1,
+    maxHp: 0,
+    hp: 0,
+    startedAt: 0,
+    endsAt: 0,
+    totalDamage: 0,
+    totalSpins: 0,
+    dailySpinLimit: 5,
+    energyPerSpin: 6,
+    lastResult: null,
+    recentResults: [],
+    participants: {},
+    rewards: {
       killCash: 25000,
       killCoins: 250,
       contributionCashPer100: 150,
       contributionXpPer100: 8,
+    },
+  };
+
+  if (!clan.boss) {
+    clan.boss = { ...fallback };
+  } else {
+    clan.boss = {
+      ...fallback,
+      ...clan.boss,
+      rewards: {
+        ...fallback.rewards,
+        ...(clan.boss.rewards || {}),
+      },
     };
   }
 
   const boss = clan.boss;
+
+  if (!boss.participants || typeof boss.participants !== "object") {
+    boss.participants = {};
+  }
+
+  if (!Array.isArray(boss.recentResults)) {
+    boss.recentResults = [];
+  }
+
+  if (!boss.raidId && String(boss.status || "").toLowerCase() === "active") {
+    boss.raidId = makeId("bossraid");
+  }
+
+  if (!["idle", "active", "defeated", "expired"].includes(String(boss.status || "").toLowerCase())) {
+    boss.status = Number(boss.hp || 0) > 0 ? "active" : "idle";
+  }
+
+  boss.status = String(boss.status || "idle").toLowerCase();
+
+  boss.season = Math.max(0, Number(boss.season || 0));
+  boss.level = Math.max(1, Number(boss.level || clan.level || 1));
+  boss.maxHp = Math.max(0, Number(boss.maxHp || 0));
+  boss.hp = Math.max(0, Number(boss.hp || 0));
+  boss.startedAt = Math.max(0, Number(boss.startedAt || 0));
+  boss.endsAt = Math.max(0, Number(boss.endsAt || 0));
+  boss.totalDamage = Math.max(0, Number(boss.totalDamage || 0));
+  boss.totalSpins = Math.max(0, Number(boss.totalSpins || 0));
+
+  boss.dailySpinLimit = Math.max(1, Number(boss.dailySpinLimit || 5));
+  boss.energyPerSpin = Math.max(1, Number(boss.energyPerSpin || 6));
+
+  if (boss.status === "active" && boss.maxHp <= 0) {
+    const fresh = createDefaultBossState(clan.level || 1);
+    clan.boss = {
+      ...fresh,
+      season: Math.max(1, Number(boss.season || 1)),
+      name: boss.name || fresh.name,
+    };
+    return clan.boss;
+  }
 
   if (boss.status === "active" && boss.endsAt > 0 && now() > boss.endsAt && boss.hp > 0) {
     boss.status = "expired";
@@ -158,6 +198,7 @@ function ensureBossState(clan) {
 
 function ensureBossParticipant(clan, playerId = "player_main", playerName = "Player") {
   const boss = ensureBossState(clan);
+
   if (!boss.participants[playerId]) {
     boss.participants[playerId] = {
       playerId,
@@ -174,10 +215,18 @@ function ensureBossParticipant(clan, playerId = "player_main", playerName = "Pla
 
   const p = boss.participants[playerId];
   const today = dayKey();
+
   if (p.lastSpinDay !== today) {
     p.spinsToday = 0;
     p.lastSpinDay = today;
   }
+
+  if (typeof p.totalDamage !== "number") p.totalDamage = 0;
+  if (typeof p.spinsToday !== "number") p.spinsToday = 0;
+  if (typeof p.bestHit !== "number") p.bestHit = 0;
+  if (!p.bestCombo) p.bestCombo = "-";
+  if (!Array.isArray(p.lastSymbols)) p.lastSymbols = [];
+  if (!Array.isArray(p.rewardClaimedSeasons)) p.rewardClaimedSeasons = [];
 
   return p;
 }
@@ -581,13 +630,29 @@ export class ClanSystem {
       const playerName = state.player?.name || state.player?.username || "Player";
       const playerEnergy = Number(state.player?.energy || 0);
 
-      if (boss.status === "idle" || boss.status === "expired") {
+      if (
+        boss.status === "idle" ||
+        boss.status === "expired" ||
+        boss.maxHp <= 0 ||
+        boss.dailySpinLimit <= 0 ||
+        boss.energyPerSpin <= 0
+      ) {
+        const nextSeason =
+          Math.max(1, Number(boss.season || 0) + (boss.status === "idle" || boss.status === "expired" ? 1 : 0));
+
         clan.boss = createDefaultBossState(clan.level || 1);
-        clan.boss.season = Number(boss.season || 0) + 1;
-        clan.boss.name = `SOKAK KRALI ${clan.boss.season}`;
+        clan.boss.season = nextSeason;
+        clan.boss.name = `SOKAK KRALI ${nextSeason}`;
       }
 
-      if (clan.boss.status !== "active") return state;
+      if (clan.boss.status !== "active") {
+        clan.boss.lastResult = {
+          ok: false,
+          reason: "BOSS_NOT_ACTIVE",
+          message: "Boss aktif değil.",
+        };
+        return state;
+      }
 
       const me = ensureBossParticipant(clan, "player_main", playerName);
 
@@ -621,16 +686,26 @@ export class ClanSystem {
       const attackBonus = 1 + clanAttackBonus / 100;
       const stunBonus = comboData.stun ? 1.1 : 1.0;
 
-      const rawDamage = (base + comboData.flat) * comboData.multiplier * powerBonus * attackBonus * stunBonus;
+      const rawDamage =
+        (base + comboData.flat) *
+        comboData.multiplier *
+        powerBonus *
+        attackBonus *
+        stunBonus;
+
       const damage = Math.max(1, Math.floor(rawDamage));
 
-      state.player.energy = Math.max(0, playerEnergy - Number(clan.boss.energyPerSpin || 6));
-      clan.boss.hp = Math.max(0, Number(clan.boss.hp || 0) - damage);
-      clan.boss.totalDamage = Number(clan.boss.totalDamage || 0) + damage;
-      clan.boss.totalSpins = Number(clan.boss.totalSpins || 0) + 1;
+      state.player.energy = Math.max(
+        0,
+        playerEnergy - Number(clan.boss.energyPerSpin || 6)
+      );
 
-      me.spinsToday += 1;
-      me.totalDamage = Number(me.totalDamage || 0) + damage;
+      clan.boss.hp = Math.max(0, Number(clan.boss.hp || 0) - damage);
+      clan.boss.totalDamage = Math.max(0, Number(clan.boss.totalDamage || 0)) + damage;
+      clan.boss.totalSpins = Math.max(0, Number(clan.boss.totalSpins || 0)) + 1;
+
+      me.spinsToday = Math.max(0, Number(me.spinsToday || 0)) + 1;
+      me.totalDamage = Math.max(0, Number(me.totalDamage || 0)) + damage;
       me.bestHit = Math.max(Number(me.bestHit || 0), damage);
       me.bestCombo =
         damage >= Number(me.bestHit || 0) ? comboData.combo : me.bestCombo || comboData.combo;
@@ -662,7 +737,11 @@ export class ClanSystem {
         clan.boss.recentResults.length = 12;
       }
 
-      addLog(clan, "boss", `${playerName} ${comboData.combo} ile boss'a ${damage.toLocaleString("tr-TR")} hasar vurdu.`);
+      addLog(
+        clan,
+        "boss",
+        `${playerName} ${comboData.combo} ile boss'a ${damage.toLocaleString("tr-TR")} hasar vurdu.`
+      );
 
       const gainedXp = Math.max(5, Math.floor(damage / 12));
       clan.xp = Number(clan.xp || 0) + gainedXp;
@@ -705,16 +784,20 @@ export class ClanSystem {
       readStoreState(store)?.player?.name || readStoreState(store)?.player?.username || "Player"
     );
 
+    const dailySpinLimit = Math.max(1, Number(boss.dailySpinLimit || 5));
+    const energyPerSpin = Math.max(1, Number(boss.energyPerSpin || 6));
+    const spinsUsedToday = Math.max(0, Number(me.spinsToday || 0));
+
     return {
-      bossStatus: boss.status,
-      bossHp: boss.hp,
-      bossMaxHp: boss.maxHp,
-      dailySpinLimit: boss.dailySpinLimit,
-      spinsUsedToday: me.spinsToday,
-      spinsLeft: Math.max(0, Number(boss.dailySpinLimit || 5) - Number(me.spinsToday || 0)),
-      energyPerSpin: boss.energyPerSpin,
-      totalDamage: me.totalDamage || 0,
-      bestHit: me.bestHit || 0,
+      bossStatus: boss.status || "idle",
+      bossHp: Math.max(0, Number(boss.hp || 0)),
+      bossMaxHp: Math.max(0, Number(boss.maxHp || 0)),
+      dailySpinLimit,
+      spinsUsedToday,
+      spinsLeft: Math.max(0, dailySpinLimit - spinsUsedToday),
+      energyPerSpin,
+      totalDamage: Math.max(0, Number(me.totalDamage || 0)),
+      bestHit: Math.max(0, Number(me.bestHit || 0)),
       bestCombo: me.bestCombo || "-",
       lastResult: boss.lastResult || null,
     };
