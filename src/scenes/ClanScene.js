@@ -456,7 +456,7 @@ startSpin() {
       const tw = Math.min(w - 40, Math.max(180, ctx.measureText(this.toastText).width + 34));
       const th = 40;
       const tx = (w - tw) / 2;
-      const ty = h - 60;
+      const ty = h - 140;
 
       fillRR(ctx, tx, ty, tw, th, 12, "rgba(0,0,0,0.86)");
       strokeRR(ctx, tx, ty, tw, th, 12, "rgba(255,190,50,0.35)");
