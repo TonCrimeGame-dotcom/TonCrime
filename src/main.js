@@ -31,12 +31,23 @@ const ctx = canvas.getContext("2d", { alpha: false });
 
 function getSafeArea() {
   const safe = document.getElementById("safe");
+  const vw = window.innerWidth || 0;
+  const vh = window.innerHeight || 0;
+
   if (!safe) {
-    return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    return { x: 0, y: 0, w: vw, h: vh };
   }
+
   const r = safe.getBoundingClientRect();
-  return { x: r.left, y: r.top, w: r.width, h: r.height };
+
+  return {
+    x: Math.max(0, Math.round(r.left)),
+    y: Math.max(0, Math.round(r.top)),
+    w: Math.max(0, Math.round(r.width || vw)),
+    h: Math.max(0, Math.round(r.height || vh)),
+  };
 }
+
 
 function fitCanvas() {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -50,8 +61,52 @@ function fitCanvas() {
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener("resize", fitCanvas);
 
+function normalizeGlobalUi() {
+  const hudTop = document.getElementById("hudTop");
+  const chatDrawer = document.getElementById("chatDrawer");
+  const pvpLayer = document.getElementById("pvpLayer");
+  const pvpFab = document.getElementById("pvpFab");
+
+  if (canvas) {
+    canvas.style.position = "fixed";
+    canvas.style.left = "0";
+    canvas.style.top = "0";
+    canvas.style.zIndex = "1000";
+  }
+
+  if (hudTop) {
+    hudTop.style.zIndex = "5000";
+    hudTop.style.opacity = "1";
+  }
+
+  if (chatDrawer) {
+    chatDrawer.style.zIndex = "6000";
+  }
+
+  if (pvpLayer) {
+    pvpLayer.style.zIndex = "7000";
+  }
+
+  if (pvpFab) {
+    pvpFab.style.zIndex = "6500";
+  }
+
+  const s = store.get();
+  const ui = s.ui || {};
+
+  const hudHeight = hudTop ? hudTop.offsetHeight : 110;
+  const chatClosedHeight = 52;
+
+  store.set({
+    ui: {
+      ...ui,
+      safe: getSafeArea(),
+      hudReservedTop: Math.max(110, hudHeight + 8),
+      chatReservedBottom: Math.max(82, chatClosedHeight + 24),
+    },
+  });
+}
 try {
   const tg = window.Telegram?.WebApp;
   if (tg) {
@@ -61,7 +116,11 @@ try {
 } catch (_) {}
 
 fitCanvas();
-
+normalizeGlobalUi();
+window.addEventListener("resize", () => {
+  fitCanvas();
+  normalizeGlobalUi();
+});
 /* ===== STORE ===== */
 const STORE_KEY = "toncrime_store_v1";
 
@@ -157,6 +216,7 @@ const initial = loaded
   : defaultState;
 
 const store = new Store(initial);
+window.tcStore = store;
 
 function dayKey() {
   const d = new Date();
@@ -1021,6 +1081,7 @@ class ClanHubScene {
 const input = new Input(canvas);
 const scenes = new SceneManager();
 
+window.tcScenes = scenes;
 window.tcStore = store;
 window.tcScenes = scenes;
 
