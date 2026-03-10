@@ -234,50 +234,31 @@ export class ClanScene {
     }
   }
 
-  startSpin() {
+startSpin() {
   if (this.spinState?.active) return;
 
-  const clan = this.getClan();
-  const boss = this.getBoss();
-  const before = this.getSpinInfo();
+  const spinInfo = this.getSpinInfo();
+  const bossBefore = this.getBoss();
 
-  if (!clan || !boss || !before) {
-    this.showToast("Clan boss verisi bulunamadı");
+  if (!spinInfo || !bossBefore) {
+    this.showToast("Boss verisi bulunamadı");
     return;
   }
 
-  const energyPerSpin = Number(
-    before.energyPerSpin ||
-    boss.energyPerSpin ||
-    clan?.boss?.energyPerSpin ||
-    6
+  const energyPerSpin = Math.max(
+    1,
+    Number(spinInfo.energyPerSpin || bossBefore.energyPerSpin || 6)
   );
 
-  const spinsLeft = Number(
-    before.spinsLeft ??
-    Math.max(
-      0,
-      Number(before.dailySpinLimit || boss.dailySpinLimit || 5) -
-      Number(before.spinsUsedToday || 0)
-    )
+  const spinsLeft = Math.max(
+    0,
+    Number(spinInfo.spinsLeft || 0)
   );
-
-  const bossStatus = String(
-    before.bossStatus ||
-    boss.status ||
-    clan?.boss?.status ||
-    "active"
-  ).toLowerCase();
 
   const playerEnergy = Number(this.store?.get?.()?.player?.energy || 0);
 
-  if (bossStatus === "defeated") {
-    this.showToast("Boss zaten yenilmiş");
-    return;
-  }
-
   if (spinsLeft <= 0) {
-    this.showToast("Günlük spin hakkı bitti");
+    this.showToast("Spin hakkın kalmadı");
     return;
   }
 
@@ -293,14 +274,11 @@ export class ClanScene {
     return;
   }
 
-  const after = this.getSpinInfo();
-  const result = after?.lastResult || this.getBoss()?.lastResult || null;
+  const bossAfter = this.getBoss();
+  const result = bossAfter?.lastResult || null;
 
   if (!result?.ok) {
-    this.showToast(
-      result?.message ||
-      `Spin başarısız (${playerEnergy}/${energyPerSpin})`
-    );
+    this.showToast(result?.message || "Spin başarısız");
     return;
   }
 
