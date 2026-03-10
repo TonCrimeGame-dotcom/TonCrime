@@ -1,10 +1,10 @@
-import { ClanSystem } from "../systems/clan/ClanSystem.js";
+import { ClanSystem } from "../clan/ClanSystem.js";
 import {
   formatMoney,
   getRoleLabel,
   getUpgradeCost,
   getUpgradeLabel,
-} from "../systems/clan/ClanUtils.js";
+} from "../clan/ClanUtils.js";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
