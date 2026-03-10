@@ -323,7 +323,7 @@ export class CoffeeShopScene {
       jackpotHit = true;
       nextCoins += 25;
       nextEnergy = Math.min(energyMax, nextEnergy + 15);
-      this.jackpotUntil = Date.now() + 1800;
+      this.jackpotUntil = Date.now() + 2600;
       toast = "🎰 Rare Weed Jackpot! +25 yton ve +15 enerji";
     }
 
