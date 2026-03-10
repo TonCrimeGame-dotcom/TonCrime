@@ -40,321 +40,165 @@ function clamp(n, a, b) {
 }
 
 export class CoffeeShopScene {
-  constructor({ store, input, i18n, assets, scenes }) {
-    this.store = store;
-    this.input = input;
-    this.i18n = i18n;
-    this.assets = assets;
-    this.scenes = scenes;
 
-    this.scrollY = 0;
-    this.maxScroll = 0;
+constructor({ store, input, i18n, assets, scenes }) {
 
-    this.dragging = false;
-    this.downY = 0;
-    this.startScroll = 0;
-    this.moved = 0;
-    this.clickCandidate = false;
+this.store = store
+this.input = input
+this.assets = assets
+this.scenes = scenes
 
-    this.hit = [];
-    this.backHit = null;
+this.scrollY = 0
+this.maxScroll = 0
 
-    this.toastText = "";
-    this.toastUntil = 0;
-  }
+this.dragging = false
+this.downY = 0
+this.startScroll = 0
+this.moved = 0
+this.clickCandidate = false
 
-  onEnter() {
-    this.scrollY = 0;
-    this.maxScroll = 0;
-    this.dragging = false;
-    this.moved = 0;
-    this.clickCandidate = false;
-    this.hit = [];
-    this.backHit = null;
-  }
+this.hit = []
+this.backHit = null
 
-  onExit() {}
+this.toastText = ""
+this.toastUntil = 0
 
-  _safeRect() {
-    const safe = this.store.get()?.ui?.safe;
-    if (safe && Number.isFinite(safe.w) && Number.isFinite(safe.h)) return safe;
-    return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
-  }
+this.music = null
 
-  _getBg() {
-    if (typeof this.assets.getImage === "function") {
-      return this.assets.getImage("coffeeshop_bg") || this.assets.getImage("coffeeshop");
-    }
-    if (typeof this.assets.get === "function") {
-      return this.assets.get("coffeeshop_bg") || this.assets.get("coffeeshop");
-    }
-    return this.assets.images?.coffeeshop_bg || this.assets.images?.coffeeshop || null;
-  }
+}
 
-  _drawCover(ctx, img, x, y, w, h) {
-    if (!img) {
-      ctx.fillStyle = "#0b0b0f";
-      ctx.fillRect(x, y, w, h);
-      return;
-    }
+onEnter(){
 
-    const iw = img.width || 1;
-    const ih = img.height || 1;
-    const scale = Math.max(w / iw, h / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = x + (w - dw) / 2;
-    const dy = y + (h - dh) / 2;
-    ctx.drawImage(img, dx, dy, dw, dh);
-  }
+const s = this.store.get()
+const p = s.player || {}
 
-  _rr(ctx, x, y, w, h, r) {
-    const rr = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rr, y);
-    ctx.arcTo(x + w, y, x + w, y + h, rr);
-    ctx.arcTo(x + w, y + h, x, y + h, rr);
-    ctx.arcTo(x, y + h, x, y, rr);
-    ctx.arcTo(x, y, x + w, y, rr);
-    ctx.closePath();
-  }
+if(!p.coffeeUses){
 
-  _showToast(text, ms = 1200) {
-    this.toastText = text;
-    this.toastUntil = Date.now() + ms;
-  }
+this.store.set({
 
-  _buy(item) {
-    const s = this.store.get();
-    const coins = Number(s.coins || 0);
-    const p = s.player || {};
-    const energy = Number(p.energy || 0);
-    const energyMax = Math.max(1, Number(p.energyMax || 10));
+player:{
+...p,
+coffeeUses:0
+}
 
-    if (coins < item.price) {
-      this._showToast("Yetersiz coin");
-      return;
-    }
+})
 
-    if (energy >= energyMax) {
-      this._showToast("Enerji full");
-      return;
-    }
+}
 
-    const add = Math.min(item.energy, energyMax - energy);
+this.startMusic()
 
-    this.store.set({
-      coins: coins - item.price,
-      player: {
-        ...p,
-        energy: energy + add,
-      },
-    });
+}
 
-    this._showToast(`+${add} enerji  /  -${item.price} yton`);
-  }
+onExit(){
 
-  update() {
-    const px = this.input.pointer?.x || 0;
-    const py = this.input.pointer?.y || 0;
+if(this.music){
 
-    if (this.input.justPressed()) {
-      this.dragging = true;
-      this.downY = py;
-      this.startScroll = this.scrollY;
-      this.moved = 0;
-      this.clickCandidate = true;
-    }
+this.music.pause()
 
-    if (this.dragging && this.input.isDown()) {
-      const dy = py - this.downY;
-      this.scrollY = clamp(this.startScroll - dy, 0, this.maxScroll);
-      this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
-    }
+}
 
-    if (this.dragging && this.input.justReleased()) {
-      this.dragging = false;
+}
 
-      if (!this.clickCandidate) return;
+startMusic(){
 
-      if (
-        this.backHit &&
-        px >= this.backHit.x &&
-        px <= this.backHit.x + this.backHit.w &&
-        py >= this.backHit.y &&
-        py <= this.backHit.y + this.backHit.h
-      ) {
-        this.scenes.go("home");
-        return;
-      }
+if(this.music) return
 
-      for (const r of this.hit) {
-        if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
-          this._buy(r.item);
-          return;
-        }
-      }
-    }
-  }
+this.music = new Audio("./src/assets/reggae.mp3")
+this.music.loop = true
+this.music.volume = 0.35
+this.music.play().catch(()=>{})
 
-  render(ctx) {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const W = Math.floor(ctx.canvas.width / dpr);
-    const H = Math.floor(ctx.canvas.height / dpr);
+}
 
-    const safe = this._safeRect();
-    const bg = this._getBg();
+_showToast(text, ms = 1500){
 
-    ctx.clearRect(0, 0, W, H);
-    this._drawCover(ctx, bg, 0, 0, W, H);
+this.toastText = text
+this.toastUntil = Date.now()+ms
 
-    ctx.fillStyle = "rgba(0,0,0,0.34)";
-    ctx.fillRect(0, 0, W, H);
+}
 
-    const panelX = safe.x + 12;
-    const panelY = Math.max(72, safe.y + 74);
-    const panelW = safe.w - 24;
-    const panelH = safe.h - 150;
+_buy(item){
 
-    this._rr(ctx, panelX, panelY, panelW, panelH, 18);
-    ctx.fillStyle = "rgba(7,7,7,0.58)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+const s = this.store.get()
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+const coins = Number(s.coins||0)
 
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "900 20px system-ui";
-    ctx.fillText("Amsterdam Coffeeshop", panelX + 16, panelY + 28);
+const p = s.player||{}
 
-    ctx.fillStyle = "rgba(255,255,255,0.76)";
-    ctx.font = "12px system-ui";
-    ctx.fillText("Ot al, enerjini doldur.", panelX + 16, panelY + 48);
+let energy = Number(p.energy||0)
 
-    const s = this.store.get();
-    const coins = Number(s.coins || 0);
-    const energy = Number(s.player?.energy || 0);
-    const energyMax = Number(s.player?.energyMax || 10);
+const energyMax = Number(p.energyMax||100)
 
-    ctx.fillStyle = "rgba(255,214,120,0.96)";
-    ctx.font = "800 12px system-ui";
-    ctx.fillText(`Coin: ${coins}`, panelX + 16, panelY + 70);
+let uses = Number(p.coffeeUses||0)
 
-    ctx.fillStyle = "rgba(255,255,255,0.86)";
-    ctx.fillText(`Enerji: ${energy}/${energyMax}`, panelX + 104, panelY + 70);
+if(coins < item.price){
 
-    const backW = 78;
-    const backH = 30;
-    const backX = panelX + panelW - backW - 14;
-    const backY = panelY + 12;
-    this.backHit = { x: backX, y: backY, w: backW, h: backH };
+this._showToast("Yetersiz coin")
 
-    this._rr(ctx, backX, backY, backW, backH, 10);
-    ctx.fillStyle = "rgba(0,0,0,0.42)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.16)";
-    ctx.stroke();
+return
 
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "800 12px system-ui";
-    ctx.fillText("Geri", backX + backW / 2, backY + 19);
+}
 
-    const listX = panelX + 10;
-    const listY = panelY + 88;
-    const listW = panelW - 20;
-    const listH = panelH - 100;
+if(energy >= energyMax){
 
-    const rowH = 68;
-    const contentH = ITEMS.length * rowH + 8;
+this._showToast("Enerji full")
 
-    this.maxScroll = Math.max(0, contentH - listH);
-    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+return
 
-    this.hit = [];
+}
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(listX, listY, listW, listH);
-    ctx.clip();
+uses++
 
-    for (let i = 0; i < ITEMS.length; i++) {
-      const item = ITEMS[i];
-      const y = listY + i * rowH - this.scrollY;
+let energyGain = item.energy
 
-      if (y > listY + listH + 10 || y + 58 < listY - 10) continue;
+// bağışıklık sistemi
+if(uses >= 10){
 
-      this._rr(ctx, listX, y, listW, 58, 14);
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fill();
+energyGain = Math.floor(energyGain * 0.7)
 
-      ctx.textAlign = "left";
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "800 13px system-ui";
-      ctx.fillText(item.name, listX + 12, y + 20);
+}
 
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "12px system-ui";
-      ctx.fillText(`+${item.energy} enerji`, listX + 12, y + 41);
+const add = Math.min(energyGain, energyMax-energy)
 
-      ctx.fillStyle = "rgba(255,214,120,0.96)";
-      ctx.fillText(`${item.price} yton`, listX + 104, y + 41);
+energy += add
 
-      const btnW = 98;
-      const btnH = 34;
-      const btnX = listX + listW - btnW - 10;
-      const btnY = y + 12;
+let newCoins = coins-item.price
 
-      this._rr(ctx, btnX, btnY, btnW, btnH, 12);
-      ctx.fillStyle = "rgba(0,0,0,0.42)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      ctx.stroke();
+// %30 dayak ihtimali
+if(Math.random() < 0.30){
 
-      ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "900 12px system-ui";
-      ctx.fillText("Satın Al", btnX + btnW / 2, btnY + 21);
+const stolenCoin = Math.floor(newCoins*0.20)
 
-      this.hit.push({ x: btnX, y: btnY, w: btnW, h: btnH, item });
-    }
+const stolenEnergy = Math.floor(energy*0.20)
 
-    ctx.restore();
+newCoins -= stolenCoin
 
-    if (this.maxScroll > 0) {
-      const trackX = panelX + panelW - 6;
-      const trackY = listY;
-      const trackH = listH;
-      const thumbH = Math.max(36, (listH / contentH) * trackH);
-      const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
+energy -= stolenEnergy
 
-      ctx.fillStyle = "rgba(255,255,255,0.10)";
-      ctx.fillRect(trackX, trackY, 3, trackH);
+this._showToast("Sokakta dayak yedin! Paran ve enerjin çalındı")
 
-      ctx.fillStyle = "rgba(255,255,255,0.34)";
-      ctx.fillRect(trackX, thumbY, 3, thumbH);
-    }
+}else{
 
-    if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(280, panelW - 36);
-      const th = 34;
-      const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - 46;
+this._showToast(`+${add} enerji`)
 
-      this._rr(ctx, tx, ty, tw, th, 12);
-      ctx.fillStyle = "rgba(0,0,0,0.76)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      ctx.stroke();
+}
 
-      ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "800 12px system-ui";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + 21);
-    }
-  }
+this.store.set({
+
+coins:newCoins,
+
+player:{
+
+...p,
+
+energy,
+
+coffeeUses:uses
+
+}
+
+})
+
+}
+
 }
