@@ -124,7 +124,8 @@ export class ClanScene {
 
     this.tab = "boss";
     this.buttons = [];
-
+    this.clickCandidate = false;
+    this.backHit = null;
     this.scrollY = 0;
     this.maxScroll = 0;
 
