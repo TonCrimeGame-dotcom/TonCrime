@@ -77,7 +77,20 @@ export class TradeScene {
     this.toastText = "";
     this.toastUntil = 0;
 
-    this._prevPointerDown = false;
+    this.pointer = {
+      x: 0,
+      y: 0,
+      down: false,
+      justPressed: false,
+      justReleased: false,
+    };
+
+    this._bound = false;
+    this._canvas = null;
+
+    this._onPointerDown = null;
+    this._onPointerMove = null;
+    this._onPointerUp = null;
   }
 
   onEnter() {
@@ -105,9 +118,117 @@ export class TradeScene {
         toast: null,
       },
     });
+
+    this._bindPointerEvents();
   }
 
-  onExit() {}
+  onExit() {
+    this._unbindPointerEvents();
+  }
+
+  _bindPointerEvents() {
+    if (this._bound) return;
+
+    const canvas = document.getElementById("game");
+    if (!canvas) return;
+
+    this._canvas = canvas;
+
+    const getCanvasPos = (clientX, clientY) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+      const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+      };
+    };
+
+    const setDown = (x, y) => {
+      const p = getCanvasPos(x, y);
+      this.pointer.x = p.x;
+      this.pointer.y = p.y;
+      if (!this.pointer.down) this.pointer.justPressed = true;
+      this.pointer.down = true;
+    };
+
+    const setMove = (x, y) => {
+      const p = getCanvasPos(x, y);
+      this.pointer.x = p.x;
+      this.pointer.y = p.y;
+    };
+
+    const setUp = (x, y) => {
+      const p = getCanvasPos(x, y);
+      this.pointer.x = p.x;
+      this.pointer.y = p.y;
+      if (this.pointer.down) this.pointer.justReleased = true;
+      this.pointer.down = false;
+    };
+
+    this._onPointerDown = (e) => {
+      if (e.cancelable) e.preventDefault();
+      if (e.touches && e.touches[0]) {
+        setDown(e.touches[0].clientX, e.touches[0].clientY);
+      } else {
+        setDown(e.clientX, e.clientY);
+      }
+    };
+
+    this._onPointerMove = (e) => {
+      if (e.touches && e.touches[0]) {
+        setMove(e.touches[0].clientX, e.touches[0].clientY);
+      } else {
+        setMove(e.clientX, e.clientY);
+      }
+    };
+
+    this._onPointerUp = (e) => {
+      if (e.changedTouches && e.changedTouches[0]) {
+        setUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      } else {
+        setUp(
+          typeof e.clientX === "number" ? e.clientX : 0,
+          typeof e.clientY === "number" ? e.clientY : 0
+        );
+      }
+    };
+
+    canvas.addEventListener("mousedown", this._onPointerDown, { passive: false });
+    window.addEventListener("mousemove", this._onPointerMove, { passive: true });
+    window.addEventListener("mouseup", this._onPointerUp, { passive: true });
+
+    canvas.addEventListener("touchstart", this._onPointerDown, { passive: false });
+    window.addEventListener("touchmove", this._onPointerMove, { passive: false });
+    window.addEventListener("touchend", this._onPointerUp, { passive: true });
+    window.addEventListener("touchcancel", this._onPointerUp, { passive: true });
+
+    this._bound = true;
+  }
+
+  _unbindPointerEvents() {
+    if (!this._bound || !this._canvas) return;
+
+    const canvas = this._canvas;
+
+    canvas.removeEventListener("mousedown", this._onPointerDown);
+    window.removeEventListener("mousemove", this._onPointerMove);
+    window.removeEventListener("mouseup", this._onPointerUp);
+
+    canvas.removeEventListener("touchstart", this._onPointerDown);
+    window.removeEventListener("touchmove", this._onPointerMove);
+    window.removeEventListener("touchend", this._onPointerUp);
+    window.removeEventListener("touchcancel", this._onPointerUp);
+
+    this._bound = false;
+    this._canvas = null;
+  }
+
+  _consumePointerFrameFlags() {
+    this.pointer.justPressed = false;
+    this.pointer.justReleased = false;
+  }
 
   _safeRect() {
     const s = this.store.get();
@@ -199,10 +320,6 @@ export class TradeScene {
     return this._marketListings().filter((x) => x.shopId === shopId);
   }
 
-  _getBusinessById(bizId) {
-    return this._allBusinesses().find((x) => x.id === bizId) || null;
-  }
-
   _changeTab(tab) {
     this.scrollY = 0;
     this.maxScroll = 0;
@@ -230,38 +347,6 @@ export class TradeScene {
       view: "main",
       selectedShopId: null,
     });
-  }
-
-  _inputSnapshot() {
-    const input = this.input || {};
-    const p =
-      input.pointer ||
-      input.p ||
-      input.state?.pointer ||
-      (typeof input.getPointer === "function" ? input.getPointer() : null) ||
-      { x: 0, y: 0 };
-
-    let down = false;
-
-    if (typeof input.isDown === "function") down = !!input.isDown();
-    else if (typeof input.down === "function") down = !!input.down();
-    else if (typeof input.pointerDown === "boolean") down = input.pointerDown;
-    else if (typeof input.down === "boolean") down = input.down;
-    else if (typeof input.state?.down === "boolean") down = input.state.down;
-    else if (typeof p?.down === "boolean") down = p.down;
-
-    const justPressed = !this._prevPointerDown && down;
-    const justReleased = this._prevPointerDown && !down;
-
-    this._prevPointerDown = down;
-
-    return {
-      x: Number(p?.x || 0),
-      y: Number(p?.y || 0),
-      down,
-      justPressed,
-      justReleased,
-    };
   }
 
   _useInventoryItem(itemId) {
@@ -338,6 +423,48 @@ export class TradeScene {
     });
 
     this._showToast(`+${gain} yton`);
+  }
+
+  _findLowestMarketPriceByName(itemName) {
+    const listings = this._marketListings().filter(
+      (x) => String(x.itemName || "").toLowerCase() === String(itemName || "").toLowerCase()
+    );
+    if (!listings.length) return 0;
+    return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
+  }
+
+  _ensurePlayerMarketShop() {
+    const s = this.store.get();
+    const playerName = String(s.player?.username || "Player");
+    const playerShopId = "shop_player_market";
+
+    let existing = (s.market?.shops || []).find((x) => x.id === playerShopId);
+    if (existing) return existing;
+
+    const shop = {
+      id: playerShopId,
+      businessId: "player_market",
+      type: "blackmarket",
+      icon: "🕶️",
+      name: `${playerName} Market`,
+      ownerId: "player_main",
+      ownerName: playerName,
+      online: true,
+      theme: "dark",
+      rating: 5,
+      totalListings: 0,
+    };
+
+    const shops = [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))];
+
+    this.store.set({
+      market: {
+        ...(s.market || {}),
+        shops,
+      },
+    });
+
+    return shop;
   }
 
   _listInventoryItem(itemId) {
@@ -419,48 +546,6 @@ export class TradeScene {
     });
 
     this._showToast(`${qty} adet pazara kondu`);
-  }
-
-  _ensurePlayerMarketShop() {
-    const s = this.store.get();
-    const playerName = String(s.player?.username || "Player");
-    const playerShopId = "shop_player_market";
-
-    let existing = (s.market?.shops || []).find((x) => x.id === playerShopId);
-    if (existing) return existing;
-
-    const shop = {
-      id: playerShopId,
-      businessId: "player_market",
-      type: "blackmarket",
-      icon: "🕶️",
-      name: `${playerName} Market`,
-      ownerId: "player_main",
-      ownerName: playerName,
-      online: true,
-      theme: "dark",
-      rating: 5,
-      totalListings: 0,
-    };
-
-    const shops = [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))];
-
-    this.store.set({
-      market: {
-        ...(s.market || {}),
-        shops,
-      },
-    });
-
-    return shop;
-  }
-
-  _findLowestMarketPriceByName(itemName) {
-    const listings = this._marketListings().filter(
-      (x) => String(x.itemName || "").toLowerCase() === String(itemName || "").toLowerCase()
-    );
-    if (!listings.length) return 0;
-    return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
   }
 
   _buyMarketItem(shopId, listingId) {
@@ -567,6 +652,13 @@ export class TradeScene {
     const finalName = String(name || "").trim() || defaultName;
     const businessId = "biz_" + type + "_" + Date.now();
 
+    const products = (productTemplates[type] || []).map((p, idx) => ({
+      id: businessId + "_prod_" + idx,
+      ...p,
+    }));
+
+    const stock = products.reduce((sum, p) => sum + Number(p.qty || 0), 0);
+
     const newBusiness = {
       id: businessId,
       type,
@@ -575,12 +667,9 @@ export class TradeScene {
       ownerId: String(s.player?.id || "player_main"),
       ownerName: String(s.player?.username || "Player"),
       dailyProduction: 50,
-      stock: 0,
+      stock,
       theme: type,
-      products: (productTemplates[type] || []).map((p, idx) => ({
-        id: businessId + "_prod_" + idx,
-        ...p,
-      })),
+      products,
     };
 
     const owned = [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))];
@@ -598,6 +687,36 @@ export class TradeScene {
     });
 
     this._showToast("İşletme satın alındı");
+  }
+
+  _ensureBusinessShop(biz) {
+    const s = this.store.get();
+    const targetId = "shop_from_" + biz.id;
+    let shop = (s.market?.shops || []).find((x) => x.id === targetId);
+    if (shop) return shop;
+
+    shop = {
+      id: targetId,
+      businessId: biz.id,
+      type: biz.type,
+      icon: biz.icon || iconForType(biz.type),
+      name: biz.name,
+      ownerId: String(biz.ownerId || s.player?.id || "player_main"),
+      ownerName: String(biz.ownerName || s.player?.username || "Player"),
+      online: true,
+      theme: biz.theme || biz.type,
+      rating: 5,
+      totalListings: 0,
+    };
+
+    this.store.set({
+      market: {
+        ...(s.market || {}),
+        shops: [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))],
+      },
+    });
+
+    return shop;
   }
 
   _useBusinessProduct(bizId, productId) {
@@ -728,36 +847,6 @@ export class TradeScene {
     });
 
     this._showToast(`${qty} adet satışa çıkarıldı`);
-  }
-
-  _ensureBusinessShop(biz) {
-    const s = this.store.get();
-    const targetId = "shop_from_" + biz.id;
-    let shop = (s.market?.shops || []).find((x) => x.id === targetId);
-    if (shop) return shop;
-
-    shop = {
-      id: targetId,
-      businessId: biz.id,
-      type: biz.type,
-      icon: biz.icon || iconForType(biz.type),
-      name: biz.name,
-      ownerId: String(biz.ownerId || s.player?.id || "player_main"),
-      ownerName: String(biz.ownerName || s.player?.username || "Player"),
-      online: true,
-      theme: biz.theme || biz.type,
-      rating: 5,
-      totalListings: 0,
-    };
-
-    this.store.set({
-      market: {
-        ...(s.market || {}),
-        shops: [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))],
-      },
-    });
-
-    return shop;
   }
 
   _drawChipRowWrap(ctx, x, y, maxW, items, activeKey, actionName, chipW = 66, chipH = 30, gap = 6) {
@@ -899,11 +988,10 @@ export class TradeScene {
   }
 
   update() {
-    const inp = this._inputSnapshot();
-    const px = inp.x;
-    const py = inp.y;
+    const px = Number(this.pointer.x || 0);
+    const py = Number(this.pointer.y || 0);
 
-    if (inp.justPressed) {
+    if (this.pointer.justPressed) {
       this.dragging = true;
       this.downY = py;
       this.startScrollY = this.scrollY;
@@ -911,17 +999,20 @@ export class TradeScene {
       this.clickCandidate = true;
     }
 
-    if (this.dragging && inp.down) {
+    if (this.dragging && this.pointer.down) {
       const dy = py - this.downY;
       this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
       if (this.moved > 10) this.clickCandidate = false;
     }
 
-    if (this.dragging && inp.justReleased) {
+    if (this.dragging && this.pointer.justReleased) {
       this.dragging = false;
 
-      if (!this.clickCandidate) return;
+      if (!this.clickCandidate) {
+        this._consumePointerFrameFlags();
+        return;
+      }
 
       if (isPointInRect(px, py, this.backHit)) {
         const t = this._tradeState();
@@ -930,6 +1021,7 @@ export class TradeScene {
         } else {
           this.scenes.go("home");
         }
+        this._consumePointerFrameFlags();
         return;
       }
 
@@ -939,44 +1031,57 @@ export class TradeScene {
         switch (h.action) {
           case "tab":
             this._changeTab(h.value);
+            this._consumePointerFrameFlags();
             return;
           case "inventory_filter":
             this._setTrade({ selectedInventoryCategory: h.value });
             this.scrollY = 0;
+            this._consumePointerFrameFlags();
             return;
           case "market_filter":
             this._setTrade({ selectedMarketFilter: h.value });
             this.scrollY = 0;
+            this._consumePointerFrameFlags();
             return;
           case "open_shop":
             this._goShop(h.shopId);
+            this._consumePointerFrameFlags();
             return;
           case "use_item":
             this._useInventoryItem(h.itemId);
+            this._consumePointerFrameFlags();
             return;
           case "sell_item":
             this._sellInventoryItem(h.itemId);
+            this._consumePointerFrameFlags();
             return;
           case "list_item":
             this._listInventoryItem(h.itemId);
+            this._consumePointerFrameFlags();
             return;
           case "buy_market_item":
             this._buyMarketItem(h.shopId, h.itemId);
+            this._consumePointerFrameFlags();
             return;
           case "buy_business":
             this._buyBusiness(h.businessType);
+            this._consumePointerFrameFlags();
             return;
           case "use_business_product":
             this._useBusinessProduct(h.bizId, h.productId);
+            this._consumePointerFrameFlags();
             return;
           case "sell_business_product":
             this._sellBusinessProduct(h.bizId, h.productId);
+            this._consumePointerFrameFlags();
             return;
           default:
-            return;
+            break;
         }
       }
     }
+
+    this._consumePointerFrameFlags();
   }
 
   render(ctx) {
