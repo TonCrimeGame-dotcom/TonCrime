@@ -156,6 +156,7 @@ export class ClanScene {
       stopping: false,
       settled: true,
       stopTime: 0,
+      finalPosition: null,
     }));
   }
 
@@ -231,6 +232,7 @@ export class ClanScene {
         const idx = Math.max(0, SYMBOL_ORDER.indexOf(lastSymbols[i] || "punch"));
         this.reels[i].position = idx;
         this.reels[i].targetIndex = idx;
+        this.reels[i].finalPosition = idx;
       }
     }
   }
@@ -301,31 +303,39 @@ export class ClanScene {
       reel.settled = false;
       reel.stopTime = now + 950 + i * 260;
       reel.targetIndex = targets[i];
+      reel.finalPosition = null;
     }
   }
 
   stopReel(reel) {
     if (reel.stopping) return;
+
+    const cycle = SYMBOL_ORDER.length;
+    let finalPosition =
+      Math.ceil(reel.position / cycle) * cycle + Number(reel.targetIndex || 0);
+
+    while (finalPosition <= reel.position + 0.1) {
+      finalPosition += cycle;
+    }
+
+    reel.finalPosition = finalPosition;
     reel.stopping = true;
   }
 
   settleReel(reel) {
-    const cycle = SYMBOL_ORDER.length;
-    const nearestTurns = Math.ceil(reel.position / cycle) * cycle;
-    let desired = nearestTurns + reel.targetIndex;
-
-    if (desired - reel.position < 0.2) {
-      desired += cycle;
+    if (typeof reel.finalPosition !== "number") {
+      reel.finalPosition = reel.position;
     }
 
-    const diff = desired - reel.position;
-    reel.position += diff * 0.22;
+    const diff = reel.finalPosition - reel.position;
+    reel.position += diff * 0.18;
 
-    if (Math.abs(diff) < 0.015) {
-      reel.position = desired;
+    if (Math.abs(diff) < 0.02) {
+      reel.position = reel.finalPosition;
       reel.speed = 0;
       reel.stopping = false;
       reel.settled = true;
+      reel.finalPosition = null;
     }
   }
 
