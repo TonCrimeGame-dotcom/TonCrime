@@ -76,6 +76,8 @@ export class TradeScene {
 
     this.toastText = "";
     this.toastUntil = 0;
+
+    this._prevPointerDown = false;
   }
 
   onEnter() {
@@ -150,7 +152,7 @@ export class TradeScene {
     ctx.stroke();
   }
 
-  _showToast(text, ms = 1400) {
+  _showToast(text, ms = 1500) {
     this.toastText = String(text || "");
     this.toastUntil = Date.now() + ms;
   }
@@ -197,6 +199,10 @@ export class TradeScene {
     return this._marketListings().filter((x) => x.shopId === shopId);
   }
 
+  _getBusinessById(bizId) {
+    return this._allBusinesses().find((x) => x.id === bizId) || null;
+  }
+
   _changeTab(tab) {
     this.scrollY = 0;
     this.maxScroll = 0;
@@ -204,6 +210,7 @@ export class TradeScene {
       activeTab: tab,
       view: "main",
       selectedShopId: null,
+      selectedBusinessId: null,
     });
   }
 
@@ -225,6 +232,38 @@ export class TradeScene {
     });
   }
 
+  _inputSnapshot() {
+    const input = this.input || {};
+    const p =
+      input.pointer ||
+      input.p ||
+      input.state?.pointer ||
+      (typeof input.getPointer === "function" ? input.getPointer() : null) ||
+      { x: 0, y: 0 };
+
+    let down = false;
+
+    if (typeof input.isDown === "function") down = !!input.isDown();
+    else if (typeof input.down === "function") down = !!input.down();
+    else if (typeof input.pointerDown === "boolean") down = input.pointerDown;
+    else if (typeof input.down === "boolean") down = input.down;
+    else if (typeof input.state?.down === "boolean") down = input.state.down;
+    else if (typeof p?.down === "boolean") down = p.down;
+
+    const justPressed = !this._prevPointerDown && down;
+    const justReleased = this._prevPointerDown && !down;
+
+    this._prevPointerDown = down;
+
+    return {
+      x: Number(p?.x || 0),
+      y: Number(p?.y || 0),
+      down,
+      justPressed,
+      justReleased,
+    };
+  }
+
   _useInventoryItem(itemId) {
     const s = this.store.get();
     const items = (s.inventory?.items || []).map((x) => ({ ...x }));
@@ -244,6 +283,7 @@ export class TradeScene {
     const p = { ...(s.player || {}) };
     const currentEnergy = Number(p.energy || 0);
     const maxEnergy = Math.max(1, Number(p.energyMax || 100));
+
     if (currentEnergy >= maxEnergy) {
       this._showToast("Enerji zaten full");
       return;
@@ -316,67 +356,111 @@ export class TradeScene {
       return;
     }
 
-    const myShop = {
-      id: "shop_player_market",
-      businessId: "player_market",
-      type: "blackmarket",
-      icon: "🕶️",
-      name: `${String(s.player?.username || "Player")} Market`,
-      ownerId: "player_main",
-      ownerName: String(s.player?.username || "Player"),
-      online: true,
-      theme: "dark",
-      rating: 5.0,
-      totalListings: 0,
-    };
-
-    const shops = (s.market?.shops || []).map((x) => ({ ...x }));
-    const listings = (s.market?.listings || []).map((x) => ({ ...x }));
-
-    let shop = shops.find((x) => x.id === myShop.id);
-    if (!shop) {
-      shops.unshift(myShop);
-      shop = myShop;
+    const qtyRaw = window.prompt("Kaç adet satmak istiyorsun?", "1");
+    if (qtyRaw === null) return;
+    const qty = clamp(parseInt(qtyRaw, 10) || 0, 1, Number(item.qty || 0));
+    if (qty <= 0) {
+      this._showToast("Geçersiz adet");
+      return;
     }
 
-    const listing = {
+    const lowest = this._findLowestMarketPriceByName(item.name);
+    const info = lowest > 0 ? `\nPazardaki en düşük fiyat: ${lowest} yton` : "\nPazarda henüz fiyat yok";
+    const priceRaw = window.prompt(`Birim satış fiyatını gir.${info}`, String(item.marketPrice || item.sellPrice || 10));
+    if (priceRaw === null) return;
+
+    const price = Math.max(1, parseInt(priceRaw, 10) || 0);
+    if (price <= 0) {
+      this._showToast("Geçersiz fiyat");
+      return;
+    }
+
+    const myShop = this._ensurePlayerMarketShop();
+    const state2 = this.store.get();
+    const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
+    const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
+    const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
+    const idx2 = items2.findIndex((x) => x.id === itemId);
+    if (idx2 < 0) return;
+
+    const item2 = items2[idx2];
+    item2.qty = Math.max(0, Number(item2.qty || 0) - qty);
+
+    listings.unshift({
       id: "listing_" + Date.now() + "_" + Math.floor(Math.random() * 9999),
-      shopId: shop.id,
-      icon: item.icon || "📦",
-      itemName: item.name,
-      rarity: item.rarity || "common",
-      stock: 1,
-      price: Number(item.marketPrice || item.sellPrice || 10),
-      energyGain: Number(item.energyGain || 0),
-      usable: !!item.usable,
-      desc: item.desc || "Oyuncu pazarı ürünü.",
-    };
+      shopId: myShop.id,
+      icon: item2.icon || "📦",
+      itemName: item2.name,
+      rarity: item2.rarity || "common",
+      stock: qty,
+      price,
+      energyGain: Number(item2.energyGain || 0),
+      usable: !!item2.usable,
+      desc: item2.desc || "Oyuncu pazarı ürünü.",
+    });
 
-    listings.unshift(listing);
-
-    item.qty = Math.max(0, Number(item.qty || 0) - 1);
-    if (item.qty <= 0) items.splice(idx, 1);
-    else items[idx] = item;
+    if (item2.qty <= 0) items2.splice(idx2, 1);
+    else items2[idx2] = item2;
 
     for (const sh of shops) {
-      if (sh.id === shop.id) {
-        sh.totalListings = listings.filter((x) => x.shopId === shop.id).length;
-      }
+      sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
     }
 
     this.store.set({
       inventory: {
-        ...(s.inventory || {}),
-        items,
+        ...(state2.inventory || {}),
+        items: items2,
       },
       market: {
-        ...(s.market || {}),
+        ...(state2.market || {}),
         shops,
         listings,
       },
     });
 
-    this._showToast("Pazara eklendi");
+    this._showToast(`${qty} adet pazara kondu`);
+  }
+
+  _ensurePlayerMarketShop() {
+    const s = this.store.get();
+    const playerName = String(s.player?.username || "Player");
+    const playerShopId = "shop_player_market";
+
+    let existing = (s.market?.shops || []).find((x) => x.id === playerShopId);
+    if (existing) return existing;
+
+    const shop = {
+      id: playerShopId,
+      businessId: "player_market",
+      type: "blackmarket",
+      icon: "🕶️",
+      name: `${playerName} Market`,
+      ownerId: "player_main",
+      ownerName: playerName,
+      online: true,
+      theme: "dark",
+      rating: 5,
+      totalListings: 0,
+    };
+
+    const shops = [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))];
+
+    this.store.set({
+      market: {
+        ...(s.market || {}),
+        shops,
+      },
+    });
+
+    return shop;
+  }
+
+  _findLowestMarketPriceByName(itemName) {
+    const listings = this._marketListings().filter(
+      (x) => String(x.itemName || "").toLowerCase() === String(itemName || "").toLowerCase()
+    );
+    if (!listings.length) return 0;
+    return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
   }
 
   _buyMarketItem(shopId, listingId) {
@@ -442,44 +526,238 @@ export class TradeScene {
     this._showToast("Satın alındı");
   }
 
-  _pointerState() {
-    const input = this.input || {};
-    const p =
-      input.pointer ||
-      input.p ||
-      input.state?.pointer ||
-      (typeof input.getPointer === "function" ? input.getPointer() : null) ||
-      { x: 0, y: 0 };
-
-    return {
-      x: Number(p?.x || 0),
-      y: Number(p?.y || 0),
+  _buyBusiness(type) {
+    const s = this.store.get();
+    const buildingPrices = {
+      nightclub: 1000,
+      coffeeshop: 850,
+      brothel: 1200,
+      blackmarket: 1500,
     };
+
+    const productTemplates = {
+      nightclub: [
+        { icon: "🥃", name: "Black Whiskey", rarity: "common", qty: 20, price: 28, energyGain: 8, desc: "Gece kulübü ürünü." },
+        { icon: "🍾", name: "Premium Champagne", rarity: "rare", qty: 8, price: 44, energyGain: 14, desc: "Lüks ürün." },
+      ],
+      coffeeshop: [
+        { icon: "🍁", name: "White Widow", rarity: "rare", qty: 14, price: 36, energyGain: 12, desc: "Enerji için kullanılabilir." },
+        { icon: "🌿", name: "Moon Rocks", rarity: "epic", qty: 6, price: 62, energyGain: 18, desc: "Nadir ürün." },
+      ],
+      brothel: [
+        { icon: "💋", name: "VIP Companion", rarity: "epic", qty: 5, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
+        { icon: "🌹", name: "Deluxe Service", rarity: "legendary", qty: 2, price: 160, energyGain: 30, desc: "En üst seviye ürün." },
+      ],
+      blackmarket: [
+        { icon: "🎟️", name: "VIP Pass", rarity: "epic", qty: 4, price: 88, energyGain: 0, desc: "Özel koleksiyon ürünü." },
+        { icon: "📦", name: "Mystery Crate", rarity: "rare", qty: 10, price: 54, energyGain: 0, desc: "Koleksiyon ürünü." },
+      ],
+    };
+
+    const cost = Number(buildingPrices[type] || 0);
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
+    const defaultName = `${String(s.player?.username || "Player")} ${typeLabel(type)}`;
+    const name = window.prompt("İşletme ismini gir:", defaultName);
+    if (name === null) return;
+
+    const finalName = String(name || "").trim() || defaultName;
+    const businessId = "biz_" + type + "_" + Date.now();
+
+    const newBusiness = {
+      id: businessId,
+      type,
+      icon: iconForType(type),
+      name: finalName,
+      ownerId: String(s.player?.id || "player_main"),
+      ownerName: String(s.player?.username || "Player"),
+      dailyProduction: 50,
+      stock: 0,
+      theme: type,
+      products: (productTemplates[type] || []).map((p, idx) => ({
+        id: businessId + "_prod_" + idx,
+        ...p,
+      })),
+    };
+
+    const owned = [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))];
+
+    this.store.set({
+      coins: Number(s.coins || 0) - cost,
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
+      },
+      trade: {
+        ...(s.trade || {}),
+        activeTab: "businesses",
+      },
+    });
+
+    this._showToast("İşletme satın alındı");
   }
 
-  _justPressed() {
-    const input = this.input || {};
-    if (typeof input.justPressed === "function") return !!input.justPressed();
-    if (typeof input.wasPressed === "function") return !!input.wasPressed();
-    if (typeof input.pressed === "function") return !!input.pressed();
-    return false;
+  _useBusinessProduct(bizId, productId) {
+    const s = this.store.get();
+    const businesses = (s.businesses?.owned || []).map((b) => ({
+      ...b,
+      products: (b.products || []).map((p) => ({ ...p })),
+    }));
+
+    const biz = businesses.find((b) => b.id === bizId);
+    if (!biz) return;
+
+    const product = (biz.products || []).find((p) => p.id === productId);
+    if (!product) return;
+
+    if (Number(product.qty || 0) <= 0) {
+      this._showToast("Ürün stoğu yok");
+      return;
+    }
+
+    const p = { ...(s.player || {}) };
+    const currentEnergy = Number(p.energy || 0);
+    const maxEnergy = Math.max(1, Number(p.energyMax || 100));
+    const gain = Math.min(Number(product.energyGain || 0), Math.max(0, maxEnergy - currentEnergy));
+
+    if (gain <= 0) {
+      this._showToast("Enerji zaten full");
+      return;
+    }
+
+    product.qty = Math.max(0, Number(product.qty || 0) - 1);
+    biz.stock = Math.max(0, Number(biz.stock || 0) - 1);
+    p.energy = currentEnergy + gain;
+
+    this.store.set({
+      player: p,
+      businesses: {
+        ...(s.businesses || {}),
+        owned: businesses,
+      },
+    });
+
+    this._showToast(`İşletmeden +${gain} enerji`);
   }
 
-  _isDown() {
-    const input = this.input || {};
-    if (typeof input.isDown === "function") return !!input.isDown();
-    if (typeof input.down === "function") return !!input.down();
-    if (typeof input.pointerDown === "boolean") return input.pointerDown;
-    if (typeof input.state?.down === "boolean") return input.state.down;
-    return false;
+  _sellBusinessProduct(bizId, productId) {
+    const s = this.store.get();
+    const businesses = (s.businesses?.owned || []).map((b) => ({
+      ...b,
+      products: (b.products || []).map((p) => ({ ...p })),
+    }));
+
+    const biz = businesses.find((b) => b.id === bizId);
+    if (!biz) return;
+
+    const product = (biz.products || []).find((p) => p.id === productId);
+    if (!product) return;
+
+    if (Number(product.qty || 0) <= 0) {
+      this._showToast("Stok yok");
+      return;
+    }
+
+    const maxQty = Number(product.qty || 0);
+    const qtyRaw = window.prompt(`Kaç adet satmak istiyorsun? (Max ${maxQty})`, "1");
+    if (qtyRaw === null) return;
+    const qty = clamp(parseInt(qtyRaw, 10) || 0, 1, maxQty);
+    if (qty <= 0) {
+      this._showToast("Geçersiz adet");
+      return;
+    }
+
+    const lowest = this._findLowestMarketPriceByName(product.name);
+    const defaultPrice = lowest > 0 ? lowest : Number(product.price || 10);
+    const priceText =
+      lowest > 0
+        ? `Bu ürün için pazardaki en düşük fiyat: ${lowest} yton\nBirim satış fiyatını gir:`
+        : "Bu ürün için pazarda fiyat yok.\nBirim satış fiyatını gir:";
+
+    const priceRaw = window.prompt(priceText, String(defaultPrice));
+    if (priceRaw === null) return;
+    const price = Math.max(1, parseInt(priceRaw, 10) || 0);
+
+    const shop = this._ensureBusinessShop(biz);
+    const state2 = this.store.get();
+    const businesses2 = (state2.businesses?.owned || []).map((b) => ({
+      ...b,
+      products: (b.products || []).map((p) => ({ ...p })),
+    }));
+    const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
+    const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
+
+    const biz2 = businesses2.find((b) => b.id === bizId);
+    if (!biz2) return;
+    const product2 = (biz2.products || []).find((p) => p.id === productId);
+    if (!product2) return;
+
+    product2.qty = Math.max(0, Number(product2.qty || 0) - qty);
+    biz2.stock = Math.max(0, Number(biz2.stock || 0) - qty);
+
+    listings.unshift({
+      id: "listing_" + Date.now() + "_" + Math.floor(Math.random() * 9999),
+      shopId: shop.id,
+      icon: product2.icon || "📦",
+      itemName: product2.name,
+      rarity: product2.rarity || "common",
+      stock: qty,
+      price,
+      energyGain: Number(product2.energyGain || 0),
+      usable: Number(product2.energyGain || 0) > 0,
+      desc: product2.desc || "İşletme ürünü",
+    });
+
+    for (const sh of shops) {
+      sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
+    }
+
+    this.store.set({
+      businesses: {
+        ...(state2.businesses || {}),
+        owned: businesses2,
+      },
+      market: {
+        ...(state2.market || {}),
+        shops,
+        listings,
+      },
+    });
+
+    this._showToast(`${qty} adet satışa çıkarıldı`);
   }
 
-  _justReleased() {
-    const input = this.input || {};
-    if (typeof input.justReleased === "function") return !!input.justReleased();
-    if (typeof input.wasReleased === "function") return !!input.wasReleased();
-    if (typeof input.released === "function") return !!input.released();
-    return false;
+  _ensureBusinessShop(biz) {
+    const s = this.store.get();
+    const targetId = "shop_from_" + biz.id;
+    let shop = (s.market?.shops || []).find((x) => x.id === targetId);
+    if (shop) return shop;
+
+    shop = {
+      id: targetId,
+      businessId: biz.id,
+      type: biz.type,
+      icon: biz.icon || iconForType(biz.type),
+      name: biz.name,
+      ownerId: String(biz.ownerId || s.player?.id || "player_main"),
+      ownerName: String(biz.ownerName || s.player?.username || "Player"),
+      online: true,
+      theme: biz.theme || biz.type,
+      rating: 5,
+      totalListings: 0,
+    };
+
+    this.store.set({
+      market: {
+        ...(s.market || {}),
+        shops: [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))],
+      },
+    });
+
+    return shop;
   }
 
   _drawChipRowWrap(ctx, x, y, maxW, items, activeKey, actionName, chipW = 66, chipH = 30, gap = 6) {
@@ -621,11 +899,11 @@ export class TradeScene {
   }
 
   update() {
-    const pointer = this._pointerState();
-    const px = pointer.x;
-    const py = pointer.y;
+    const inp = this._inputSnapshot();
+    const px = inp.x;
+    const py = inp.y;
 
-    if (this._justPressed()) {
+    if (inp.justPressed) {
       this.dragging = true;
       this.downY = py;
       this.startScrollY = this.scrollY;
@@ -633,14 +911,14 @@ export class TradeScene {
       this.clickCandidate = true;
     }
 
-    if (this.dragging && this._isDown()) {
+    if (this.dragging && inp.down) {
       const dy = py - this.downY;
       this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
       if (this.moved > 10) this.clickCandidate = false;
     }
 
-    if (this.dragging && this._justReleased()) {
+    if (this.dragging && inp.justReleased) {
       this.dragging = false;
 
       if (!this.clickCandidate) return;
@@ -684,6 +962,15 @@ export class TradeScene {
             return;
           case "buy_market_item":
             this._buyMarketItem(h.shopId, h.itemId);
+            return;
+          case "buy_business":
+            this._buyBusiness(h.businessType);
+            return;
+          case "use_business_product":
+            this._useBusinessProduct(h.bizId, h.productId);
+            return;
+          case "sell_business_product":
+            this._sellBusinessProduct(h.bizId, h.productId);
             return;
           default:
             return;
@@ -749,22 +1036,23 @@ export class TradeScene {
 
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.font = "12px system-ui";
-    ctx.fillText("İşletmeler • Envanter • Açık Pazar", panelX + 112, panelY + 67);
+    ctx.fillText("İşletmeler • Envanter • Açık Pazar • Bina Satın Al", panelX + 112, panelY + 67);
 
     this._drawTopBadges(ctx, panelX, panelY, panelW, state);
 
     const tabsY = panelY + headerH + 20;
     const tabs = [
-      { key: "businesses", label: "İşletmelerim" },
-      { key: "inventory", label: "Envanterim" },
-      { key: "market", label: "Açık Pazar" },
+      { key: "businesses", label: "İşletmeler" },
+      { key: "inventory", label: "Envanter" },
+      { key: "market", label: "Pazar" },
+      { key: "buy", label: "Satın Al" },
     ];
 
     let tx = panelX + 14;
-    const tabGap = 8;
+    const tabGap = 6;
     const totalTabW = panelW - 28;
-    const tabW = Math.floor((totalTabW - tabGap * 2) / 3);
-    const tabH = 42;
+    const tabW = Math.floor((totalTabW - tabGap * 3) / 4);
+    const tabH = 40;
 
     if (trade.view === "main") {
       for (const tab of tabs) {
@@ -792,7 +1080,7 @@ export class TradeScene {
         );
 
         ctx.fillStyle = active ? "#ffffff" : "rgba(255,255,255,0.78)";
-        ctx.font = "800 13px system-ui";
+        ctx.font = "800 12px system-ui";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(tab.label, r.x + r.w / 2, r.y + r.h / 2);
@@ -823,8 +1111,10 @@ export class TradeScene {
       contentBottom = this._renderBusinessesTab(ctx, contentX, cursorY, contentW);
     } else if (trade.activeTab === "inventory") {
       contentBottom = this._renderInventoryTab(ctx, contentX, cursorY, contentW);
-    } else {
+    } else if (trade.activeTab === "market") {
       contentBottom = this._renderMarketTab(ctx, contentX, cursorY, contentW);
+    } else {
+      contentBottom = this._renderBuyTab(ctx, contentX, cursorY, contentW);
     }
 
     ctx.restore();
@@ -844,7 +1134,7 @@ export class TradeScene {
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(panelW - 28, 230);
+      const tw = Math.min(panelW - 28, 260);
       const th = 40;
       const txx = panelX + (panelW - tw) / 2;
       const tyy = panelY + panelH - th - 10;
@@ -862,18 +1152,19 @@ export class TradeScene {
     const businesses = this._allBusinesses();
 
     if (!businesses.length) {
-      return this._drawEmptyState(ctx, x, y, w, "🏪", "Henüz işletmen yok.");
+      return this._drawEmptyState(ctx, x, y, w, "🏪", "Henüz işletmen yok. Satın Al sekmesinden bina al.");
     }
 
     for (const biz of businesses) {
       const cardX = x + 10;
       const cardW = w - 20;
-      const cardH = 132;
+      const products = biz.products || [];
+      const cardH = 86 + Math.max(1, products.length) * 72 + 12;
 
       this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
       this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
 
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.fillStyle = "#fff";
       ctx.font = "900 24px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
@@ -882,49 +1173,61 @@ export class TradeScene {
       ctx.font = "900 16px system-ui";
       ctx.fillText(biz.name || "İşletme", cardX + 50, y + 24);
 
-      ctx.fillStyle = "rgba(255,255,255,0.68)";
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
       ctx.fillText(`${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)}`, cardX + 50, y + 45);
-      ctx.fillText(`Stok ${fmtNum(biz.stock)} • Sahip ${biz.ownerName || "Player"}`, cardX + 50, y + 63);
+      ctx.fillText(`Toplam stok ${fmtNum(biz.stock)} • Sahip ${biz.ownerName || "Player"}`, cardX + 50, y + 63);
 
-      const products = biz.products || [];
-      let chipX = cardX + 14;
-      let chipY = y + 82;
+      let py = y + 82;
 
-      for (let i = 0; i < Math.min(3, products.length); i++) {
-        const p = products[i];
-        const chipW = 90;
-        const chipH = 26;
+      for (const p of products) {
+        const rowX = cardX + 12;
+        const rowW = cardW - 24;
+        const rowH = 62;
 
-        if (chipX + chipW > cardX + cardW - 126) {
-          chipX = cardX + 14;
-          chipY += chipH + 6;
-        }
-
-        this._fillRound(ctx, chipX, chipY, chipW, chipH, 10, "rgba(255,255,255,0.08)");
-        this._strokeRound(ctx, chipX, chipY, chipW, chipH, 10, rarityColor(p.rarity), 1);
+        this._fillRound(ctx, rowX, py, rowW, rowH, 14, "rgba(255,255,255,0.05)");
+        this._strokeRound(ctx, rowX, py, rowW, rowH, 14, "rgba(255,255,255,0.10)");
 
         ctx.fillStyle = "#fff";
+        ctx.font = "900 20px system-ui";
+        ctx.fillText(p.icon || "📦", rowX + 10, py + 22);
+
+        ctx.font = "900 14px system-ui";
+        ctx.fillText(p.name || "Ürün", rowX + 38, py + 20);
+
+        ctx.fillStyle = rarityColor(p.rarity);
         ctx.font = "800 10px system-ui";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(`${p.icon || "📦"} ${(p.name || "").slice(0, 8)}`, chipX + chipW / 2, chipY + chipH / 2);
+        ctx.fillText(String(p.rarity || "common").toUpperCase(), rowX + 38, py + 35);
 
-        chipX += chipW + 8;
+        ctx.fillStyle = "rgba(255,255,255,0.76)";
+        ctx.font = "11px system-ui";
+        ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban fiyat ${fmtNum(p.price)} yton`, rowX + 38, py + 51);
+
+        const useRect = {
+          x: rowX + rowW - 174,
+          y: py + 17,
+          w: 74,
+          h: 28,
+          action: "use_business_product",
+          bizId: biz.id,
+          productId: p.id,
+        };
+        const sellRect = {
+          x: rowX + rowW - 92,
+          y: py + 17,
+          w: 78,
+          h: 28,
+          action: "sell_business_product",
+          bizId: biz.id,
+          productId: p.id,
+        };
+
+        this.hit.push(useRect, sellRect);
+        this._drawActionBtn(ctx, useRect, "Kullan", "primary");
+        this._drawActionBtn(ctx, sellRect, "Satışa Koy", "gold");
+
+        py += rowH + 10;
       }
-
-      const manageW = 108;
-      const manageH = 32;
-      const manageX = cardX + cardW - manageW - 14;
-      const manageY = y + cardH - manageH - 14;
-
-      this._fillRound(ctx, manageX, manageY, manageW, manageH, 12, "rgba(84,157,255,0.18)");
-      this._strokeRound(ctx, manageX, manageY, manageW, manageH, 12, "rgba(84,157,255,0.42)");
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "800 12px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("Yönetim Hazır", manageX + manageW / 2, manageY + manageH / 2);
 
       y += cardH + 12;
     }
@@ -937,8 +1240,8 @@ export class TradeScene {
     const filters = [
       { key: "all", label: "Tümü" },
       { key: "consumable", label: "Enerji" },
-      { key: "girls", label: "Kadınlar" },
-      { key: "goods", label: "Ürünler" },
+      { key: "girls", label: "Kadın" },
+      { key: "goods", label: "Ürün" },
       { key: "rare", label: "Nadir" },
     ];
 
@@ -1213,6 +1516,78 @@ export class TradeScene {
       };
       this.hit.push(buyRect);
       this._drawActionBtn(ctx, buyRect, "Satın Al", "gold");
+
+      y += cardH + 12;
+    }
+
+    return y;
+  }
+
+  _renderBuyTab(ctx, x, y, w) {
+    const buildings = [
+      {
+        type: "nightclub",
+        icon: "🌃",
+        name: "Nightclub",
+        price: 1000,
+        desc: "Alkol ve gece ürünü üretir.",
+      },
+      {
+        type: "coffeeshop",
+        icon: "🌿",
+        name: "Coffeeshop",
+        price: 850,
+        desc: "Ot ve enerji ürünü üretir.",
+      },
+      {
+        type: "brothel",
+        icon: "💋",
+        name: "Genel Ev",
+        price: 1200,
+        desc: "Yüksek enerji ürünleri üretir.",
+      },
+      {
+        type: "blackmarket",
+        icon: "🕶️",
+        name: "Black Market",
+        price: 1500,
+        desc: "Nadir ürün ve kasa satar.",
+      },
+    ];
+
+    for (const b of buildings) {
+      const cardX = x + 10;
+      const cardW = w - 20;
+      const cardH = 118;
+
+      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
+      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 24px system-ui";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(b.icon, cardX + 14, y + 34);
+
+      ctx.font = "900 16px system-ui";
+      ctx.fillText(b.name, cardX + 48, y + 24);
+
+      ctx.fillStyle = "rgba(255,255,255,0.74)";
+      ctx.font = "12px system-ui";
+      ctx.fillText(b.desc, cardX + 48, y + 45);
+      ctx.fillText(`Satın alma fiyatı: ${fmtNum(b.price)} yton`, cardX + 48, y + 64);
+      ctx.fillText("Satın alırken işletme ismi sorulur.", cardX + 48, y + 82);
+
+      const buyRect = {
+        x: cardX + cardW - 102,
+        y: y + 78,
+        w: 88,
+        h: 28,
+        action: "buy_business",
+        businessType: b.type,
+      };
+      this.hit.push(buyRect);
+      this._drawActionBtn(ctx, buyRect, "Satın Al", "primary");
 
       y += cardH + 12;
     }
