@@ -88,11 +88,14 @@ export class HomeScene {
     return [
       { id: "missions", titleTR: "Görevler", titleEN: "Missions", sceneKey: "missions" },
       { id: "pvp", titleTR: "PvP", titleEN: "PvP", sceneKey: "pvp" },
+      { id: "clan", titleTR: "Clan", titleEN: "Clan", sceneKey: "clanhub" },
       { id: "weapons", titleTR: "Silah Kaçakçısı", titleEN: "Arms Dealer", sceneKey: "weapons" },
       { id: "blackmarket", titleTR: "Black Market", titleEN: "Black Market", sceneKey: "trade" },
       { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
       { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
       { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
+    ];
+  }
     ];
   }
 
