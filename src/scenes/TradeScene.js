@@ -89,8 +89,10 @@ export class TradeScene {
 
     const s = this.store.get();
     const trade = s.trade || {};
+
     this.store.set({
       trade: {
+        ...(trade || {}),
         activeTab: trade.activeTab || "businesses",
         selectedBusinessId: trade.selectedBusinessId || null,
         selectedInventoryCategory: trade.selectedInventoryCategory || "all",
@@ -107,7 +109,12 @@ export class TradeScene {
 
   _safeRect() {
     const s = this.store.get();
-    const safe = s.ui?.safe || { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    const safe = s.ui?.safe || {
+      x: 0,
+      y: 0,
+      w: window.innerWidth,
+      h: window.innerHeight,
+    };
     const topReserved = Number(s.ui?.hudReservedTop || 110);
     const bottomReserved = Number(s.ui?.chatReservedBottom || 82);
 
@@ -435,6 +442,144 @@ export class TradeScene {
     this._showToast("Satın alındı");
   }
 
+  _drawChipRowWrap(ctx, x, y, maxW, items, activeKey, actionName, chipW = 66, chipH = 30, gap = 6) {
+    let cx = x;
+    let cy = y;
+
+    for (const item of items) {
+      if (cx + chipW > x + maxW) {
+        cx = x;
+        cy += chipH + gap;
+      }
+
+      const active = activeKey === item.key;
+      const r = { x: cx, y: cy, w: chipW, h: chipH, action: actionName, value: item.key };
+      this.hit.push(r);
+
+      this._fillRound(
+        ctx,
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        10,
+        active ? "rgba(84,157,255,0.20)" : "rgba(255,255,255,0.06)"
+      );
+      this._strokeRound(
+        ctx,
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        10,
+        active ? "rgba(84,157,255,0.42)" : "rgba(255,255,255,0.10)"
+      );
+
+      ctx.fillStyle = active ? "#fff" : "rgba(255,255,255,0.82)";
+      ctx.font = "800 11px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(item.label, r.x + r.w / 2, r.y + r.h / 2);
+
+      cx += chipW + gap;
+    }
+
+    return cy + chipH;
+  }
+
+  _drawActionBtn(ctx, r, text, style = "ghost") {
+    let fill = "rgba(255,255,255,0.10)";
+    let stroke = "rgba(255,255,255,0.14)";
+    let txt = "#fff";
+
+    if (style === "primary") {
+      fill = "rgba(84,157,255,0.22)";
+      stroke = "rgba(84,157,255,0.42)";
+    } else if (style === "gold") {
+      fill = "rgba(255,196,77,0.20)";
+      stroke = "rgba(255,196,77,0.42)";
+      txt = "#ffe59f";
+    } else if (style === "danger") {
+      fill = "rgba(255,90,90,0.18)";
+      stroke = "rgba(255,90,90,0.38)";
+      txt = "#ffd0d0";
+    }
+
+    this._fillRound(ctx, r.x, r.y, r.w, r.h, 11, fill);
+    this._strokeRound(ctx, r.x, r.y, r.w, r.h, 11, stroke);
+
+    ctx.fillStyle = txt;
+    ctx.font = "800 11px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, r.x + r.w / 2, r.y + r.h / 2);
+  }
+
+  _drawEmptyState(ctx, x, y, w, icon, text) {
+    const boxH = 120;
+    this._fillRound(ctx, x + 10, y, w - 20, boxH, 18, "rgba(255,255,255,0.05)");
+    this._strokeRound(ctx, x + 10, y, w - 20, boxH, 18, "rgba(255,255,255,0.10)");
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 30px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(icon || "📦", x + w / 2, y + 38);
+
+    ctx.fillStyle = "rgba(255,255,255,0.82)";
+    ctx.font = "700 14px system-ui";
+    ctx.fillText(text || "Boş", x + w / 2, y + 82);
+
+    return y + boxH + 12;
+  }
+
+  _drawTopBadges(ctx, panelX, panelY, panelW, state) {
+    const rowY = panelY + 58;
+    const gap = 6;
+    const items = [
+      { text: `YTON ${fmtNum(state.coins)}`, minW: 92, color: "#ffd36a" },
+      {
+        text: `Enerji ${fmtNum(state.player?.energy)}/${fmtNum(state.player?.energyMax)}`,
+        minW: 118,
+        color: "rgba(255,255,255,0.92)",
+      },
+      { text: `Lv ${fmtNum(state.player?.level)}`, minW: 56, color: "rgba(255,255,255,0.92)" },
+    ];
+
+    let totalMinW = gap * (items.length - 1);
+    for (const b of items) totalMinW += b.minW;
+
+    let badgeW = null;
+    if (totalMinW <= panelW - 150) {
+      badgeW = items.map((b) => b.minW);
+    } else {
+      const avail = panelW - 150 - gap * (items.length - 1);
+      badgeW = [
+        Math.max(76, Math.floor(avail * 0.29)),
+        Math.max(106, Math.floor(avail * 0.49)),
+        Math.max(50, Math.floor(avail * 0.18)),
+      ];
+    }
+
+    let bx = panelX + panelW - 16;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const b = items[i];
+      const w = badgeW[i];
+      bx -= w;
+
+      this._fillRound(ctx, bx, rowY, w, 26, 10, "rgba(255,255,255,0.07)");
+      this._strokeRound(ctx, bx, rowY, w, 26, 10, "rgba(255,255,255,0.12)");
+
+      ctx.fillStyle = b.color;
+      ctx.font = "800 10px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(b.text, bx + w / 2, rowY + 13);
+
+      bx -= gap;
+    }
+  }
+
   update() {
     const px = Number(this.input.pointer?.x || 0);
     const py = Number(this.input.pointer?.y || 0);
@@ -537,7 +682,7 @@ export class TradeScene {
     this._fillRound(ctx, panelX, panelY, panelW, panelH, 22, "rgba(8,12,18,0.86)");
     this._strokeRound(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,255,255,0.12)");
 
-    const headerH = 82;
+    const headerH = 92;
     this._fillRound(ctx, panelX + 10, panelY + 10, panelW - 20, headerH, 18, "rgba(255,255,255,0.05)");
     this._strokeRound(ctx, panelX + 10, panelY + 10, panelW - 20, headerH, 18, "rgba(255,255,255,0.10)");
 
@@ -565,28 +710,9 @@ export class TradeScene {
     ctx.font = "12px system-ui";
     ctx.fillText("İşletmeler • Envanter • Açık Pazar", panelX + 112, panelY + 67);
 
-    const badgeY = panelY + 26;
-    const badges = [
-      { text: `YTON ${fmtNum(state.coins)}`, w: 96 },
-      { text: `Enerji ${fmtNum(state.player?.energy)}/${fmtNum(state.player?.energyMax)}`, w: 128 },
-      { text: `Lv ${fmtNum(state.player?.level)}`, w: 58 },
-    ];
+    this._drawTopBadges(ctx, panelX, panelY, panelW, state);
 
-    let bx = panelX + panelW - 18;
-    for (let i = badges.length - 1; i >= 0; i--) {
-      const b = badges[i];
-      bx -= b.w;
-      this._fillRound(ctx, bx, badgeY, b.w, 28, 11, "rgba(255,255,255,0.07)");
-      this._strokeRound(ctx, bx, badgeY, b.w, 28, 11, "rgba(255,255,255,0.12)");
-      ctx.fillStyle = i === 0 ? "#ffd36a" : "rgba(255,255,255,0.92)";
-      ctx.font = "800 11px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(b.text, bx + b.w / 2, badgeY + 14);
-      bx -= 8;
-    }
-
-    const tabsY = panelY + headerH + 22;
+    const tabsY = panelY + headerH + 20;
     const tabs = [
       { key: "businesses", label: "İşletmelerim" },
       { key: "inventory", label: "Envanterim" },
@@ -605,8 +731,25 @@ export class TradeScene {
         const r = { x: tx, y: tabsY, w: tabW, h: tabH, action: "tab", value: tab.key };
         this.hit.push(r);
 
-        this._fillRound(ctx, r.x, r.y, r.w, r.h, 14, active ? "rgba(84,157,255,0.22)" : "rgba(255,255,255,0.06)");
-        this._strokeRound(ctx, r.x, r.y, r.w, r.h, 14, active ? "rgba(84,157,255,0.45)" : "rgba(255,255,255,0.12)");
+        this._fillRound(
+          ctx,
+          r.x,
+          r.y,
+          r.w,
+          r.h,
+          14,
+          active ? "rgba(84,157,255,0.22)" : "rgba(255,255,255,0.06)"
+        );
+        this._strokeRound(
+          ctx,
+          r.x,
+          r.y,
+          r.w,
+          r.h,
+          14,
+          active ? "rgba(84,157,255,0.45)" : "rgba(255,255,255,0.12)"
+        );
+
         ctx.fillStyle = active ? "#ffffff" : "rgba(255,255,255,0.78)";
         ctx.font = "800 13px system-ui";
         ctx.textAlign = "center";
@@ -618,7 +761,7 @@ export class TradeScene {
     }
 
     const contentX = panelX + 12;
-    const contentY = trade.view === "main" ? tabsY + tabH + 12 : panelY + 102;
+    const contentY = trade.view === "main" ? tabsY + tabH + 12 : panelY + 116;
     const contentW = panelW - 24;
     const contentH = panelH - (contentY - panelY) - 12;
 
@@ -682,48 +825,57 @@ export class TradeScene {
     }
 
     for (const biz of businesses) {
-      const cardH = 128;
-      this._fillRound(ctx, x + 10, y, w - 20, cardH, 18, "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, x + 10, y, w - 20, cardH, 18, "rgba(255,255,255,0.10)");
+      const cardX = x + 10;
+      const cardW = w - 20;
+      const cardH = 132;
+
+      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
+      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
 
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "900 24px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(biz.icon || iconForType(biz.type), x + 24, y + 34);
+      ctx.fillText(biz.icon || iconForType(biz.type), cardX + 14, y + 34);
 
       ctx.font = "900 16px system-ui";
-      ctx.fillText(biz.name || "İşletme", x + 60, y + 26);
+      ctx.fillText(biz.name || "İşletme", cardX + 50, y + 24);
 
       ctx.fillStyle = "rgba(255,255,255,0.68)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)}`, x + 60, y + 46);
-      ctx.fillText(`Stok ${fmtNum(biz.stock)} • Sahip ${biz.ownerName || "Player"}`, x + 60, y + 64);
+      ctx.fillText(`${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)}`, cardX + 50, y + 45);
+      ctx.fillText(`Stok ${fmtNum(biz.stock)} • Sahip ${biz.ownerName || "Player"}`, cardX + 50, y + 63);
 
       const products = biz.products || [];
-      let py = y + 88;
-      let px = x + 24;
+      let chipX = cardX + 14;
+      let chipY = y + 82;
+
       for (let i = 0; i < Math.min(3, products.length); i++) {
         const p = products[i];
-        const chipW = 92;
+        const chipW = 90;
         const chipH = 26;
 
-        this._fillRound(ctx, px, py, chipW, chipH, 10, "rgba(255,255,255,0.08)");
-        this._strokeRound(ctx, px, py, chipW, chipH, 10, rarityColor(p.rarity), 1);
+        if (chipX + chipW > cardX + cardW - 126) {
+          chipX = cardX + 14;
+          chipY += chipH + 6;
+        }
+
+        this._fillRound(ctx, chipX, chipY, chipW, chipH, 10, "rgba(255,255,255,0.08)");
+        this._strokeRound(ctx, chipX, chipY, chipW, chipH, 10, rarityColor(p.rarity), 1);
 
         ctx.fillStyle = "#fff";
-        ctx.font = "800 11px system-ui";
+        ctx.font = "800 10px system-ui";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(`${p.icon || "📦"} ${p.name.slice(0, 8)}`, px + chipW / 2, py + chipH / 2);
+        ctx.fillText(`${p.icon || "📦"} ${(p.name || "").slice(0, 8)}`, chipX + chipW / 2, chipY + chipH / 2);
 
-        px += chipW + 8;
+        chipX += chipW + 8;
       }
 
-      const manageW = 110;
-      const manageH = 34;
-      const manageX = x + w - manageW - 24;
-      const manageY = y + 86;
+      const manageW = 108;
+      const manageH = 32;
+      const manageX = cardX + cardW - manageW - 14;
+      const manageY = y + cardH - manageH - 14;
 
       this._fillRound(ctx, manageX, manageY, manageW, manageH, 12, "rgba(84,157,255,0.18)");
       this._strokeRound(ctx, manageX, manageY, manageW, manageH, 12, "rgba(84,157,255,0.42)");
@@ -749,24 +901,20 @@ export class TradeScene {
       { key: "rare", label: "Nadir" },
     ];
 
-    let fx = x + 10;
-    for (const f of filters) {
-      const active = trade.selectedInventoryCategory === f.key;
-      const r = { x: fx, y, w: 66, h: 30, action: "inventory_filter", value: f.key };
-      this.hit.push(r);
+    const lastChipBottom = this._drawChipRowWrap(
+      ctx,
+      x + 10,
+      y,
+      w - 20,
+      filters,
+      trade.selectedInventoryCategory,
+      "inventory_filter",
+      66,
+      30,
+      6
+    );
 
-      this._fillRound(ctx, r.x, r.y, r.w, r.h, 10, active ? "rgba(84,157,255,0.20)" : "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, r.x, r.y, r.w, r.h, 10, active ? "rgba(84,157,255,0.42)" : "rgba(255,255,255,0.10)");
-      ctx.fillStyle = active ? "#fff" : "rgba(255,255,255,0.82)";
-      ctx.font = "800 11px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(f.label, r.x + r.w / 2, r.y + r.h / 2);
-
-      fx += 72;
-    }
-
-    y += 42;
+    y = lastChipBottom + 12;
 
     let items = this._inventoryItems();
     if (trade.selectedInventoryCategory !== "all") {
@@ -774,13 +922,13 @@ export class TradeScene {
     }
 
     if (!items.length) {
-      return this._drawEmptyState(ctx, x, y + 30, w, "🎒", "Bu kategoride envanter yok.");
+      return this._drawEmptyState(ctx, x, y + 10, w, "🎒", "Bu kategoride envanter yok.");
     }
 
     for (const item of items) {
-      const cardH = 116;
       const cardX = x + 10;
       const cardW = w - 20;
+      const cardH = 122;
 
       this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
       this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
@@ -797,7 +945,7 @@ export class TradeScene {
       this._fillRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, "rgba(255,255,255,0.07)");
       this._strokeRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, rarityColor(item.rarity), 1.2);
       ctx.fillStyle = rarityColor(item.rarity);
-      ctx.font = "800 11px system-ui";
+      ctx.font = "800 10px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(item.rarity || "common").toUpperCase(), cardX + cardW - 47, y + 24);
@@ -813,28 +961,38 @@ export class TradeScene {
       sub += ` • NPC satış ${fmtNum(item.sellPrice)} yton`;
       ctx.fillText(sub, cardX + 14, y + 64);
 
-      const btnY = y + 78;
-      let btnX = cardX + 14;
       const btnGap = 8;
+      const btnY = y + 82;
+      const innerW = cardW - 28;
+      const btns = [];
 
-      if (item.usable) {
-        const r = { x: btnX, y: btnY, w: 88, h: 28, action: "use_item", itemId: item.id };
-        this.hit.push(r);
-        this._drawActionBtn(ctx, r, "Kullan", "primary");
-        btnX += r.w + btnGap;
+      if (item.usable) btns.push({ text: "Kullan", action: "use_item", style: "primary", itemId: item.id });
+      if (item.sellable) btns.push({ text: "Sat", action: "sell_item", style: "gold", itemId: item.id });
+      if (item.marketable) btns.push({ text: "Pazara Koy", action: "list_item", style: "ghost", itemId: item.id });
+
+      let widths;
+      if (btns.length === 3) {
+        widths = [80, 64, Math.max(92, innerW - 80 - 64 - btnGap * 2)];
+      } else if (btns.length === 2) {
+        const w1 = Math.floor((innerW - btnGap) / 2);
+        widths = [w1, innerW - btnGap - w1];
+      } else {
+        widths = [innerW];
       }
 
-      if (item.sellable) {
-        const r = { x: btnX, y: btnY, w: 78, h: 28, action: "sell_item", itemId: item.id };
+      let btnX = cardX + 14;
+      for (let i = 0; i < btns.length; i++) {
+        const r = {
+          x: btnX,
+          y: btnY,
+          w: widths[i],
+          h: 28,
+          action: btns[i].action,
+          itemId: btns[i].itemId,
+        };
         this.hit.push(r);
-        this._drawActionBtn(ctx, r, "Sat", "gold");
-        btnX += r.w + btnGap;
-      }
-
-      if (item.marketable) {
-        const r = { x: btnX, y: btnY, w: 106, h: 28, action: "list_item", itemId: item.id };
-        this.hit.push(r);
-        this._drawActionBtn(ctx, r, "Pazara Koy", "ghost");
+        this._drawActionBtn(ctx, r, btns[i].text, btns[i].style);
+        btnX += widths[i] + btnGap;
       }
 
       y += cardH + 12;
@@ -854,24 +1012,20 @@ export class TradeScene {
       { key: "blackmarket", label: "Market" },
     ];
 
-    let fx = x + 10;
-    for (const f of filters) {
-      const active = trade.selectedMarketFilter === f.key;
-      const r = { x: fx, y, w: 66, h: 30, action: "market_filter", value: f.key };
-      this.hit.push(r);
+    const lastChipBottom = this._drawChipRowWrap(
+      ctx,
+      x + 10,
+      y,
+      w - 20,
+      filters,
+      trade.selectedMarketFilter,
+      "market_filter",
+      66,
+      30,
+      6
+    );
 
-      this._fillRound(ctx, r.x, r.y, r.w, r.h, 10, active ? "rgba(84,157,255,0.20)" : "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, r.x, r.y, r.w, r.h, 10, active ? "rgba(84,157,255,0.42)" : "rgba(255,255,255,0.10)");
-      ctx.fillStyle = active ? "#fff" : "rgba(255,255,255,0.82)";
-      ctx.font = "800 11px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(f.label, r.x + r.w / 2, r.y + r.h / 2);
-
-      fx += 72;
-    }
-
-    y += 42;
+    y = lastChipBottom + 12;
 
     let shops = this._marketShops();
     if (trade.selectedMarketFilter !== "all") {
@@ -879,13 +1033,13 @@ export class TradeScene {
     }
 
     if (!shops.length) {
-      return this._drawEmptyState(ctx, x, y + 30, w, "🏬", "Bu filtrede dükkan bulunamadı.");
+      return this._drawEmptyState(ctx, x, y + 10, w, "🏬", "Bu filtrede dükkan bulunamadı.");
     }
 
     for (const shop of shops) {
-      const cardH = 118;
       const cardX = x + 10;
       const cardW = w - 20;
+      const cardH = 122;
 
       this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
       this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
@@ -909,15 +1063,22 @@ export class TradeScene {
       const onlineBorder = shop.online ? "rgba(76,217,100,0.44)" : "rgba(255,255,255,0.12)";
       const onlineTextColor = shop.online ? "#b8ffca" : "rgba(255,255,255,0.80)";
 
-      this._fillRound(ctx, cardX + 14, y + 78, 62, 26, 10, onlineColor);
-      this._strokeRound(ctx, cardX + 14, y + 78, 62, 26, 10, onlineBorder);
+      this._fillRound(ctx, cardX + 14, y + 82, 62, 26, 10, onlineColor);
+      this._strokeRound(ctx, cardX + 14, y + 82, 62, 26, 10, onlineBorder);
       ctx.fillStyle = onlineTextColor;
       ctx.font = "800 11px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(onlineText, cardX + 45, y + 91);
+      ctx.fillText(onlineText, cardX + 45, y + 95);
 
-      const enterRect = { x: cardX + cardW - 112, y: y + 74, w: 96, h: 30, action: "open_shop", shopId: shop.id };
+      const enterRect = {
+        x: cardX + cardW - 110,
+        y: y + 80,
+        w: 96,
+        h: 30,
+        action: "open_shop",
+        shopId: shop.id,
+      };
       this.hit.push(enterRect);
       this._drawActionBtn(ctx, enterRect, "Dükkana Gir", "primary");
 
@@ -935,22 +1096,26 @@ export class TradeScene {
       return this._drawEmptyState(ctx, x, y + 40, w, "❌", "Dükkan bulunamadı.");
     }
 
-    const headerH = 84;
-    this._fillRound(ctx, x + 10, y, w - 20, headerH, 18, "rgba(255,255,255,0.06)");
-    this._strokeRound(ctx, x + 10, y, w - 20, headerH, 18, "rgba(255,255,255,0.10)");
+    const headX = x + 10;
+    const headW = w - 20;
+    const headerH = 90;
+
+    this._fillRound(ctx, headX, y, headW, headerH, 18, "rgba(255,255,255,0.06)");
+    this._strokeRound(ctx, headX, y, headW, headerH, 18, "rgba(255,255,255,0.10)");
 
     ctx.fillStyle = "#fff";
     ctx.font = "900 26px system-ui";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(shop.icon || iconForType(shop.type), x + 24, y + 36);
+    ctx.fillText(shop.icon || iconForType(shop.type), headX + 14, y + 36);
+
     ctx.font = "900 17px system-ui";
-    ctx.fillText(shop.name || "Dükkan", x + 62, y + 26);
+    ctx.fillText(shop.name || "Dükkan", headX + 52, y + 26);
 
     ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = "12px system-ui";
-    ctx.fillText(`Sahip ${shop.ownerName || "?"} • ${typeLabel(shop.type)} • Puan ${shop.rating || 0}`, x + 62, y + 46);
-    ctx.fillText(`Market ürünleri aşağıda listelenmiştir.`, x + 62, y + 64);
+    ctx.fillText(`Sahip ${shop.ownerName || "?"} • ${typeLabel(shop.type)} • Puan ${shop.rating || 0}`, headX + 52, y + 46);
+    ctx.fillText("Market ürünleri aşağıda listelenmiştir.", headX + 52, y + 65);
 
     y += headerH + 12;
 
@@ -960,9 +1125,9 @@ export class TradeScene {
     }
 
     for (const item of listings) {
-      const cardH = 110;
       const cardX = x + 10;
       const cardW = w - 20;
+      const cardH = 114;
 
       this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
       this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
@@ -979,7 +1144,7 @@ export class TradeScene {
       this._fillRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, "rgba(255,255,255,0.07)");
       this._strokeRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, rarityColor(item.rarity), 1.2);
       ctx.fillStyle = rarityColor(item.rarity);
-      ctx.font = "800 11px system-ui";
+      ctx.font = "800 10px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(String(item.rarity || "common").toUpperCase(), cardX + cardW - 47, y + 24);
@@ -997,8 +1162,8 @@ export class TradeScene {
       ctx.fillText(line2, cardX + 14, y + 64);
 
       const buyRect = {
-        x: cardX + cardW - 98,
-        y: y + 76,
+        x: cardX + cardW - 96,
+        y: y + 80,
         w: 82,
         h: 28,
         action: "buy_market_item",
@@ -1012,46 +1177,5 @@ export class TradeScene {
     }
 
     return y;
-  }
-
-  _drawActionBtn(ctx, r, text, style = "ghost") {
-    let fill = "rgba(255,255,255,0.10)";
-    let stroke = "rgba(255,255,255,0.14)";
-    let txt = "#fff";
-
-    if (style === "primary") {
-      fill = "rgba(84,157,255,0.22)";
-      stroke = "rgba(84,157,255,0.42)";
-    } else if (style === "gold") {
-      fill = "rgba(255,196,77,0.20)";
-      stroke = "rgba(255,196,77,0.42)";
-      txt = "#ffe59f";
-    }
-
-    this._fillRound(ctx, r.x, r.y, r.w, r.h, 11, fill);
-    this._strokeRound(ctx, r.x, r.y, r.w, r.h, 11, stroke);
-    ctx.fillStyle = txt;
-    ctx.font = "800 11px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, r.x + r.w / 2, r.y + r.h / 2);
-  }
-
-  _drawEmptyState(ctx, x, y, w, icon, text) {
-    const boxH = 120;
-    this._fillRound(ctx, x + 10, y, w - 20, boxH, 18, "rgba(255,255,255,0.05)");
-    this._strokeRound(ctx, x + 10, y, w - 20, boxH, 18, "rgba(255,255,255,0.10)");
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 30px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(icon || "📦", x + w / 2, y + 38);
-
-    ctx.fillStyle = "rgba(255,255,255,0.82)";
-    ctx.font = "700 14px system-ui";
-    ctx.fillText(text || "Boş", x + w / 2, y + 82);
-
-    return y + boxH + 12;
   }
 }
