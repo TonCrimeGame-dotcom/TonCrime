@@ -379,62 +379,71 @@ export class ClanScene {
     this.spinState.active = false;
   }
 
-  update() {
-    const wheel = wheelDelta(this.input);
-    if (wheel) {
-      this.scrollY = clamp(this.scrollY + wheel, 0, this.maxScroll);
+ update(dt) {
+  const wheel = wheelDelta(this.input);
+  if (wheel) {
+    this.scrollY = clamp(this.scrollY + wheel, 0, this.maxScroll);
+  }
+
+  const pointer = getPointer(this.input);
+  const px = Number(pointer.x || 0);
+  const py = Number(pointer.y || 0);
+
+  if (justPressed(this.input)) {
+    this.dragging = true;
+    this.dragMoved = 0;
+    this.downX = px;
+    this.downY = py;
+    this.startScrollY = this.scrollY;
+    this.clickCandidate = true;
+
+    // basıldığı anda buton üzerindeyse de hafif toleranslı kalsın
+  }
+
+  if (this.dragging && isDown(this.input)) {
+    const dy = py - this.downY;
+    this.dragMoved = Math.max(this.dragMoved, Math.abs(dy));
+    this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
+
+    if (this.dragMoved > 10) {
+      this.clickCandidate = false;
     }
+  }
 
-    const pointer = getPointer(this.input);
-    const px = Number(pointer.x || 0);
-    const py = Number(pointer.y || 0);
+  if (this.dragging && justReleased(this.input)) {
+    this.dragging = false;
 
-    if (justPressed(this.input)) {
-      this.dragging = true;
-      this.dragMoved = 0;
-      this.downX = px;
-      this.downY = py;
-      this.startScrollY = this.scrollY;
-    }
-
-    if (this.dragging && isDown(this.input)) {
-      const dy = py - this.downY;
-      this.dragMoved = Math.max(this.dragMoved, Math.abs(dy));
-      this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
-    }
-
-    if (this.dragging && justReleased(this.input)) {
-      const moved = this.dragMoved > 10;
-      if (!moved) {
-        for (let i = this.buttons.length - 1; i >= 0; i--) {
-          const b = this.buttons[i];
-          if (pointInRect(px, py, b)) {
-            b.onClick?.();
-            break;
-          }
+    if (this.clickCandidate) {
+      for (let i = this.buttons.length - 1; i >= 0; i--) {
+        const b = this.buttons[i];
+        if (pointInRect(px, py, b)) {
+          b.onClick?.();
+          break;
         }
       }
-      this.dragging = false;
     }
+  }
 
-    if (this.spinState?.active) {
-      const now = performance.now();
+  if (this.spinState?.active) {
+    const now = performance.now();
 
-      for (const reel of this.reels) {
-        if (!reel.stopping && now >= reel.stopTime) {
-          this.stopReel(reel);
-        }
-
-        if (!reel.stopping) {
-          reel.position += reel.speed;
-          reel.speed = Math.max(0.38, reel.speed * 0.992);
-        } else if (!reel.settled) {
-          this.settleReel(reel);
-        }
+    for (const reel of this.reels) {
+      if (!reel.stopping && now >= reel.stopTime) {
+        this.stopReel(reel);
       }
 
-      this.completeSpinIfReady();
+      if (!reel.stopping) {
+        reel.position += reel.speed;
+        reel.speed = Math.max(0.38, reel.speed * 0.992);
+      } else if (!reel.settled) {
+        this.settleReel(reel);
+      }
     }
+
+    this.completeSpinIfReady();
+  }
+  }
+
 
     this.syncBossState();
   }
