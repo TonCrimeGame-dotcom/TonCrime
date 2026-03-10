@@ -58,7 +58,7 @@ function isPointInRect(px, py, r) {
 export class TradeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
-    this.input = input;
+    this.input = input || null;
     this.i18n = i18n;
     this.assets = assets;
     this.scenes = scenes;
@@ -442,6 +442,46 @@ export class TradeScene {
     this._showToast("Satın alındı");
   }
 
+  _pointerState() {
+    const input = this.input || {};
+    const p =
+      input.pointer ||
+      input.p ||
+      input.state?.pointer ||
+      (typeof input.getPointer === "function" ? input.getPointer() : null) ||
+      { x: 0, y: 0 };
+
+    return {
+      x: Number(p?.x || 0),
+      y: Number(p?.y || 0),
+    };
+  }
+
+  _justPressed() {
+    const input = this.input || {};
+    if (typeof input.justPressed === "function") return !!input.justPressed();
+    if (typeof input.wasPressed === "function") return !!input.wasPressed();
+    if (typeof input.pressed === "function") return !!input.pressed();
+    return false;
+  }
+
+  _isDown() {
+    const input = this.input || {};
+    if (typeof input.isDown === "function") return !!input.isDown();
+    if (typeof input.down === "function") return !!input.down();
+    if (typeof input.pointerDown === "boolean") return input.pointerDown;
+    if (typeof input.state?.down === "boolean") return input.state.down;
+    return false;
+  }
+
+  _justReleased() {
+    const input = this.input || {};
+    if (typeof input.justReleased === "function") return !!input.justReleased();
+    if (typeof input.wasReleased === "function") return !!input.wasReleased();
+    if (typeof input.released === "function") return !!input.released();
+    return false;
+  }
+
   _drawChipRowWrap(ctx, x, y, maxW, items, activeKey, actionName, chipW = 66, chipH = 30, gap = 6) {
     let cx = x;
     let cy = y;
@@ -581,10 +621,11 @@ export class TradeScene {
   }
 
   update() {
-    const px = Number(this.input.pointer?.x || 0);
-    const py = Number(this.input.pointer?.y || 0);
+    const pointer = this._pointerState();
+    const px = pointer.x;
+    const py = pointer.y;
 
-    if (this.input.justPressed?.()) {
+    if (this._justPressed()) {
       this.dragging = true;
       this.downY = py;
       this.startScrollY = this.scrollY;
@@ -592,14 +633,14 @@ export class TradeScene {
       this.clickCandidate = true;
     }
 
-    if (this.dragging && this.input.isDown?.()) {
+    if (this.dragging && this._isDown()) {
       const dy = py - this.downY;
       this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
       if (this.moved > 10) this.clickCandidate = false;
     }
 
-    if (this.dragging && this.input.justReleased?.()) {
+    if (this.dragging && this._justReleased()) {
       this.dragging = false;
 
       if (!this.clickCandidate) return;
