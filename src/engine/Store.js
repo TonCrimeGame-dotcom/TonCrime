@@ -26,7 +26,9 @@ export class Store {
   subscribe(fn) {
     if (typeof fn !== "function") return () => {};
     this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
   }
 
   _emit(prev, next) {
@@ -50,47 +52,75 @@ export class Store {
   }
 
   _deepMerge(base, patch) {
-    if (Array.isArray(base) && Array.isArray(patch)) return patch.slice();
-    if (!this._isObject(base) || !this._isObject(patch)) return patch;
+    if (Array.isArray(base) && Array.isArray(patch)) {
+      return patch.slice();
+    }
 
-    for (const k of Object.keys(patch)) {
-      const pv = patch[k];
-      const bv = base[k];
+    if (!this._isObject(base) || !this._isObject(patch)) {
+      return patch;
+    }
+
+    for (const key of Object.keys(patch)) {
+      const pv = patch[key];
+      const bv = base[key];
 
       if (Array.isArray(pv)) {
-        base[k] = pv.slice();
+        base[key] = pv.slice();
       } else if (this._isObject(pv) && this._isObject(bv)) {
-        base[k] = this._deepMerge({ ...bv }, pv);
+        base[key] = this._deepMerge({ ...bv }, pv);
       } else if (this._isObject(pv)) {
-        base[k] = this._deepMerge({}, pv);
+        base[key] = this._deepMerge({}, pv);
       } else {
-        base[k] = pv;
+        base[key] = pv;
       }
     }
+
     return base;
   }
 
   _mergeDefaults(state) {
     const defaults = {
       lang: "tr",
+
       coins: 5000,
       cash: 25000,
       premium: false,
 
       ui: {
-        safe: { x: 0, y: 0, w: 390, h: 844 },
+        safe: {
+          x: 0,
+          y: 0,
+          w:
+            typeof window !== "undefined"
+              ? window.innerWidth
+              : 390,
+          h:
+            typeof window !== "undefined"
+              ? window.innerHeight
+              : 844,
+        },
         hudReservedTop: 110,
         chatReservedBottom: 82,
       },
 
       player: {
+        id: "player_main",
         username: "Player",
         telegramId: "",
+        email: "",
+        age: 18,
+
         level: 50,
         xp: 0,
         xpToNext: 100,
+
         energy: 70,
         energyMax: 100,
+
+        hp: 100,
+        hpMax: 100,
+
+        premiumUntil: 0,
       },
 
       trade: {
@@ -222,6 +252,29 @@ export class Store {
                 price: 36,
                 energyGain: 12,
                 desc: "Enerji için kullanılabilir.",
+              },
+            ],
+          },
+          {
+            id: "biz_brothel_1",
+            type: "brothel",
+            icon: "💋",
+            name: "Ruby House",
+            ownerId: "player_main",
+            ownerName: "Player",
+            dailyProduction: 50,
+            stock: 19,
+            theme: "red",
+            products: [
+              {
+                id: "biz_brothel_1_vip",
+                icon: "🌹",
+                name: "VIP Companion",
+                rarity: "epic",
+                qty: 5,
+                price: 95,
+                energyGain: 22,
+                desc: "Yüksek enerji itemi.",
               },
             ],
           },
@@ -358,8 +411,79 @@ export class Store {
           },
         ],
       },
+
+      stars: {
+        owned: {},
+        selectedId: null,
+        lastClaimTs: {},
+        twinBonusClaimed: {},
+      },
+
+      missions: {
+        dailyAdsWatched: 0,
+        dailyAdsMax: 20,
+        invites: 0,
+        completed: {},
+        claimed: {},
+      },
+
+      pvp: {
+        wins: 0,
+        losses: 0,
+        rating: 1000,
+        currentOpponent: null,
+      },
+
+      settings: {
+        music: true,
+        sfx: true,
+        vibration: true,
+      },
     };
 
-    return this._deepMerge(this._clone(defaults), state || {});
+    const merged = this._deepMerge(this._clone(defaults), state || {});
+
+    if (!merged.player) merged.player = {};
+    if (!merged.trade) merged.trade = {};
+    if (!merged.inventory) merged.inventory = { items: [] };
+    if (!Array.isArray(merged.inventory.items)) merged.inventory.items = [];
+    if (!merged.businesses) merged.businesses = { owned: [] };
+    if (!Array.isArray(merged.businesses.owned)) merged.businesses.owned = [];
+    if (!merged.market) merged.market = { shops: [], listings: [] };
+    if (!Array.isArray(merged.market.shops)) merged.market.shops = [];
+    if (!Array.isArray(merged.market.listings)) merged.market.listings = [];
+
+    const playerName = String(merged.player.username || "Player");
+
+    for (const biz of merged.businesses.owned) {
+      if (!biz.ownerName) biz.ownerName = playerName;
+      if (!biz.ownerId) biz.ownerId = String(merged.player.id || "player_main");
+      if (!biz.icon) biz.icon = this._businessIcon(biz.type);
+      if (!Array.isArray(biz.products)) biz.products = [];
+    }
+
+    for (const shop of merged.market.shops) {
+      if (!shop.icon) shop.icon = this._businessIcon(shop.type);
+      if (typeof shop.totalListings !== "number") {
+        shop.totalListings = merged.market.listings.filter((x) => x.shopId === shop.id).length;
+      }
+    }
+
+    return merged;
+  }
+
+  _businessIcon(type) {
+    switch (type) {
+      case "nightclub":
+        return "🌃";
+      case "coffeeshop":
+        return "🌿";
+      case "brothel":
+        return "💋";
+      case "blackmarket":
+        return "🕶️";
+      default:
+        return "🏪";
+    }
   }
 }
