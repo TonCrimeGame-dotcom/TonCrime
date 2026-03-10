@@ -1,177 +1,170 @@
-import { ClanSystem } from "../clan/ClanSystem.js";
+import { ClanSystem } from "../systems/clan/ClanSystem.js";
 import {
   formatMoney,
   getRoleLabel,
   getUpgradeCost,
   getUpgradeLabel,
-} from "../clan/ClanUtils.js";
+} from "../systems/clan/ClanUtils.js";
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function pointInRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
 
 export class ClanScene {
   constructor({ engine, sceneManager, assets, input, store, i18n, scenes }) {
     this.engine = engine;
     this.sceneManager = sceneManager || scenes;
-    this.scenes = scenes || sceneManager;
     this.assets = assets;
     this.input = input;
     this.store = store;
     this.i18n = i18n;
 
+    this.activeTab = "genel";
+
+    this.scrollY = 0;
+    this.maxScroll = 0;
+    this.dragging = false;
+    this.downY = 0;
+    this.startScroll = 0;
+    this.moved = 0;
+    this.clickCandidate = false;
+
     this.buttons = [];
     this.tabButtons = [];
+    this.rowHits = [];
+  }
+
+  enter() {
     this.activeTab = "genel";
-    this.bossKickFlash = 0;
+    this.scrollY = 0;
+    this.maxScroll = 0;
+    this.dragging = false;
   }
 
   onEnter() {
-    this.activeTab = "genel";
-    this.bossKickFlash = 0;
-    this.rebuildUi();
+    this.enter();
   }
 
-  onExit() {}
+  exit() {}
 
-  goScene(key) {
-    if (this.sceneManager && typeof this.sceneManager.go === "function") {
-      this.sceneManager.go(key);
-      return;
-    }
-    if (this.scenes && typeof this.scenes.go === "function") {
-      this.scenes.go(key);
-      return;
-    }
-    if (this.sceneManager && typeof this.sceneManager.goTo === "function") {
-      this.sceneManager.goTo(key);
-    }
+  onExit() {
+    this.exit();
   }
 
-  getPointer() {
-    return (
-      this.input?.pointer ||
-      this.input?.p ||
-      this.input?.mouse ||
-      this.input?.state?.pointer ||
-      { x: 0, y: 0 }
-    );
+  _go(key) {
+    if (this.sceneManager?.go) return this.sceneManager.go(key);
+    if (this.sceneManager?.goTo) return this.sceneManager.goTo(key);
   }
 
-  isPressed() {
-    if (typeof this.input?.justPressed === "function") return !!this.input.justPressed();
-    if (typeof this.input?.isJustPressed === "function") {
-      return (
-        !!this.input.isJustPressed("pointer") ||
-        !!this.input.isJustPressed("mouseLeft") ||
-        !!this.input.isJustPressed("touch")
-      );
-    }
-    return !!this.input?._justPressed || !!this.input?.mousePressed;
+  _safe(ctx) {
+    const s = this.store.get();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const W = Math.floor(ctx.canvas.width / dpr);
+    const H = Math.floor(ctx.canvas.height / dpr);
+    return s?.ui?.safe || { x: 0, y: 0, w: W, h: H };
   }
 
-  rebuildUi() {
-    this.buttons = [
-      {
-        id: "back",
-        x: 30,
-        y: 24,
-        w: 130,
-        h: 42,
-        text: "GERİ",
-        onClick: () => this.goScene("home"),
+  _layout(ctx) {
+    const safe = this._safe(ctx);
+    const s = this.store.get();
+
+    const topReserved = Number(s?.ui?.hudReservedTop || 118);
+    const bottomReserved = Number(s?.ui?.chatReservedBottom || 82);
+
+    const pageX = safe.x + 14;
+    const pageY = safe.y + topReserved;
+    const pageW = safe.w - 28;
+    const pageH = Math.max(220, safe.h - topReserved - bottomReserved);
+
+    const headerH = 96;
+    const tabsH = 54;
+    const contentY = pageY + headerH + tabsH + 12;
+    const contentH = Math.max(120, pageH - headerH - tabsH - 12);
+
+    return {
+      safe,
+      pageX,
+      pageY,
+      pageW,
+      pageH,
+      headerH,
+      tabsH,
+      contentX: pageX,
+      contentY,
+      contentW: pageW,
+      contentH,
+    };
+  }
+
+  _buildStaticButtons(ctx, clan) {
+    const L = this._layout(ctx);
+
+    this.buttons = [];
+    this.tabButtons = [];
+
+    this.buttons.push({
+      id: "back",
+      rect: { x: L.pageX + 14, y: L.pageY + 14, w: 96, h: 34 },
+      text: "GERİ",
+      onClick: () => this._go("home"),
+    });
+
+    this.buttons.push({
+      id: "leave",
+      rect: { x: L.pageX + L.pageW - 150, y: L.pageY + 14, w: 136, h: 34 },
+      text: "CLAN'DAN ÇIK",
+      onClick: () => {
+        ClanSystem.leaveClan(this.store);
+        if (ClanSystem.hasClan(this.store)) {
+          this.activeTab = "genel";
+          this.scrollY = 0;
+        } else {
+          this._go("clan_create");
+        }
       },
-      {
-        id: "leave",
-        x: 830,
-        y: 24,
-        w: 160,
-        h: 42,
-        text: "CLAN'DAN ÇIK",
-        onClick: () => {
-          ClanSystem.leaveClan(this.store);
-          if (ClanSystem.hasClan(this.store)) {
-            this.rebuildUi();
-          } else {
-            this.goScene("clan_create");
-          }
-        },
-      },
-    ];
+    });
 
     const tabs = ClanSystem.getTabList();
-    this.tabButtons = tabs.map((tab, i) => ({
-      id: `tab_${tab}`,
-      tab,
-      x: 40 + i * 155,
-      y: 150,
-      w: 138,
-      h: 42,
-      text: this.getTabLabel(tab),
-      onClick: () => {
-        this.activeTab = tab;
-        this.rebuildUi();
-      },
-    }));
+    const tabGap = 10;
+    const tabW = Math.min(170, Math.floor((L.pageW - 28 - (tabs.length - 1) * tabGap) / tabs.length));
 
-    const clan = ClanSystem.getClan(this.store);
+    tabs.forEach((tab, i) => {
+      const x = L.pageX + 14 + i * (tabW + tabGap);
+      const y = L.pageY + L.headerH + 8;
+      this.tabButtons.push({
+        id: `tab_${tab}`,
+        tab,
+        rect: { x, y, w: tabW, h: 40 },
+        text: this.getTabLabel(tab),
+        onClick: () => {
+          this.activeTab = tab;
+          this.scrollY = 0;
+        },
+      });
+    });
+
     if (!clan) return;
 
     if (this.activeTab === "kasa") {
-      this.buttons.push(
-        {
-          id: "donate_1000",
-          x: 60,
-          y: 560,
-          w: 180,
-          h: 50,
-          text: "$1.000 YATIR",
-          onClick: () => {
-            ClanSystem.donateToClan(this.store, 1000);
-            this.rebuildUi();
-          },
-        },
-        {
-          id: "donate_5000",
-          x: 260,
-          y: 560,
-          w: 180,
-          h: 50,
-          text: "$5.000 YATIR",
-          onClick: () => {
-            ClanSystem.donateToClan(this.store, 5000);
-            this.rebuildUi();
-          },
-        },
-        {
-          id: "donate_10000",
-          x: 460,
-          y: 560,
-          w: 200,
-          h: 50,
-          text: "$10.000 YATIR",
-          onClick: () => {
-            ClanSystem.donateToClan(this.store, 10000);
-            this.rebuildUi();
-          },
-        }
-      );
-    }
+      const baseY = L.contentY + L.contentH - 58;
+      const startX = L.contentX + 18;
+      const btns = [
+        { id: "donate_1000", text: "$1.000 YATIR", amount: 1000 },
+        { id: "donate_5000", text: "$5.000 YATIR", amount: 5000 },
+        { id: "donate_10000", text: "$10.000 YATIR", amount: 10000 },
+      ];
 
-    if (this.activeTab === "gelistirme") {
-      const upgradeTypes = ["memberCap", "vault", "income", "attack", "defense"];
-      upgradeTypes.forEach((type, i) => {
-        const row = i % 3;
-        const col = Math.floor(i / 3);
-        const x = 60 + row * 300;
-        const y = 320 + col * 100;
-
+      btns.forEach((b, i) => {
         this.buttons.push({
-          id: `upgrade_${type}`,
-          x,
-          y,
-          w: 240,
-          h: 56,
-          text: `${getUpgradeLabel(type)} YÜKSELT`,
+          id: b.id,
+          rect: { x: startX + i * 166, y: baseY, w: 150, h: 40 },
+          text: b.text,
           onClick: () => {
-            ClanSystem.upgrade(this.store, type);
-            this.rebuildUi();
+            ClanSystem.donateToClan(this.store, b.amount);
           },
         });
       });
@@ -180,66 +173,32 @@ export class ClanScene {
     if (this.activeTab === "uyeler") {
       this.buttons.push({
         id: "add_mock_member",
-        x: 760,
-        y: 560,
-        w: 220,
-        h: 50,
+        rect: { x: L.contentX + L.contentW - 190, y: L.contentY + L.contentH - 58, w: 170, h: 40 },
         text: "ÖRNEK ÜYE EKLE",
         onClick: () => {
           ClanSystem.addMockMember(this.store);
-          this.rebuildUi();
         },
       });
     }
 
-    if (this.activeTab === "boss") {
-      const boss = ClanSystem.getBossState(this.store);
-      const spinStatus = ClanSystem.getBossSpinStatus(this.store);
+    if (this.activeTab === "gelistirme") {
+      const upgradeTypes = ["memberCap", "vault", "income", "attack", "defense"];
+      upgradeTypes.forEach((type, i) => {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const cardW = Math.min(320, Math.floor((L.contentW - 54) / 2));
+        const x = L.contentX + 18 + col * (cardW + 18);
+        const y = L.contentY + 160 + row * 110 - this.scrollY;
 
-      const canStart =
-        !boss ||
-        boss.status === "idle" ||
-        boss.status === "expired" ||
-        boss.status === "defeated";
-
-      this.buttons.push(
-        {
-          id: "boss_start",
-          x: 58,
-          y: 548,
-          w: 230,
-          h: 52,
-          text: canStart ? "BOSS BAŞLAT" : "RAID AKTİF",
-          disabled: !canStart,
+        this.buttons.push({
+          id: `upgrade_${type}`,
+          rect: { x: x + cardW - 130, y: y + 56, w: 110, h: 34 },
+          text: "YÜKSELT",
           onClick: () => {
-            if (!canStart) return;
-            ClanSystem.startBossRaid(this.store);
-            this.rebuildUi();
+            ClanSystem.upgrade(this.store, type);
           },
-        },
-        {
-          id: "boss_spin",
-          x: 304,
-          y: 548,
-          w: 250,
-          h: 52,
-          text: "SPIN / SALDIR",
-          disabled: !spinStatus || spinStatus.bossStatus !== "active",
-          onClick: () => {
-            const before = ClanSystem.getBossSpinStatus(this.store);
-            ClanSystem.spinBoss(this.store);
-            const after = ClanSystem.getBossSpinStatus(this.store);
-
-            if (after?.lastResult?.ok) {
-              this.bossKickFlash = 12;
-            } else if (before?.bossStatus !== "active") {
-              this.bossKickFlash = 0;
-            }
-
-            this.rebuildUi();
-          },
-        }
-      );
+        });
+      });
     }
   }
 
@@ -253,525 +212,357 @@ export class ClanScene {
         return "KASA";
       case "gelistirme":
         return "GELİŞTİRME";
-      case "boss":
-        return "BOSS";
       case "log":
         return "LOG";
       default:
-        return String(tab || "").toUpperCase();
+        return String(tab).toUpperCase();
     }
   }
 
   update() {
     const clan = ClanSystem.getClan(this.store);
     if (!clan) {
-      this.goScene("clan_create");
+      this._go("clan_create");
       return;
     }
 
-    if (this.bossKickFlash > 0) this.bossKickFlash -= 1;
+    const pointer = this.input?.pointer || this.input?.mouse || { x: 0, y: 0 };
+    const justPressed =
+      this.input?.justPressed?.() ||
+      this.input?.isJustPressed?.("pointer") ||
+      this.input?.isJustPressed?.("mouseLeft") ||
+      this.input?.mousePressed;
 
-    const pointer = this.getPointer();
-    const pressed = this.isPressed();
-    if (!pressed) return;
+    const isDown =
+      this.input?.isDown?.() ||
+      this.input?.isPressed?.("pointer") ||
+      this.input?.mouseDown ||
+      false;
 
-    const px = Number(pointer.x || 0);
-    const py = Number(pointer.y || 0);
+    const justReleased =
+      this.input?.justReleased?.() ||
+      this.input?.isJustReleased?.("pointer") ||
+      this.input?.isJustReleased?.("mouseLeft") ||
+      false;
 
-    for (const btn of [...this.buttons, ...this.tabButtons]) {
-      if (btn.disabled) continue;
-      if (px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h) {
-        btn.onClick?.();
-        return;
-      }
+    if (justPressed) {
+      this.dragging = true;
+      this.downY = pointer.y;
+      this.startScroll = this.scrollY;
+      this.moved = 0;
+      this.clickCandidate = true;
     }
 
-    if (this.activeTab === "uyeler") {
-      const member = this.findKickTarget(px, py);
-      if (member) {
-        ClanSystem.kickMember(this.store, member.id);
-        this.rebuildUi();
-      }
-    }
-  }
-
-  findKickTarget(px, py) {
-    const clan = ClanSystem.getClan(this.store);
-    if (!clan) return null;
-
-    const startY = 425;
-    const rowH = 52;
-
-    for (let i = 0; i < clan.members.length; i++) {
-      const y = startY + i * rowH;
-      const kickX = 850;
-      const kickY = y - 18;
-      const kickW = 110;
-      const kickH = 34;
-
-      if (px >= kickX && px <= kickX + kickW && py >= kickY && py <= kickY + kickH) {
-        return clan.members[i];
-      }
+    if (this.dragging && isDown) {
+      const dy = pointer.y - this.downY;
+      this.scrollY = clamp(this.startScroll - dy, 0, this.maxScroll);
+      this.moved = Math.max(this.moved, Math.abs(dy));
+      if (this.moved > 10) this.clickCandidate = false;
     }
 
-    return null;
+    if (this.dragging && justReleased) {
+      this.dragging = false;
+
+      if (!this.clickCandidate) return;
+
+      const px = pointer.x;
+      const py = pointer.y;
+
+      for (const btn of [...this.buttons, ...this.tabButtons]) {
+        if (btn?.rect && pointInRect(px, py, btn.rect)) {
+          btn.onClick?.();
+          return;
+        }
+      }
+
+      for (const hit of this.rowHits) {
+        if (pointInRect(px, py, hit.rect)) {
+          hit.onClick?.();
+          return;
+        }
+      }
+    }
   }
 
   render(ctx) {
     const clan = ClanSystem.getClan(this.store);
     if (!clan) return;
 
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
+    const L = this._layout(ctx);
+    this._buildStaticButtons(ctx, clan);
+    this.rowHits = [];
 
+    ctx.clearRect(0, 0, L.safe.w, L.safe.h);
     ctx.fillStyle = "#09101d";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, L.safe.w, L.safe.h);
 
-    this.drawBackgroundDecor(ctx, w, h);
-    this.drawPanel(ctx, 20, 18, w - 40, 100, 22, "#121b31");
+    this.drawPanel(ctx, L.pageX, L.pageY, L.pageW, L.pageH, 22, "#10182c");
+    this.drawPanel(ctx, L.pageX + 1, L.pageY + 1, L.pageW - 2, 96, 22, "#121b31");
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 34px Arial";
-    ctx.fillText(`${clan.name} [${clan.tag}]`, 50, 62);
+    ctx.font = "bold 26px Arial";
+    ctx.fillText(`${clan.name} [${clan.tag}]`, L.pageX + 22, L.pageY + 34);
 
     ctx.fillStyle = "#9cb2d9";
-    ctx.font = "20px Arial";
-    ctx.fillText(clan.description, 50, 95);
+    ctx.font = "15px Arial";
+    ctx.fillText(clan.description || "", L.pageX + 22, L.pageY + 58);
 
-    for (const btn of this.buttons) {
-      const color =
-        btn.id === "leave"
-          ? "#8d2f3c"
-          : btn.id === "back"
-          ? "#2c3d63"
-          : btn.id.startsWith("boss_")
-          ? "#7340b7"
-          : "#1d8f5a";
-
-      this.drawButton(ctx, btn, color, 18, !!btn.disabled);
-    }
-
-    for (const tab of this.tabButtons) {
-      const active = this.activeTab === tab.tab;
-      this.drawButton(ctx, tab, active ? "#365a98" : "#1b2743");
-    }
-
-    this.drawTopStats(ctx, clan);
-
-    if (this.activeTab === "genel") this.renderGeneral(ctx, clan);
-    if (this.activeTab === "uyeler") this.renderMembers(ctx, clan);
-    if (this.activeTab === "kasa") this.renderBank(ctx, clan);
-    if (this.activeTab === "gelistirme") this.renderUpgrades(ctx, clan);
-    if (this.activeTab === "boss") this.renderBoss(ctx, clan);
-    if (this.activeTab === "log") this.renderLogs(ctx, clan);
-  }
-
-  drawTopStats(ctx, clan) {
-    const cards = [
+    const statCards = [
       { label: "Seviye", value: String(clan.level) },
       { label: "Güç", value: String(clan.power) },
       { label: "Üye", value: `${clan.members.length}/${clan.limits.members}` },
       { label: "Kasa", value: `$${formatMoney(clan.bank)}` },
-      { label: "Günlük Gelir", value: `$${formatMoney(clan.dailyIncome)}` },
     ];
 
-    cards.forEach((card, i) => {
-      const x = 40 + i * 190;
-      const y = 210;
-      const cw = 170;
-      const ch = 88;
-
-      this.drawPanel(ctx, x, y, cw, ch, 16, "#16213c");
+    statCards.forEach((card, i) => {
+      const cardW = Math.floor((L.pageW - 44 - 3 * 10) / 4);
+      const x = L.pageX + 22 + i * (cardW + 10);
+      const y = L.pageY + 64;
+      this.drawPanel(ctx, x, y, cardW, 26, 10, "#17233f");
       ctx.fillStyle = "#8ea7d4";
-      ctx.font = "18px Arial";
-      ctx.fillText(card.label, x + 18, y + 30);
-
+      ctx.font = "12px Arial";
+      ctx.fillText(`${card.label}:`, x + 10, y + 17);
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 26px Arial";
-      ctx.fillText(card.value, x + 18, y + 66);
+      ctx.font = "bold 12px Arial";
+      ctx.fillText(card.value, x + Math.min(cardW - 54, 84), y + 17);
     });
+
+    for (const btn of this.buttons) {
+      const color =
+        btn.id === "leave" ? "#8d2f3c" :
+        btn.id === "back" ? "#2c3d63" :
+        btn.id.startsWith("upgrade_") ? "#315fbe" :
+        "#1d8f5a";
+      this.drawButton(ctx, btn.rect, btn.text, color);
+    }
+
+    for (const tab of this.tabButtons) {
+      const active = this.activeTab === tab.tab;
+      this.drawButton(ctx, tab.rect, tab.text, active ? "#365a98" : "#1b2743");
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.contentX, L.contentY, L.contentW, L.contentH);
+    ctx.clip();
+
+    if (this.activeTab === "genel") this.renderGeneral(ctx, clan, L);
+    if (this.activeTab === "uyeler") this.renderMembers(ctx, clan, L);
+    if (this.activeTab === "kasa") this.renderBank(ctx, clan, L);
+    if (this.activeTab === "gelistirme") this.renderUpgrades(ctx, clan, L);
+    if (this.activeTab === "log") this.renderLogs(ctx, clan, L);
+
+    ctx.restore();
   }
 
-  renderGeneral(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 450, 300, 18, "#121b31");
-    this.drawPanel(ctx, 520, 320, 460, 300, 18, "#121b31");
+  renderGeneral(ctx, clan, L) {
+    const contentH = 540;
+    this.maxScroll = Math.max(0, contentH - L.contentH);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+
+    const y0 = L.contentY - this.scrollY;
+
+    this.drawPanel(ctx, L.contentX + 18, y0 + 14, L.contentW * 0.45, 260, 18, "#121b31");
+    this.drawPanel(ctx, L.contentX + L.contentW * 0.45 + 30, y0 + 14, L.contentW * 0.45 - 12, 260, 18, "#121b31");
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Clan Bilgisi", 60, 360);
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Clan Bilgisi", L.contentX + 36, y0 + 46);
 
     ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Sıralama: #${clan.rank}`, 60, 405);
-    ctx.fillText(`Bölge Sayısı: ${clan.territoryCount}`, 60, 440);
-    ctx.fillText(`XP: ${clan.xp} / ${clan.xpNext}`, 60, 475);
-    ctx.fillText(`Savaş Aktif: ${clan.wars.active.length}`, 60, 510);
-    ctx.fillText(`Geçmiş Savaş: ${clan.wars.history.length}`, 60, 545);
+    ctx.font = "18px Arial";
+    ctx.fillText(`Sıralama: #${clan.rank}`, L.contentX + 36, y0 + 86);
+    ctx.fillText(`Bölge Sayısı: ${clan.territoryCount}`, L.contentX + 36, y0 + 118);
+    ctx.fillText(`XP: ${clan.xp} / ${clan.xpNext}`, L.contentX + 36, y0 + 150);
+    ctx.fillText(`Savaş Aktif: ${clan.wars.active.length}`, L.contentX + 36, y0 + 182);
+    ctx.fillText(`Geçmiş Savaş: ${clan.wars.history.length}`, L.contentX + 36, y0 + 214);
 
     ctx.fillStyle = "#25365f";
-    ctx.fillRect(60, 570, 360, 18);
+    ctx.fillRect(L.contentX + 36, y0 + 234, 280, 16);
     ctx.fillStyle = "#4f7dd1";
     const ratio = clan.xpNext > 0 ? Math.max(0, Math.min(1, clan.xp / clan.xpNext)) : 0;
-    ctx.fillRect(60, 570, 360 * ratio, 18);
+    ctx.fillRect(L.contentX + 36, y0 + 234, 280 * ratio, 16);
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Rol Dağılımı", 540, 360);
-
+    const panel2X = L.contentX + L.contentW * 0.45 + 48;
     const leaderCount = clan.members.filter((m) => m.role === "leader").length;
     const officerCount = clan.members.filter((m) => m.role === "officer").length;
     const memberCount = clan.members.filter((m) => m.role === "member").length;
     const onlineCount = clan.members.filter((m) => m.online).length;
+    const topContributor = [...clan.members].sort((a, b) => (b.contribution || 0) - (a.contribution || 0))[0];
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Rol Dağılımı", panel2X, y0 + 46);
 
     ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Lider: ${leaderCount}`, 540, 405);
-    ctx.fillText(`Yardımcı: ${officerCount}`, 540, 440);
-    ctx.fillText(`Üye: ${memberCount}`, 540, 475);
-    ctx.fillText(`Online: ${onlineCount}`, 540, 510);
-
-    const topContributor = [...clan.members].sort(
-      (a, b) => (b.contribution || 0) - (a.contribution || 0)
-    )[0];
-
+    ctx.font = "18px Arial";
+    ctx.fillText(`Lider: ${leaderCount}`, panel2X, y0 + 86);
+    ctx.fillText(`Yardımcı: ${officerCount}`, panel2X, y0 + 118);
+    ctx.fillText(`Üye: ${memberCount}`, panel2X, y0 + 150);
+    ctx.fillText(`Online: ${onlineCount}`, panel2X, y0 + 182);
     ctx.fillText(
-      `En çok katkı: ${
-        topContributor ? `${topContributor.name} ($${formatMoney(topContributor.contribution)})` : "-"
-      }`,
-      540,
-      545
+      `En çok katkı: ${topContributor ? `${topContributor.name} ($${formatMoney(topContributor.contribution)})` : "-"}`,
+      panel2X,
+      y0 + 214
     );
   }
 
-  renderMembers(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 940, 300, 18, "#121b31");
+  renderMembers(ctx, clan, L) {
+    const rowH = 54;
+    const contentH = 90 + clan.members.length * rowH + 90;
+    this.maxScroll = Math.max(0, contentH - L.contentH);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+
+    const y0 = L.contentY - this.scrollY;
+
+    this.drawPanel(ctx, L.contentX + 18, y0 + 14, L.contentW - 36, 62 + clan.members.length * rowH, 18, "#121b31");
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Üyeler", 60, 360);
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Üyeler", L.contentX + 34, y0 + 46);
 
     ctx.fillStyle = "#8ea7d4";
-    ctx.font = "18px Arial";
-    ctx.fillText("İsim", 60, 400);
-    ctx.fillText("Rol", 260, 400);
-    ctx.fillText("Seviye", 400, 400);
-    ctx.fillText("Güç", 520, 400);
-    ctx.fillText("Katkı", 650, 400);
-    ctx.fillText("Durum", 790, 400);
-
-    const startY = 425;
-    const rowH = 52;
+    ctx.font = "16px Arial";
+    ctx.fillText("İsim", L.contentX + 34, y0 + 82);
+    ctx.fillText("Rol", L.contentX + 210, y0 + 82);
+    ctx.fillText("Seviye", L.contentX + 330, y0 + 82);
+    ctx.fillText("Güç", L.contentX + 440, y0 + 82);
+    ctx.fillText("Katkı", L.contentX + 550, y0 + 82);
+    ctx.fillText("Durum", L.contentX + 700, y0 + 82);
 
     clan.members.forEach((member, i) => {
-      const y = startY + i * rowH;
-
+      const y = y0 + 108 + i * rowH;
       ctx.fillStyle = i % 2 === 0 ? "#182444" : "#14203a";
-      ctx.fillRect(55, y - 24, 910, 42);
+      ctx.fillRect(L.contentX + 28, y - 22, L.contentW - 56, 42);
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "18px Arial";
-      ctx.fillText(member.name, 60, y);
-      ctx.fillText(getRoleLabel(member.role), 260, y);
-      ctx.fillText(String(member.level || 1), 400, y);
-      ctx.fillText(String(member.power || 0), 520, y);
-      ctx.fillText(`$${formatMoney(member.contribution || 0)}`, 650, y);
-      ctx.fillText(member.online ? "Online" : "Offline", 790, y);
+      ctx.font = "17px Arial";
+      ctx.fillText(member.name, L.contentX + 34, y);
+      ctx.fillText(getRoleLabel(member.role), L.contentX + 210, y);
+      ctx.fillText(String(member.level || 1), L.contentX + 330, y);
+      ctx.fillText(String(member.power || 0), L.contentX + 440, y);
+      ctx.fillText(`$${formatMoney(member.contribution || 0)}`, L.contentX + 550, y);
+      ctx.fillText(member.online ? "Online" : "Offline", L.contentX + 700, y);
 
       if (member.id !== "player_main") {
-        this.drawButton(
-          ctx,
-          {
-            x: 850,
-            y: y - 18,
-            w: 110,
-            h: 34,
-            text: "AT",
-          },
-          "#8d2f3c",
-          16
-        );
+        const kickRect = { x: L.contentX + L.contentW - 150, y: y - 18, w: 100, h: 34 };
+        this.drawButton(ctx, kickRect, "AT", "#8d2f3c", 15);
+        this.rowHits.push({
+          rect: kickRect,
+          onClick: () => ClanSystem.kickMember(this.store, member.id),
+        });
       }
     });
   }
 
-  renderBank(ctx, clan) {
+  renderBank(ctx, clan, L) {
     const state = this.store?.get?.() || this.store?.state || {};
     const playerCash = Number(state.player?.cash || 0);
 
-    this.drawPanel(ctx, 40, 320, 420, 220, 18, "#121b31");
-    this.drawPanel(ctx, 490, 320, 490, 220, 18, "#121b31");
+    const contentH = 420;
+    this.maxScroll = Math.max(0, contentH - L.contentH);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+
+    const y0 = L.contentY - this.scrollY;
+
+    const leftW = Math.floor((L.contentW - 54) * 0.42);
+    const rightW = L.contentW - leftW - 54;
+
+    this.drawPanel(ctx, L.contentX + 18, y0 + 14, leftW, 220, 18, "#121b31");
+    this.drawPanel(ctx, L.contentX + leftW + 36, y0 + 14, rightW, 220, 18, "#121b31");
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Kasa Durumu", 60, 360);
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Kasa Durumu", L.contentX + 34, y0 + 46);
 
     ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Clan Kasası: $${formatMoney(clan.bank)}`, 60, 405);
-    ctx.fillText(`Kasa Kapasitesi: $${formatMoney(clan.limits.vaultCapacity)}`, 60, 440);
-    ctx.fillText(`Oyuncu Parası: $${formatMoney(playerCash)}`, 60, 475);
+    ctx.font = "18px Arial";
+    ctx.fillText(`Clan Kasası: $${formatMoney(clan.bank)}`, L.contentX + 34, y0 + 84);
+    ctx.fillText(`Kasa Kapasitesi: $${formatMoney(clan.limits.vaultCapacity)}`, L.contentX + 34, y0 + 116);
+    ctx.fillText(`Oyuncu Parası: $${formatMoney(playerCash)}`, L.contentX + 34, y0 + 148);
 
     ctx.fillStyle = "#25365f";
-    ctx.fillRect(60, 500, 320, 18);
+    ctx.fillRect(L.contentX + 34, y0 + 172, Math.min(300, leftW - 50), 16);
     ctx.fillStyle = "#53a96f";
     const ratio = clan.limits.vaultCapacity > 0 ? clan.bank / clan.limits.vaultCapacity : 0;
-    ctx.fillRect(60, 500, 320 * Math.max(0, Math.min(1, ratio)), 18);
+    ctx.fillRect(L.contentX + 34, y0 + 172, Math.min(300, leftW - 50) * Math.max(0, Math.min(1, ratio)), 16);
 
+    const tx = L.contentX + leftW + 54;
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Bilgi", 510, 360);
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Bilgi", tx, y0 + 46);
 
     ctx.fillStyle = "#c7d4ee";
-    ctx.font = "20px Arial";
-    ctx.fillText("Kasadaki para geliştirmeler için kullanılır.", 510, 405);
-    ctx.fillText("Aşağıdaki butonlarla hızlı bağış yapabilirsin.", 510, 440);
-    ctx.fillText("Kasa doluysa fazla para yatırılmaz.", 510, 475);
-
-    for (const btn of this.buttons.filter((b) => b.id.startsWith("donate_"))) {
-      this.drawButton(ctx, btn, "#1d8f5a");
-    }
+    ctx.font = "17px Arial";
+    ctx.fillText("Kasadaki para geliştirmeler için kullanılır.", tx, y0 + 84);
+    ctx.fillText("Aşağıdaki butonlarla hızlı bağış yapabilirsin.", tx, y0 + 116);
+    ctx.fillText("Kasa doluysa fazla para yatırılmaz.", tx, y0 + 148);
   }
 
-  renderUpgrades(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 940, 300, 18, "#121b31");
+  renderUpgrades(ctx, clan, L) {
+    const upgradeTypes = ["memberCap", "vault", "income", "attack", "defense"];
+    const contentH = 520;
+    this.maxScroll = Math.max(0, contentH - L.contentH);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+
+    const y0 = L.contentY - this.scrollY;
+    this.drawPanel(ctx, L.contentX + 18, y0 + 14, L.contentW - 36, 470, 18, "#121b31");
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Geliştirmeler", 60, 360);
-
-    const upgradeTypes = ["memberCap", "vault", "income", "attack", "defense"];
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Geliştirmeler", L.contentX + 34, y0 + 46);
 
     upgradeTypes.forEach((type, i) => {
-      const row = i % 3;
-      const col = Math.floor(i / 3);
-      const x = 60 + row * 300;
-      const y = 390 + col * 100;
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const cardW = Math.min(320, Math.floor((L.contentW - 54) / 2));
+      const x = L.contentX + 26 + col * (cardW + 18);
+      const y = y0 + 84 + row * 110;
       const level = clan.upgrades[type] || 0;
       const cost = getUpgradeCost(type, level);
 
-      this.drawPanel(ctx, x, y, 240, 76, 14, "#182444");
+      this.drawPanel(ctx, x, y, cardW, 88, 14, "#182444");
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 20px Arial";
-      ctx.fillText(getUpgradeLabel(type), x + 16, y + 26);
+      ctx.font = "bold 18px Arial";
+      ctx.fillText(getUpgradeLabel(type), x + 16, y + 28);
 
       ctx.fillStyle = "#b8c8ea";
-      ctx.font = "18px Arial";
-      ctx.fillText(`Seviye: ${level}`, x + 16, y + 50);
-      ctx.fillText(`Maliyet: $${formatMoney(cost)}`, x + 16, y + 72);
+      ctx.font = "16px Arial";
+      ctx.fillText(`Seviye: ${level}`, x + 16, y + 52);
+      ctx.fillText(`Maliyet: $${formatMoney(cost)}`, x + 16, y + 74);
     });
-
-    for (const btn of this.buttons.filter((b) => b.id.startsWith("upgrade_"))) {
-      this.drawButton(ctx, btn, "#315fbe");
-    }
   }
 
-  renderBoss(ctx, clan) {
-    const boss = ClanSystem.getBossState(this.store);
-    const spin = ClanSystem.getBossSpinStatus(this.store);
-    const leaderboard = ClanSystem.getBossLeaderboard(this.store) || [];
-
-    this.drawPanel(ctx, 40, 320, 520, 300, 18, "#121b31");
-    this.drawPanel(ctx, 580, 320, 400, 300, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Clan Boss Savaşı", 60, 360);
-
-    const bossName = boss?.name || "SOKAK KRALI";
-    const bossStatus = this.getBossStatusLabel(boss?.status);
-    const bossHp = Number(boss?.hp || 0);
-    const bossMaxHp = Number(boss?.maxHp || 0);
-    const hpRatio = bossMaxHp > 0 ? Math.max(0, Math.min(1, bossHp / bossMaxHp)) : 0;
-
-    ctx.fillStyle = "#d7e4ff";
-    ctx.font = "20px Arial";
-    ctx.fillText(`Boss: ${bossName}`, 60, 400);
-    ctx.fillText(`Durum: ${bossStatus}`, 60, 432);
-
-    if (boss?.status === "active" && boss?.endsAt) {
-      ctx.fillText(`Kalan Süre: ${this.formatRemainingTime(boss.endsAt)}`, 60, 464);
-    } else {
-      ctx.fillText(`Toplam Hasar: ${formatMoney(boss?.totalDamage || 0)}`, 60, 464);
-    }
-
-    ctx.fillText(`Toplam Spin: ${formatMoney(boss?.totalSpins || 0)}`, 60, 496);
-
-    ctx.fillStyle = "#26324f";
-    ctx.fillRect(60, 520, 470, 22);
-    ctx.fillStyle = hpRatio > 0.5 ? "#44c36b" : hpRatio > 0.2 ? "#f1b84b" : "#de4a5f";
-    ctx.fillRect(60, 520, 470 * hpRatio, 22);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 16px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText(
-      `${formatMoney(bossHp)} / ${formatMoney(bossMaxHp)} HP`,
-      295,
-      537
-    );
-    ctx.textAlign = "start";
-
-    this.drawBossVisual(ctx, 86, 555, 170, 50, boss, spin);
-    this.drawSlotReels(ctx, 280, 552, 246, 56, spin?.lastResult);
-
-    for (const btn of this.buttons.filter((b) => b.id === "boss_start" || b.id === "boss_spin")) {
-      this.drawButton(ctx, btn, btn.id === "boss_start" ? "#355dbe" : "#7a3cdf", 18, !!btn.disabled);
-    }
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Katkı Sıralaması", 600, 360);
-
-    ctx.fillStyle = "#8ea7d4";
-    ctx.font = "18px Arial";
-    ctx.fillText("#", 600, 392);
-    ctx.fillText("Oyuncu", 640, 392);
-    ctx.fillText("Hasar", 800, 392);
-    ctx.fillText("En İyi", 900, 392);
-
-    const rows = leaderboard.slice(0, 5);
-    rows.forEach((row, i) => {
-      const y = 426 + i * 44;
-
-      ctx.fillStyle = i % 2 === 0 ? "#182444" : "#14203a";
-      ctx.fillRect(595, y - 24, 370, 34);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "18px Arial";
-      ctx.fillText(String(i + 1), 605, y);
-      ctx.fillText(String(row.name || "-").slice(0, 14), 640, y);
-      ctx.fillText(formatMoney(row.totalDamage || 0), 800, y);
-      ctx.fillText(formatMoney(row.bestHit || 0), 900, y);
-    });
-
-    if (!rows.length) {
-      ctx.fillStyle = "#d5e1f8";
-      ctx.font = "18px Arial";
-      ctx.fillText("Henüz katılım yok.", 600, 430);
-    }
-
-    const last = spin?.lastResult;
-    this.drawPanel(ctx, 600, 548, 350, 54, 14, "#182444");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 18px Arial";
-    if (last?.ok) {
-      ctx.fillText(`${last.combo}  •  ${formatMoney(last.damage)} hasar`, 618, 580);
-    } else if (last?.message) {
-      ctx.fillText(last.message, 618, 580);
-    } else {
-      ctx.fillText("Boss savaşı için spin at.", 618, 580);
-    }
-
-    ctx.fillStyle = "#b8c8ea";
-    ctx.font = "16px Arial";
-    ctx.fillText(
-      `Kalan spin: ${spin?.spinsLeft ?? 0}   •   Enerji/spin: ${spin?.energyPerSpin ?? 0}`,
-      600,
-      518
-    );
-  }
-
-  renderLogs(ctx, clan) {
-    this.drawPanel(ctx, 40, 320, 940, 300, 18, "#121b31");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 24px Arial";
-    ctx.fillText("Son İşlemler", 60, 360);
-
+  renderLogs(ctx, clan, L) {
     const logs = clan.logs || [];
-    const visible = logs.slice(0, 8);
+    const contentH = 120 + Math.max(1, logs.length) * 34;
+    this.maxScroll = Math.max(0, contentH - L.contentH);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
+    const y0 = L.contentY - this.scrollY;
+    this.drawPanel(ctx, L.contentX + 18, y0 + 14, L.contentW - 36, contentH - 20, 18, "#121b31");
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("Son İşlemler", L.contentX + 34, y0 + 46);
+
+    const visible = logs.length ? logs : [{ text: "Henüz log yok." }];
     visible.forEach((log, i) => {
-      const y = 400 + i * 28;
+      const y = y0 + 82 + i * 30;
       ctx.fillStyle = "#d5e1f8";
-      ctx.font = "18px Arial";
-      ctx.fillText(`• ${log.text}`, 60, y);
+      ctx.font = "17px Arial";
+      ctx.fillText(`• ${log.text}`, L.contentX + 34, y);
     });
-
-    if (!visible.length) {
-      ctx.fillStyle = "#d5e1f8";
-      ctx.font = "18px Arial";
-      ctx.fillText("Henüz log yok.", 60, 400);
-    }
   }
 
-  drawSlotReels(ctx, x, y, w, h, lastResult) {
-    const symbols = lastResult?.symbols || ["punch", "kick", "head"];
-    const boxW = 72;
-    const gap = 12;
-    const symbolsMap = {
-      punch: "👊",
-      kick: "🦵",
-      slap: "✋",
-      head: "🧠",
-    };
-
-    for (let i = 0; i < 3; i++) {
-      const bx = x + i * (boxW + gap);
-      this.drawPanel(ctx, bx, y, boxW, h, 14, "#1b2743");
-
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fillRect(bx + 8, y + 8, boxW - 16, h - 16);
-
-      ctx.font = "34px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(symbolsMap[symbols[i]] || "?", bx + boxW / 2, y + h / 2 + 1);
-      ctx.textAlign = "start";
-      ctx.textBaseline = "alphabetic";
-    }
-  }
-
-  drawBossVisual(ctx, x, y, w, h, boss, spin) {
-    this.drawPanel(ctx, x, y, w, h, 18, "#1b1628");
-
-    if (this.bossKickFlash > 0) {
-      this.drawPanel(ctx, x + 2, y + 2, w - 4, h - 4, 16, "rgba(255,90,90,0.35)");
-    }
-
+  drawButton(ctx, rect, text, color = "#2c3d63", fontSize = 16) {
+    this.drawPanel(ctx, rect.x, rect.y, rect.w, rect.h, 12, color);
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText("BOSS", x + 10, y + 18);
-
-    ctx.font = "26px Arial";
-    ctx.fillText("😈", x + 14, y + 42);
-
-    ctx.font = "13px Arial";
-    ctx.fillStyle = "#d8c8ff";
-    ctx.fillText(String(boss?.status === "defeated" ? "INDIRILDI" : "HEDEF AKTİF"), x + 50, y + 24);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 14px Arial";
-    ctx.fillText(
-      spin?.lastResult?.ok ? `-${formatMoney(spin.lastResult.damage)} HP` : "Hazır",
-      x + 50,
-      y + 44
-    );
-  }
-
-  drawButton(ctx, btn, color = "#2c3d63", fontSize = 18, disabled = false) {
-    this.drawPanel(ctx, btn.x, btn.y, btn.w, btn.h, 12, disabled ? "#3a4358" : color);
-
-    if (disabled) {
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
-      ctx.beginPath();
-      ctx.moveTo(btn.x + 12, btn.y + 12);
-      ctx.lineTo(btn.x + btn.w - 12, btn.y + btn.h - 12);
-      ctx.moveTo(btn.x + btn.w - 12, btn.y + 12);
-      ctx.lineTo(btn.x + 12, btn.y + btn.h - 12);
-      ctx.strokeStyle = "rgba(255,255,255,0.12)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = disabled ? "rgba(255,255,255,0.60)" : "#ffffff";
     ctx.font = `bold ${fontSize}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
+    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
     ctx.textAlign = "start";
     ctx.textBaseline = "alphabetic";
   }
@@ -786,45 +577,5 @@ export class ClanScene {
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
     ctx.fill();
-  }
-
-  drawBackgroundDecor(ctx, w, h) {
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "rgba(59,75,120,0.14)");
-    g.addColorStop(1, "rgba(10,12,20,0.0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.fillStyle = "rgba(255,255,255,0.025)";
-    for (let i = 0; i < 10; i++) {
-      const xx = 40 + i * 95;
-      const yy = 90 + (i % 2) * 40;
-      ctx.beginPath();
-      ctx.arc(xx, yy, 2 + (i % 3), 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  getBossStatusLabel(status) {
-    switch (status) {
-      case "active":
-        return "Aktif";
-      case "defeated":
-        return "Öldürüldü";
-      case "expired":
-        return "Süre Bitti";
-      case "idle":
-      default:
-        return "Hazır Değil";
-    }
-  }
-
-  formatRemainingTime(endsAt) {
-    const ms = Math.max(0, Number(endsAt || 0) - Date.now());
-    const totalSec = Math.floor(ms / 1000);
-    const hh = Math.floor(totalSec / 3600);
-    const mm = Math.floor((totalSec % 3600) / 60);
-    const ss = totalSec % 60;
-    return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
   }
 }
