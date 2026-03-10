@@ -126,6 +126,7 @@ export class ClanScene {
     this.buttons = [];
     this.clickCandidate = false;
     this.backHit = null;
+
     this.scrollY = 0;
     this.maxScroll = 0;
 
@@ -234,78 +235,74 @@ export class ClanScene {
     }
   }
 
-startSpin() {
-  if (this.spinState?.active) return;
+  startSpin() {
+    if (this.spinState?.active) return;
 
-  const spinInfo = this.getSpinInfo();
-  const bossBefore = this.getBoss();
+    const spinInfo = this.getSpinInfo();
+    const bossBefore = this.getBoss();
 
-  if (!spinInfo || !bossBefore) {
-    this.showToast("Boss verisi bulunamadı");
-    return;
+    if (!spinInfo || !bossBefore) {
+      this.showToast("Boss verisi bulunamadı");
+      return;
+    }
+
+    const energyPerSpin = Math.max(
+      1,
+      Number(spinInfo.energyPerSpin || bossBefore.energyPerSpin || 6)
+    );
+
+    const spinsLeft = Math.max(0, Number(spinInfo.spinsLeft || 0));
+    const playerEnergy = Number(this.store?.get?.()?.player?.energy || 0);
+
+    if (spinsLeft <= 0) {
+      this.showToast("Spin hakkın kalmadı");
+      return;
+    }
+
+    if (playerEnergy < energyPerSpin) {
+      this.showToast(`Yeterli enerji yok (${playerEnergy}/${energyPerSpin})`);
+      return;
+    }
+
+    try {
+      ClanSystem.spinBoss(this.store);
+    } catch (err) {
+      this.showToast(err?.message || "Spin başarısız");
+      return;
+    }
+
+    const bossAfter = this.getBoss();
+    const result = bossAfter?.lastResult || null;
+
+    if (!result?.ok) {
+      this.showToast(result?.message || "Spin başarısız");
+      return;
+    }
+
+    const targets = (result.symbols || ["punch", "kick", "slap"]).map((key) => {
+      const idx = SYMBOL_ORDER.indexOf(key);
+      return idx >= 0 ? idx : 0;
+    });
+
+    const now = performance.now();
+
+    this.spinState = {
+      active: true,
+      startedAt: now,
+      result,
+      targets,
+      finished: false,
+    };
+
+    for (let i = 0; i < 3; i++) {
+      const reel = this.reels[i];
+      reel.speed = 1.2 + i * 0.1;
+      reel.stopping = false;
+      reel.settled = false;
+      reel.stopTime = now + 950 + i * 260;
+      reel.targetIndex = targets[i];
+    }
   }
-
-  const energyPerSpin = Math.max(
-    1,
-    Number(spinInfo.energyPerSpin || bossBefore.energyPerSpin || 6)
-  );
-
-  const spinsLeft = Math.max(
-    0,
-    Number(spinInfo.spinsLeft || 0)
-  );
-
-  const playerEnergy = Number(this.store?.get?.()?.player?.energy || 0);
-
-  if (spinsLeft <= 0) {
-    this.showToast("Spin hakkın kalmadı");
-    return;
-  }
-
-  if (playerEnergy < energyPerSpin) {
-    this.showToast(`Yeterli enerji yok (${playerEnergy}/${energyPerSpin})`);
-    return;
-  }
-
-  try {
-    ClanSystem.spinBoss(this.store);
-  } catch (err) {
-    this.showToast(err?.message || "Spin başarısız");
-    return;
-  }
-
-  const bossAfter = this.getBoss();
-  const result = bossAfter?.lastResult || null;
-
-  if (!result?.ok) {
-    this.showToast(result?.message || "Spin başarısız");
-    return;
-  }
-
-  const targets = (result.symbols || ["punch", "kick", "slap"]).map((key) => {
-    const idx = SYMBOL_ORDER.indexOf(key);
-    return idx >= 0 ? idx : 0;
-  });
-
-  const now = performance.now();
-
-  this.spinState = {
-    active: true,
-    startedAt: now,
-    result,
-    targets,
-    finished: false,
-  };
-
-  for (let i = 0; i < 3; i++) {
-    const reel = this.reels[i];
-    reel.speed = 1.2 + i * 0.1;
-    reel.stopping = false;
-    reel.settled = false;
-    reel.stopTime = now + 950 + i * 260;
-    reel.targetIndex = targets[i];
-  }
-}
 
   stopReel(reel) {
     if (reel.stopping) return;
@@ -315,14 +312,13 @@ startSpin() {
   settleReel(reel) {
     const cycle = SYMBOL_ORDER.length;
     const nearestTurns = Math.ceil(reel.position / cycle) * cycle;
-    const desired = nearestTurns + reel.targetIndex;
+    let desired = nearestTurns + reel.targetIndex;
 
     if (desired - reel.position < 0.2) {
-      reel.position = desired + cycle;
+      desired += cycle;
     }
 
     const diff = desired - reel.position;
-
     reel.position += diff * 0.22;
 
     if (Math.abs(diff) < 0.015) {
@@ -357,71 +353,67 @@ startSpin() {
     this.spinState.active = false;
   }
 
- update(dt) {
-  const wheel = wheelDelta(this.input);
-  if (wheel) {
-    this.scrollY = clamp(this.scrollY + wheel, 0, this.maxScroll);
-  }
-
-  const pointer = getPointer(this.input);
-  const px = Number(pointer.x || 0);
-  const py = Number(pointer.y || 0);
-
-  if (justPressed(this.input)) {
-    this.dragging = true;
-    this.dragMoved = 0;
-    this.downX = px;
-    this.downY = py;
-    this.startScrollY = this.scrollY;
-    this.clickCandidate = true;
-
-    // basıldığı anda buton üzerindeyse de hafif toleranslı kalsın
-  }
-
-  if (this.dragging && isDown(this.input)) {
-    const dy = py - this.downY;
-    this.dragMoved = Math.max(this.dragMoved, Math.abs(dy));
-    this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
-
-    if (this.dragMoved > 10) {
-      this.clickCandidate = false;
+  update(dt) {
+    const wheel = wheelDelta(this.input);
+    if (wheel) {
+      this.scrollY = clamp(this.scrollY + wheel, 0, this.maxScroll);
     }
-  }
 
-  if (this.dragging && justReleased(this.input)) {
-    this.dragging = false;
+    const pointer = getPointer(this.input);
+    const px = Number(pointer.x || 0);
+    const py = Number(pointer.y || 0);
 
-    if (this.clickCandidate) {
-      for (let i = this.buttons.length - 1; i >= 0; i--) {
-        const b = this.buttons[i];
-        if (pointInRect(px, py, b)) {
-          b.onClick?.();
-          break;
+    if (justPressed(this.input)) {
+      this.dragging = true;
+      this.dragMoved = 0;
+      this.downX = px;
+      this.downY = py;
+      this.startScrollY = this.scrollY;
+      this.clickCandidate = true;
+    }
+
+    if (this.dragging && isDown(this.input)) {
+      const dy = py - this.downY;
+      this.dragMoved = Math.max(this.dragMoved, Math.abs(dy));
+      this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
+
+      if (this.dragMoved > 10) {
+        this.clickCandidate = false;
+      }
+    }
+
+    if (this.dragging && justReleased(this.input)) {
+      this.dragging = false;
+
+      if (this.clickCandidate) {
+        for (let i = this.buttons.length - 1; i >= 0; i--) {
+          const b = this.buttons[i];
+          if (pointInRect(px, py, b)) {
+            if (typeof b.onClick === "function") b.onClick();
+            break;
+          }
         }
       }
     }
-  }
 
-  if (this.spinState?.active) {
-    const now = performance.now();
+    if (this.spinState?.active) {
+      const now = performance.now();
 
-    for (const reel of this.reels) {
-      if (!reel.stopping && now >= reel.stopTime) {
-        this.stopReel(reel);
+      for (const reel of this.reels) {
+        if (!reel.stopping && now >= reel.stopTime) {
+          this.stopReel(reel);
+        }
+
+        if (!reel.stopping) {
+          reel.position += reel.speed;
+          reel.speed = Math.max(0.38, reel.speed * 0.992);
+        } else if (!reel.settled) {
+          this.settleReel(reel);
+        }
       }
 
-      if (!reel.stopping) {
-        reel.position += reel.speed;
-        reel.speed = Math.max(0.38, reel.speed * 0.992);
-      } else if (!reel.settled) {
-        this.settleReel(reel);
-      }
+      this.completeSpinIfReady();
     }
-
-    this.completeSpinIfReady();
-  }
-  }
-
 
     this.syncBossState();
   }
@@ -453,6 +445,7 @@ startSpin() {
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
+      ctx.font = "800 13px Arial";
       const tw = Math.min(w - 40, Math.max(180, ctx.measureText(this.toastText).width + 34));
       const th = 40;
       const tx = (w - tw) / 2;
@@ -462,7 +455,6 @@ startSpin() {
       strokeRR(ctx, tx, ty, tw, th, 12, "rgba(255,190,50,0.35)");
 
       ctx.fillStyle = "#fff";
-      ctx.font = "800 13px Arial";
       ctx.textAlign = "center";
       ctx.fillText(this.toastText, tx + tw / 2, ty + 25);
       ctx.textAlign = "left";
@@ -515,6 +507,7 @@ startSpin() {
     let tx = panelX + 16;
     const ty = panelY + 66;
 
+    ctx.font = "800 13px Arial";
     for (const tab of tabs) {
       const tw = Math.max(76, ctx.measureText(tab.label).width + 24);
       fillRR(
@@ -537,7 +530,6 @@ startSpin() {
       );
 
       ctx.fillStyle = this.tab === tab.id ? "#ffd166" : "#fff";
-      ctx.font = "800 13px Arial";
       ctx.fillText(tab.label, tx + 12, ty + 23);
 
       this.addButton({ x: tx, y: ty, w: tw, h: 36 }, () => {
@@ -619,7 +611,11 @@ startSpin() {
 
     ctx.fillStyle = "#fff";
     ctx.font = "700 13px Arial";
-    ctx.fillText(`Sezon: ${Number(boss.season || 1)}  •  Durum: ${String(boss.status || "active").toUpperCase()}`, x + 16, y + 68);
+    ctx.fillText(
+      `Sezon: ${Number(boss.season || 1)}  •  Durum: ${String(boss.status || "active").toUpperCase()}`,
+      x + 16,
+      y + 68
+    );
 
     fillRR(ctx, x + 16, y + 82, w - 32, 18, 9, "rgba(255,255,255,0.08)");
     fillRR(ctx, x + 16, y + 82, (w - 32) * hpPct, 18, 9, hpPct > 0.3 ? "#ef4444" : "#f97316");
@@ -675,8 +671,20 @@ startSpin() {
       h: 42,
     };
 
-    const disabled = !!this.spinState?.active || Number(spinInfo.spinsLeft || 0) <= 0 || String(boss.status || "") === "defeated";
-    fillRR(ctx, spinBtn.x, spinBtn.y, spinBtn.w, spinBtn.h, 14, disabled ? "rgba(255,255,255,0.12)" : "rgba(255,190,50,0.95)");
+    const disabled =
+      !!this.spinState?.active ||
+      Number(spinInfo.spinsLeft || 0) <= 0 ||
+      String(boss.status || "") === "defeated";
+
+    fillRR(
+      ctx,
+      spinBtn.x,
+      spinBtn.y,
+      spinBtn.w,
+      spinBtn.h,
+      14,
+      disabled ? "rgba(255,255,255,0.12)" : "rgba(255,190,50,0.95)"
+    );
 
     ctx.fillStyle = disabled ? "rgba(255,255,255,0.72)" : "#111";
     ctx.font = "900 16px Arial";
@@ -774,10 +782,10 @@ startSpin() {
     const endRow = 3;
 
     for (let row = startRow; row <= endRow; row++) {
-      const symbolIndex = ((whole + row) % SYMBOL_ORDER.length + SYMBOL_ORDER.length) % SYMBOL_ORDER.length;
+      const symbolIndex =
+        ((whole + row) % SYMBOL_ORDER.length + SYMBOL_ORDER.length) % SYMBOL_ORDER.length;
       const key = SYMBOL_ORDER[symbolIndex];
       const sym = SYMBOL_META[key];
-
       const cy = y + h / 2 + row * cellH - frac * cellH;
 
       fillRR(ctx, x + 10, cy - 18, w - 20, 36, 12, sym.color);
