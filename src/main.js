@@ -384,19 +384,6 @@ function getAssetImageSafe(a, key) {
   );
 }
 
-/* ===== PREMIUM HOME PATCH ===== */
-HomeScene.prototype._carouselItems = function () {
-  return [
-    { id: "missions", titleTR: "Görevler", titleEN: "Missions", sceneKey: "missions" },
-    { id: "pvp", titleTR: "PvP", titleEN: "PvP", sceneKey: "pvp" },
-    { id: "weapons", titleTR: "Silah Kaçakçısı", titleEN: "Arms Dealer", sceneKey: "weapons" },
-    { id: "blackmarket", titleTR: "Black Market", titleEN: "Black Market", sceneKey: "trade" },
-    { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
-    { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
-    { id: "clan", titleTR: "Clan", titleEN: "Clan", sceneKey: "clanhub" },
-    { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
-  ];
-};
 
 HomeScene.prototype.render = function (ctx, w, h) {
   const state = this.store.get();
