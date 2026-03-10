@@ -48,7 +48,6 @@ function getSafeArea() {
   };
 }
 
-
 function fitCanvas() {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   const cssW = Math.floor(window.innerWidth);
@@ -62,7 +61,7 @@ function fitCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function normalizeGlobalUi() {
+function normalizeGlobalUi(store) {
   const hudTop = document.getElementById("hudTop");
   const chatDrawer = document.getElementById("chatDrawer");
   const pvpLayer = document.getElementById("pvpLayer");
@@ -92,6 +91,8 @@ function normalizeGlobalUi() {
     pvpFab.style.zIndex = "6500";
   }
 
+  if (!store) return;
+
   const s = store.get();
   const ui = s.ui || {};
 
@@ -107,6 +108,7 @@ function normalizeGlobalUi() {
     },
   });
 }
+
 try {
   const tg = window.Telegram?.WebApp;
   if (tg) {
@@ -116,11 +118,7 @@ try {
 } catch (_) {}
 
 fitCanvas();
-normalizeGlobalUi();
-window.addEventListener("resize", () => {
-  fitCanvas();
-  normalizeGlobalUi();
-});
+
 /* ===== STORE ===== */
 const STORE_KEY = "toncrime_store_v1";
 
@@ -211,12 +209,23 @@ const initial = loaded
       player: { ...defaultState.player, ...(loaded.player || {}) },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       missions: { ...defaultState.missions, ...(loaded.missions || {}) },
-      ui: { safe: getSafeArea() },
+      ui: {
+        ...(defaultState.ui || {}),
+        ...(loaded.ui || {}),
+        safe: getSafeArea(),
+      },
     }
   : defaultState;
 
 const store = new Store(initial);
 window.tcStore = store;
+
+normalizeGlobalUi(store);
+
+window.addEventListener("resize", () => {
+  fitCanvas();
+  normalizeGlobalUi(store);
+});
 
 function dayKey() {
   const d = new Date();
@@ -443,182 +452,6 @@ function getAssetImageSafe(a, key) {
     null
   );
 }
-
-
-HomeScene.prototype.render = function (ctx, w, h) {
-  const state = this.store.get();
-  const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
-
-  const bg = getAssetImageSafe(this.assets, "background");
-  if (bg) {
-    const iw = bg.width || 1;
-    const ih = bg.height || 1;
-    const scale = Math.max(w / iw, h / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = (w - dw) / 2;
-    const dy = (h - dh) / 2;
-    ctx.drawImage(bg, dx, dy, dw, dh);
-  } else {
-    ctx.fillStyle = "#0b0b0f";
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  ctx.fillStyle = "rgba(0,0,0,0.28)";
-  ctx.fillRect(0, 0, w, h);
-
-  const HUD_TOP_RESERVED = 96;
-  const CHAT_BOTTOM_RESERVED = 74;
-
-  const carouselTop = safe.y + HUD_TOP_RESERVED;
-  const carouselBottom = safe.y + safe.h - CHAT_BOTTOM_RESERVED;
-
-  const areaH = Math.max(160, carouselBottom - carouselTop);
-  const cx = safe.x + safe.w / 2;
-  const cy = carouselTop + areaH / 2;
-
-  const items = this._carouselItems();
-  const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
-  this.carousel.index = idx;
-
-  const cardW = Math.min(safe.w * 0.58, 410);
-  const cardH = Math.min(areaH * 0.72, 310);
-  const sideScale = 0.72;
-
-  const sideW = cardW * sideScale;
-  const maxSpacingByScreen = Math.max(cardW * 0.56, safe.w / 2 - sideW / 2 - 8);
-  const spacing = Math.min(cardW * 0.88, maxSpacingByScreen);
-
-  const dragDX = this.carousel.dragging
-    ? this.carousel.dragNowX - this.carousel.dragStartX
-    : 0;
-
-  const getImg = (item) => {
-    return (
-      getAssetImageSafe(this.assets, item.id) ||
-      getAssetImageSafe(this.assets, item.sceneKey) ||
-      getAssetImageSafe(this.assets, `${item.id}_bg`) ||
-      getAssetImageSafe(this.assets, "background")
-    );
-  };
-
-  const drawCard = (itemIndex) => {
-    if (itemIndex < 0 || itemIndex >= items.length) return;
-
-    const item = items[itemIndex];
-    const rel = itemIndex - idx;
-    const offset = rel * spacing + dragDX;
-    const dist = Math.abs(rel);
-    const scale = dist === 0 ? 1 : sideScale;
-
-    const w2 = cardW * scale;
-    const h2 = cardH * scale;
-    let x2 = cx - w2 / 2 + offset;
-    const y2 = cy - h2 / 2;
-
-    const minX = safe.x + 4;
-    const maxX = safe.x + safe.w - w2 - 4;
-    x2 = Math.max(minX, Math.min(maxX, x2));
-
-    ctx.save();
-    ctx.globalAlpha = dist === 0 ? 1 : 0.92;
-
-    ctx.fillStyle = "rgba(0,0,0,0.56)";
-    fillRoundRect(ctx, x2, y2, w2, h2, 18);
-
-    ctx.save();
-    roundRectPath(ctx, x2, y2, w2, h2, 18);
-    ctx.clip();
-
-    const img = getImg(item);
-    if (img) {
-      const iw = img.width || 1;
-      const ih = img.height || 1;
-
-      const bgScale = Math.max(w2 / iw, h2 / ih);
-      const bgW = iw * bgScale;
-      const bgH = ih * bgScale;
-      const bgX = x2 + (w2 - bgW) / 2;
-      const bgY = y2 + (h2 - bgH) / 2;
-      ctx.drawImage(img, bgX, bgY, bgW, bgH);
-
-      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.42)";
-      ctx.fillRect(x2, y2, w2, h2);
-
-      const padImg = dist === 0 ? 8 : 10;
-      const fitScale = Math.min((w2 - padImg * 2) / iw, (h2 - padImg * 2) / ih);
-      const fitW = iw * fitScale;
-      const fitH = ih * fitScale;
-      const fitX = x2 + (w2 - fitW) / 2;
-      const fitY = y2 + (h2 - fitH) / 2;
-      ctx.drawImage(img, fitX, fitY, fitW, fitH);
-
-      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.18)";
-      ctx.fillRect(x2, y2, w2, h2);
-    } else {
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fillRect(x2, y2, w2, h2);
-    }
-
-    const grad = ctx.createLinearGradient(0, y2 + h2 * 0.42, 0, y2 + h2);
-    grad.addColorStop(0, "rgba(0,0,0,0)");
-    grad.addColorStop(1, "rgba(0,0,0,0.76)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(x2, y2, w2, h2);
-
-    ctx.restore();
-
-    ctx.strokeStyle =
-      dist === 0 ? "rgba(255,255,255,0.34)" : "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
-
-    if (dist !== 0) {
-      ctx.fillStyle = "rgba(0,0,0,0.12)";
-      fillRoundRect(ctx, x2, y2, w2, h2, 18);
-    }
-
-    const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = dist === 0 ? "700 18px system-ui" : "700 15px system-ui";
-    ctx.shadowColor = "rgba(0,0,0,0.80)";
-    ctx.shadowBlur = 10;
-    ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 28);
-    ctx.shadowBlur = 0;
-
-    ctx.restore();
-
-    if (itemIndex === idx) {
-      this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
-    }
-  };
-
-  const visibleCards = [idx - 1, idx, idx + 1]
-    .filter((i) => i >= 0 && i < items.length)
-    .sort((a, b) => {
-      const aDepth = Math.abs((a - idx) * spacing + dragDX);
-      const bDepth = Math.abs((b - idx) * spacing + dragDX);
-      return bDepth - aDepth;
-    });
-
-  visibleCards.forEach(drawCard);
-
-  const dotsY = Math.min(carouselBottom - 10, cy + cardH / 2 + 18);
-  const dotGap = 10;
-  const total = (items.length - 1) * dotGap;
-  const startX = cx - total / 2;
-
-  for (let i = 0; i < items.length; i++) {
-    ctx.beginPath();
-    const dx = startX + i * dotGap;
-    ctx.arc(dx, dotsY, 3, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.fillStyle =
-      i === idx ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.28)";
-    ctx.fill();
-  }
-};
 
 /* ===== MISSIONS SCENE ===== */
 class MissionsScene {
@@ -1082,8 +915,6 @@ const input = new Input(canvas);
 const scenes = new SceneManager();
 
 window.tcScenes = scenes;
-window.tcStore = store;
-window.tcScenes = scenes;
 
 window.tc = window.tc || {};
 window.tc.dev = {
@@ -1131,8 +962,7 @@ window.tc.dev = {
     console.log("Clan oluşturuldu:", store.get().clan);
   },
   clanReset() {
-    const s = store.get();
-    store.set({ ...s, clan: null });
+    store.set({ clan: null });
     console.log("Clan sıfırlandı.");
   },
   reset() {
@@ -1184,7 +1014,13 @@ const engine = new Engine({ canvas, ctx, input, scenes });
 /* ===== KEEP SAFE AREA UPDATED ===== */
 (function safeAreaLoop() {
   const s = store.get();
-  store.set({ ui: { ...(s.ui || {}), safe: getSafeArea() } });
+  const ui = s.ui || {};
+  store.set({
+    ui: {
+      ...ui,
+      safe: getSafeArea(),
+    },
+  });
   requestAnimationFrame(safeAreaLoop);
 })();
 
@@ -1218,6 +1054,8 @@ startMenu(store);
 startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
 startPvpLobby();
+
+normalizeGlobalUi(store);
 
 /* ===== START ===== */
 scenes.go("boot");
