@@ -95,10 +95,11 @@ export class CoffeeShopScene {
 
     const s = this.store.get();
     const p = s.player || {};
-
     const patch = {};
+
     if (!Number.isFinite(Number(p.coffeeshopUses))) patch.coffeeshopUses = 0;
     if (!Number.isFinite(Number(p.coffeeshopTolerance))) patch.coffeeshopTolerance = 0;
+
     if (Object.keys(patch).length) {
       this.store.set({
         player: {
@@ -196,6 +197,7 @@ export class CoffeeShopScene {
   _seedSmoke(count) {
     this.smoke = [];
     const safe = this._safeRect();
+
     for (let i = 0; i < count; i++) {
       this.smoke.push({
         x: safe.x + Math.random() * safe.w,
@@ -227,10 +229,10 @@ export class CoffeeShopScene {
     this.jointFx.push({
       x,
       y,
-      vy: -0.9,
+      vy: -0.55,
       life: 1,
-      rot: -0.2 + Math.random() * 0.4,
-      scale: 0.95 + Math.random() * 0.2,
+      rot: -0.12 + Math.random() * 0.24,
+      scale: 1.05 + Math.random() * 0.18,
     });
   }
 
@@ -267,7 +269,7 @@ export class CoffeeShopScene {
     for (let i = this.jointFx.length - 1; i >= 0; i--) {
       const fx = this.jointFx[i];
       fx.y += fx.vy * dt * 3.5;
-      fx.life -= 0.025 * dt;
+      fx.life -= 0.012 * dt;
       if (fx.life <= 0) this.jointFx.splice(i, 1);
     }
   }
@@ -294,7 +296,7 @@ export class CoffeeShopScene {
       return;
     }
 
-    let uses = Number(p.coffeeshopUses || 0) + 1;
+    const uses = Number(p.coffeeshopUses || 0) + 1;
     const tolerant = uses >= 10;
     const adjustedEnergy = this._applyToleranceEnergy(item.energy, uses);
     const add = Math.min(adjustedEnergy, energyMax - energy);
@@ -314,8 +316,8 @@ export class CoffeeShopScene {
       nextCoins = Math.max(0, nextCoins - stolenCoins);
       nextEnergy = Math.max(0, nextEnergy - stolenEnergy);
       toast = "Sokakta dayak yedin! Enerji ve yton çalındı.";
-      this.blurUntil = Date.now() + 900;
-      this.slowUntil = Date.now() + 1000;
+      this.blurUntil = Date.now() + 2200;
+      this.slowUntil = Date.now() + 1600;
     }
 
     let jackpotHit = false;
@@ -339,7 +341,11 @@ export class CoffeeShopScene {
 
     if (hitRect) {
       this._spawnJointFx(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.4);
-      this._spawnSmokeBurst(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.5, jackpotHit ? 10 : 6);
+      this._spawnSmokeBurst(
+        hitRect.x + hitRect.w * 0.5,
+        hitRect.y + hitRect.h * 0.5,
+        jackpotHit ? 10 : 6
+      );
     }
 
     this._showToast(toast, jackpotHit ? 2200 : 1600);
@@ -405,22 +411,69 @@ export class CoffeeShopScene {
       ctx.translate(fx.x, fx.y);
       ctx.rotate(fx.rot);
       ctx.scale(fx.scale, fx.scale);
-      ctx.globalAlpha = fx.life;
+      ctx.globalAlpha = Math.max(0, fx.life);
 
-      ctx.fillStyle = "rgba(246,228,190,0.98)";
-      this._rr(ctx, -18, -4, 28, 8, 4);
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.35)";
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+
+      const bodyW = 34;
+      const bodyH = 8;
+
+      const grad = ctx.createLinearGradient(-bodyW / 2, 0, bodyW / 2, 0);
+      grad.addColorStop(0, "rgba(214,196,156,0.98)");
+      grad.addColorStop(0.35, "rgba(236,222,185,0.98)");
+      grad.addColorStop(0.7, "rgba(205,186,145,0.98)");
+      grad.addColorStop(1, "rgba(176,156,120,0.98)");
+
+      ctx.fillStyle = grad;
+      this._rr(ctx, -bodyW / 2, -bodyH / 2, bodyW, bodyH, 4);
       ctx.fill();
 
-      ctx.fillStyle = "rgba(255,120,20,0.95)";
+      ctx.strokeStyle = "rgba(120,90,55,0.18)";
+      ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.arc(12, 0, 4, 0, Math.PI * 2);
+      ctx.moveTo(-10, -2);
+      ctx.lineTo(8, 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(245,235,210,0.95)";
+      this._rr(ctx, -bodyW / 2 - 3, -bodyH / 2, 7, bodyH, 2.5);
       ctx.fill();
 
-      ctx.fillStyle = "rgba(120,255,120,0.95)";
-      ctx.font = "900 14px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("🌿", -22, -2);
+      ctx.fillStyle = "rgba(78,92,48,0.95)";
+      ctx.beginPath();
+      ctx.ellipse(bodyW / 2 - 1, 0, 4.5, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      const ember = ctx.createRadialGradient(bodyW / 2 + 2, 0, 0, bodyW / 2 + 2, 0, 7);
+      ember.addColorStop(0, "rgba(255,235,180,1)");
+      ember.addColorStop(0.35, "rgba(255,150,40,0.95)");
+      ember.addColorStop(0.7, "rgba(255,70,10,0.7)");
+      ember.addColorStop(1, "rgba(255,70,10,0)");
+      ctx.fillStyle = ember;
+      ctx.beginPath();
+      ctx.arc(bodyW / 2 + 2, 0, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+
+      const smokeAlpha = Math.max(0, fx.life * 0.45);
+      for (let i = 0; i < 3; i++) {
+        const sx = bodyW / 2 + 5 + i * 2;
+        const sy = -6 - i * 6;
+        const sr = 4 + i * 2.5;
+
+        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+        sg.addColorStop(0, `rgba(230,235,230,${smokeAlpha * 0.55})`);
+        sg.addColorStop(0.45, `rgba(190,205,190,${smokeAlpha * 0.28})`);
+        sg.addColorStop(1, "rgba(190,205,190,0)");
+        ctx.fillStyle = sg;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       ctx.restore();
     }
@@ -438,8 +491,8 @@ export class CoffeeShopScene {
 
     if (Date.now() < this.blurUntil) {
       ctx.save();
-      ctx.filter = "blur(3px)";
-      this._drawCover(ctx, bg, -6, -6, W + 12, H + 12);
+      ctx.filter = "blur(5px) saturate(1.08) brightness(1.03)";
+      this._drawCover(ctx, bg, -10, -10, W + 20, H + 20);
       ctx.restore();
     } else {
       this._drawCover(ctx, bg, 0, 0, W, H);
