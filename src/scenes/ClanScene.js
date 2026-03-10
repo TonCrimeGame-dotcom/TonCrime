@@ -234,66 +234,99 @@ export class ClanScene {
   }
 
   startSpin() {
-    if (this.spinState?.active) return;
+  if (this.spinState?.active) return;
 
-    const before = this.getSpinInfo();
-    if (!before) {
-      this.showToast("Clan boss verisi bulunamadı");
-      return;
-    }
+  const clan = this.getClan();
+  const boss = this.getBoss();
+  const before = this.getSpinInfo();
 
-    if (Number(before.spinsLeft || 0) <= 0) {
-      this.showToast("Günlük spin hakkı bitti");
-      return;
-    }
-
-    const playerEnergy = Number(this.store?.get?.()?.player?.energy || 0);
-    const energyPerSpin = Number(before.energyPerSpin || 0);
-
-    if (playerEnergy < energyPerSpin) {
-      this.showToast("Yeterli enerjin yok");
-      return;
-    }
-
-    try {
-      ClanSystem.spinBoss(this.store);
-    } catch (err) {
-      this.showToast(err?.message || "Spin başarısız");
-      return;
-    }
-
-    const after = this.getSpinInfo();
-    const result = after?.lastResult || null;
-
-    if (!result?.ok) {
-      this.showToast(result?.message || "Spin başarısız");
-      return;
-    }
-
-    const targets = (result.symbols || ["punch", "kick", "slap"]).map((key) => {
-      const idx = SYMBOL_ORDER.indexOf(key);
-      return idx >= 0 ? idx : 0;
-    });
-
-    const now = performance.now();
-
-    this.spinState = {
-      active: true,
-      startedAt: now,
-      result,
-      targets,
-      finished: false,
-    };
-
-    for (let i = 0; i < 3; i++) {
-      const reel = this.reels[i];
-      reel.speed = 1.2 + i * 0.1;
-      reel.stopping = false;
-      reel.settled = false;
-      reel.stopTime = now + 950 + i * 260;
-      reel.targetIndex = targets[i];
-    }
+  if (!clan || !boss || !before) {
+    this.showToast("Clan boss verisi bulunamadı");
+    return;
   }
+
+  const energyPerSpin = Number(
+    before.energyPerSpin ||
+    boss.energyPerSpin ||
+    clan?.boss?.energyPerSpin ||
+    6
+  );
+
+  const spinsLeft = Number(
+    before.spinsLeft ??
+    Math.max(
+      0,
+      Number(before.dailySpinLimit || boss.dailySpinLimit || 5) -
+      Number(before.spinsUsedToday || 0)
+    )
+  );
+
+  const bossStatus = String(
+    before.bossStatus ||
+    boss.status ||
+    clan?.boss?.status ||
+    "active"
+  ).toLowerCase();
+
+  const playerEnergy = Number(this.store?.get?.()?.player?.energy || 0);
+
+  if (bossStatus === "defeated") {
+    this.showToast("Boss zaten yenilmiş");
+    return;
+  }
+
+  if (spinsLeft <= 0) {
+    this.showToast("Günlük spin hakkı bitti");
+    return;
+  }
+
+  if (playerEnergy < energyPerSpin) {
+    this.showToast(`Yeterli enerji yok (${playerEnergy}/${energyPerSpin})`);
+    return;
+  }
+
+  try {
+    ClanSystem.spinBoss(this.store);
+  } catch (err) {
+    this.showToast(err?.message || "Spin başarısız");
+    return;
+  }
+
+  const after = this.getSpinInfo();
+  const result = after?.lastResult || this.getBoss()?.lastResult || null;
+
+  if (!result?.ok) {
+    this.showToast(
+      result?.message ||
+      `Spin başarısız (${playerEnergy}/${energyPerSpin})`
+    );
+    return;
+  }
+
+  const targets = (result.symbols || ["punch", "kick", "slap"]).map((key) => {
+    const idx = SYMBOL_ORDER.indexOf(key);
+    return idx >= 0 ? idx : 0;
+  });
+
+  const now = performance.now();
+
+  this.spinState = {
+    active: true,
+    startedAt: now,
+    result,
+    targets,
+    finished: false,
+  };
+
+  for (let i = 0; i < 3; i++) {
+    const reel = this.reels[i];
+    reel.speed = 1.2 + i * 0.1;
+    reel.stopping = false;
+    reel.settled = false;
+    reel.stopTime = now + 950 + i * 260;
+    reel.targetIndex = targets[i];
+  }
+}
 
   stopReel(reel) {
     if (reel.stopping) return;
