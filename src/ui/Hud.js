@@ -1,5 +1,7 @@
 export function startHud(store) {
-  const hudTop = document.getElementById("hudTop");
+  const root = document.getElementById("hudTop");
+  const row = document.getElementById("hudRow");
+
   const elUsername = document.getElementById("hudUsername");
   const elCoins = document.getElementById("hudCoins");
   const elWeaponName = document.getElementById("hudWeaponName");
@@ -8,9 +10,11 @@ export function startHud(store) {
   const elXpText = document.getElementById("hudXpText");
   const elEnergyFill = document.getElementById("hudEnergyFill");
   const elEnergyText = document.getElementById("hudEnergyText");
+  const elLogo = document.getElementById("hudLogo");
 
   if (
-    !hudTop ||
+    !root ||
+    !row ||
     !elUsername ||
     !elCoins ||
     !elWeaponName ||
@@ -24,6 +28,13 @@ export function startHud(store) {
     return;
   }
 
+  root.style.zIndex = "5000";
+  root.style.opacity = "1";
+  root.style.pointerEvents = "auto";
+  root.style.left = "max(var(--sal), 0px)";
+  root.style.right = "max(var(--sar), 0px)";
+  root.style.top = "max(var(--sat), 0px)";
+
   const clamp01 = (n) => Math.max(0, Math.min(1, n));
 
   function fmtMMSS(ms) {
@@ -33,12 +44,34 @@ export function startHud(store) {
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+  function syncHudCss() {
+    const vw = window.innerWidth || 0;
+
+    if (vw <= 640) {
+      row.style.gridTemplateColumns = "1fr";
+      row.style.gap = "8px";
+      root.style.padding = "10px 10px 0";
+      if (elLogo) {
+        elLogo.style.height = "44px";
+        elLogo.style.margin = "0 auto";
+      }
+    } else {
+      row.style.gridTemplateColumns = "1fr auto 1fr";
+      row.style.gap = "10px";
+      root.style.padding = "10px 12px 0";
+      if (elLogo) {
+        elLogo.style.height = "64px";
+        elLogo.style.margin = "0";
+      }
+    }
+  }
+
   function loop() {
+    syncHudCss();
+
     const s = store.get();
     const p = s.player || {};
-    const currentScene = window.tcScenes?._currentKey || "";
-
-    hudTop.style.display = currentScene === "profile" ? "none" : "";
+    const ui = s.ui || {};
 
     elUsername.textContent = p.username ?? "Player";
     elCoins.textContent = `Coin: ${s.coins ?? 0}`;
@@ -60,8 +93,23 @@ export function startHud(store) {
     const untilNext = e >= eMax ? 0 : Math.max(0, interval - (now - lastAt));
     elEnergyText.textContent = `ENERJİ ${e}/${eMax} • ${e >= eMax ? "FULL" : fmtMMSS(untilNext)}`;
 
+    const safeTop = Number(ui.safe?.y || 0);
+    const reservedTop = Math.max(root.offsetHeight + safeTop + 8, 110);
+
+    if (
+      Number(ui.hudReservedTop || 0) !== reservedTop
+    ) {
+      store.set({
+        ui: {
+          ...ui,
+          hudReservedTop: reservedTop,
+        },
+      });
+    }
+
     requestAnimationFrame(loop);
   }
 
+  syncHudCss();
   loop();
 }
