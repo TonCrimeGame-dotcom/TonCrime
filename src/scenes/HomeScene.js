@@ -123,7 +123,7 @@ export class HomeScene {
 
       const items = this._carouselItems();
       const dragDX = c.dragNowX - c.dragStartX;
-      const threshold = 45;
+      const threshold = 48;
 
       if (dragDX > threshold) {
         c.index = Math.max(0, c.index - 1);
@@ -143,10 +143,7 @@ export class HomeScene {
 
         try {
           this.scenes.go(item.sceneKey);
-        } catch (_) {
-          const s = this.store.get();
-          this.store.set({ coins: (s.coins ?? 0) + 1 });
-        }
+        } catch (_) {}
       }
     }
   }
@@ -154,6 +151,9 @@ export class HomeScene {
   render(ctx, w, h) {
     const state = this.store.get();
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
+
+    const topReserved = Number(state?.ui?.hudReservedTop || 118);
+    const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
 
     const bg = getImgSafe(this.assets, "background");
     if (bg) {
@@ -170,16 +170,13 @@ export class HomeScene {
       ctx.fillRect(0, 0, w, h);
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillStyle = "rgba(0,0,0,0.30)";
     ctx.fillRect(0, 0, w, h);
 
-    const HUD_TOP_RESERVED = 96;
-    const CHAT_BOTTOM_RESERVED = 74;
+    const carouselTop = safe.y + topReserved;
+    const carouselBottom = safe.y + safe.h - bottomReserved;
+    const areaH = Math.max(180, carouselBottom - carouselTop);
 
-    const carouselTop = safe.y + HUD_TOP_RESERVED;
-    const carouselBottom = safe.y + safe.h - CHAT_BOTTOM_RESERVED;
-
-    const areaH = Math.max(160, carouselBottom - carouselTop);
     const cx = safe.x + safe.w / 2;
     const cy = carouselTop + areaH / 2;
 
@@ -188,14 +185,10 @@ export class HomeScene {
     this.carousel.index = idx;
 
     const cardW = Math.min(safe.w * 0.58, 410);
-    const cardH = Math.min(areaH * 0.72, 310);
+    const cardH = Math.min(areaH * 0.72, 320);
     const sideScale = 0.72;
     const sideW = cardW * sideScale;
-
-    const maxSpacingByScreen = Math.max(
-      cardW * 0.56,
-      safe.w / 2 - sideW / 2 - 8
-    );
+    const maxSpacingByScreen = Math.max(cardW * 0.56, safe.w / 2 - sideW / 2 - 8);
     const spacing = Math.min(cardW * 0.88, maxSpacingByScreen);
 
     const dragDX = this.carousel.dragging
@@ -230,8 +223,8 @@ export class HomeScene {
       x2 = Math.max(minX, Math.min(maxX, x2));
 
       ctx.save();
-      ctx.globalAlpha = dist === 0 ? 1 : 0.92;
-ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = dist === 0 ? 1 : 0.9;
+
       ctx.fillStyle = "rgba(0,0,0,0.56)";
       fillRoundRect(ctx, x2, y2, w2, h2, 18);
 
@@ -244,20 +237,19 @@ ctx.globalCompositeOperation = "source-over";
         const iw = img.width || 1;
         const ih = img.height || 1;
 
-        /* TAM GÖRÜNSÜN: contain */
-        const contain = Math.min((w2 - 12) / iw, (h2 - 12) / ih);
-        const dw = iw * contain;
-        const dh = ih * contain;
-        const dx = x2 + (w2 - dw) / 2;
-        const dy = y2 + (h2 - dh) / 2;
-
-        /* kart içi arka dolgu */
-        ctx.fillStyle = "rgba(0,0,0,0.30)";
+        ctx.fillStyle = "rgba(0,0,0,0.22)";
         ctx.fillRect(x2, y2, w2, h2);
 
-        ctx.drawImage(img, dx, dy, dw, dh);
+        const fitPad = dist === 0 ? 10 : 12;
+        const fitScale = Math.min((w2 - fitPad * 2) / iw, (h2 - fitPad * 2) / ih);
+        const fitW = iw * fitScale;
+        const fitH = ih * fitScale;
+        const fitX = x2 + (w2 - fitW) / 2;
+        const fitY = y2 + (h2 - fitH) / 2;
 
-        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.22)";
+        ctx.drawImage(img, fitX, fitY, fitW, fitH);
+
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.18)";
         ctx.fillRect(x2, y2, w2, h2);
       } else {
         ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -266,7 +258,7 @@ ctx.globalCompositeOperation = "source-over";
 
       const grad = ctx.createLinearGradient(0, y2 + h2 * 0.42, 0, y2 + h2);
       grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(1, "rgba(0,0,0,0.76)");
+      grad.addColorStop(1, "rgba(0,0,0,0.78)");
       ctx.fillStyle = grad;
       ctx.fillRect(x2, y2, w2, h2);
 
@@ -276,18 +268,13 @@ ctx.globalCompositeOperation = "source-over";
         dist === 0 ? "rgba(255,255,255,0.34)" : "rgba(255,255,255,0.14)";
       strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
 
-      if (dist !== 0) {
-        ctx.fillStyle = "rgba(0,0,0,0.12)";
-        fillRoundRect(ctx, x2, y2, w2, h2, 18);
-      }
-
       const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = dist === 0 ? "700 18px system-ui" : "700 15px system-ui";
-      ctx.shadowColor = "rgba(0,0,0,0.80)";
-      ctx.shadowBlur = 10;
+      ctx.shadowColor = "rgba(0,0,0,0.85)";
+      ctx.shadowBlur = 12;
       ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 28);
       ctx.shadowBlur = 0;
 
@@ -297,10 +284,16 @@ ctx.globalCompositeOperation = "source-over";
         this._cardRect = { x: x2, y: y2, w: w2, h: h2 };
       }
     };
-drawCard(idx - 1);
-drawCard(idx + 1);
-drawCard(idx);
 
+    const visibleCards = [idx - 1, idx, idx + 1]
+      .filter((i) => i >= 0 && i < items.length)
+      .sort((a, b) => {
+        const aDepth = Math.abs((a - idx) * spacing + dragDX);
+        const bDepth = Math.abs((b - idx) * spacing + dragDX);
+        return bDepth - aDepth;
+      });
+
+    visibleCards.forEach(drawCard);
 
     const dotsY = Math.min(carouselBottom - 10, cy + cardH / 2 + 18);
     const dotGap = 10;
