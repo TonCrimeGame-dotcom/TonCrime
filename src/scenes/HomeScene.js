@@ -96,8 +96,7 @@ export class HomeScene {
       { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
     ];
   }
-    ];
-  }
+
 
   update() {
     const c = this.carousel;
