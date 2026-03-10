@@ -37,6 +37,18 @@ export class ClanScene {
     this.buttons = [];
     this.tabButtons = [];
     this.rowHits = [];
+
+    this.bossUi = {
+      lastSpinId: null,
+      animating: false,
+      spinStartAt: 0,
+      reelStopAt: [0, 0, 0],
+      previewSymbols: ["👊", "🔪", "🔫"],
+      finalSymbols: ["?", "?", "?"],
+      flashUntil: 0,
+      comboText: "",
+      damageText: "",
+    };
   }
 
   enter() {
@@ -110,6 +122,46 @@ export class ClanScene {
       contentW: pageW,
       contentH,
     };
+  }
+
+  _updateBossAnimation() {
+    if (this.activeTab !== "boss") return;
+
+    const boss = ClanSystem.getBoss ? ClanSystem.getBoss(this.store) : null;
+    if (!boss) return;
+
+    const lastSpin = boss.lastSpin || null;
+    if (lastSpin && lastSpin.id !== this.bossUi.lastSpinId) {
+      const now = Date.now();
+      this.bossUi.lastSpinId = lastSpin.id;
+      this.bossUi.animating = true;
+      this.bossUi.spinStartAt = now;
+      this.bossUi.reelStopAt = [now + 450, now + 900, now + 1350];
+      this.bossUi.finalSymbols = lastSpin.reels?.slice?.(0, 3) || ["?", "?", "?"];
+      this.bossUi.comboText = lastSpin.comboName || "";
+      this.bossUi.damageText = `${formatMoney(lastSpin.finalDamage || 0)} DMG`;
+      this.bossUi.flashUntil = now + 1900;
+    }
+
+    if (!this.bossUi.animating) return;
+
+    const now = Date.now();
+    const symbolPool = (ClanSystem.getBossSymbols?.() || []).map((x) => x.label).filter(Boolean);
+    const fallbackPool = symbolPool.length ? symbolPool : ["👊", "🔪", "🔫", "💣", "🛡️", "☠️", "⭐", "💰"];
+
+    for (let i = 0; i < 3; i++) {
+      if (now < this.bossUi.reelStopAt[i]) {
+        const seed = Math.floor(now / 70 + i * 17) % fallbackPool.length;
+        this.bossUi.previewSymbols[i] = fallbackPool[seed];
+      } else {
+        this.bossUi.previewSymbols[i] = this.bossUi.finalSymbols[i] || "?";
+      }
+    }
+
+    if (now >= this.bossUi.reelStopAt[2]) {
+      this.bossUi.animating = false;
+      this.bossUi.previewSymbols = this.bossUi.finalSymbols.slice(0, 3);
+    }
   }
 
   _buildStaticButtons(ctx, clan) {
@@ -233,12 +285,12 @@ export class ClanScene {
         ? ClanSystem.getPlayerBossSpinsLeft(this.store)
         : 0;
 
-      const machineW = Math.min(700, L.contentW - 36);
+      const machineW = Math.min(760, L.contentW - 36);
       const machineX = L.contentX + (L.contentW - machineW) / 2;
 
       this.buttons.push({
         id: "boss_spin",
-        rect: { x: machineX + machineW - 170, y: L.contentY + 258, w: 148, h: 46 },
+        rect: { x: machineX + machineW - 184, y: L.contentY + 328, w: 160, h: 52 },
         text: boss?.status === "dead" ? "BEKLENİYOR" : `SPIN (${spinsLeft})`,
         onClick: () => {
           if (!boss || boss.status === "dead") return;
@@ -313,6 +365,8 @@ export class ClanScene {
         }
       }
     }
+
+    this._updateBossAnimation();
   }
 
   render(ctx) {
@@ -620,7 +674,7 @@ export class ClanScene {
       ? ClanSystem.getPlayerBossSpinsLeft(this.store)
       : 0;
 
-    const contentH = 860;
+    const contentH = 980;
     this.maxScroll = Math.max(0, contentH - L.contentH);
     this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
@@ -634,135 +688,131 @@ export class ClanScene {
       return;
     }
 
-    const machineW = Math.min(700, L.contentW - 36);
+    const machineW = Math.min(760, L.contentW - 36);
     const machineX = L.contentX + (L.contentW - machineW) / 2;
     const machineY = y0 + 18;
+    const machineH = 430;
 
-    this.drawPanel(ctx, machineX, machineY, machineW, 360, 20, "rgba(20,18,12,0.98)");
-    this.drawPanel(ctx, machineX + 10, machineY + 10, machineW - 20, 340, 18, "rgba(40,28,12,0.98)");
+    this.drawSlotMachineShell(ctx, machineX, machineY, machineW, machineH);
 
-    ctx.fillStyle = "#f5d58d";
-    ctx.font = "bold 26px Arial";
+    ctx.fillStyle = "#ffe29d";
+    ctx.font = "bold 28px Arial";
     ctx.textAlign = "center";
-    ctx.fillText("CLAN BOSS SLOT", machineX + machineW / 2, machineY + 34);
+    ctx.fillText("BOSS SLOT MACHINE", machineX + machineW / 2, machineY + 42);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 24px Arial";
-    ctx.fillText(`${boss.name}`, machineX + machineW / 2, machineY + 66);
+    ctx.fillText(`${boss.name}`, machineX + machineW / 2, machineY + 76);
 
-    ctx.fillStyle = "#cdbd92";
+    ctx.fillStyle = "#d4c49e";
     ctx.font = "15px Arial";
-    ctx.fillText(`Lv.${boss.level || 1} • ${boss.title || "Clan Boss"}`, machineX + machineW / 2, machineY + 88);
+    ctx.fillText(`Lv.${boss.level || 1} • ${boss.title || "Clan Boss"}`, machineX + machineW / 2, machineY + 98);
 
     const hpRatio = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    this.roundRect(ctx, machineX + 32, machineY + 104, machineW - 64, 24, 10);
-    ctx.fill();
-    ctx.fillStyle = boss.status === "dead" ? "#7a2e2e" : "#b83a3a";
-    this.roundRect(ctx, machineX + 32, machineY + 104, (machineW - 64) * hpRatio, 24, 10);
-    ctx.fill();
+    this.drawProgressBar(
+      ctx,
+      machineX + 34,
+      machineY + 116,
+      machineW - 68,
+      26,
+      hpRatio,
+      boss.status === "dead" ? "#7a2e2e" : "#b83a3a",
+      "rgba(0,0,0,0.40)"
+    );
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 14px Arial";
     ctx.fillText(
       `${Number(boss.hp || 0).toLocaleString("tr-TR")} / ${Number(boss.maxHp || 0).toLocaleString("tr-TR")} HP`,
       machineX + machineW / 2,
-      machineY + 121
+      machineY + 133
     );
 
-    const reelY = machineY + 148;
-    const reelW = 132;
-    const reelH = 94;
+    const reelW = 150;
+    const reelH = 120;
     const reelGap = 18;
     const totalReelW = reelW * 3 + reelGap * 2;
     const reelX = machineX + (machineW - totalReelW) / 2;
+    const reelY = machineY + 172;
 
-    const lastSpin = boss.lastSpin;
-    const reelLabels =
-      lastSpin?.reels && lastSpin.reels.length === 3 ? lastSpin.reels : ["?", "?", "?"];
-
+    const symbols = this.bossUi.previewSymbols || ["?", "?", "?"];
     for (let i = 0; i < 3; i++) {
       const x = reelX + i * (reelW + reelGap);
-      this.drawPanel(ctx, x, reelY, reelW, reelH, 16, "rgba(235,227,216,0.96)");
-      this.drawPanel(ctx, x + 6, reelY + 6, reelW - 12, reelH - 12, 12, "rgba(20,20,22,0.98)");
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 44px Arial";
-      ctx.textAlign = "center";
-      ctx.fillText(reelLabels[i], x + reelW / 2, reelY + 61);
+      const activeGlow = this.bossUi.animating && Date.now() < this.bossUi.reelStopAt[i];
+      this.drawSingleReel(ctx, x, reelY, reelW, reelH, symbols[i], activeGlow);
     }
 
-    const statusX = machineX + 26;
-    const statusY = machineY + 260;
+    const leverX = machineX + machineW - 58;
+    const leverY = machineY + 190;
+    this.drawLever(ctx, leverX, leverY, this.bossUi.animating);
 
-    ctx.fillStyle = "#f1e8d2";
+    ctx.fillStyle = "#f4e9c8";
     ctx.font = "bold 16px Arial";
     ctx.textAlign = "left";
-    ctx.fillText(`Günlük Spin: ${spinsLeft}/${boss.dailySpinLimit || 5}`, statusX, statusY);
-    ctx.fillText(`Spin Ücreti: $${formatMoney(boss.dailySpinCostCash || 0)}`, statusX, statusY + 24);
-    ctx.fillText(`Toplam Hasar: ${formatMoney(boss.totalDamage || 0)}`, statusX, statusY + 48);
-    ctx.fillText(`Toplam Spin: ${formatMoney(boss.totalSpins || 0)}`, statusX, statusY + 72);
+    ctx.fillText(`Günlük Spin: ${spinsLeft}/${boss.dailySpinLimit || 5}`, machineX + 34, machineY + 322);
+    ctx.fillText(`Spin Ücreti: $${formatMoney(boss.dailySpinCostCash || 0)}`, machineX + 34, machineY + 348);
+    ctx.fillText(`Toplam Hasar: ${formatMoney(boss.totalDamage || 0)}`, machineX + 34, machineY + 374);
+
+    const comboNow = boss.lastSpin?.comboName || this.bossUi.comboText || "-";
+    const dmgNow =
+      boss.lastSpin?.finalDamage != null
+        ? `${formatMoney(boss.lastSpin.finalDamage || 0)} DMG`
+        : this.bossUi.damageText || "-";
+
+    ctx.fillStyle = Date.now() < this.bossUi.flashUntil ? "#ffe27c" : "#f4e9c8";
+    ctx.font = "bold 17px Arial";
+    ctx.fillText(`Combo: ${comboNow}`, machineX + 300, machineY + 322);
+    ctx.fillText(`Hasar: ${dmgNow}`, machineX + 300, machineY + 348);
+
+    if (boss.lastSpin?.bonusCash > 0) {
+      ctx.fillText(
+        `Bonus Para: $${formatMoney(boss.lastSpin.bonusCash || 0)}`,
+        machineX + 300,
+        machineY + 374
+      );
+    }
 
     if (boss.status === "dead") {
       const remainMs = Math.max(0, Number(boss.respawnAt || 0) - Date.now());
       const min = Math.floor(remainMs / 60000);
       const sec = Math.floor((remainMs % 60000) / 1000);
       ctx.fillStyle = "#ffb4b4";
-      ctx.font = "bold 15px Arial";
+      ctx.font = "bold 16px Arial";
       ctx.fillText(
         `Boss öldü • Yeniden doğuş: ${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`,
-        statusX,
-        statusY + 98
+        machineX + 34,
+        machineY + 404
       );
-    } else if (lastSpin) {
-      ctx.fillStyle = "#ffe7a0";
-      ctx.font = "bold 15px Arial";
-      ctx.fillText(
-        `Son Combo: ${lastSpin.comboName} • Hasar: ${formatMoney(lastSpin.finalDamage || 0)}`,
-        statusX,
-        statusY + 98
-      );
-      if (Number(lastSpin.bonusCash || 0) > 0) {
-        ctx.fillText(
-          `Bonus Para: $${formatMoney(lastSpin.bonusCash || 0)}`,
-          statusX,
-          statusY + 122
-        );
-      }
     }
 
-    this.drawPanel(ctx, L.contentX + 18, y0 + 398, L.contentW - 36, 188, 18, "rgba(18,27,49,0.98)");
+    this.drawPanel(ctx, L.contentX + 18, y0 + 472, L.contentW - 36, 188, 18, "rgba(18,27,49,0.98)");
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 22px Arial";
     ctx.textAlign = "left";
-    ctx.fillText("Ödül ve Savaş Bilgisi", L.contentX + 34, y0 + 430);
+    ctx.fillText("Ödül ve Savaş Bilgisi", L.contentX + 34, y0 + 504);
 
     ctx.fillStyle = "#c7d4ee";
     ctx.font = "17px Arial";
-    ctx.fillText(`Ödül Havuzu: $${formatMoney(boss.rewardPoolCash || 0)}`, L.contentX + 34, y0 + 464);
-    ctx.fillText(`Clan XP Ödülü: ${formatMoney(boss.rewardPoolClanXp || 0)}`, L.contentX + 34, y0 + 492);
-    ctx.fillText(`Boss Kill Sayısı: ${formatMoney(boss.killCount || 0)}`, L.contentX + 34, y0 + 520);
-    ctx.fillText(
-      `Durum: ${boss.status === "dead" ? "ÖLDÜ" : "AKTİF"}`,
-      L.contentX + 34,
-      y0 + 548
-    );
+    ctx.fillText(`Ödül Havuzu: $${formatMoney(boss.rewardPoolCash || 0)}`, L.contentX + 34, y0 + 538);
+    ctx.fillText(`Clan XP Ödülü: ${formatMoney(boss.rewardPoolClanXp || 0)}`, L.contentX + 34, y0 + 566);
+    ctx.fillText(`Boss Kill Sayısı: ${formatMoney(boss.killCount || 0)}`, L.contentX + 34, y0 + 594);
+    ctx.fillText(`Durum: ${boss.status === "dead" ? "ÖLDÜ" : "AKTİF"}`, L.contentX + 34, y0 + 622);
 
-    this.drawPanel(ctx, L.contentX + 18, y0 + 606, L.contentW - 36, 220, 18, "rgba(18,27,49,0.98)");
+    this.drawPanel(ctx, L.contentX + 18, y0 + 684, L.contentW - 36, 250, 18, "rgba(18,27,49,0.98)");
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 22px Arial";
-    ctx.fillText("Hasar Sıralaması", L.contentX + 34, y0 + 638);
+    ctx.fillText("Hasar Sıralaması", L.contentX + 34, y0 + 716);
 
     if (!leaderboard.length) {
       ctx.fillStyle = "#c7d4ee";
       ctx.font = "17px Arial";
-      ctx.fillText("Henüz hasar kaydı yok.", L.contentX + 34, y0 + 674);
+      ctx.fillText("Henüz hasar kaydı yok.", L.contentX + 34, y0 + 752);
     } else {
-      const show = leaderboard.slice(0, 6);
+      const show = leaderboard.slice(0, 7);
       show.forEach((row, i) => {
-        const ry = y0 + 676 + i * 24;
+        const ry = y0 + 754 + i * 26;
         ctx.fillStyle = i % 2 === 0 ? "rgba(24,36,68,0.98)" : "rgba(20,32,58,0.98)";
-        ctx.fillRect(L.contentX + 28, ry - 17, L.contentW - 56, 20);
+        ctx.fillRect(L.contentX + 28, ry - 18, L.contentW - 56, 22);
 
         ctx.fillStyle = "#ffffff";
         ctx.font = "16px Arial";
@@ -818,6 +868,110 @@ export class ClanScene {
     }
   }
 
+  drawSlotMachineShell(ctx, x, y, w, h) {
+    const outer = ctx.createLinearGradient(x, y, x, y + h);
+    outer.addColorStop(0, "#6d4d15");
+    outer.addColorStop(0.2, "#c79b33");
+    outer.addColorStop(0.5, "#5f4212");
+    outer.addColorStop(0.8, "#b98926");
+    outer.addColorStop(1, "#4b330f");
+    ctx.fillStyle = outer;
+    this.roundRect(ctx, x, y, w, h, 24);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    this.roundRect(ctx, x + 10, y + 10, w - 20, h - 20, 20);
+    ctx.fill();
+
+    const top = ctx.createLinearGradient(x, y, x, y + 110);
+    top.addColorStop(0, "rgba(255,255,255,0.18)");
+    top.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = top;
+    this.roundRect(ctx, x + 12, y + 12, w - 24, 120, 18);
+    ctx.fill();
+
+    for (let i = 0; i < 12; i++) {
+      const bx = x + 24 + i * ((w - 48) / 11);
+      const on = Math.floor(Date.now() / 180 + i) % 2 === 0;
+      ctx.fillStyle = on ? "#ffd85e" : "rgba(255,216,94,0.28)";
+      ctx.beginPath();
+      ctx.arc(bx, y + 18, 4.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  drawSingleReel(ctx, x, y, w, h, symbol, activeGlow) {
+    const frame = ctx.createLinearGradient(x, y, x, y + h);
+    frame.addColorStop(0, "#d7d3c8");
+    frame.addColorStop(1, "#868178");
+    ctx.fillStyle = frame;
+    this.roundRect(ctx, x, y, w, h, 18);
+    ctx.fill();
+
+    ctx.fillStyle = activeGlow ? "rgba(255,216,94,0.25)" : "rgba(255,255,255,0.08)";
+    this.roundRect(ctx, x + 6, y + 6, w - 12, h - 12, 14);
+    ctx.fill();
+
+    ctx.fillStyle = "#11141a";
+    this.roundRect(ctx, x + 12, y + 12, w - 24, h - 24, 12);
+    ctx.fill();
+
+    if (activeGlow) {
+      ctx.strokeStyle = "#ffd85e";
+      ctx.lineWidth = 2;
+      this.roundRect(ctx, x + 12, y + 12, w - 24, h - 24, 12);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.fillRect(x + 16, y + 18, w - 32, 20);
+    ctx.fillRect(x + 16, y + h - 38, w - 32, 14);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 54px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(symbol || "?", x + w / 2, y + h / 2 + 2);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  drawLever(ctx, x, y, animating) {
+    ctx.fillStyle = "#c79b33";
+    this.roundRect(ctx, x, y, 18, 96, 8);
+    ctx.fill();
+
+    ctx.fillStyle = "#7c5e1d";
+    this.roundRect(ctx, x + 6, y + 12, 6, 68, 3);
+    ctx.fill();
+
+    const ballY = animating ? y + 74 : y + 18;
+    ctx.fillStyle = "#d64444";
+    ctx.beginPath();
+    ctx.arc(x + 9, ballY, 16, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.arc(x + 4, ballY - 5, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawProgressBar(ctx, x, y, w, h, ratio, fillColor, bgColor) {
+    ctx.fillStyle = bgColor;
+    this.roundRect(ctx, x, y, w, h, h / 2);
+    ctx.fill();
+
+    ctx.fillStyle = fillColor;
+    this.roundRect(ctx, x, y, Math.max(0, w * ratio), h, h / 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, h / 2);
+    ctx.stroke();
+  }
+
   drawButton(ctx, rect, text, color = "#2c3d63", fontSize = 16) {
     this.drawPanel(ctx, rect.x, rect.y, rect.w, rect.h, 12, color);
     ctx.fillStyle = "#ffffff";
@@ -831,13 +985,7 @@ export class ClanScene {
 
   drawPanel(ctx, x, y, w, h, r, color) {
     ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
+    this.roundRect(ctx, x, y, w, h, r);
     ctx.fill();
   }
 
