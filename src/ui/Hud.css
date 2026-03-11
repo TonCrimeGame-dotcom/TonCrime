@@ -219,10 +219,11 @@
   align-items: center;
   justify-content: center;
   align-self: stretch;
-  min-height: 100%;
   pointer-events: none;
   overflow: visible;
-  padding: 0 4px;
+  padding: 0 8px;
+  position: relative;
+  left: -14px;
 }
 
 #hudLogo {
