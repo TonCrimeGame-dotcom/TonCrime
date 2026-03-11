@@ -13,9 +13,12 @@ export function startHud(store) {
   const elEnergyText = document.getElementById("hudEnergyText");
 
   const elLogo = document.getElementById("hudLogo");
+  const elCenter = document.getElementById("hudCenter");
+
   const elAvatar = document.getElementById("hudAvatar");
   const elAvatarImg = document.getElementById("hudAvatarImg");
   const elAvatarFallback = document.getElementById("hudAvatarFallback");
+
   const elOnlineBadge = document.getElementById("hudOnlineBadge");
   const elPremiumBadge = document.getElementById("hudPremiumBadge");
 
@@ -104,6 +107,27 @@ export function startHud(store) {
     return "+0%";
   }
 
+  function updateLogoSize() {
+    if (!elLogo || !elCenter || !root) return;
+
+    const hudH = Math.max(48, root.offsetHeight - 14);
+    const vw = window.innerWidth || 0;
+
+    let logoH = Math.round(hudH * 0.78);
+    if (vw <= 420) logoH = Math.round(hudH * 0.62);
+    else if (vw <= 640) logoH = Math.round(hudH * 0.68);
+    else if (vw <= 920) logoH = Math.round(hudH * 0.74);
+
+    elLogo.style.height = `${logoH}px`;
+    elLogo.style.width = "auto";
+    elLogo.style.maxWidth = "100%";
+    elLogo.style.objectFit = "contain";
+
+    const centerW = Math.max(logoH + 10, Math.round(logoH * 1.2));
+    elCenter.style.width = `${centerW}px`;
+    elCenter.style.minWidth = `${centerW}px`;
+  }
+
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
   let imgEventsBound = false;
@@ -142,7 +166,12 @@ export function startHud(store) {
 
     elWeaponName.textContent = weaponName;
     elWeaponName.title = weaponName;
-    elWeaponBonus.textContent = `• ${bonusText}`;
+
+    if (elWeaponBonus) {
+      elWeaponBonus.textContent = `• ${bonusText}`;
+      elWeaponBonus.title = bonusText;
+      elWeaponBonus.style.display = "inline";
+    }
 
     const xp = Math.max(0, Number(p.xp || 0));
     const xpToNext = Math.max(1, Number(p.xpToNext || 100));
@@ -194,9 +223,7 @@ export function startHud(store) {
     elOnlineBadge.style.display = "inline-flex";
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
-    if (elLogo) {
-      elLogo.style.display = "";
-    }
+    updateLogoSize();
 
     const safeTop = Number(ui.safe?.y || 0);
     const reservedTop = Math.max(72, root.offsetHeight + safeTop + 6);
@@ -214,5 +241,6 @@ export function startHud(store) {
     requestAnimationFrame(loop);
   }
 
+  window.addEventListener("resize", updateLogoSize, { passive: true });
   loop();
 }
