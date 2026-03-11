@@ -409,33 +409,6 @@
         grid-template-columns: 1fr;
       }
     }
-@media (min-width: 721px) and (max-width: 980px) {
-
-  #hudRow {
-    grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
-    align-items: center;
-  }
-
-  #hudLeft {
-    width: 100%;
-  }
-
-  #hudRight {
-    width: min(100%, 360px);
-  }
-
-  #hudLogoWrap {
-    grid-column: 1 / -1;
-    order: -1;
-    margin-bottom: 2px;
-  }
-
-  #hudLogo {
-    height: 46px;
-    max-width: 180px;
-  }
-
-}
 
 }
   </style>
@@ -446,11 +419,9 @@
   <canvas id="game"></canvas>
 
 <div id="safe"></div>
-
 <div id="hudTop">
   <div id="hudShell" class="hudPanel">
     <div id="hudRow">
-      <!-- SOL -->
       <div id="hudLeft">
         <div id="hudIdentity">
           <div id="hudAvatarWrap">
@@ -464,27 +435,23 @@
 
           <div id="hudIdentityText">
             <div class="line1" id="hudUsername">Player</div>
-
             <div class="line2">
               <span class="hudMiniIcon">Y</span>
               <span id="hudCoins">YTON 0</span>
             </div>
-
             <div class="line3">
               <span class="hudMiniIcon">⚔</span>
               <span id="hudWeaponName">Silah Yok</span>
-              <small id="hudWeaponBonus">• +0%</small>
+              <small id="hudWeaponBonus"></small>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ORTA -->
       <div id="hudCenter">
         <img id="hudLogo" src="./src/assets/logo.png" alt="TonCrime" />
       </div>
 
-      <!-- SAĞ -->
       <div id="hudRight">
         <div class="bar">
           <div class="barFill" id="hudXpFill"></div>
@@ -499,6 +466,7 @@
     </div>
   </div>
 </div>
+
  
 
   <div id="pvpLayer">
@@ -1022,6 +990,7 @@
   </script>
 </body>
 </html>
+
 
 
 
