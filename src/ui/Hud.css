@@ -1,10 +1,10 @@
-/* ===== TOP HUD / SINGLE SHELL ===== */
+/* ===== TONCRIME HUD / AAA FINAL ===== */
 #hudTop {
   position: fixed;
   left: var(--sal);
   right: var(--sar);
   top: var(--sat);
-  padding: 6px 10px 0;
+  padding: 6px 8px 0;
   z-index: 9998;
   pointer-events: auto;
 }
@@ -20,7 +20,7 @@
 .hudPanel {
   background:
     linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 100%),
-    rgba(0, 0, 0, 0.58);
+    rgba(0, 0, 0, 0.62);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 18px;
   backdrop-filter: blur(10px);
@@ -38,14 +38,14 @@
 
 #hudRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px 190px;
+  grid-template-columns: minmax(0, 1fr) auto 148px;
   align-items: center;
   gap: 10px;
   width: 100%;
   min-width: 0;
 }
 
-/* ===== SOL ===== */
+/* ===== LEFT ===== */
 #hudLeft {
   min-width: 0;
   width: 100%;
@@ -60,14 +60,14 @@
 
 #hudAvatarWrap {
   position: relative;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
 }
 
 #hudAvatar {
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.14);
@@ -90,7 +90,7 @@
   display: grid;
   place-items: center;
   color: rgba(255,255,255,0.96);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 900;
 }
 
@@ -145,7 +145,7 @@
   color: rgba(255,255,255,0.97);
   font-size: 13px;
   font-weight: 900;
-  line-height: 1.15;
+  line-height: 1.1;
   margin-bottom: 4px;
 }
 
@@ -162,29 +162,29 @@
 }
 
 .hudMiniIcon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
   display: inline-grid;
   place-items: center;
   border-radius: 999px;
   background: rgba(255,255,255,0.10);
   color: rgba(255,255,255,0.95);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 900;
   line-height: 1;
 }
 
 #hudCoins {
   color: rgba(255,255,255,0.92);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1.1;
 }
 
 #hudWeaponName {
   color: rgba(255,255,255,0.78);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   line-height: 1.1;
   flex: 1 1 auto;
@@ -192,42 +192,44 @@
 }
 
 #hudWeaponBonus {
-  color: rgba(255,255,255,0.58);
-  font-size: 11px;
-  font-weight: 600;
-  flex: 0 0 auto;
+  display: none !important;
 }
 
-/* ===== ORTA ===== */
+/* ===== CENTER / LOGO ===== */
 #hudCenter {
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
   align-self: stretch;
-  padding: 0 8px;
+  pointer-events: none;
+  overflow: visible;
+  padding: 0 6px;
 }
 
 #hudLogo {
   display: block;
-  height: 80%;
-  width: auto;
-  max-height: 48px;
+  width: auto !important;
+  height: 34px !important;
+  max-width: none !important;
+  max-height: none !important;
   object-fit: contain;
   filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35));
+  transform: translateY(1px);
 }
-/* ===== SAĞ ===== */
+
+/* ===== RIGHT ===== */
 #hudRight {
-  width: 190px;
-  min-width: 190px;
-  max-width: 190px;
+  width: 148px;
+  min-width: 148px;
+  max-width: 148px;
   display: grid;
-  gap: 7px;
+  gap: 6px;
+  align-self: center;
 }
 
 .bar {
   position: relative;
-  height: 22px;
+  height: 20px;
   border-radius: 999px;
   overflow: hidden;
   background:
@@ -257,11 +259,11 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
   color: rgba(255,255,255,0.97);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
   line-height: 1;
   text-align: center;
   white-space: nowrap;
@@ -269,137 +271,119 @@
 }
 
 /* ===== TABLET ===== */
-@media (max-width: 920px) {
+@media (min-width: 768px) {
+  #hudTop {
+    padding: 8px 12px 0;
+  }
+
+  #hudShell {
+    padding: 9px 12px;
+  }
+
   #hudRow {
-    grid-template-columns: minmax(0, 1fr) 58px 176px;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto 180px;
+    gap: 12px;
   }
 
-  #hudCenter {
-    width: 58px;
-    min-width: 58px;
+  #hudAvatarWrap {
+    width: 46px;
+    height: 46px;
+    flex-basis: 46px;
   }
 
-  #hudLogo {
-    width: 48px;
-    max-height: 38px;
+  #hudAvatar {
+    width: 46px;
+    height: 46px;
   }
 
-  #hudRight {
-    width: 176px;
-    min-width: 176px;
-    max-width: 176px;
+  #hudAvatarFallback {
+    font-size: 17px;
   }
 
   #hudUsername {
+    font-size: 14px;
+  }
+
+  #hudCoins {
     font-size: 12px;
   }
 
-  #hudCoins,
-  #hudWeaponName,
-  #hudWeaponBonus {
-    font-size: 10px;
+  #hudWeaponName {
+    font-size: 11px;
+  }
+
+  #hudCenter {
+    padding: 0 10px;
+  }
+
+  #hudLogo {
+    height: 42px !important;
+  }
+
+  #hudRight {
+    width: 180px;
+    min-width: 180px;
+    max-width: 180px;
+    gap: 7px;
+  }
+
+  .bar {
+    height: 22px;
   }
 
   .barText {
-    font-size: 9px;
+    font-size: 10px;
   }
 }
 
-/* ===== MOBILE ===== */
-@media (max-width: 640px) {
+/* ===== SMALL MOBILE ===== */
+@media (max-width: 420px) {
   #hudTop {
-    padding: 6px 8px 0;
+    padding: 6px 6px 0;
   }
 
   #hudShell {
     padding: 7px 8px;
-    border-radius: 16px;
   }
 
   #hudRow {
-    grid-template-columns: minmax(0, 1fr) 46px 150px;
-    gap: 7px;
+    grid-template-columns: minmax(0, 1fr) auto 132px;
+    gap: 8px;
   }
 
   #hudAvatarWrap {
-    width: 42px;
-    height: 42px;
-    flex: 0 0 42px;
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
   }
 
   #hudAvatar {
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
   }
 
   #hudAvatarFallback {
     font-size: 15px;
   }
 
-  #hudCenter {
-    width: 46px;
-    min-width: 46px;
-  }
-
-  #hudLogo {
-    width: 38px;
-    max-height: 32px;
-  }
-
   #hudUsername {
-    font-size: 11px;
-    margin-bottom: 3px;
+    font-size: 12px;
   }
 
   #hudCoins {
     font-size: 10px;
   }
 
-  #hudWeaponName,
-  #hudWeaponBonus {
+  #hudWeaponName {
     font-size: 9px;
   }
 
-  .hudMiniIcon {
-    width: 14px;
-    height: 14px;
-    flex-basis: 14px;
-    font-size: 8px;
-  }
-
-  #hudRight {
-    width: 150px;
-    min-width: 150px;
-    max-width: 150px;
-    gap: 6px;
-  }
-
-  .bar {
-    height: 20px;
-  }
-
-  .barText {
-    font-size: 8px;
-    padding: 0 6px;
-  }
-}
-
-/* ===== VERY SMALL ===== */
-@media (max-width: 420px) {
-  #hudRow {
-    grid-template-columns: minmax(0, 1fr) 34px 132px;
-    gap: 6px;
-  }
-
   #hudCenter {
-    width: 34px;
-    min-width: 34px;
+    padding: 0 4px;
   }
 
   #hudLogo {
-    width: 28px;
-    max-height: 24px;
+    height: 30px !important;
   }
 
   #hudRight {
@@ -408,22 +392,12 @@
     max-width: 132px;
   }
 
-  #hudUsername {
-    font-size: 10px;
-  }
-
-  #hudCoins,
-  #hudWeaponName,
-  #hudWeaponBonus {
-    font-size: 8px;
-  }
-
   .bar {
-    height: 18px;
+    height: 19px;
   }
 
   .barText {
-    font-size: 7px;
-    letter-spacing: 0.1px;
+    font-size: 8px;
+    padding: 0 5px;
   }
 }
