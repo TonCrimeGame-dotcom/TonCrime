@@ -55,6 +55,13 @@ function isPointInRect(px, py, r) {
   return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
 export class TradeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -108,13 +115,16 @@ export class TradeScene {
     this.store.set({
       trade: {
         ...(trade || {}),
-        activeTab: trade.activeTab || "businesses",
+        activeTab: trade.activeTab || "explore",
         selectedBusinessId: trade.selectedBusinessId || null,
         selectedInventoryCategory: trade.selectedInventoryCategory || "all",
         selectedMarketFilter: trade.selectedMarketFilter || "all",
         selectedShopId: trade.selectedShopId || null,
         selectedShopItemId: trade.selectedShopItemId || null,
+        selectedLootFilter: trade.selectedLootFilter || "all",
+        searchQuery: trade.searchQuery || "",
         view: trade.view || "main",
+        lastFreeSpinDay: trade.lastFreeSpinDay || "",
         toast: null,
       },
     });
@@ -349,6 +359,221 @@ export class TradeScene {
     });
   }
 
+  _isFreeSpinReady() {
+    return String(this._tradeState().lastFreeSpinDay || "") !== todayKey();
+  }
+
+  _promptSearch() {
+    const trade = this._tradeState();
+    const v = window.prompt("Mekan veya ürün ara:", trade.searchQuery || "");
+    if (v === null) return;
+    this._setTrade({ searchQuery: String(v || "").trim() });
+    this._showToast(v ? `Arama hazır: ${v}` : "Arama temizlendi");
+  }
+
+  _doFreeSpin() {
+    if (!this._isFreeSpinReady()) {
+      this._showToast("Günlük ücretsiz çark zaten kullanıldı");
+      return;
+    }
+
+    const rewards = [
+      { type: "coins", amount: 25, text: "+25 yton" },
+      { type: "coins", amount: 50, text: "+50 yton" },
+      { type: "coins", amount: 120, text: "+120 yton" },
+      { type: "energy", amount: 12, text: "+12 enerji" },
+      { type: "energy", amount: 20, text: "+20 enerji" },
+      {
+        type: "item",
+        item: {
+          id: "loot_crate_" + Date.now(),
+          kind: "rare",
+          icon: "📦",
+          name: "Mystery Crate",
+          rarity: "rare",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: true,
+          sellPrice: 45,
+          marketPrice: 60,
+          desc: "Sandık & Çark ödülü.",
+        },
+        text: "Mystery Crate kazandın",
+      },
+    ];
+
+    const reward = rewards[Math.floor(Math.random() * rewards.length)];
+    const s = this.store.get();
+
+    if (reward.type === "coins") {
+      this.store.set({
+        coins: Number(s.coins || 0) + Number(reward.amount || 0),
+        trade: {
+          ...(s.trade || {}),
+          lastFreeSpinDay: todayKey(),
+        },
+      });
+    } else if (reward.type === "energy") {
+      const p = { ...(s.player || {}) };
+      p.energy = clamp(
+        Number(p.energy || 0) + Number(reward.amount || 0),
+        0,
+        Number(p.energyMax || 100)
+      );
+      this.store.set({
+        player: p,
+        trade: {
+          ...(s.trade || {}),
+          lastFreeSpinDay: todayKey(),
+        },
+      });
+    } else {
+      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+      const existing = items.find((x) => x.name === reward.item.name && x.rarity === reward.item.rarity);
+      if (existing) existing.qty = Number(existing.qty || 0) + 1;
+      else items.unshift({ ...reward.item });
+      this.store.set({
+        inventory: {
+          ...(s.inventory || {}),
+          items,
+        },
+        trade: {
+          ...(s.trade || {}),
+          lastFreeSpinDay: todayKey(),
+        },
+      });
+    }
+
+    this._showToast(reward.text, 1800);
+  }
+
+  _doPremiumSpin() {
+    const s = this.store.get();
+    const cost = 90;
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Premium çark için yetersiz yton");
+      return;
+    }
+
+    const rewards = [
+      { type: "coins", amount: 180, text: "+180 yton" },
+      { type: "coins", amount: 260, text: "+260 yton" },
+      { type: "energy", amount: 32, text: "+32 enerji" },
+      {
+        type: "item",
+        item: {
+          id: "loot_pass_" + Date.now(),
+          kind: "rare",
+          icon: "🎟️",
+          name: "VIP Pass",
+          rarity: "epic",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: false,
+          sellPrice: 120,
+          marketPrice: 0,
+          desc: "Premium çark ödülü.",
+        },
+        text: "VIP Pass kazandın",
+      },
+      {
+        type: "item",
+        item: {
+          id: "loot_legend_" + Date.now(),
+          kind: "rare",
+          icon: "👑",
+          name: "Golden Pass",
+          rarity: "legendary",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: false,
+          sellPrice: 250,
+          marketPrice: 0,
+          desc: "Nadir premium ödül.",
+        },
+        text: "Golden Pass kazandın",
+      },
+    ];
+
+    const reward = rewards[Math.floor(Math.random() * rewards.length)];
+    const patch = { coins: Number(s.coins || 0) - cost };
+
+    if (reward.type === "coins") {
+      patch.coins = patch.coins + Number(reward.amount || 0);
+      this.store.set(patch);
+    } else if (reward.type === "energy") {
+      const p = { ...(s.player || {}) };
+      p.energy = clamp(
+        Number(p.energy || 0) + Number(reward.amount || 0),
+        0,
+        Number(p.energyMax || 100)
+      );
+      this.store.set({
+        ...patch,
+        player: p,
+      });
+    } else {
+      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+      const existing = items.find((x) => x.name === reward.item.name && x.rarity === reward.item.rarity);
+      if (existing) existing.qty = Number(existing.qty || 0) + 1;
+      else items.unshift({ ...reward.item });
+      this.store.set({
+        ...patch,
+        inventory: {
+          ...(s.inventory || {}),
+          items,
+        },
+      });
+    }
+
+    this._showToast(reward.text, 1800);
+  }
+
+  _buyCrate(crateType) {
+    const s = this.store.get();
+    const cost = crateType === "legendary" ? 140 : 65;
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
+    const rarity = crateType === "legendary" ? "legendary" : "rare";
+    const name = crateType === "legendary" ? "Legendary Crate" : "Mystery Crate";
+
+    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+    const existing = items.find((x) => x.name === name);
+    if (existing) existing.qty = Number(existing.qty || 0) + 1;
+    else {
+      items.unshift({
+        id: "crate_" + Date.now(),
+        kind: "rare",
+        icon: "📦",
+        name,
+        rarity,
+        qty: 1,
+        usable: false,
+        sellable: true,
+        marketable: true,
+        sellPrice: Math.floor(cost * 0.68),
+        marketPrice: cost + 18,
+        desc: "Sandık & Çark sekmesi sandığı.",
+      });
+    }
+
+    this.store.set({
+      coins: Number(s.coins || 0) - cost,
+      inventory: {
+        ...(s.inventory || {}),
+        items,
+      },
+    });
+
+    this._showToast(`${name} satın alındı`);
+  }
+
   _useInventoryItem(itemId) {
     const s = this.store.get();
     const items = (s.inventory?.items || []).map((x) => ({ ...x }));
@@ -493,7 +718,10 @@ export class TradeScene {
 
     const lowest = this._findLowestMarketPriceByName(item.name);
     const info = lowest > 0 ? `\nPazardaki en düşük fiyat: ${lowest} yton` : "\nPazarda henüz fiyat yok";
-    const priceRaw = window.prompt(`Birim satış fiyatını gir.${info}`, String(item.marketPrice || item.sellPrice || 10));
+    const priceRaw = window.prompt(
+      `Birim satış fiyatını gir.${info}`,
+      String(item.marketPrice || item.sellPrice || 10)
+    );
     if (priceRaw === null) return;
 
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
@@ -849,7 +1077,7 @@ export class TradeScene {
     this._showToast(`${qty} adet satışa çıkarıldı`);
   }
 
-  _drawChipRowWrap(ctx, x, y, maxW, items, activeKey, actionName, chipW = 66, chipH = 30, gap = 6) {
+  _drawChipRowWrap(ctx, x, y, maxW, items, activeKey, actionName, chipW = 76, chipH = 32, gap = 8) {
     let cx = x;
     let cy = y;
 
@@ -869,7 +1097,7 @@ export class TradeScene {
         r.y,
         r.w,
         r.h,
-        10,
+        16,
         active ? "rgba(84,157,255,0.20)" : "rgba(255,255,255,0.06)"
       );
       this._strokeRound(
@@ -878,7 +1106,7 @@ export class TradeScene {
         r.y,
         r.w,
         r.h,
-        10,
+        16,
         active ? "rgba(84,157,255,0.42)" : "rgba(255,255,255,0.10)"
       );
 
@@ -903,7 +1131,7 @@ export class TradeScene {
       fill = "rgba(84,157,255,0.22)";
       stroke = "rgba(84,157,255,0.42)";
     } else if (style === "gold") {
-      fill = "rgba(255,196,77,0.20)";
+      fill = "rgba(255,196,77,0.18)";
       stroke = "rgba(255,196,77,0.42)";
       txt = "#ffe59f";
     } else if (style === "danger") {
@@ -912,8 +1140,8 @@ export class TradeScene {
       txt = "#ffd0d0";
     }
 
-    this._fillRound(ctx, r.x, r.y, r.w, r.h, 11, fill);
-    this._strokeRound(ctx, r.x, r.y, r.w, r.h, 11, stroke);
+    this._fillRound(ctx, r.x, r.y, r.w, r.h, 14, fill);
+    this._strokeRound(ctx, r.x, r.y, r.w, r.h, 14, stroke);
 
     ctx.fillStyle = txt;
     ctx.font = "800 11px system-ui";
@@ -923,21 +1151,146 @@ export class TradeScene {
   }
 
   _drawEmptyState(ctx, x, y, w, icon, text) {
-    const boxH = 120;
-    this._fillRound(ctx, x + 10, y, w - 20, boxH, 18, "rgba(255,255,255,0.05)");
-    this._strokeRound(ctx, x + 10, y, w - 20, boxH, 18, "rgba(255,255,255,0.10)");
+    const boxH = 132;
+    this._fillRound(ctx, x + 10, y, w - 20, boxH, 20, "rgba(255,255,255,0.05)");
+    this._strokeRound(ctx, x + 10, y, w - 20, boxH, 20, "rgba(255,255,255,0.10)");
 
     ctx.fillStyle = "#fff";
     ctx.font = "900 30px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(icon || "📦", x + w / 2, y + 38);
+    ctx.fillText(icon || "📦", x + w / 2, y + 40);
 
     ctx.fillStyle = "rgba(255,255,255,0.82)";
     ctx.font = "700 14px system-ui";
-    ctx.fillText(text || "Boş", x + w / 2, y + 82);
+    ctx.fillText(text || "Boş", x + w / 2, y + 88);
 
     return y + boxH + 12;
+  }
+
+  _drawGlassPanel(ctx, x, y, w, h, r = 18) {
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, "rgba(255,255,255,0.08)");
+    g.addColorStop(1, "rgba(255,255,255,0.04)");
+    this._fillRound(ctx, x, y, w, h, r, g);
+    this._strokeRound(ctx, x, y, w, h, r, "rgba(255,255,255,0.12)");
+  }
+
+  _drawHeroCard(ctx, x, y, w, h, title, subtitle, badgeText, icon, glow = "#4ea7ff") {
+    const grad = ctx.createLinearGradient(x, y, x + w, y + h);
+    grad.addColorStop(0, "rgba(10,18,30,0.96)");
+    grad.addColorStop(0.6, "rgba(8,15,24,0.94)");
+    grad.addColorStop(1, "rgba(6,11,18,0.96)");
+    this._fillRound(ctx, x, y, w, h, 22, grad);
+    this._strokeRound(ctx, x, y, w, h, 22, "rgba(255,255,255,0.12)");
+
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = glow;
+    this._fillRound(ctx, x + w - 112, y + 18, 78, 78, 24, glow);
+    ctx.restore();
+
+    this._fillRound(ctx, x + 14, y + 14, 96, 28, 14, "rgba(255,196,77,0.16)");
+    this._strokeRound(ctx, x + 14, y + 14, 96, 28, 14, "rgba(255,196,77,0.34)");
+    ctx.fillStyle = "#ffe59f";
+    ctx.font = "800 11px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(badgeText, x + 62, y + 28);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 19px system-ui";
+    ctx.fillText(title, x + 16, y + 68);
+
+    ctx.fillStyle = "rgba(255,255,255,0.76)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(subtitle, x + 16, y + 90);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 44px system-ui";
+    ctx.fillText(icon, x + w - 76, y + 72);
+  }
+
+  _drawSearchBar(ctx, x, y, w, text, action = "prompt_search") {
+    const r = { x, y, w, h: 46, action };
+    this.hit.push(r);
+
+    this._fillRound(ctx, x, y, w, 46, 18, "rgba(255,255,255,0.06)");
+    this._strokeRound(ctx, x, y, w, 46, 18, "rgba(255,255,255,0.10)");
+
+    ctx.fillStyle = "rgba(255,255,255,0.64)";
+    ctx.font = "800 16px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🔎", x + 14, y + 23);
+
+    ctx.fillStyle = text ? "#fff" : "rgba(255,255,255,0.48)";
+    ctx.font = "13px system-ui";
+    ctx.fillText(text || "Mekan ya da ürün ara", x + 42, y + 23);
+  }
+
+  _drawStatPill(ctx, x, y, w, h, label, value, accent = "#ffffff") {
+    this._fillRound(ctx, x, y, w, h, 16, "rgba(255,255,255,0.05)");
+    this._strokeRound(ctx, x, y, w, h, 16, "rgba(255,255,255,0.10)");
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.font = "11px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(label, x + 12, y + 18);
+    ctx.fillStyle = accent;
+    ctx.font = "900 15px system-ui";
+    ctx.fillText(value, x + 12, y + 38);
+  }
+
+  _drawTabScroller(ctx, panelX, y, panelW, trade) {
+    const tabs = [
+      { key: "explore", label: "Keşfet" },
+      { key: "businesses", label: "İşletmelerim" },
+      { key: "inventory", label: "Envanter" },
+      { key: "loot", label: "Sandık & Çark" },
+      { key: "market", label: "Açık Pazar" },
+      { key: "buy", label: "Satın Al" },
+    ];
+
+    const gap = 8;
+    let tx = panelX + 14;
+    for (const tab of tabs) {
+      const active = trade.activeTab === tab.key;
+      const tabW = Math.max(92, 28 + tab.label.length * 7);
+      const r = { x: tx, y, w: tabW, h: 46, action: "tab", value: tab.key };
+      this.hit.push(r);
+
+      this._fillRound(
+        ctx,
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        23,
+        active ? "rgba(84,157,255,0.22)" : "rgba(255,255,255,0.06)"
+      );
+      this._strokeRound(
+        ctx,
+        r.x,
+        r.y,
+        r.w,
+        r.h,
+        23,
+        active ? "rgba(84,157,255,0.45)" : "rgba(255,255,255,0.12)"
+      );
+
+      ctx.fillStyle = active ? "#ffffff" : "rgba(255,255,255,0.80)";
+      ctx.font = "800 12px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(tab.label, r.x + r.w / 2, r.y + r.h / 2);
+
+      tx += tabW + gap;
+    }
+
+    return tx;
   }
 
   _drawTopBadges(ctx, panelX, panelY, panelW, state) {
@@ -1016,11 +1369,8 @@ export class TradeScene {
 
       if (isPointInRect(px, py, this.backHit)) {
         const t = this._tradeState();
-        if (t.view === "shop") {
-          this._goBackFromShop();
-        } else {
-          this.scenes.go("home");
-        }
+        if (t.view === "shop") this._goBackFromShop();
+        else this.scenes.go("home");
         this._consumePointerFrameFlags();
         return;
       }
@@ -1075,6 +1425,26 @@ export class TradeScene {
             this._sellBusinessProduct(h.bizId, h.productId);
             this._consumePointerFrameFlags();
             return;
+          case "prompt_search":
+            this._promptSearch();
+            this._consumePointerFrameFlags();
+            return;
+          case "hero_jump_tab":
+            this._changeTab(h.value);
+            this._consumePointerFrameFlags();
+            return;
+          case "free_spin":
+            this._doFreeSpin();
+            this._consumePointerFrameFlags();
+            return;
+          case "premium_spin":
+            this._doPremiumSpin();
+            this._consumePointerFrameFlags();
+            return;
+          case "buy_crate":
+            this._buyCrate(h.value);
+            this._consumePointerFrameFlags();
+            return;
           default:
             break;
         }
@@ -1095,14 +1465,19 @@ export class TradeScene {
     ctx.clearRect(0, 0, W, H);
 
     const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-    bgGrad.addColorStop(0, "#081018");
-    bgGrad.addColorStop(0.45, "#0b1118");
-    bgGrad.addColorStop(1, "#06080c");
+    bgGrad.addColorStop(0, "#050a12");
+    bgGrad.addColorStop(0.4, "#08111a");
+    bgGrad.addColorStop(1, "#04070b");
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = "rgba(0,0,0,0.34)";
-    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "#2d74ff";
+    this._fillRound(ctx, 24, 86, 180, 180, 90, "#2d74ff");
+    ctx.fillStyle = "#ffcc4d";
+    this._fillRound(ctx, W - 180, 120, 140, 140, 70, "#ffcc4d");
+    ctx.restore();
 
     const panelX = safe.x;
     const panelY = safe.y;
@@ -1112,21 +1487,21 @@ export class TradeScene {
     this.hit = [];
     this.backHit = null;
 
-    this._fillRound(ctx, panelX, panelY, panelW, panelH, 22, "rgba(8,12,18,0.86)");
-    this._strokeRound(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,255,255,0.12)");
+    this._fillRound(ctx, panelX, panelY, panelW, panelH, 24, "rgba(6,11,18,0.88)");
+    this._strokeRound(ctx, panelX, panelY, panelW, panelH, 24, "rgba(255,255,255,0.12)");
 
-    const headerH = 92;
-    this._fillRound(ctx, panelX + 10, panelY + 10, panelW - 20, headerH, 18, "rgba(255,255,255,0.05)");
-    this._strokeRound(ctx, panelX + 10, panelY + 10, panelW - 20, headerH, 18, "rgba(255,255,255,0.10)");
+    const headerH = 94;
+    this._fillRound(ctx, panelX + 10, panelY + 10, panelW - 20, headerH, 20, "rgba(255,255,255,0.05)");
+    this._strokeRound(ctx, panelX + 10, panelY + 10, panelW - 20, headerH, 20, "rgba(255,255,255,0.10)");
 
     const backW = 78;
-    const backH = 34;
+    const backH = 36;
     const backX = panelX + 20;
     const backY = panelY + 24;
     this.backHit = { x: backX, y: backY, w: backW, h: backH };
 
-    this._fillRound(ctx, backX, backY, backW, backH, 12, "rgba(255,255,255,0.08)");
-    this._strokeRound(ctx, backX, backY, backW, backH, 12, "rgba(255,255,255,0.12)");
+    this._fillRound(ctx, backX, backY, backW, backH, 14, "rgba(255,255,255,0.08)");
+    this._strokeRound(ctx, backX, backY, backW, backH, 14, "rgba(255,255,255,0.12)");
     ctx.fillStyle = "#ffffff";
     ctx.font = "800 13px system-ui";
     ctx.textAlign = "center";
@@ -1137,70 +1512,32 @@ export class TradeScene {
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 22px system-ui";
-    ctx.fillText(trade.view === "shop" ? "Dükkan" : "Trade Center", panelX + 112, panelY + 46);
+    ctx.fillText(trade.view === "shop" ? "Dükkan" : "Black Market Hub", panelX + 112, panelY + 46);
 
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.font = "12px system-ui";
-    ctx.fillText("İşletmeler • Envanter • Açık Pazar • Bina Satın Al", panelX + 112, panelY + 67);
+    ctx.fillText(
+      trade.view === "shop"
+        ? "Ürünler • fiyatlar • stok • hızlı satın al"
+        : "Keşfet • İşletmelerim • Envanter • Sandık & Çark • Açık Pazar • Satın Al",
+      panelX + 112,
+      panelY + 67
+    );
 
     this._drawTopBadges(ctx, panelX, panelY, panelW, state);
 
     const tabsY = panelY + headerH + 20;
-    const tabs = [
-      { key: "businesses", label: "İşletmeler" },
-      { key: "inventory", label: "Envanter" },
-      { key: "market", label: "Pazar" },
-      { key: "buy", label: "Satın Al" },
-    ];
-
-    let tx = panelX + 14;
-    const tabGap = 6;
-    const totalTabW = panelW - 28;
-    const tabW = Math.floor((totalTabW - tabGap * 3) / 4);
-    const tabH = 40;
-
     if (trade.view === "main") {
-      for (const tab of tabs) {
-        const active = trade.activeTab === tab.key;
-        const r = { x: tx, y: tabsY, w: tabW, h: tabH, action: "tab", value: tab.key };
-        this.hit.push(r);
-
-        this._fillRound(
-          ctx,
-          r.x,
-          r.y,
-          r.w,
-          r.h,
-          14,
-          active ? "rgba(84,157,255,0.22)" : "rgba(255,255,255,0.06)"
-        );
-        this._strokeRound(
-          ctx,
-          r.x,
-          r.y,
-          r.w,
-          r.h,
-          14,
-          active ? "rgba(84,157,255,0.45)" : "rgba(255,255,255,0.12)"
-        );
-
-        ctx.fillStyle = active ? "#ffffff" : "rgba(255,255,255,0.78)";
-        ctx.font = "800 12px system-ui";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(tab.label, r.x + r.w / 2, r.y + r.h / 2);
-
-        tx += tabW + tabGap;
-      }
+      this._drawTabScroller(ctx, panelX, tabsY, panelW, trade);
     }
 
     const contentX = panelX + 12;
-    const contentY = trade.view === "main" ? tabsY + tabH + 12 : panelY + 116;
+    const contentY = trade.view === "main" ? tabsY + 58 : panelY + 116;
     const contentW = panelW - 24;
     const contentH = panelH - (contentY - panelY) - 12;
 
-    this._fillRound(ctx, contentX, contentY, contentW, contentH, 18, "rgba(255,255,255,0.04)");
-    this._strokeRound(ctx, contentX, contentY, contentW, contentH, 18, "rgba(255,255,255,0.10)");
+    this._fillRound(ctx, contentX, contentY, contentW, contentH, 20, "rgba(255,255,255,0.04)");
+    this._strokeRound(ctx, contentX, contentY, contentW, contentH, 20, "rgba(255,255,255,0.10)");
 
     ctx.save();
     ctx.beginPath();
@@ -1212,10 +1549,14 @@ export class TradeScene {
 
     if (trade.view === "shop") {
       contentBottom = this._renderShopView(ctx, contentX, cursorY, contentW);
+    } else if (trade.activeTab === "explore") {
+      contentBottom = this._renderExploreTab(ctx, contentX, cursorY, contentW);
     } else if (trade.activeTab === "businesses") {
       contentBottom = this._renderBusinessesTab(ctx, contentX, cursorY, contentW);
     } else if (trade.activeTab === "inventory") {
       contentBottom = this._renderInventoryTab(ctx, contentX, cursorY, contentW);
+    } else if (trade.activeTab === "loot") {
+      contentBottom = this._renderLootTab(ctx, contentX, cursorY, contentW);
     } else if (trade.activeTab === "market") {
       contentBottom = this._renderMarketTab(ctx, contentX, cursorY, contentW);
     } else {
@@ -1239,12 +1580,12 @@ export class TradeScene {
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(panelW - 28, 260);
-      const th = 40;
+      const tw = Math.min(panelW - 28, 280);
+      const th = 42;
       const txx = panelX + (panelW - tw) / 2;
       const tyy = panelY + panelH - th - 10;
-      this._fillRound(ctx, txx, tyy, tw, th, 14, "rgba(0,0,0,0.78)");
-      this._strokeRound(ctx, txx, tyy, tw, th, 14, "rgba(255,255,255,0.12)");
+      this._fillRound(ctx, txx, tyy, tw, th, 16, "rgba(0,0,0,0.80)");
+      this._strokeRound(ctx, txx, tyy, tw, th, 16, "rgba(255,255,255,0.12)");
       ctx.fillStyle = "#fff";
       ctx.font = "800 13px system-ui";
       ctx.textAlign = "center";
@@ -1253,24 +1594,230 @@ export class TradeScene {
     }
   }
 
+  _renderExploreTab(ctx, x, y, w) {
+    const trade = this._tradeState();
+    const shops = this._marketShops();
+    const listings = this._marketListings();
+
+    const cheapestShop = shops
+      .map((shop) => {
+        const shopListings = listings.filter((l) => l.shopId === shop.id);
+        const lowest = shopListings.length
+          ? shopListings.reduce((m, l) => Math.min(m, Number(l.price || 0)), Number.MAX_SAFE_INTEGER)
+          : 0;
+        return { shop, lowest };
+      })
+      .filter((x) => x.lowest > 0)
+      .sort((a, b) => a.lowest - b.lowest)[0];
+
+    const popularShop = [...shops].sort(
+      (a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.totalListings || 0) - Number(a.totalListings || 0)
+    )[0];
+
+    const deal = [...listings].sort((a, b) => Number(a.price || 0) - Number(b.price || 0))[0];
+    const crateItem = this._inventoryItems().find((x) => /crate/i.test(String(x.name || "")));
+
+    this._drawSearchBar(ctx, x + 12, y, w - 24, trade.searchQuery);
+    y += 58;
+
+    const heroRect = { x: x + 10, y, w: w - 20, h: 128, action: "hero_jump_tab", value: "market" };
+    this.hit.push(heroRect);
+    this._drawHeroCard(
+      ctx,
+      heroRect.x,
+      heroRect.y,
+      heroRect.w,
+      heroRect.h,
+      "Bugünün Vitrini",
+      deal
+        ? `${deal.itemName} • ${fmtNum(deal.price)} yton • pazara hızlı giriş`
+        : "Açık pazarda vitrin ürünleri seni bekliyor",
+      "GÜNLÜK FIRSAT",
+      deal?.icon || "🕶️",
+      "#4ea7ff"
+    );
+    y += 140;
+
+    const gap = 10;
+    const cardW = Math.floor((w - 30) / 2);
+    const row1Y = y;
+
+    const cheapRect = { x: x + 10, y: row1Y, w: cardW, h: 118, action: "hero_jump_tab", value: "market" };
+    const popRect = { x: x + 20 + cardW, y: row1Y, w: cardW, h: 118, action: "hero_jump_tab", value: "market" };
+    this.hit.push(cheapRect, popRect);
+
+    this._drawMiniFeatureCard(
+      ctx,
+      cheapRect,
+      "En Ucuz Mekanlar",
+      cheapestShop ? `${cheapestShop.shop.name} • ${fmtNum(cheapestShop.lowest)} yton` : "Henüz vitrin verisi yok",
+      cheapestShop?.shop?.icon || "🏪",
+      "#7ac6ff"
+    );
+
+    this._drawMiniFeatureCard(
+      ctx,
+      popRect,
+      "En Popüler Mekanlar",
+      popularShop ? `${popularShop.name} • Puan ${popularShop.rating || 0}` : "Henüz popüler dükkan yok",
+      popularShop?.icon || "🔥",
+      "#ffcc4d"
+    );
+
+    y += 128;
+
+    const row2Y = y;
+    const dealRect = { x: x + 10, y: row2Y, w: cardW, h: 118, action: "hero_jump_tab", value: "loot" };
+    const spinRect = { x: x + 20 + cardW, y: row2Y, w: cardW, h: 118, action: "free_spin" };
+    this.hit.push(dealRect, spinRect);
+
+    this._drawMiniFeatureCard(
+      ctx,
+      dealRect,
+      "Sandık Fırsatları",
+      crateItem ? `${crateItem.name} sende mevcut • adet ${fmtNum(crateItem.qty)}` : "Mystery Crate ve premium sandıklar hazır",
+      crateItem?.icon || "📦",
+      "#c16bff"
+    );
+
+    this._drawMiniFeatureCard(
+      ctx,
+      spinRect,
+      "Günlük Ücretsiz Çark",
+      this._isFreeSpinReady() ? "Hazır • şimdi çevir" : "Bugün kullanıldı • yarın tekrar açılır",
+      this._isFreeSpinReady() ? "🎰" : "⏳",
+      this._isFreeSpinReady() ? "#56f0a8" : "#9aa4b2"
+    );
+
+    y += 138;
+
+    const quickX = x + 10;
+    const quickW = w - 20;
+    const quickH = 96;
+    this._drawGlassPanel(ctx, quickX, y, quickW, quickH, 20);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 15px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Hızlı Geçiş", quickX + 14, y + 24);
+
+    const buttons = [
+      { text: "İşletmelerim", value: "businesses" },
+      { text: "Envanter", value: "inventory" },
+      { text: "Sandık & Çark", value: "loot" },
+      { text: "Satın Al", value: "buy" },
+    ];
+
+    let bx = quickX + 14;
+    let by = y + 40;
+    for (const btn of buttons) {
+      const r = { x: bx, y: by, w: 88, h: 34, action: "hero_jump_tab", value: btn.value };
+      this.hit.push(r);
+      this._drawActionBtn(ctx, r, btn.text, btn.value === "loot" ? "gold" : "primary");
+      bx += 94;
+      if (bx + 88 > quickX + quickW - 14) {
+        bx = quickX + 14;
+        by += 40;
+      }
+    }
+
+    y += quickH + 14;
+    return y;
+  }
+
+  _drawMiniFeatureCard(ctx, rect, title, subtitle, icon, accent) {
+    const grad = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
+    grad.addColorStop(0, "rgba(12,19,30,0.96)");
+    grad.addColorStop(1, "rgba(8,14,24,0.92)");
+    this._fillRound(ctx, rect.x, rect.y, rect.w, rect.h, 20, grad);
+    this._strokeRound(ctx, rect.x, rect.y, rect.w, rect.h, 20, "rgba(255,255,255,0.10)");
+
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    this._fillRound(ctx, rect.x + rect.w - 66, rect.y + 14, 46, 46, 16, accent);
+    ctx.restore();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 15px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(title, rect.x + 14, rect.y + 24);
+
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "12px system-ui";
+    this._fitText(ctx, subtitle, rect.x + 14, rect.y + 48, rect.w - 28, 14);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 28px system-ui";
+    ctx.fillText(icon, rect.x + rect.w - 48, rect.y + 40);
+  }
+
+  _fitText(ctx, text, x, y, maxW, lineH = 14, lines = 2) {
+    const words = String(text || "").split(" ");
+    let line = "";
+    let row = 0;
+
+    for (let i = 0; i < words.length; i++) {
+      const test = line ? `${line} ${words[i]}` : words[i];
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line, x, y + row * lineH);
+        line = words[i];
+        row += 1;
+        if (row >= lines - 1) break;
+      } else {
+        line = test;
+      }
+    }
+
+    if (line) ctx.fillText(line, x, y + row * lineH);
+  }
+
   _renderBusinessesTab(ctx, x, y, w) {
     const businesses = this._allBusinesses();
+    const state = this.store.get();
 
     if (!businesses.length) {
       return this._drawEmptyState(ctx, x, y, w, "🏪", "Henüz işletmen yok. Satın Al sekmesinden bina al.");
     }
 
+    const totalStock = businesses.reduce((sum, b) => sum + Number(b.stock || 0), 0);
+    const totalProducts = businesses.reduce((sum, b) => sum + Number((b.products || []).length || 0), 0);
+
+    const headX = x + 10;
+    const headW = w - 20;
+    const headH = 118;
+    this._drawHeroCard(
+      ctx,
+      headX,
+      y,
+      headW,
+      headH,
+      "İşletmelerim",
+      `${fmtNum(businesses.length)} işletme • ${fmtNum(totalStock)} toplam stok • yönetim paneli`,
+      "DASHBOARD",
+      "🏢",
+      "#56b6ff"
+    );
+
+    this._drawStatPill(ctx, headX + 14, y + 74, 86, 46, "Toplam", fmtNum(businesses.length), "#ffffff");
+    this._drawStatPill(ctx, headX + 106, y + 74, 86, 46, "Stok", fmtNum(totalStock), "#ffd36a");
+    this._drawStatPill(ctx, headX + 198, y + 74, 96, 46, "Ürün", fmtNum(totalProducts), "#7ac6ff");
+
+    y += headH + 12;
+
     for (const biz of businesses) {
+      const products = biz.products || [];
       const cardX = x + 10;
       const cardW = w - 20;
-      const products = biz.products || [];
-      const cardH = 86 + Math.max(1, products.length) * 72 + 12;
+      const topH = 106;
+      const rowH = 68;
+      const cardH = topH + Math.max(1, products.length) * (rowH + 10) + 12;
 
-      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
+      this._drawGlassPanel(ctx, cardX, y, cardW, cardH, 20);
 
       ctx.fillStyle = "#fff";
-      ctx.font = "900 24px system-ui";
+      ctx.font = "900 26px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.fillText(biz.icon || iconForType(biz.type), cardX + 14, y + 34);
@@ -1280,22 +1827,26 @@ export class TradeScene {
 
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)}`, cardX + 50, y + 45);
-      ctx.fillText(`Toplam stok ${fmtNum(biz.stock)} • Sahip ${biz.ownerName || "Player"}`, cardX + 50, y + 63);
+      ctx.fillText(`${typeLabel(biz.type)} • Sahip ${biz.ownerName || state.player?.username || "Player"}`, cardX + 50, y + 45);
+      ctx.fillText(`Günlük üretim ${fmtNum(biz.dailyProduction)} • Toplam stok ${fmtNum(biz.stock)}`, cardX + 50, y + 63);
 
-      let py = y + 82;
+      const fakeProfit = Math.floor(Number(biz.stock || 0) * 3.4);
+      const bestProduct = products.slice().sort((a, b) => Number(b.qty || 0) - Number(a.qty || 0))[0];
 
+      this._drawStatPill(ctx, cardX + 14, y + 76, 96, 46, "Kâr/Zarar", `+${fmtNum(fakeProfit)}`, "#56f0a8");
+      this._drawStatPill(ctx, cardX + 116, y + 76, 96, 46, "Satış", fmtNum(products.reduce((s, p) => s + Number(p.qty || 0), 0)), "#ffd36a");
+      this._drawStatPill(ctx, cardX + 218, y + 76, 112, 46, "En Çok", bestProduct ? bestProduct.name : "-", "#7ac6ff");
+
+      let py = y + topH;
       for (const p of products) {
         const rowX = cardX + 12;
         const rowW = cardW - 24;
-        const rowH = 62;
-
-        this._fillRound(ctx, rowX, py, rowW, rowH, 14, "rgba(255,255,255,0.05)");
-        this._strokeRound(ctx, rowX, py, rowW, rowH, 14, "rgba(255,255,255,0.10)");
+        this._fillRound(ctx, rowX, py, rowW, rowH, 16, "rgba(255,255,255,0.05)");
+        this._strokeRound(ctx, rowX, py, rowW, rowH, 16, "rgba(255,255,255,0.10)");
 
         ctx.fillStyle = "#fff";
         ctx.font = "900 20px system-ui";
-        ctx.fillText(p.icon || "📦", rowX + 10, py + 22);
+        ctx.fillText(p.icon || "📦", rowX + 10, py + 24);
 
         ctx.font = "900 14px system-ui";
         ctx.fillText(p.name || "Ürün", rowX + 38, py + 20);
@@ -1306,22 +1857,22 @@ export class TradeScene {
 
         ctx.fillStyle = "rgba(255,255,255,0.76)";
         ctx.font = "11px system-ui";
-        ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban fiyat ${fmtNum(p.price)} yton`, rowX + 38, py + 51);
+        ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, rowX + 38, py + 50);
 
         const useRect = {
           x: rowX + rowW - 174,
-          y: py + 17,
+          y: py + 20,
           w: 74,
-          h: 28,
+          h: 30,
           action: "use_business_product",
           bizId: biz.id,
           productId: p.id,
         };
         const sellRect = {
           x: rowX + rowW - 92,
-          y: py + 17,
+          y: py + 20,
           w: 78,
-          h: 28,
+          h: 30,
           action: "sell_business_product",
           bizId: biz.id,
           productId: p.id,
@@ -1350,6 +1901,9 @@ export class TradeScene {
       { key: "rare", label: "Nadir" },
     ];
 
+    this._drawSearchBar(ctx, x + 10, y, w - 20, trade.searchQuery);
+    y += 56;
+
     const lastChipBottom = this._drawChipRowWrap(
       ctx,
       x + 10,
@@ -1358,9 +1912,9 @@ export class TradeScene {
       filters,
       trade.selectedInventoryCategory,
       "inventory_filter",
-      66,
-      30,
-      6
+      76,
+      32,
+      8
     );
 
     y = lastChipBottom + 12;
@@ -1370,17 +1924,21 @@ export class TradeScene {
       items = items.filter((x) => x.kind === trade.selectedInventoryCategory);
     }
 
+    if (trade.searchQuery) {
+      const q = trade.searchQuery.toLowerCase();
+      items = items.filter((x) => String(x.name || "").toLowerCase().includes(q));
+    }
+
     if (!items.length) {
-      return this._drawEmptyState(ctx, x, y + 10, w, "🎒", "Bu kategoride envanter yok.");
+      return this._drawEmptyState(ctx, x, y + 10, w, "🎒", "Bu filtrede envanter yok.");
     }
 
     for (const item of items) {
       const cardX = x + 10;
       const cardW = w - 20;
-      const cardH = 122;
+      const cardH = 126;
 
-      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
+      this._drawGlassPanel(ctx, cardX, y, cardW, cardH, 20);
 
       ctx.fillStyle = "#fff";
       ctx.font = "900 24px system-ui";
@@ -1391,13 +1949,13 @@ export class TradeScene {
       ctx.font = "900 15px system-ui";
       ctx.fillText(item.name || "Item", cardX + 48, y + 24);
 
-      this._fillRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, "rgba(255,255,255,0.07)");
-      this._strokeRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, rarityColor(item.rarity), 1.2);
+      this._fillRound(ctx, cardX + cardW - 82, y + 12, 66, 24, 10, "rgba(255,255,255,0.07)");
+      this._strokeRound(ctx, cardX + cardW - 82, y + 12, 66, 24, 10, rarityColor(item.rarity), 1.2);
       ctx.fillStyle = rarityColor(item.rarity);
       ctx.font = "800 10px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), cardX + cardW - 47, y + 24);
+      ctx.fillText(String(item.rarity || "common").toUpperCase(), cardX + cardW - 49, y + 24);
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
@@ -1407,11 +1965,11 @@ export class TradeScene {
 
       let sub = `Adet ${fmtNum(item.qty)}`;
       if (item.usable) sub += ` • +${fmtNum(item.energyGain)} enerji`;
-      sub += ` • NPC satış ${fmtNum(item.sellPrice)} yton`;
-      ctx.fillText(sub, cardX + 14, y + 64);
+      sub += ` • NPC ${fmtNum(item.sellPrice)} yton`;
+      ctx.fillText(sub, cardX + 14, y + 66);
 
       const btnGap = 8;
-      const btnY = y + 82;
+      const btnY = y + 88;
       const innerW = cardW - 28;
       const btns = [];
 
@@ -1435,7 +1993,7 @@ export class TradeScene {
           x: btnX,
           y: btnY,
           w: widths[i],
-          h: 28,
+          h: 30,
           action: btns[i].action,
           itemId: btns[i].itemId,
         };
@@ -1450,8 +2008,115 @@ export class TradeScene {
     return y;
   }
 
+  _renderLootTab(ctx, x, y, w) {
+    const inventory = this._inventoryItems();
+    const crates = inventory.filter((x) => /crate/i.test(String(x.name || "")));
+    const freeReady = this._isFreeSpinReady();
+
+    const heroX = x + 10;
+    const heroW = w - 20;
+    this._drawHeroCard(
+      ctx,
+      heroX,
+      y,
+      heroW,
+      126,
+      "Sandık & Çark",
+      freeReady ? "Günlük ücretsiz çark hazır • hemen çevir" : "Premium çark ve sandık ekonomisi aktif",
+      "PREMIUM LOOT",
+      "🎰",
+      "#c16bff"
+    );
+
+    const freeRect = { x: heroX + 14, y: y + 74, w: 108, h: 34, action: "free_spin" };
+    const premiumRect = { x: heroX + 130, y: y + 74, w: 116, h: 34, action: "premium_spin" };
+    this.hit.push(freeRect, premiumRect);
+    this._drawActionBtn(ctx, freeRect, freeReady ? "Ücretsiz Çevir" : "Yarın Açılır", freeReady ? "primary" : "ghost");
+    this._drawActionBtn(ctx, premiumRect, "Premium Çark", "gold");
+
+    y += 138;
+
+    const cardW = Math.floor((w - 30) / 2);
+    const mysteryRect = { x: x + 10, y, w: cardW, h: 124, action: "buy_crate", value: "mystery" };
+    const legendaryRect = { x: x + 20 + cardW, y, w: cardW, h: 124, action: "buy_crate", value: "legendary" };
+    this.hit.push(mysteryRect, legendaryRect);
+
+    this._drawMiniFeatureCard(ctx, mysteryRect, "Mystery Crate", "Satın al • aç • sat • ekonomiye kat", "📦", "#7ac6ff");
+    this._drawMiniFeatureCard(ctx, legendaryRect, "Legendary Crate", "Daha pahalı ama üst seviye ödül havuzu", "👑", "#ffcc4d");
+
+    ctx.fillStyle = "rgba(255,255,255,0.76)";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText("65 yton", mysteryRect.x + 14, mysteryRect.y + 96);
+    ctx.fillText("140 yton", legendaryRect.x + 14, legendaryRect.y + 96);
+
+    y += 136;
+
+    const poolX = x + 10;
+    const poolW = w - 20;
+    const poolH = 108;
+    this._drawGlassPanel(ctx, poolX, y, poolW, poolH, 20);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 15px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText("Olası Ödül Havuzu", poolX + 14, y + 24);
+
+    const rewards = [
+      { icon: "💰", name: "YTON" },
+      { icon: "⚡", name: "Enerji" },
+      { icon: "📦", name: "Mystery Crate" },
+      { icon: "🎟️", name: "VIP Pass" },
+      { icon: "👑", name: "Golden Pass" },
+    ];
+
+    let rx = poolX + 14;
+    for (const r of rewards) {
+      this._fillRound(ctx, rx, y + 40, 64, 50, 16, "rgba(255,255,255,0.05)");
+      this._strokeRound(ctx, rx, y + 40, 64, 50, 16, "rgba(255,255,255,0.10)");
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 18px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(r.icon, rx + 32, y + 56);
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.font = "10px system-ui";
+      ctx.fillText(r.name, rx + 32, y + 78);
+      rx += 70;
+      if (rx + 64 > poolX + poolW - 12) break;
+    }
+
+    y += poolH + 12;
+
+    const lastX = x + 10;
+    const lastW = w - 20;
+    const lastH = 96;
+    this._drawGlassPanel(ctx, lastX, y, lastW, lastH, 20);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 15px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText("Son Kazanılanlar", lastX + 14, y + 24);
+
+    const lines = crates.length
+      ? crates.slice(0, 3).map((c) => `${c.icon} ${c.name} • adet ${fmtNum(c.qty)}`)
+      : ["🎰 Bugün ödül kazan, burada görün", "📦 Mystery Crate sisteme hazır", "👑 Premium ödüller aktif"];
+
+    ctx.fillStyle = "rgba(255,255,255,0.76)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(lines[0], lastX + 14, y + 50);
+    if (lines[1]) ctx.fillText(lines[1], lastX + 14, y + 68);
+    if (lines[2]) ctx.fillText(lines[2], lastX + 14, y + 86);
+
+    y += lastH + 14;
+    return y;
+  }
+
   _renderMarketTab(ctx, x, y, w) {
     const trade = this._tradeState();
+
+    this._drawSearchBar(ctx, x + 10, y, w - 20, trade.searchQuery);
+    y += 56;
 
     const filters = [
       { key: "all", label: "Tümü" },
@@ -1469,9 +2134,9 @@ export class TradeScene {
       filters,
       trade.selectedMarketFilter,
       "market_filter",
-      66,
-      30,
-      6
+      76,
+      32,
+      8
     );
 
     y = lastChipBottom + 12;
@@ -1481,6 +2146,15 @@ export class TradeScene {
       shops = shops.filter((x) => x.type === trade.selectedMarketFilter);
     }
 
+    if (trade.searchQuery) {
+      const q = trade.searchQuery.toLowerCase();
+      shops = shops.filter(
+        (x) =>
+          String(x.name || "").toLowerCase().includes(q) ||
+          this._getListingsByShopId(x.id).some((l) => String(l.itemName || "").toLowerCase().includes(q))
+      );
+    }
+
     if (!shops.length) {
       return this._drawEmptyState(ctx, x, y + 10, w, "🏬", "Bu filtrede dükkan bulunamadı.");
     }
@@ -1488,10 +2162,13 @@ export class TradeScene {
     for (const shop of shops) {
       const cardX = x + 10;
       const cardW = w - 20;
-      const cardH = 122;
+      const cardH = 128;
+      const shopListings = this._getListingsByShopId(shop.id);
+      const lowest = shopListings.length
+        ? shopListings.reduce((m, l) => Math.min(m, Number(l.price || 0)), Number.MAX_SAFE_INTEGER)
+        : 0;
 
-      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
+      this._drawGlassPanel(ctx, cardX, y, cardW, cardH, 20);
 
       ctx.fillStyle = "#fff";
       ctx.font = "900 24px system-ui";
@@ -1505,26 +2182,26 @@ export class TradeScene {
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "12px system-ui";
       ctx.fillText(`${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"}`, cardX + 48, y + 44);
-      ctx.fillText(`Ürün ${fmtNum(shop.totalListings)} • Puan ${String(shop.rating || 0)}`, cardX + 48, y + 62);
+      ctx.fillText(`Ürün ${fmtNum(shop.totalListings)} • Puan ${String(shop.rating || 0)} • En düşük ${lowest ? fmtNum(lowest) : "-"}`, cardX + 48, y + 62);
 
-      const onlineText = shop.online ? "Açık" : "Kapalı";
+      const onlineText = shop.online ? "Online" : "Offline";
       const onlineColor = shop.online ? "rgba(76,217,100,0.22)" : "rgba(255,255,255,0.10)";
       const onlineBorder = shop.online ? "rgba(76,217,100,0.44)" : "rgba(255,255,255,0.12)";
       const onlineTextColor = shop.online ? "#b8ffca" : "rgba(255,255,255,0.80)";
 
-      this._fillRound(ctx, cardX + 14, y + 82, 62, 26, 10, onlineColor);
-      this._strokeRound(ctx, cardX + 14, y + 82, 62, 26, 10, onlineBorder);
+      this._fillRound(ctx, cardX + 14, y + 86, 68, 28, 12, onlineColor);
+      this._strokeRound(ctx, cardX + 14, y + 86, 68, 28, 12, onlineBorder);
       ctx.fillStyle = onlineTextColor;
       ctx.font = "800 11px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(onlineText, cardX + 45, y + 95);
+      ctx.fillText(onlineText, cardX + 48, y + 100);
 
       const enterRect = {
         x: cardX + cardW - 110,
-        y: y + 80,
+        y: y + 84,
         w: 96,
-        h: 30,
+        h: 32,
         action: "open_shop",
         shopId: shop.id,
       };
@@ -1547,24 +2224,20 @@ export class TradeScene {
 
     const headX = x + 10;
     const headW = w - 20;
-    const headerH = 90;
+    const headerH = 96;
 
-    this._fillRound(ctx, headX, y, headW, headerH, 18, "rgba(255,255,255,0.06)");
-    this._strokeRound(ctx, headX, y, headW, headerH, 18, "rgba(255,255,255,0.10)");
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 26px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(shop.icon || iconForType(shop.type), headX + 14, y + 36);
-
-    ctx.font = "900 17px system-ui";
-    ctx.fillText(shop.name || "Dükkan", headX + 52, y + 26);
-
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(`Sahip ${shop.ownerName || "?"} • ${typeLabel(shop.type)} • Puan ${shop.rating || 0}`, headX + 52, y + 46);
-    ctx.fillText("Market ürünleri aşağıda listelenmiştir.", headX + 52, y + 65);
+    this._drawHeroCard(
+      ctx,
+      headX,
+      y,
+      headW,
+      headerH,
+      shop.name || "Dükkan",
+      `Sahip ${shop.ownerName || "?"} • ${typeLabel(shop.type)} • Puan ${shop.rating || 0}`,
+      shop.online ? "ONLINE" : "OFFLINE",
+      shop.icon || iconForType(shop.type),
+      "#4ea7ff"
+    );
 
     y += headerH + 12;
 
@@ -1576,10 +2249,9 @@ export class TradeScene {
     for (const item of listings) {
       const cardX = x + 10;
       const cardW = w - 20;
-      const cardH = 114;
+      const cardH = 118;
 
-      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
+      this._drawGlassPanel(ctx, cardX, y, cardW, cardH, 20);
 
       ctx.fillStyle = "#fff";
       ctx.font = "900 24px system-ui";
@@ -1590,13 +2262,13 @@ export class TradeScene {
       ctx.font = "900 15px system-ui";
       ctx.fillText(item.itemName || "Ürün", cardX + 48, y + 24);
 
-      this._fillRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, "rgba(255,255,255,0.07)");
-      this._strokeRound(ctx, cardX + cardW - 78, y + 12, 62, 24, 9, rarityColor(item.rarity), 1.2);
+      this._fillRound(ctx, cardX + cardW - 82, y + 12, 66, 24, 10, "rgba(255,255,255,0.07)");
+      this._strokeRound(ctx, cardX + cardW - 82, y + 12, 66, 24, 10, rarityColor(item.rarity), 1.2);
       ctx.fillStyle = rarityColor(item.rarity);
       ctx.font = "800 10px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), cardX + cardW - 47, y + 24);
+      ctx.fillText(String(item.rarity || "common").toUpperCase(), cardX + cardW - 49, y + 24);
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
@@ -1605,16 +2277,14 @@ export class TradeScene {
       ctx.fillText(item.desc || "", cardX + 48, y + 44);
 
       let line2 = `Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`;
-      if (item.usable && Number(item.energyGain || 0) > 0) {
-        line2 += ` • +${fmtNum(item.energyGain)} enerji`;
-      }
-      ctx.fillText(line2, cardX + 14, y + 64);
+      if (item.usable && Number(item.energyGain || 0) > 0) line2 += ` • +${fmtNum(item.energyGain)} enerji`;
+      ctx.fillText(line2, cardX + 14, y + 66);
 
       const buyRect = {
-        x: cardX + cardW - 96,
-        y: y + 80,
-        w: 82,
-        h: 28,
+        x: cardX + cardW - 100,
+        y: y + 84,
+        w: 84,
+        h: 30,
         action: "buy_market_item",
         itemId: item.id,
         shopId: shop.id,
@@ -1636,6 +2306,8 @@ export class TradeScene {
         name: "Nightclub",
         price: 1000,
         desc: "Alkol ve gece ürünü üretir.",
+        risk: "Orta",
+        level: "Lv 25+",
       },
       {
         type: "coffeeshop",
@@ -1643,6 +2315,8 @@ export class TradeScene {
         name: "Coffeeshop",
         price: 850,
         desc: "Ot ve enerji ürünü üretir.",
+        risk: "Düşük",
+        level: "Lv 20+",
       },
       {
         type: "brothel",
@@ -1650,6 +2324,8 @@ export class TradeScene {
         name: "Genel Ev",
         price: 1200,
         desc: "Yüksek enerji ürünleri üretir.",
+        risk: "Yüksek",
+        level: "Lv 35+",
       },
       {
         type: "blackmarket",
@@ -1657,16 +2333,31 @@ export class TradeScene {
         name: "Black Market",
         price: 1500,
         desc: "Nadir ürün ve kasa satar.",
+        risk: "Yüksek",
+        level: "Lv 50+",
       },
     ];
+
+    this._drawHeroCard(
+      ctx,
+      x + 10,
+      y,
+      w - 20,
+      122,
+      "İşletme Satın Al",
+      "Bina kartları • günlük üretim • risk seviyesi • isim vererek satın al",
+      "OWNER MODE",
+      "🏗️",
+      "#ffcc4d"
+    );
+    y += 134;
 
     for (const b of buildings) {
       const cardX = x + 10;
       const cardW = w - 20;
-      const cardH = 118;
+      const cardH = 124;
 
-      this._fillRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.06)");
-      this._strokeRound(ctx, cardX, y, cardW, cardH, 18, "rgba(255,255,255,0.10)");
+      this._drawGlassPanel(ctx, cardX, y, cardW, cardH, 20);
 
       ctx.fillStyle = "#fff";
       ctx.font = "900 24px system-ui";
@@ -1680,14 +2371,14 @@ export class TradeScene {
       ctx.fillStyle = "rgba(255,255,255,0.74)";
       ctx.font = "12px system-ui";
       ctx.fillText(b.desc, cardX + 48, y + 45);
-      ctx.fillText(`Satın alma fiyatı: ${fmtNum(b.price)} yton`, cardX + 48, y + 64);
-      ctx.fillText("Satın alırken işletme ismi sorulur.", cardX + 48, y + 82);
+      ctx.fillText(`Fiyat ${fmtNum(b.price)} yton • Günlük üretim 50`, cardX + 48, y + 64);
+      ctx.fillText(`Risk ${b.risk} • Önerilen ${b.level} • satın alırken isim sorulur`, cardX + 48, y + 82);
 
       const buyRect = {
-        x: cardX + cardW - 102,
-        y: y + 78,
-        w: 88,
-        h: 28,
+        x: cardX + cardW - 104,
+        y: y + 82,
+        w: 90,
+        h: 30,
         action: "buy_business",
         businessType: b.type,
       };
