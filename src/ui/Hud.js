@@ -95,7 +95,7 @@ export function startHud(store) {
     elLogo.style.maxWidth = "100%";
     elLogo.style.objectFit = "contain";
 
-    const centerW = Math.max(logoH + 30, Math.round(logoH * 3.6));
+    const centerW = Math.max(logoH + 5, Math.round(logoH * 5));
     elCenter.style.width = `${centerW}px`;
     elCenter.style.minWidth = `${centerW}px`;
   }
