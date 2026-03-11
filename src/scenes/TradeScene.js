@@ -54,8 +54,6 @@ function typeLabel(type) {
       return "Coffeeshop";
     case "brothel":
       return "Genel Ev";
-    case "blackmarket":
-      return "Black Market";
     default:
       return "İşletme";
   }
@@ -69,9 +67,7 @@ function iconForType(type) {
       return "🌿";
     case "brothel":
       return "💋";
-    case "blackmarket":
-      return "🕶️";
-    default:
+      default:
       return "🏪";
   }
 }
@@ -276,8 +272,6 @@ export class TradeScene {
     const shop = {
       id: playerShopId,
       businessId: "player_market",
-      type: "blackmarket",
-      icon: "🕶️",
       name: `${playerName} Market`,
       ownerId: "player_main",
       ownerName: playerName,
@@ -702,7 +696,6 @@ export class TradeScene {
       nightclub: 1000,
       coffeeshop: 850,
       brothel: 1200,
-      blackmarket: 1500,
     };
 
     const templates = {
@@ -1559,7 +1552,6 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
       { key: "nightclub", label: "Club" },
       { key: "coffeeshop", label: "Coffee" },
       { key: "brothel", label: "Genel" },
-      { key: "blackmarket", label: "Market" },
     ];
 
     let fx = x;
@@ -1704,7 +1696,6 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
       { type: "nightclub", icon: "🌃", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 25+" },
       { type: "coffeeshop", icon: "🌿", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 20+" },
       { type: "brothel", icon: "💋", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 35+" },
-      { type: "blackmarket", icon: "🕶️", name: "Black Market", price: 1500, risk: "Yüksek", level: "Lv 50+" },
     ];
 
     for (const b of buildings) {
@@ -1746,11 +1737,14 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
   this.hitTabs = [];
   this.hitButtons = [];
 
-  const bgImg =
-    getImgSafe(this.assets, "trade") ||
-    getImgSafe(this.assets, "blackmarket_bg") ||
-    getImgSafe(this.assets, "blackmarket") ||
-    getImgSafe(this.assets, "background");
+ const bg = ctx.createLinearGradient(0, 0, 0, h);
+bg.addColorStop(0, "#07090d");
+bg.addColorStop(0.3, "#0f0b0c");
+bg.addColorStop(0.6, "#0b1018");
+bg.addColorStop(1, "#03060a");
+
+ctx.fillStyle = bg;
+ctx.fillRect(0, 0, w, h);
 
   if (bgImg) {
     const iw = bgImg.width || 1;
@@ -2057,5 +2051,6 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
   }
  }
 }
+
 
 
