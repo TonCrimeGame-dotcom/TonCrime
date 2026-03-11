@@ -79,17 +79,9 @@ export function startHud(store) {
     );
   }
 
- function updateLogoSize() {
-  /* logo boyutu artık CSS tarafından yönetiliyor */
-}
-
-  let lastReservedTop = 0;
-  let lastAvatarUrl = "";
-  let imgEventsBound = false;
-
   function bindAvatarImgEventsOnce() {
-    if (!elAvatarImg || imgEventsBound) return;
-    imgEventsBound = true;
+    if (!elAvatarImg || elAvatarImg.__hudBound) return;
+    elAvatarImg.__hudBound = true;
 
     elAvatarImg.onload = () => {
       elAvatarImg.style.display = "block";
@@ -102,7 +94,10 @@ export function startHud(store) {
     };
   }
 
-  function loop() {
+  let lastReservedTop = 0;
+  let lastAvatarUrl = "";
+
+  function updateHud() {
     bindAvatarImgEventsOnce();
 
     const s = store.get() || {};
@@ -128,12 +123,14 @@ export function startHud(store) {
 
     const xp = Math.max(0, Number(p.xp || 0));
     const xpToNext = Math.max(1, Number(p.xpToNext || 100));
-    elXpFill.style.width = `${Math.max(3, clamp01(xp / xpToNext) * 100)}%`;
+    const xpPct = Math.max(3, clamp01(xp / xpToNext) * 100);
+    elXpFill.style.width = `${xpPct}%`;
     elXpText.textContent = `LVL ${Number(p.level || 1)} • ${xp}/${xpToNext}`;
 
     const energy = Math.max(0, Number(p.energy || 0));
     const energyMax = Math.max(1, Number(p.energyMax || 10));
-    elEnergyFill.style.width = `${Math.max(3, clamp01(energy / energyMax) * 100)}%`;
+    const energyPct = Math.max(3, clamp01(energy / energyMax) * 100);
+    elEnergyFill.style.width = `${energyPct}%`;
 
     const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
     const lastAt = Number(p.lastEnergyAt || Date.now());
@@ -176,7 +173,12 @@ export function startHud(store) {
     elOnlineBadge.style.display = "inline-flex";
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
-    updateLogoSize();
+    if (elLogo) {
+      elLogo.style.display = "block";
+    }
+    if (elCenter) {
+      elCenter.style.display = "flex";
+    }
 
     const safeTop = Number(ui.safe?.y || 0);
     const reservedTop = Math.max(72, root.offsetHeight + safeTop + 6);
@@ -191,9 +193,8 @@ export function startHud(store) {
       });
     }
 
-    requestAnimationFrame(loop);
+    requestAnimationFrame(updateHud);
   }
 
-  window.addEventListener("resize", updateLogoSize, { passive: true });
-  loop();
+  updateHud();
 }
