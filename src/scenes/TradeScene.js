@@ -1737,14 +1737,11 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
   this.hitTabs = [];
   this.hitButtons = [];
 
- const bg = ctx.createLinearGradient(0, 0, 0, h);
-bg.addColorStop(0, "#07090d");
-bg.addColorStop(0.3, "#0f0b0c");
-bg.addColorStop(0.6, "#0b1018");
-bg.addColorStop(1, "#03060a");
-
-ctx.fillStyle = bg;
-ctx.fillRect(0, 0, w, h);
+const bgImg =
+  getImgSafe(this.assets, "trade") ||
+  getImgSafe(this.assets, "blackmarket_bg") ||
+  getImgSafe(this.assets, "blackmarket") ||
+  getImgSafe(this.assets, "background");
 
   if (bgImg) {
     const iw = bgImg.width || 1;
@@ -2051,6 +2048,7 @@ ctx.fillRect(0, 0, w, h);
   }
  }
 }
+
 
 
 
