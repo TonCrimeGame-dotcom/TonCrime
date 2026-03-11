@@ -687,8 +687,14 @@
     .muted { color: rgba(255,255,255,0.70); font-size: 12px; }
 
     @media (max-width: 720px) {
+      #hudTop {
+        padding: 8px 10px 0;
+      }
+
       #hudRow {
         grid-template-columns: 1fr;
+        gap: 8px;
+        max-width: 100%;
       }
 
       #hudLogoWrap {
@@ -697,6 +703,36 @@
 
       #hudLeft, #hudRight {
         width: 100%;
+        justify-self: stretch;
+      }
+
+      #hudIdentity {
+        gap: 9px;
+      }
+
+      #hudAvatarWrap {
+        width: 42px;
+        height: 42px;
+      }
+
+      #hudUsername {
+        font-size: 14px;
+      }
+
+      #hudCoinsRow {
+        font-size: 13px;
+      }
+
+      #hudWeaponRow {
+        font-size: 11px;
+      }
+
+      .bar {
+        height: 30px;
+      }
+
+      .barText {
+        font-size: 11px;
       }
 
       #pvpHeader {
@@ -1290,5 +1326,6 @@
   </script>
 </body>
 </html>
+
 
 
