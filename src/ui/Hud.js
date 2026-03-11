@@ -79,26 +79,9 @@ export function startHud(store) {
     );
   }
 
-  function updateLogoSize() {
-    if (!elLogo || !elCenter || !root) return;
-
-    const hudH = Math.max(48, root.offsetHeight - 14);
-    const vw = window.innerWidth || 0;
-
-    let logoH = Math.round(hudH * 0.95);
-    if (vw <= 420) logoH = Math.round(hudH * 0.62);
-    else if (vw <= 640) logoH = Math.round(hudH * 0.68);
-    else if (vw <= 920) logoH = Math.round(hudH * 0.74);
-
-    elLogo.style.height = `${logoH}px`;
-    elLogo.style.width = "auto";
-    elLogo.style.maxWidth = "100%";
-    elLogo.style.objectFit = "contain";
-
-    const centerW = Math.max(logoH + 10, Math.round(logoH * 1.2));
-    elCenter.style.width = `${centerW}px`;
-    elCenter.style.minWidth = `${centerW}px`;
-  }
+ function updateLogoSize() {
+  /* logo boyutu artık CSS tarafından yönetiliyor */
+}
 
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
