@@ -677,46 +677,54 @@
 
 <div id="safe"></div>
 
-<!-- ===== TOP HUD ===== -->
 <div id="hudTop">
-  <div id="hudRow">
-    <div id="hudLeft" class="hudPanel">
-      <div id="hudIdentity">
-        <div id="hudAvatarWrap">
-          <div id="hudAvatar">
-            <img id="hudAvatarImg" alt="avatar" />
-            <div id="hudAvatarFallback">P</div>
+  <div id="hudShell" class="hudPanel">
+    <div id="hudRow">
+      <!-- SOL -->
+      <div id="hudLeft">
+        <div id="hudIdentity">
+          <div id="hudAvatarWrap">
+            <div id="hudAvatar">
+              <img id="hudAvatarImg" alt="avatar" />
+              <div id="hudAvatarFallback">P</div>
+            </div>
+            <div id="hudOnlineBadge" title="Online"></div>
+            <div id="hudPremiumBadge" title="Premium">★</div>
           </div>
-          <div id="hudOnlineBadge" title="Online"></div>
-          <div id="hudPremiumBadge" title="Premium">★</div>
-        </div>
 
-        <div id="hudIdentityText">
-          <div class="line1" id="hudUsername">Player</div>
-          <div class="line2">
-            <span id="hudCoins">YTON 0</span>
-          </div>
-          <div class="line3">
-            <span id="hudWeaponName">Silah Yok</span>
-            <small id="hudWeaponBonus">• +0%</small>
+          <div id="hudIdentityText">
+            <div class="line1" id="hudUsername">Player</div>
+
+            <div class="line2">
+              <span class="hudMiniIcon">Y</span>
+              <span id="hudCoins">YTON 0</span>
+            </div>
+
+            <div class="line3">
+              <span class="hudMiniIcon">⚔</span>
+              <span id="hudWeaponName">Silah Yok</span>
+              <small id="hudWeaponBonus">• +0%</small>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div id="hudLogoWrap">
-      <img id="hudLogo" src="./src/assets/logo.png" alt="TonCrime" />
-    </div>
-
-    <div id="hudRight" class="hudPanel">
-      <div class="bar">
-        <div class="barFill" id="hudXpFill"></div>
-        <div class="barText" id="hudXpText">LVL 1 • 0/100</div>
+      <!-- ORTA -->
+      <div id="hudCenter">
+        <img id="hudLogo" src="./src/assets/logo.png" alt="TonCrime" />
       </div>
 
-      <div class="bar">
-        <div class="barFill" id="hudEnergyFill"></div>
-        <div class="barText" id="hudEnergyText">ENERJİ 100/100 • FULL</div>
+      <!-- SAĞ -->
+      <div id="hudRight">
+        <div class="bar">
+          <div class="barFill" id="hudXpFill"></div>
+          <div class="barText" id="hudXpText">LVL 1 • 0/100</div>
+        </div>
+
+        <div class="bar">
+          <div class="barFill" id="hudEnergyFill"></div>
+          <div class="barText" id="hudEnergyText">ENERGY 100/100 • FULL</div>
+        </div>
       </div>
     </div>
   </div>
@@ -1244,6 +1252,7 @@
   </script>
 </body>
 </html>
+
 
 
 
