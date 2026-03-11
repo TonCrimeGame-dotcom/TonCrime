@@ -34,10 +34,11 @@ export function startHud(store) {
     !elEnergyFill ||
     !elEnergyText ||
     !elAvatar ||
+    !elAvatarFallback ||
     !elOnlineBadge ||
     !elPremiumBadge
   ) {
-    console.warn("[HUD] index.html HUD elementleri bulunamadı");
+    console.warn("[HUD] gerekli HUD elementleri bulunamadı");
     return;
   }
 
@@ -58,42 +59,58 @@ export function startHud(store) {
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+  function getInitials(name) {
+    const raw = String(name || "").trim();
+    if (!raw) return "P";
+    const parts = raw.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return raw.slice(0, 2).toUpperCase();
+  }
+
+  function getAvatarUrl(player) {
+    return (
+      player?.avatarUrl ||
+      player?.avatar ||
+      player?.photoUrl ||
+      player?.photo_url ||
+      player?.telegramPhotoUrl ||
+      player?.telegram_photo_url ||
+      ""
+    );
+  }
+
   function syncHudCss() {
     const vw = window.innerWidth || 0;
 
     if (vw <= 720) {
       row.style.gridTemplateColumns = "1fr";
-      row.style.gap = "8px";
+      row.style.gap = "7px";
       root.style.padding = "8px 10px 0";
 
       if (elLogoWrap) elLogoWrap.style.display = "none";
       if (elLogo) {
-        elLogo.style.height = "44px";
+        elLogo.style.height = "40px";
         elLogo.style.margin = "0 auto";
       }
       return;
     }
 
     if (vw <= 980) {
-      row.style.gridTemplateColumns = "minmax(0,1fr) minmax(120px,auto)";
+      row.style.gridTemplateColumns = "minmax(0,1fr) minmax(0,1fr)";
       row.style.gap = "10px";
-      root.style.padding = "10px 12px 0";
+      root.style.padding = "9px 12px 0";
 
       if (elLogoWrap) {
-        elLogoWrap.style.display = "flex";
-        elLogoWrap.style.gridColumn = "1 / -1";
-        elLogoWrap.style.order = "-1";
-      }
-      if (elLogo) {
-        elLogo.style.height = "46px";
-        elLogo.style.margin = "0 auto";
+        elLogoWrap.style.display = "none";
+        elLogoWrap.style.gridColumn = "auto";
+        elLogoWrap.style.order = "0";
       }
       return;
     }
 
-    row.style.gridTemplateColumns = "minmax(0,1fr) auto minmax(0,1.08fr)";
-    row.style.gap = "clamp(8px, 1.8vw, 14px)";
-    root.style.padding = "clamp(8px, 2.2vw, 14px) clamp(10px, 3vw, 18px) 0";
+    row.style.gridTemplateColumns = "minmax(0,1fr) auto minmax(0,1fr)";
+    row.style.gap = "12px";
+    root.style.padding = "10px 16px 0";
 
     if (elLogoWrap) {
       elLogoWrap.style.display = "flex";
@@ -101,36 +118,32 @@ export function startHud(store) {
       elLogoWrap.style.order = "0";
     }
     if (elLogo) {
-      elLogo.style.height = "clamp(40px, 5.8vw, 68px)";
+      elLogo.style.height = "46px";
       elLogo.style.margin = "0";
     }
   }
 
-  function getInitials(name) {
-    const raw = String(name || "").trim();
-    if (!raw) return "P";
-    const parts = raw.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return raw.slice(0, 2).toUpperCase();
-  }
-
-  function pickAvatarUrl(player) {
-    return (
-      player?.avatarUrl ||
-      player?.avatar ||
-      player?.photoUrl ||
-      player?.photo_url ||
-      player?.telegramPhotoUrl ||
-      ""
-    );
-  }
-
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
+  let imgEventsBound = false;
+
+  function bindAvatarImgEventsOnce() {
+    if (!elAvatarImg || imgEventsBound) return;
+    imgEventsBound = true;
+
+    elAvatarImg.onload = () => {
+      elAvatarImg.style.display = "block";
+      elAvatarFallback.style.display = "none";
+    };
+
+    elAvatarImg.onerror = () => {
+      elAvatarImg.style.display = "none";
+      elAvatarFallback.style.display = "grid";
+    };
+  }
 
   function loop() {
+    bindAvatarImgEventsOnce();
     syncHudCss();
 
     const s = store.get() || {};
@@ -141,69 +154,57 @@ export function startHud(store) {
     elUsername.textContent = username;
     elUsername.title = username;
 
-    const coins = Number(s.coins || p.coins || 0);
-    elCoins.textContent = `YTON ${coins.toLocaleString("tr-TR")}`;
+    const yton = Number(s.coins ?? p.coins ?? 0);
+    elCoins.textContent = `YTON ${yton.toLocaleString("tr-TR")}`;
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
-    const weaponBonusRaw = Number(p.weaponIconBonusPct ?? p.weaponBonusPct ?? 0);
-    const weaponBonusText =
+    const bonusNum = Number(p.weaponIconBonusPct ?? p.weaponBonusPct ?? 0);
+    const bonusText =
       typeof p.weaponBonus === "string" && p.weaponBonus.trim()
         ? p.weaponBonus.trim()
-        : `+${weaponBonusRaw}%`;
+        : `+${bonusNum}%`;
 
     elWeaponName.textContent = weaponName;
     elWeaponName.title = weaponName;
-    elWeaponBonus.textContent = `• ${weaponBonusText}`;
+    elWeaponBonus.textContent = `• ${bonusText}`;
 
     const xp = Math.max(0, Number(p.xp || 0));
     const xpToNext = Math.max(1, Number(p.xpToNext || 100));
-    elXpFill.style.width = `${Math.max(2, clamp01(xp / xpToNext) * 100)}%`;
+    elXpFill.style.width = `${Math.max(3, clamp01(xp / xpToNext) * 100)}%`;
     elXpText.textContent = `LVL ${Number(p.level || 1)} • ${xp}/${xpToNext}`;
 
-    const e = Math.max(0, Number(p.energy || 0));
-    const eMax = Math.max(1, Number(p.energyMax || 10));
-    elEnergyFill.style.width = `${Math.max(2, clamp01(e / eMax) * 100)}%`;
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 10));
+    elEnergyFill.style.width = `${Math.max(3, clamp01(energy / energyMax) * 100)}%`;
 
     const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
     const lastAt = Number(p.lastEnergyAt || Date.now());
     const now = Date.now();
-    const untilNext = e >= eMax ? 0 : Math.max(0, interval - (now - lastAt));
+    const untilNext = energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
 
     elEnergyText.textContent =
-      e >= eMax
-        ? `ENERJİ ${e}/${eMax} • FULL`
-        : `ENERJİ ${e}/${eMax} • ${fmtMMSS(untilNext)}`;
+      energy >= energyMax
+        ? `ENERGY ${energy}/${energyMax} • FULL`
+        : `ENERGY ${energy}/${energyMax} • ${fmtMMSS(untilNext)}`;
 
-    const avatarUrl = pickAvatarUrl(p);
+    const avatarUrl = getAvatarUrl(p);
     const initials = getInitials(username);
-
-    if (elAvatarFallback) {
-      elAvatarFallback.textContent = initials;
-    }
+    elAvatarFallback.textContent = initials;
 
     if (elAvatarImg) {
       if (avatarUrl !== lastAvatarUrl) {
         lastAvatarUrl = avatarUrl;
+
         if (avatarUrl) {
+          elAvatarImg.style.display = "none";
+          elAvatarFallback.style.display = "grid";
           elAvatarImg.src = avatarUrl;
-          elAvatarImg.style.display = "block";
-          if (elAvatarFallback) elAvatarFallback.style.display = "none";
         } else {
           elAvatarImg.removeAttribute("src");
           elAvatarImg.style.display = "none";
-          if (elAvatarFallback) elAvatarFallback.style.display = "grid";
+          elAvatarFallback.style.display = "grid";
         }
       }
-
-      elAvatarImg.onerror = () => {
-        elAvatarImg.style.display = "none";
-        if (elAvatarFallback) elAvatarFallback.style.display = "grid";
-      };
-
-      elAvatarImg.onload = () => {
-        elAvatarImg.style.display = "block";
-        if (elAvatarFallback) elAvatarFallback.style.display = "none";
-      };
     }
 
     const isPremium = !!(
@@ -214,16 +215,13 @@ export function startHud(store) {
       p.membership === "premium"
     );
 
-    elOnlineBadge.textContent = "● ONLINE";
     elOnlineBadge.style.display = "inline-flex";
-
-    elPremiumBadge.textContent = "PREMIUM";
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
     const safeTop = Number(ui.safe?.y || 0);
-    const isMobile = (window.innerWidth || 0) <= 720;
-    const minReserved = isMobile ? 112 : 92;
-    const extraGap = isMobile ? 6 : 8;
+    const vw = window.innerWidth || 0;
+    const minReserved = vw <= 720 ? 88 : vw <= 980 ? 78 : 72;
+    const extraGap = vw <= 720 ? 5 : 6;
     const reservedTop = Math.max(minReserved, root.offsetHeight + safeTop + extraGap);
 
     if (Math.abs(lastReservedTop - reservedTop) > 1) {
