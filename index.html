@@ -748,6 +748,35 @@
         grid-template-columns: 1fr;
       }
     }
+@media (min-width: 721px) and (max-width: 980px) {
+
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
+    align-items: center;
+  }
+
+  #hudLeft {
+    width: 100%;
+  }
+
+  #hudRight {
+    width: min(100%, 360px);
+  }
+
+  #hudLogoWrap {
+    grid-column: 1 / -1;
+    order: -1;
+    margin-bottom: 2px;
+  }
+
+  #hudLogo {
+    height: 46px;
+    max-width: 180px;
+  }
+
+}
+
+}
   </style>
 </head>
 
@@ -1326,6 +1355,7 @@
   </script>
 </body>
 </html>
+
 
 
 
