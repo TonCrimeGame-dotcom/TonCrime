@@ -722,14 +722,32 @@
   <div id="hudTop">
     <div id="hudRow">
       <div id="hudLeft" class="hudPanel">
-        <div class="line1" id="hudUsername">Player</div>
-        <div class="line2">
-          <img id="hudCoinIcon" src="./src/assets/yton.png" alt="coin" />
-          <div id="hudCoins">Coin: 0</div>
+        <div id="hudIdentity">
+          <div id="hudAvatarWrap">
+            <div id="hudAvatar">
+              <img id="hudAvatarImg" alt="avatar" />
+              <div id="hudAvatarFallback">P</div>
+            </div>
+          </div>
+
+          <div id="hudUserMeta">
+            <div id="hudBadges">
+              <span id="hudOnlineBadge" class="hudBadge">● ONLINE</span>
+              <span id="hudPremiumBadge" class="hudBadge">PREMIUM</span>
+            </div>
+
+            <div id="hudUsername">Player</div>
+          </div>
         </div>
-        <div class="line3">
+
+        <div id="hudCoinsRow">
+          <img id="hudCoinIcon" src="./src/assets/yton.png" alt="coin" />
+          <div id="hudCoins">YTON 0</div>
+        </div>
+
+        <div id="hudWeaponRow">
           <span id="hudWeaponName">Silah Yok</span>
-          <small id="hudWeaponBonus"> +0%</small>
+          <small id="hudWeaponBonus">• +0%</small>
         </div>
       </div>
 
@@ -740,8 +758,9 @@
       <div id="hudRight" class="hudPanel">
         <div class="bar">
           <div class="barFill" id="hudXpFill"></div>
-          <div class="barText" id="hudXpText">LVL 1 • XP 0/100</div>
+          <div class="barText" id="hudXpText">LVL 1 • 0/100</div>
         </div>
+
         <div class="bar">
           <div class="barFill" id="hudEnergyFill"></div>
           <div class="barText" id="hudEnergyText">ENERJİ 0/10 • --:--</div>
@@ -1271,4 +1290,5 @@
   </script>
 </body>
 </html>
+
 
