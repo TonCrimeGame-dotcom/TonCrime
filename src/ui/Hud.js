@@ -1,344 +1,238 @@
-    /* ===== TOP HUD ===== */
-    #hudTop {
-      position: fixed;
-      left: var(--sal);
-      right: var(--sar);
-      top: var(--sat);
-      padding: 10px 16px 0;
-      z-index: 9998;
-      pointer-events: auto;
-      box-sizing: border-box;
+export function startHud(store) {
+  const root = document.getElementById("hudTop");
+  const row = document.getElementById("hudRow");
+
+  const elUsername = document.getElementById("hudUsername");
+  const elCoins = document.getElementById("hudCoins");
+  const elWeaponName = document.getElementById("hudWeaponName");
+  const elWeaponBonus = document.getElementById("hudWeaponBonus");
+
+  const elXpFill = document.getElementById("hudXpFill");
+  const elXpText = document.getElementById("hudXpText");
+  const elEnergyFill = document.getElementById("hudEnergyFill");
+  const elEnergyText = document.getElementById("hudEnergyText");
+
+  const elLogo = document.getElementById("hudLogo");
+  const elLogoWrap = document.getElementById("hudLogoWrap");
+
+  const elAvatar = document.getElementById("hudAvatar");
+  const elAvatarImg = document.getElementById("hudAvatarImg");
+  const elAvatarFallback = document.getElementById("hudAvatarFallback");
+
+  const elOnlineBadge = document.getElementById("hudOnlineBadge");
+  const elPremiumBadge = document.getElementById("hudPremiumBadge");
+
+  if (
+    !root ||
+    !row ||
+    !elUsername ||
+    !elCoins ||
+    !elWeaponName ||
+    !elWeaponBonus ||
+    !elXpFill ||
+    !elXpText ||
+    !elEnergyFill ||
+    !elEnergyText ||
+    !elAvatar ||
+    !elAvatarFallback ||
+    !elOnlineBadge ||
+    !elPremiumBadge
+  ) {
+    console.warn("[HUD] gerekli HUD elementleri bulunamadı");
+    return;
+  }
+
+  root.style.zIndex = "5000";
+  root.style.opacity = "1";
+  root.style.pointerEvents = "auto";
+  root.style.left = "max(var(--sal), 0px)";
+  root.style.right = "max(var(--sar), 0px)";
+  root.style.top = "max(var(--sat), 0px)";
+
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+  const clamp01 = (n) => clamp(n, 0, 1);
+
+  function fmtMMSS(ms) {
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function getInitials(name) {
+    const raw = String(name || "").trim();
+    if (!raw) return "P";
+    const parts = raw.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return raw.slice(0, 2).toUpperCase();
+  }
+
+  function getAvatarUrl(player) {
+    return (
+      player?.avatarUrl ||
+      player?.avatar ||
+      player?.photoUrl ||
+      player?.photo_url ||
+      player?.telegramPhotoUrl ||
+      player?.telegram_photo_url ||
+      ""
+    );
+  }
+
+  function syncHudCss() {
+    const vw = window.innerWidth || 0;
+
+    if (vw <= 720) {
+      row.style.gridTemplateColumns = "1fr";
+      row.style.gap = "8px";
+      root.style.padding = "8px 10px 0";
+
+      if (elLogoWrap) elLogoWrap.style.display = "none";
+      if (elLogo) {
+        elLogo.style.height = "40px";
+        elLogo.style.margin = "0 auto";
+      }
+      return;
     }
 
-    #hudTop, #hudTop * {
-      touch-action: auto;
-      -webkit-user-select: none;
-      user-select: none;
-      box-sizing: border-box;
+    if (vw <= 980) {
+      row.style.gridTemplateColumns = "minmax(0,1fr) minmax(0,1fr)";
+      row.style.gap = "10px";
+      root.style.padding = "9px 12px 0";
+
+      if (elLogoWrap) elLogoWrap.style.display = "none";
+      return;
     }
 
-    #hudRow {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-      align-items: center;
-      gap: 12px;
-      max-width: 1120px;
-      margin: 0 auto;
+    row.style.gridTemplateColumns = "minmax(0,1fr) auto minmax(320px,390px)";
+    row.style.gap = "12px";
+    root.style.padding = "10px 16px 0";
+
+    if (elLogoWrap) {
+      elLogoWrap.style.display = "flex";
+      elLogoWrap.style.gridColumn = "auto";
+      elLogoWrap.style.order = "0";
+    }
+    if (elLogo) {
+      elLogo.style.height = "44px";
+      elLogo.style.margin = "0";
+    }
+  }
+
+  let lastReservedTop = 0;
+  let lastAvatarUrl = "";
+  let imgEventsBound = false;
+
+  function bindAvatarImgEventsOnce() {
+    if (!elAvatarImg || imgEventsBound) return;
+    imgEventsBound = true;
+
+    elAvatarImg.onload = () => {
+      elAvatarImg.style.display = "block";
+      elAvatarFallback.style.display = "none";
+    };
+
+    elAvatarImg.onerror = () => {
+      elAvatarImg.style.display = "none";
+      elAvatarFallback.style.display = "grid";
+    };
+  }
+
+  function loop() {
+    bindAvatarImgEventsOnce();
+    syncHudCss();
+
+    const s = store.get() || {};
+    const p = s.player || {};
+    const ui = s.ui || {};
+
+    const username = String(p.username || "Player").trim() || "Player";
+    elUsername.textContent = username;
+    elUsername.title = username;
+
+    const yton = Number(s.coins ?? p.coins ?? 0);
+    elCoins.textContent = `YTON ${yton.toLocaleString("tr-TR")}`;
+
+    const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
+    const bonusNum = Number(p.weaponIconBonusPct ?? p.weaponBonusPct ?? 0);
+    const bonusText =
+      typeof p.weaponBonus === "string" && p.weaponBonus.trim()
+        ? p.weaponBonus.trim()
+        : `+${bonusNum}%`;
+
+    elWeaponName.textContent = weaponName;
+    elWeaponName.title = weaponName;
+    elWeaponBonus.textContent = `• ${bonusText}`;
+
+    const xp = Math.max(0, Number(p.xp || 0));
+    const xpToNext = Math.max(1, Number(p.xpToNext || 100));
+    elXpFill.style.width = `${Math.max(3, clamp01(xp / xpToNext) * 100)}%`;
+    elXpText.textContent = `LVL ${Number(p.level || 1)} • ${xp}/${xpToNext}`;
+
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 10));
+    elEnergyFill.style.width = `${Math.max(3, clamp01(energy / energyMax) * 100)}%`;
+
+    const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
+    const lastAt = Number(p.lastEnergyAt || Date.now());
+    const now = Date.now();
+    const untilNext = energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
+
+    elEnergyText.textContent =
+      energy >= energyMax
+        ? `ENERGY ${energy}/${energyMax} • FULL`
+        : `ENERGY ${energy}/${energyMax} • ${fmtMMSS(untilNext)}`;
+
+    const avatarUrl = getAvatarUrl(p);
+    const initials = getInitials(username);
+    elAvatarFallback.textContent = initials;
+
+    if (elAvatarImg) {
+      if (avatarUrl !== lastAvatarUrl) {
+        lastAvatarUrl = avatarUrl;
+
+        if (avatarUrl) {
+          elAvatarImg.style.display = "none";
+          elAvatarFallback.style.display = "grid";
+          elAvatarImg.src = avatarUrl;
+        } else {
+          elAvatarImg.removeAttribute("src");
+          elAvatarImg.style.display = "none";
+          elAvatarFallback.style.display = "grid";
+        }
+      }
     }
 
-    .hudPanel {
-      position: relative;
-      min-width: 0;
-      border-radius: 18px;
-      padding: 10px 12px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background:
-        radial-gradient(140% 160% at 0% 0%, rgba(60,140,255,0.16), transparent 38%),
-        radial-gradient(140% 160% at 100% 0%, rgba(138,72,255,0.14), transparent 36%),
-        linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02)),
-        rgba(8, 12, 22, 0.82);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      box-shadow:
-        0 10px 24px rgba(0,0,0,0.28),
-        inset 0 1px 0 rgba(255,255,255,0.05),
-        0 0 0 1px rgba(255,255,255,0.02);
+    const isPremium = !!(
+      p.isPremium ||
+      p.premium ||
+      s.isPremium ||
+      s.premium ||
+      p.membership === "premium"
+    );
+
+    elOnlineBadge.style.display = "inline-flex";
+    elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
+
+    const safeTop = Number(ui.safe?.y || 0);
+    const vw = window.innerWidth || 0;
+    const minReserved = vw <= 720 ? 88 : vw <= 980 ? 78 : 72;
+    const extraGap = vw <= 720 ? 5 : 6;
+    const reservedTop = Math.max(minReserved, root.offsetHeight + safeTop + extraGap);
+
+    if (Math.abs(lastReservedTop - reservedTop) > 1) {
+      lastReservedTop = reservedTop;
+      store.set({
+        ui: {
+          ...ui,
+          hudReservedTop: reservedTop,
+        },
+      });
     }
 
-    #hudLeft {
-      justify-self: start;
-      width: min(100%, 350px);
-      display: grid;
-      gap: 7px;
-      align-content: center;
-      min-width: 0;
-    }
+    requestAnimationFrame(loop);
+  }
 
-    #hudIdentity {
-      display: grid;
-      grid-template-columns: 40px minmax(0, 1fr);
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    #hudAvatarWrap {
-      position: relative;
-      width: 40px;
-      height: 40px;
-    }
-
-    #hudAvatarWrap::after {
-      content: "";
-      position: absolute;
-      right: -1px;
-      bottom: -1px;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #3dff8a;
-      border: 2px solid rgba(8,12,22,0.96);
-      box-shadow:
-        0 0 10px rgba(61,255,138,0.65),
-        0 0 4px rgba(61,255,138,0.45);
-    }
-
-    #hudAvatar {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      border-radius: 50%;
-      border: 1px solid rgba(255,255,255,0.18);
-      background:
-        linear-gradient(135deg, rgba(0,212,255,0.88), rgba(117,53,255,0.9));
-      box-shadow:
-        0 6px 14px rgba(0,0,0,0.30),
-        0 0 16px rgba(64,160,255,0.22),
-        inset 0 1px 0 rgba(255,255,255,0.18);
-    }
-
-    #hudAvatarImg,
-    #hudAvatarFallback {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-    }
-
-    #hudAvatarImg {
-      display: none;
-      object-fit: cover;
-    }
-
-    #hudAvatarFallback {
-      display: grid;
-      place-items: center;
-      color: rgba(255,255,255,0.98);
-      font-size: 14px;
-      font-weight: 1000;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-
-    #hudUserMeta {
-      min-width: 0;
-      display: grid;
-      gap: 4px;
-    }
-
-    #hudBadges {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-      min-width: 0;
-    }
-
-    .hudBadge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: 18px;
-      padding: 0 7px;
-      border-radius: 999px;
-      font-size: 9px;
-      font-weight: 1000;
-      letter-spacing: 0.08em;
-      line-height: 1;
-      white-space: nowrap;
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
-    }
-
-    #hudOnlineBadge {
-      color: #eafff3;
-      background:
-        linear-gradient(180deg, rgba(34,200,100,0.30), rgba(20,98,56,0.22));
-    }
-
-    #hudPremiumBadge {
-      display: none;
-      color: #fff6d7;
-      background:
-        linear-gradient(180deg, rgba(255,210,74,0.30), rgba(166,116,14,0.22));
-      box-shadow:
-        0 0 12px rgba(255,193,59,0.16),
-        inset 0 1px 0 rgba(255,255,255,0.08);
-    }
-
-    #hudUsername {
-      min-width: 0;
-      color: rgba(255,255,255,0.98);
-      font-size: 14px;
-      font-weight: 1000;
-      line-height: 1.05;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-shadow: 0 1px 0 rgba(0,0,0,0.25);
-    }
-
-    #hudCoinsRow {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      color: rgba(255,255,255,0.96);
-      font-size: 13px;
-      font-weight: 1000;
-      line-height: 1;
-    }
-
-    #hudCoinIcon {
-      width: 17px;
-      height: 17px;
-      display: inline-block;
-      flex: 0 0 auto;
-      filter:
-        drop-shadow(0 2px 8px rgba(0,0,0,0.36))
-        drop-shadow(0 0 10px rgba(255,205,40,0.22));
-    }
-
-    #hudCoins {
-      min-width: 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #ffe89a;
-      text-shadow: 0 0 10px rgba(255,211,74,0.14);
-    }
-
-    #hudWeaponRow {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-      color: rgba(255,255,255,0.74);
-      font-size: 11px;
-      font-weight: 800;
-      line-height: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    #hudWeaponBonus {
-      color: rgba(145,228,255,0.95);
-      font-weight: 1000;
-    }
-
-    #hudLogoWrap {
-      align-self: center;
-      justify-self: center;
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 0;
-      padding-inline: 4px;
-    }
-
-    #hudLogo {
-      height: 46px;
-      width: auto;
-      max-width: 180px;
-      display: block;
-      object-fit: contain;
-      filter:
-        drop-shadow(0 8px 18px rgba(0,0,0,0.40))
-        drop-shadow(0 0 16px rgba(79,154,255,0.12));
-      opacity: 0.96;
-    }
-
-    #hudRight {
-      justify-self: end;
-      width: min(100%, 390px);
-      display: grid;
-      gap: 7px;
-      align-content: center;
-      min-width: 0;
-    }
-
-    .bar {
-      position: relative;
-      height: 24px;
-      border-radius: 999px;
-      overflow: hidden;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
-        rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.12);
-      box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.05),
-        0 4px 10px rgba(0,0,0,0.14);
-    }
-
-    .barFill {
-      position: relative;
-      height: 100%;
-      width: 0%;
-      min-width: 3%;
-      border-radius: inherit;
-      transition: width 180ms ease;
-      overflow: hidden;
-    }
-
-    .barFill::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        110deg,
-        transparent 0%,
-        rgba(255,255,255,0.00) 34%,
-        rgba(255,255,255,0.18) 50%,
-        rgba(255,255,255,0.00) 66%,
-        transparent 100%
-      );
-      transform: translateX(-120%);
-      animation: hudSheen 2.4s linear infinite;
-      pointer-events: none;
-    }
-
-    #hudXpFill {
-      background:
-        linear-gradient(90deg, rgba(111,70,255,0.98), rgba(61,189,255,0.98));
-      box-shadow:
-        0 0 14px rgba(95,132,255,0.28),
-        inset 0 1px 0 rgba(255,255,255,0.18);
-    }
-
-    #hudEnergyFill {
-      background:
-        linear-gradient(90deg, rgba(43,227,122,0.98), rgba(0,236,255,0.98));
-      box-shadow:
-        0 0 14px rgba(41,232,120,0.26),
-        inset 0 1px 0 rgba(255,255,255,0.18);
-    }
-
-    .barText {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 10px;
-      color: rgba(255,255,255,0.98);
-      font-size: 10px;
-      font-weight: 1000;
-      letter-spacing: 0.04em;
-      pointer-events: none;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-shadow:
-        0 1px 2px rgba(0,0,0,0.55),
-        0 0 8px rgba(0,0,0,0.18);
-    }
-
-    @keyframes hudSheen {
-      0% { transform: translateX(-120%); }
-      100% { transform: translateX(140%); }
-    }
+  syncHudCss();
+  loop();
+}
