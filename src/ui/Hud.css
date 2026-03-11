@@ -205,19 +205,17 @@
   justify-content: center;
   pointer-events: none;
   align-self: stretch;
+  padding: 0 8px;
 }
 
 #hudLogo {
   display: block;
-  width: auto !important;
-  height: 100% !important;
-  max-width: none !important;
-  max-height: none !important;
+  height: 80%;
+  width: auto;
+  max-height: 48px;
   object-fit: contain;
   filter: drop-shadow(0 4px 12px rgba(0,0,0,0.35));
 }
-
-
 /* ===== SAĞ ===== */
 #hudRight {
   width: 190px;
