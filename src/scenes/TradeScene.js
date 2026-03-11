@@ -73,6 +73,7 @@ function iconForType(type) {
 }
 
 function todayKey() {
+  const DAY_MS = 24 * 60 * 60 * 1000;
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
@@ -709,10 +710,6 @@ export class TradeScene {
       brothel: [
         { icon: "🌹", name: "VIP Companion", rarity: "epic", qty: 5, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
       ],
-      blackmarket: [
-        { icon: "📦", name: "Mystery Crate", rarity: "rare", qty: 10, price: 54, energyGain: 0, desc: "Koleksiyon ürünü." },
-      ],
-    };
 
     const cost = Number(prices[type] || 0);
     if (Number(s.coins || 0) < cost) {
@@ -729,9 +726,11 @@ export class TradeScene {
     const products = (templates[type] || []).map((p, idx) => ({
       id: businessId + "_prod_" + idx,
       ...p,
+      qty: 0,
     }));
 
-    const stock = products.reduce((sum, p) => sum + Number(p.qty || 0), 0);
+    const pendingProduction = this._createPendingProduction(products, 50);
+    const now = Date.now();
 
     const newBusiness = {
       id: businessId,
@@ -741,9 +740,12 @@ export class TradeScene {
       ownerId: String(s.player?.id || "player_main"),
       ownerName: String(s.player?.username || "Player"),
       dailyProduction: 50,
-      stock,
+      stock: 0,
       theme: type,
       products,
+      pendingProduction,
+      productionStartedAt: now,
+      productionExpireAt: now + DAY_MS,
     };
 
     const owned = [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))];
@@ -828,7 +830,142 @@ export class TradeScene {
         owned: businesses,
       },
     });
+  _createPendingProduction(products = [], totalDaily = 50) {
+    const safeProducts = (products || []).map((p) => ({ ...p }));
+    if (!safeProducts.length) return [];
 
+    const per = Math.floor(totalDaily / safeProducts.length);
+    let remainder = totalDaily - per * safeProducts.length;
+
+    return safeProducts.map((p) => {
+      const extra = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder -= 1;
+      return {
+        productId: p.id,
+        qty: per + extra,
+      };
+    });
+  }
+
+  _refreshBusinessProduction() {
+    const s = this.store.get();
+    const now = Date.now();
+
+    const owned = (s.businesses?.owned || []).map((biz) => ({
+      ...biz,
+      products: (biz.products || []).map((p) => ({ ...p })),
+      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
+    }));
+
+    let changed = false;
+
+    for (const biz of owned) {
+      const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
+      if (!hasProducts) continue;
+
+      if (!Array.isArray(biz.pendingProduction)) {
+        biz.pendingProduction = this._createPendingProduction(
+          biz.products,
+          Number(biz.dailyProduction || 50)
+        );
+        changed = true;
+      }
+
+      if (!biz.productionStartedAt) {
+        biz.productionStartedAt = now;
+        changed = true;
+      }
+
+      if (!biz.productionExpireAt) {
+        biz.productionExpireAt = Number(biz.productionStartedAt) + DAY_MS;
+        changed = true;
+      }
+
+      const pendingTotal = (biz.pendingProduction || []).reduce(
+        (sum, row) => sum + Number(row.qty || 0),
+        0
+      );
+
+      if (now >= Number(biz.productionExpireAt || 0)) {
+        if (pendingTotal > 0) {
+          biz.pendingProduction = biz.pendingProduction.map((row) => ({
+            ...row,
+            qty: 0,
+          }));
+        }
+
+        biz.productionStartedAt = now;
+        biz.productionExpireAt = now + DAY_MS;
+        biz.pendingProduction = this._createPendingProduction(
+          biz.products,
+          Number(biz.dailyProduction || 50)
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.store.set({
+        businesses: {
+          ...(s.businesses || {}),
+          owned,
+        },
+      });
+    }
+  }
+
+  _collectBusinessProduction(bizId) {
+    this._refreshBusinessProduction();
+
+    const s = this.store.get();
+    const now = Date.now();
+
+    const owned = (s.businesses?.owned || []).map((biz) => ({
+      ...biz,
+      products: (biz.products || []).map((p) => ({ ...p })),
+      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
+    }));
+
+    const biz = owned.find((b) => b.id === bizId);
+    if (!biz) return;
+
+    const pendingTotal = (biz.pendingProduction || []).reduce(
+      (sum, row) => sum + Number(row.qty || 0),
+      0
+    );
+
+    if (pendingTotal <= 0) {
+      this._showToast("Toplanacak üretim yok");
+      return;
+    }
+
+    for (const row of biz.pendingProduction || []) {
+      const product = (biz.products || []).find((p) => p.id === row.productId);
+      if (!product) continue;
+      product.qty = Number(product.qty || 0) + Number(row.qty || 0);
+    }
+
+    biz.stock = (biz.products || []).reduce(
+      (sum, p) => sum + Number(p.qty || 0),
+      0
+    );
+
+    biz.pendingProduction = this._createPendingProduction(
+      biz.products,
+      Number(biz.dailyProduction || 50)
+    );
+    biz.productionStartedAt = now;
+    biz.productionExpireAt = now + DAY_MS;
+
+    this.store.set({
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
+      },
+    });
+
+    this._showToast(`${fmtNum(pendingTotal)} ürün toplandı`);
+  }
     this._showToast(`+${gain} enerji`);
   }
 
@@ -987,6 +1124,9 @@ export class TradeScene {
           case "sell_business_product":
             this._sellBusinessProduct(h.bizId, h.productId);
             return;
+          case "collect_business":
+            this._collectBusinessProduction(h.bizId);
+            return; 
           case "free_spin":
             this._doFreeSpin();
             return;
@@ -1315,6 +1455,7 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
   }
 
   _renderBusinesses(ctx, x, y, w) {
+    this._refreshBusinessProduction();
     const businesses = this._allBusinesses();
 
     this._drawHeroCard(
@@ -1337,7 +1478,7 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
 
     for (const biz of businesses) {
       const products = biz.products || [];
-      const cardH = 96 + products.length * 64;
+      const cardH = 122 + products.length * 64;
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, cardH, 20);
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
@@ -1351,11 +1492,37 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
       ctx.font = "900 15px system-ui";
       ctx.fillText(biz.name || "İşletme", x + 48, y + 24);
 
+      const pendingCount = (biz.pendingProduction || []).reduce(
+        (sum, row) => sum + Number(row.qty || 0),
+        0
+      );
+      const remainMs = Math.max(0, Number(biz.productionExpireAt || 0) - Date.now());
+      const remainHours = Math.floor(remainMs / (60 * 60 * 1000));
+      const remainMinutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
+
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)} • Stok ${fmtNum(biz.stock)}`, x + 48, y + 46);
+      ctx.fillText(
+        `${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)} • Stok ${fmtNum(biz.stock)}`,
+        x + 48,
+        y + 46
+      );
 
-      let rowY = y + 62;
+      ctx.fillStyle = pendingCount > 0 ? "rgba(255,209,120,0.95)" : "rgba(255,255,255,0.48)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(
+        pendingCount > 0
+          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde topla`
+          : "Bekleyen üretim yok",
+        x + 48,
+        y + 64
+      );
+
+      const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
+      this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
+      this._drawButton(ctx, collectRect, "Topla", pendingCount > 0 ? "gold" : "muted");
+
+      let rowY = y + 82;
       for (const p of products) {
         ctx.fillStyle = "rgba(255,255,255,0.04)";
         fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
@@ -1763,10 +1930,10 @@ const bgImg =
   }
 
   const overlay = ctx.createLinearGradient(0, 0, 0, h);
-  overlay.addColorStop(0, "rgba(0,0,0,0.20)");
-  overlay.addColorStop(0.24, "rgba(32,12,4,0.20)");
-  overlay.addColorStop(0.56, "rgba(8,12,20,0.46)");
-  overlay.addColorStop(1, "rgba(2,5,10,0.84)");
+  overlay.addColorStop(0, "rgba(0,0,0,0.55)");
+  overlay.addColorStop(0.30, "rgba(18,10,10,0.70)");
+  overlay.addColorStop(0.60, "rgba(8,10,18,0.82)");
+  overlay.addColorStop(1, "rgba(2,5,10,0.92)");
   ctx.fillStyle = overlay;
   ctx.fillRect(0, 0, w, h);
 
@@ -1786,10 +1953,10 @@ const bgImg =
   const panelH = safe.h;
 
   const shellGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-  shellGrad.addColorStop(0, "rgba(8,10,16,0.70)");
-  shellGrad.addColorStop(0.35, "rgba(7,11,18,0.80)");
-  shellGrad.addColorStop(0.72, "rgba(4,8,14,0.87)");
-  shellGrad.addColorStop(1, "rgba(3,6,12,0.93)");
+  shellGrad.addColorStop(0, "rgba(8,10,16,0.90)");
+  shellGrad.addColorStop(0.35, "rgba(7,11,18,0.94)");
+  shellGrad.addColorStop(0.72, "rgba(4,8,14,0.97)");
+  shellGrad.addColorStop(1, "rgba(3,6,12,0.985)");
   ctx.fillStyle = shellGrad;
   fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
@@ -2048,6 +2215,7 @@ const bgImg =
   }
  }
 }
+
 
 
 
