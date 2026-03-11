@@ -79,34 +79,6 @@ export function startHud(store) {
     );
   }
 
-  function sanitizeBonusText(player) {
-    const raw = String(player?.weaponBonus ?? "").trim();
-
-    if (raw) {
-      const match = raw.match(/-?\d+(?:[.,]\d+)?/);
-      if (match) {
-        const num = Number(String(match[0]).replace(",", "."));
-        if (Number.isFinite(num)) {
-          const sign = num > 0 ? "+" : "";
-          return `${sign}${num}%`;
-        }
-      }
-    }
-
-    const fallbackNum = Number(
-      player?.weaponIconBonusPct ??
-      player?.weaponBonusPct ??
-      0
-    );
-
-    if (Number.isFinite(fallbackNum)) {
-      const sign = fallbackNum > 0 ? "+" : "";
-      return `${sign}${fallbackNum}%`;
-    }
-
-    return "+0%";
-  }
-
   function updateLogoSize() {
     if (!elLogo || !elCenter || !root) return;
 
@@ -162,12 +134,14 @@ export function startHud(store) {
     elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
-    const bonusText = sanitizeBonusText(p);
-
     elWeaponName.textContent = weaponName;
     elWeaponName.title = weaponName;
 
-
+    if (elWeaponBonus) {
+      elWeaponBonus.textContent = "";
+      elWeaponBonus.title = "";
+      elWeaponBonus.style.display = "none";
+    }
 
     const xp = Math.max(0, Number(p.xp || 0));
     const xpToNext = Math.max(1, Number(p.xpToNext || 100));
