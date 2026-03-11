@@ -109,17 +109,17 @@ export function startHud(store) {
     elUsername.title = username;
 
     const yton = Number(s.coins ?? p.coins ?? 0);
-    elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
+    elCoins.textContent = `YTON ${
+      Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"
+    }`;
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
     elWeaponName.textContent = weaponName;
     elWeaponName.title = weaponName;
 
-    if (elWeaponBonus) {
-      elWeaponBonus.textContent = "";
-      elWeaponBonus.title = "";
-      elWeaponBonus.style.display = "none";
-    }
+    elWeaponBonus.textContent = "";
+    elWeaponBonus.title = "";
+    elWeaponBonus.style.display = "none";
 
     const xp = Math.max(0, Number(p.xp || 0));
     const xpToNext = Math.max(1, Number(p.xpToNext || 100));
@@ -135,7 +135,8 @@ export function startHud(store) {
     const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
     const lastAt = Number(p.lastEnergyAt || Date.now());
     const now = Date.now();
-    const untilNext = energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
+    const untilNext =
+      energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
 
     elEnergyText.textContent =
       energy >= energyMax
@@ -146,19 +147,17 @@ export function startHud(store) {
     const initials = getInitials(username);
     elAvatarFallback.textContent = initials;
 
-    if (elAvatarImg) {
-      if (avatarUrl !== lastAvatarUrl) {
-        lastAvatarUrl = avatarUrl;
+    if (avatarUrl !== lastAvatarUrl) {
+      lastAvatarUrl = avatarUrl;
 
-        if (avatarUrl) {
-          elAvatarImg.style.display = "none";
-          elAvatarFallback.style.display = "grid";
-          elAvatarImg.src = avatarUrl;
-        } else {
-          elAvatarImg.removeAttribute("src");
-          elAvatarImg.style.display = "none";
-          elAvatarFallback.style.display = "grid";
-        }
+      if (avatarUrl) {
+        elAvatarImg.style.display = "none";
+        elAvatarFallback.style.display = "grid";
+        elAvatarImg.src = avatarUrl;
+      } else {
+        elAvatarImg.removeAttribute("src");
+        elAvatarImg.style.display = "none";
+        elAvatarFallback.style.display = "grid";
       }
     }
 
@@ -173,12 +172,8 @@ export function startHud(store) {
     elOnlineBadge.style.display = "inline-flex";
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
-    if (elLogo) {
-      elLogo.style.display = "block";
-    }
-    if (elCenter) {
-      elCenter.style.display = "flex";
-    }
+    if (elLogo) elLogo.style.display = "block";
+    if (elCenter) elCenter.style.display = "flex";
 
     const safeTop = Number(ui.safe?.y || 0);
     const reservedTop = Math.max(72, root.offsetHeight + safeTop + 6);
