@@ -83,6 +83,23 @@ function todayKey() {
   ).padStart(2, "0")}`;
 }
 
+function getImgSafe(assets, key) {
+  try {
+    if (!assets) return null;
+
+    if (typeof assets.get === "function") {
+      const img = assets.get(key);
+      if (img) return img;
+    }
+
+    if (assets.images && assets.images[key]) return assets.images[key];
+    if (assets[key]) return assets[key];
+
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
 export class TradeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -2040,4 +2057,5 @@ _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
   }
  }
 }
+
 
