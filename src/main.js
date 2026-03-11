@@ -160,7 +160,7 @@ const defaultState = {
     xp: 25,
     xpToNext: 100,
     weaponName: "Silah Yok",
-    weaponBonus: "+0%",
+    weaponBonus: "",
     energy: 100,
     energyMax: 100,
     energyIntervalMs: 5 * 60 * 1000,
