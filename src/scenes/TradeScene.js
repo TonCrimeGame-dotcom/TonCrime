@@ -72,8 +72,9 @@ function iconForType(type) {
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function todayKey() {
-  const DAY_MS = 24 * 60 * 60 * 1000;
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
@@ -710,7 +711,7 @@ export class TradeScene {
       brothel: [
         { icon: "🌹", name: "VIP Companion", rarity: "epic", qty: 5, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
       ],
-
+    };
     const cost = Number(prices[type] || 0);
     if (Number(s.coins || 0) < cost) {
       this._showToast("Yetersiz yton");
@@ -830,6 +831,9 @@ export class TradeScene {
         owned: businesses,
       },
     });
+        this._showToast(`+${gain} enerji`);
+  }
+  
   _createPendingProduction(products = [], totalDaily = 50) {
     const safeProducts = (products || []).map((p) => ({ ...p }));
     if (!safeProducts.length) return [];
@@ -966,9 +970,7 @@ export class TradeScene {
 
     this._showToast(`${fmtNum(pendingTotal)} ürün toplandı`);
   }
-    this._showToast(`+${gain} enerji`);
-  }
-
+    
   _sellBusinessProduct(bizId, productId) {
     const s = this.store.get();
     const businesses = (s.businesses?.owned || []).map((b) => ({
@@ -2215,6 +2217,7 @@ const bgImg =
   }
  }
 }
+
 
 
 
