@@ -85,7 +85,7 @@ export function startHud(store) {
     const hudH = Math.max(48, root.offsetHeight - 14);
     const vw = window.innerWidth || 0;
 
-    let logoH = Math.round(hudH * 5.34);
+    let logoH = Math.round(hudH * 0.95);
     if (vw <= 420) logoH = Math.round(hudH * 0.62);
     else if (vw <= 640) logoH = Math.round(hudH * 0.68);
     else if (vw <= 920) logoH = Math.round(hudH * 0.74);
