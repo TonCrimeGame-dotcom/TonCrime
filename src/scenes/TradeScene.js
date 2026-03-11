@@ -1156,388 +1156,169 @@ export class TradeScene {
     }
   }
 
-_drawButton(ctx, rect, text, style = "ghost") {
-  let fill = "rgba(255,255,255,0.05)";
-  let stroke = "rgba(255,255,255,0.10)";
-  let txt = "rgba(255,255,255,0.88)";
+  _drawButton(ctx, rect, text, style = "ghost") {
+    let fill = "rgba(255,255,255,0.05)";
+    let stroke = "rgba(255,255,255,0.10)";
+    let txt = "rgba(255,255,255,0.88)";
 
-  if (style === "primary") {
-    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(40,95,210,0.72)");
-    g.addColorStop(1, "rgba(18,54,140,0.78)");
-    fill = g;
-    stroke = "rgba(130,175,255,0.45)";
-    txt = "#ffffff";
-  } else if (style === "gold") {
-    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(130,94,28,0.68)");
-    g.addColorStop(1, "rgba(88,60,15,0.78)");
-    fill = g;
-    stroke = "rgba(255,214,120,0.34)";
-    txt = "#fff5dd";
-  } else if (style === "muted") {
-    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(255,255,255,0.08)");
-    g.addColorStop(1, "rgba(255,255,255,0.04)");
-    fill = g;
-    stroke = "rgba(255,255,255,0.10)";
-    txt = "rgba(255,255,255,0.84)";
-  }
-
-  ctx.fillStyle = fill;
-  fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-  ctx.strokeStyle = stroke;
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-  ctx.fillStyle = txt;
-  ctx.font = "800 12px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
-}
-
-_drawSearchBar(ctx, x, y, w, text) {
-  const rect = { x, y, w, h: 46 };
-  this.hitButtons.push({ rect, action: "search" });
-
-  const g = ctx.createLinearGradient(x, y, x, y + rect.h);
-  g.addColorStop(0, "rgba(20,24,30,0.42)");
-  g.addColorStop(1, "rgba(10,13,18,0.54)");
-  ctx.fillStyle = g;
-  fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 18);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.10)";
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 18);
-
-  ctx.save();
-  ctx.globalAlpha = 0.08;
-  ctx.fillStyle = "#ffb24a";
-  fillRoundRect(ctx, rect.x + rect.w - 86, rect.y + 7, 56, 32, 16);
-  ctx.restore();
-
-  ctx.fillStyle = "rgba(255,255,255,0.52)";
-  ctx.font = "900 15px system-ui";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText("🔎", x + 14, y + 23);
-
-  ctx.fillStyle = text ? "#ffffff" : "rgba(255,255,255,0.40)";
-  ctx.font = "13px system-ui";
-  ctx.fillText(text || "Mekan veya ürün ara", x + 42, y + 23);
-}
-
-_drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
-  const grad = ctx.createLinearGradient(x, y, x, y + h);
-  grad.addColorStop(0, "rgba(8,12,18,0.42)");
-  grad.addColorStop(1, "rgba(4,8,14,0.56)");
-  ctx.fillStyle = grad;
-  fillRoundRect(ctx, x, y, w, h, 24);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.10)";
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, x, y, w, h, 24);
-
-  ctx.save();
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = glow;
-  fillRoundRect(ctx, x + w - 96, y + 16, 66, 66, 22);
-  ctx.restore();
-
-  ctx.fillStyle = "rgba(255,210,120,0.13)";
-  fillRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
-  ctx.strokeStyle = "rgba(255,210,120,0.24)";
-  strokeRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
-
-  ctx.fillStyle = "#ffe0a0";
-  ctx.font = "800 10px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(badge || "GÜNÜN VİTRİNİ", x + 68, y + 26);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.font = "900 16px system-ui";
-  ctx.fillText(title, x + 16, y + 58);
-
-  ctx.fillStyle = "rgba(255,255,255,0.74)";
-  ctx.font = "12px system-ui";
-  ctx.fillText(desc, x + 16, y + 81);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "900 30px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(icon || "📦", x + w - 63, y + h / 2);
-}
-
-_drawMiniCard(ctx, x, y, w, h, title, text, icon, accent = "#458cff") {
-  const grad = ctx.createLinearGradient(x, y, x, y + h);
-  grad.addColorStop(0, "rgba(10,14,20,0.34)");
-  grad.addColorStop(1, "rgba(6,10,16,0.48)");
-  ctx.fillStyle = grad;
-  fillRoundRect(ctx, x, y, w, h, 20);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.09)";
-  strokeRoundRect(ctx, x, y, w, h, 20);
-
-  ctx.save();
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = accent;
-  fillRoundRect(ctx, x + w - 56, y + 14, 40, 40, 14);
-  ctx.restore();
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 14px system-ui";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText(title, x + 14, y + 24);
-
-  ctx.fillStyle = "rgba(255,255,255,0.70)";
-  ctx.font = "12px system-ui";
-  ctx.fillText(text, x + 14, y + 48);
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 24px system-ui";
-  ctx.fillText(icon, x + w - 42, y + 38);
-}
-
-render(ctx, w, h) {
-  const state = this.store.get();
-  const trade = this._trade();
-  const safe = this._safeRect(w, h);
-
-  this.hitBack = null;
-  this.hitTabs = [];
-  this.hitButtons = [];
-
-  const bgImg =
-    getImgSafe(this.assets, "trade") ||
-    getImgSafe(this.assets, "blackmarket_bg") ||
-    getImgSafe(this.assets, "blackmarket") ||
-    getImgSafe(this.assets, "background");
-
-  if (bgImg) {
-    const iw = bgImg.width || 1;
-    const ih = bgImg.height || 1;
-    const scale = Math.max(w / iw, h / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = (w - dw) / 2;
-    const dy = (h - dh) / 2;
-    ctx.drawImage(bgImg, dx, dy, dw, dh);
-  } else {
-    const bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, "#08090d");
-    bg.addColorStop(0.35, "#12090b");
-    bg.addColorStop(0.7, "#0a0f16");
-    bg.addColorStop(1, "#04070a");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  const overlay = ctx.createLinearGradient(0, 0, 0, h);
-  overlay.addColorStop(0, "rgba(0,0,0,0.48)");
-  overlay.addColorStop(0.28, "rgba(16,8,8,0.58)");
-  overlay.addColorStop(0.62, "rgba(8,10,18,0.72)");
-  overlay.addColorStop(1, "rgba(2,5,10,0.86)");
-  ctx.fillStyle = overlay;
-  ctx.fillRect(0, 0, w, h);
-
-  ctx.save();
-  ctx.globalAlpha = 0.08;
-  ctx.fillStyle = "#ff9e46";
-  fillRoundRect(ctx, safe.x - 8, safe.y + 8, safe.w * 0.42, 120, 42);
-  ctx.fillStyle = "#2d68ff";
-  fillRoundRect(ctx, safe.x + safe.w - 112, safe.y + 128, 78, 78, 28);
-  ctx.restore();
-
-  const panelX = safe.x;
-  const panelY = safe.y;
-  const panelW = safe.w;
-  const panelH = safe.h;
-
-  const shellGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-  shellGrad.addColorStop(0, "rgba(8,12,18,0.26)");
-  shellGrad.addColorStop(1, "rgba(4,8,14,0.34)");
-  ctx.fillStyle = shellGrad;
-  fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
-
-  let headerH = trade.view === "main" ? 126 : 88;
-
-  const headerGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + headerH);
-  headerGrad.addColorStop(0, "rgba(10,14,20,0.34)");
-  headerGrad.addColorStop(1, "rgba(8,10,16,0.20)");
-  ctx.fillStyle = headerGrad;
-  fillRoundRect(ctx, panelX + 6, panelY + 6, panelW - 12, headerH, 22);
-
-  this.hitBack = { x: panelX + 14, y: panelY + 16, w: 76, h: 34 };
-  this._drawButton(ctx, this.hitBack, "← Geri", "muted");
-
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.font = "900 22px system-ui";
-  ctx.fillText(trade.view === "shop" ? "Dükkan" : "Black Market", panelX + 102, panelY + 40);
-
-  ctx.fillStyle = "rgba(255,255,255,0.68)";
-  ctx.font = "13px system-ui";
-  ctx.fillText(
-    trade.view === "shop"
-      ? "Ürünler • fiyatlar • stok"
-      : "Ekonomi merkezi • pazar • sandık • işletmeler",
-    panelX + 102,
-    panelY + 62
-  );
-
-  const stats = [
-    `YTON ${fmtNum(state.coins)}`,
-    `ENERJİ ${fmtNum(state.player?.energy)}/${fmtNum(state.player?.energyMax)}`,
-    `LV ${fmtNum(state.player?.level)}`
-  ];
-
-  let chipX = panelX + panelW - 14;
-  const chipY = panelY + 18;
-
-  ctx.font = "800 10px system-ui";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-
-  for (let i = stats.length - 1; i >= 0; i--) {
-    const text = stats[i];
-    const tw = Math.ceil(ctx.measureText(text).width) + 20;
-    chipX -= tw;
-
-    const chipRect = { x: chipX, y: chipY, w: tw, h: 20 };
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, chipRect.x, chipRect.y, chipRect.w, chipRect.h, 10);
-    ctx.strokeStyle = i === 0 ? "rgba(255,210,120,0.18)" : "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, chipRect.x, chipRect.y, chipRect.w, chipRect.h, 10);
-
-    ctx.fillStyle = "#f4f6fb";
-    ctx.fillText(text, chipRect.x + chipRect.w - 10, chipRect.y + chipRect.h / 2);
-
-    chipX -= 8;
-  }
-
-  let contentTop = panelY + headerH + 16;
-
-  if (trade.view === "main") {
-    const tabs = [
-      { key: "explore", label: "Keşfet" },
-      { key: "businesses", label: "İşletmelerim" },
-      { key: "inventory", label: "Envanter" },
-      { key: "loot", label: "Sandık & Çark" },
-      { key: "market", label: "Açık Pazar" },
-      { key: "buy", label: "Satın Al" },
-    ];
-
-    let tx = panelX + 16;
-    let ty = panelY + 78;
-    const limitX = panelX + panelW - 16;
-
-    for (const tab of tabs) {
-      const tw = clamp(28 + tab.label.length * 7.2, 86, 138);
-      if (tx + tw > limitX) {
-        tx = panelX + 16;
-        ty += 42;
-      }
-
-      const rect = { x: tx, y: ty, w: tw, h: 34 };
-      this.hitTabs.push({ rect, tab: tab.key });
-
-      const active = trade.activeTab === tab.key;
-      this._drawButton(ctx, rect, tab.label, active ? "primary" : "muted");
-      tx += tw + 10;
+    if (style === "primary") {
+      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+      g.addColorStop(0, "rgba(40,95,210,0.72)");
+      g.addColorStop(1, "rgba(18,54,140,0.78)");
+      fill = g;
+      stroke = "rgba(130,175,255,0.45)";
+      txt = "#ffffff";
+    } else if (style === "gold") {
+      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+      g.addColorStop(0, "rgba(130,94,28,0.68)");
+      g.addColorStop(1, "rgba(88,60,15,0.78)");
+      fill = g;
+      stroke = "rgba(255,214,120,0.34)";
+      txt = "#fff5dd";
+    } else if (style === "muted") {
+      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+      g.addColorStop(0, "rgba(255,255,255,0.08)");
+      g.addColorStop(1, "rgba(255,255,255,0.04)");
+      fill = g;
+      stroke = "rgba(255,255,255,0.10)";
+      txt = "rgba(255,255,255,0.84)";
     }
 
-    contentTop = ty + 46;
-  }
+    ctx.fillStyle = fill;
+    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
 
-  const contentX = panelX + 8;
-  const contentY = contentTop;
-  const contentW = panelW - 16;
-  const contentH = panelY + panelH - 8 - contentTop;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
 
-  const contentGrad = ctx.createLinearGradient(contentX, contentY, contentX, contentY + contentH);
-  contentGrad.addColorStop(0, "rgba(8,12,18,0.22)");
-  contentGrad.addColorStop(1, "rgba(4,8,14,0.30)");
-  ctx.fillStyle = contentGrad;
-  fillRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
-  strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
-
-  ctx.save();
-  roundRectPath(ctx, contentX, contentY, contentW, contentH, 24);
-  ctx.clip();
-
-  let cursorY = contentY + 14 - this.scrollY;
-  let endY = cursorY;
-
-  if (trade.view === "shop") {
-    endY = this._renderShopView(ctx, contentX + 12, cursorY, contentW - 24);
-  } else {
-    const x = contentX + 12;
-    const y = cursorY;
-    const w2 = contentW - 24;
-
-    if (trade.activeTab === "explore") endY = this._renderExplore(ctx, x, y, w2);
-    else if (trade.activeTab === "businesses") endY = this._renderBusinesses(ctx, x, y, w2);
-    else if (trade.activeTab === "inventory") endY = this._renderInventory(ctx, x, y, w2);
-    else if (trade.activeTab === "loot") endY = this._renderLoot(ctx, x, y, w2);
-    else if (trade.activeTab === "market") endY = this._renderMarket(ctx, x, y, w2);
-    else endY = this._renderBuy(ctx, x, y, w2);
-  }
-
-  ctx.restore();
-
-  this.maxScroll = Math.max(0, (endY - contentY + 14) - contentH);
-  this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
-
-  if (this.maxScroll > 0) {
-    const barX = contentX + contentW - 6;
-    const barY = contentY + 12;
-    const barH = contentH - 24;
-    const thumbH = Math.max(42, Math.floor((contentH / (contentH + this.maxScroll)) * barH));
-    const thumbY = barY + Math.floor((this.scrollY / Math.max(1, this.maxScroll)) * (barH - thumbH));
-
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, barX, barY, 3, barH, 3);
-
-    const sg = ctx.createLinearGradient(barX, thumbY, barX, thumbY + thumbH);
-    sg.addColorStop(0, "rgba(255,196,100,0.82)");
-    sg.addColorStop(1, "rgba(255,132,58,0.78)");
-    ctx.fillStyle = sg;
-    fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
-  }
-
-  if (this.toastText && Date.now() < this.toastUntil) {
-    const tw = Math.min(panelW - 28, 290);
-    const th = 40;
-    const tx = panelX + (panelW - tw) / 2;
-    const ty = panelY + panelH - th - 10;
-
-    ctx.fillStyle = "rgba(0,0,0,0.58)";
-    fillRoundRect(ctx, tx, ty, tw, th, 14);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, tx, ty, tw, th, 14);
-
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = txt;
     ctx.font = "800 12px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2);
+    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
   }
-}
+
+  _drawSearchBar(ctx, x, y, w, text) {
+    const rect = { x, y, w, h: 46 };
+    this.hitButtons.push({ rect, action: "search" });
+
+    const g = ctx.createLinearGradient(x, y, x, y + rect.h);
+    g.addColorStop(0, "rgba(20,24,30,0.42)");
+    g.addColorStop(1, "rgba(10,13,18,0.54)");
+    ctx.fillStyle = g;
+    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 18);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 18);
+
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = "#ffb24a";
+    fillRoundRect(ctx, rect.x + rect.w - 86, rect.y + 7, 56, 32, 16);
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255,255,255,0.52)";
+    ctx.font = "900 15px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🔎", x + 14, y + 23);
+
+    ctx.fillStyle = text ? "#ffffff" : "rgba(255,255,255,0.40)";
+    ctx.font = "13px system-ui";
+    ctx.fillText(text || "Mekan veya ürün ara", x + 42, y + 23);
+  }
+
+  _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, "rgba(8,12,18,0.42)");
+    grad.addColorStop(1, "rgba(4,8,14,0.56)");
+    ctx.fillStyle = grad;
+    fillRoundRect(ctx, x, y, w, h, 24);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, x, y, w, h, 24);
+
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = glow;
+    fillRoundRect(ctx, x + w - 96, y + 16, 66, 66, 22);
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255,210,120,0.13)";
+    fillRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
+    ctx.strokeStyle = "rgba(255,210,120,0.24)";
+    strokeRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
+
+    ctx.fillStyle = "#ffe0a0";
+    ctx.font = "800 10px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(badge || "GÜNÜN VİTRİNİ", x + 68, y + 26);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "900 16px system-ui";
+    ctx.fillText(title, x + 16, y + 58);
+
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(desc, x + 16, y + 81);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 30px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(icon || "📦", x + w - 63, y + h / 2);
+  }
+
+  _drawMiniCard(ctx, x, y, w, h, title, text, icon, accent = "#458cff") {
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, "rgba(10,14,20,0.34)");
+    grad.addColorStop(1, "rgba(6,10,16,0.48)");
+    ctx.fillStyle = grad;
+    fillRoundRect(ctx, x, y, w, h, 20);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.09)";
+    strokeRoundRect(ctx, x, y, w, h, 20);
+
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = accent;
+    fillRoundRect(ctx, x + w - 56, y + 14, 40, 40, 14);
+    ctx.restore();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 14px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(title, x + 14, y + 24);
+
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(text, x + 14, y + 48);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 24px system-ui";
+    ctx.fillText(icon, x + w - 42, y + 38);
+  }
+
+  _drawSectionTitle(ctx, x, y, title, sub) {
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 15px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(title, x, y);
+
+    if (sub) {
+      ctx.fillStyle = "rgba(255,255,255,0.60)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(sub, x, y + 16);
+    }
+  }
+
   _drawEmptyState(ctx, x, y, w, icon, text) {
     ctx.fillStyle = "rgba(255,255,255,0.05)";
     fillRoundRect(ctx, x, y, w, 120, 18);
@@ -1702,6 +1483,7 @@ render(ctx, w, h) {
     for (const biz of businesses) {
       const products = biz.products || [];
       const cardH = 122 + products.length * 64;
+
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, cardH, 20);
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
@@ -2118,11 +1900,237 @@ render(ctx, w, h) {
     return y;
   }
 
- 
+  render(ctx, w, h) {
+    const state = this.store.get();
+    const trade = this._trade();
+    const safe = this._safeRect(w, h);
 
+    this.hitBack = null;
+    this.hitTabs = [];
+    this.hitButtons = [];
 
+    const bgImg =
+      getImgSafe(this.assets, "trade") ||
+      getImgSafe(this.assets, "blackmarket_bg") ||
+      getImgSafe(this.assets, "blackmarket") ||
+      getImgSafe(this.assets, "background");
 
+    if (bgImg) {
+      const iw = bgImg.width || 1;
+      const ih = bgImg.height || 1;
+      const scale = Math.max(w / iw, h / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      ctx.drawImage(bgImg, dx, dy, dw, dh);
+    } else {
+      const bg = ctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, "#08090d");
+      bg.addColorStop(0.35, "#12090b");
+      bg.addColorStop(0.7, "#0a0f16");
+      bg.addColorStop(1, "#04070a");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+    }
 
+    const overlay = ctx.createLinearGradient(0, 0, 0, h);
+    overlay.addColorStop(0, "rgba(0,0,0,0.48)");
+    overlay.addColorStop(0.28, "rgba(16,8,8,0.58)");
+    overlay.addColorStop(0.62, "rgba(8,10,18,0.72)");
+    overlay.addColorStop(1, "rgba(2,5,10,0.86)");
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0, 0, w, h);
 
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = "#ff9e46";
+    fillRoundRect(ctx, safe.x - 8, safe.y + 8, safe.w * 0.42, 120, 42);
+    ctx.fillStyle = "#2d68ff";
+    fillRoundRect(ctx, safe.x + safe.w - 112, safe.y + 128, 78, 78, 28);
+    ctx.restore();
 
+    const panelX = safe.x;
+    const panelY = safe.y;
+    const panelW = safe.w;
+    const panelH = safe.h;
 
+    const shellGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    shellGrad.addColorStop(0, "rgba(8,12,18,0.26)");
+    shellGrad.addColorStop(1, "rgba(4,8,14,0.34)");
+    ctx.fillStyle = shellGrad;
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
+
+    let headerH = trade.view === "main" ? 126 : 88;
+
+    const headerGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + headerH);
+    headerGrad.addColorStop(0, "rgba(10,14,20,0.34)");
+    headerGrad.addColorStop(1, "rgba(8,10,16,0.20)");
+    ctx.fillStyle = headerGrad;
+    fillRoundRect(ctx, panelX + 6, panelY + 6, panelW - 12, headerH, 22);
+
+    this.hitBack = { x: panelX + 14, y: panelY + 16, w: 76, h: 34 };
+    this._drawButton(ctx, this.hitBack, "← Geri", "muted");
+
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "900 22px system-ui";
+    ctx.fillText(trade.view === "shop" ? "Dükkan" : "Black Market", panelX + 102, panelY + 40);
+
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = "13px system-ui";
+    ctx.fillText(
+      trade.view === "shop"
+        ? "Ürünler • fiyatlar • stok"
+        : "Ekonomi merkezi • pazar • sandık • işletmeler",
+      panelX + 102,
+      panelY + 62
+    );
+
+    const stats = [
+      `YTON ${fmtNum(state.coins)}`,
+      `ENERJİ ${fmtNum(state.player?.energy)}/${fmtNum(state.player?.energyMax)}`,
+      `LV ${fmtNum(state.player?.level)}`
+    ];
+
+    let chipX = panelX + panelW - 14;
+    const chipY = panelY + 18;
+
+    ctx.font = "800 10px system-ui";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+
+    for (let i = stats.length - 1; i >= 0; i--) {
+      const text = stats[i];
+      const tw = Math.ceil(ctx.measureText(text).width) + 20;
+      chipX -= tw;
+
+      const chipRect = { x: chipX, y: chipY, w: tw, h: 20 };
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      fillRoundRect(ctx, chipRect.x, chipRect.y, chipRect.w, chipRect.h, 10);
+      ctx.strokeStyle = i === 0 ? "rgba(255,210,120,0.18)" : "rgba(255,255,255,0.08)";
+      strokeRoundRect(ctx, chipRect.x, chipRect.y, chipRect.w, chipRect.h, 10);
+
+      ctx.fillStyle = "#f4f6fb";
+      ctx.fillText(text, chipRect.x + chipRect.w - 10, chipRect.y + chipRect.h / 2);
+
+      chipX -= 8;
+    }
+
+    let contentTop = panelY + headerH + 16;
+
+    if (trade.view === "main") {
+      const tabs = [
+        { key: "explore", label: "Keşfet" },
+        { key: "businesses", label: "İşletmelerim" },
+        { key: "inventory", label: "Envanter" },
+        { key: "loot", label: "Sandık & Çark" },
+        { key: "market", label: "Açık Pazar" },
+        { key: "buy", label: "Satın Al" },
+      ];
+
+      let tx = panelX + 16;
+      let ty = panelY + 78;
+      const limitX = panelX + panelW - 16;
+
+      for (const tab of tabs) {
+        const tw = clamp(28 + tab.label.length * 7.2, 86, 138);
+        if (tx + tw > limitX) {
+          tx = panelX + 16;
+          ty += 42;
+        }
+
+        const rect = { x: tx, y: ty, w: tw, h: 34 };
+        this.hitTabs.push({ rect, tab: tab.key });
+
+        const active = trade.activeTab === tab.key;
+        this._drawButton(ctx, rect, tab.label, active ? "primary" : "muted");
+        tx += tw + 10;
+      }
+
+      contentTop = ty + 46;
+    }
+
+    const contentX = panelX + 8;
+    const contentY = contentTop;
+    const contentW = panelW - 16;
+    const contentH = panelY + panelH - 8 - contentTop;
+
+    const contentGrad = ctx.createLinearGradient(contentX, contentY, contentX, contentY + contentH);
+    contentGrad.addColorStop(0, "rgba(8,12,18,0.22)");
+    contentGrad.addColorStop(1, "rgba(4,8,14,0.30)");
+    ctx.fillStyle = contentGrad;
+    fillRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
+
+    ctx.save();
+    roundRectPath(ctx, contentX, contentY, contentW, contentH, 24);
+    ctx.clip();
+
+    let cursorY = contentY + 14 - this.scrollY;
+    let endY = cursorY;
+
+    if (trade.view === "shop") {
+      endY = this._renderShopView(ctx, contentX + 12, cursorY, contentW - 24);
+    } else {
+      const x = contentX + 12;
+      const y = cursorY;
+      const w2 = contentW - 24;
+
+      if (trade.activeTab === "explore") endY = this._renderExplore(ctx, x, y, w2);
+      else if (trade.activeTab === "businesses") endY = this._renderBusinesses(ctx, x, y, w2);
+      else if (trade.activeTab === "inventory") endY = this._renderInventory(ctx, x, y, w2);
+      else if (trade.activeTab === "loot") endY = this._renderLoot(ctx, x, y, w2);
+      else if (trade.activeTab === "market") endY = this._renderMarket(ctx, x, y, w2);
+      else endY = this._renderBuy(ctx, x, y, w2);
+    }
+
+    ctx.restore();
+
+    this.maxScroll = Math.max(0, (endY - contentY + 14) - contentH);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+
+    if (this.maxScroll > 0) {
+      const barX = contentX + contentW - 6;
+      const barY = contentY + 12;
+      const barH = contentH - 24;
+      const thumbH = Math.max(42, Math.floor((contentH / (contentH + this.maxScroll)) * barH));
+      const thumbY = barY + Math.floor((this.scrollY / Math.max(1, this.maxScroll)) * (barH - thumbH));
+
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      fillRoundRect(ctx, barX, barY, 3, barH, 3);
+
+      const sg = ctx.createLinearGradient(barX, thumbY, barX, thumbY + thumbH);
+      sg.addColorStop(0, "rgba(255,196,100,0.82)");
+      sg.addColorStop(1, "rgba(255,132,58,0.78)");
+      ctx.fillStyle = sg;
+      fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
+    }
+
+    if (this.toastText && Date.now() < this.toastUntil) {
+      const tw = Math.min(panelW - 28, 290);
+      const th = 40;
+      const tx = panelX + (panelW - tw) / 2;
+      const ty = panelY + panelH - th - 10;
+
+      ctx.fillStyle = "rgba(0,0,0,0.58)";
+      fillRoundRect(ctx, tx, ty, tw, th, 14);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      strokeRoundRect(ctx, tx, ty, tw, th, 14);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 12px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2);
+    }
+  }
+}
