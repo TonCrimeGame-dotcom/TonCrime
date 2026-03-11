@@ -1,115 +1,104 @@
 #hudTop {
-  padding: 10px 16px 0;
+  padding: 6px 10px 0;
 }
 
 #hudRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(320px, 390px);
-  align-items: start;
-  gap: 12px;
-  max-width: 1120px;
-  margin: 0 auto;
-}
-
-#hudLeft,
-#hudRight {
-  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  align-items: center;
+  gap: 10px;
 }
 
 #hudLeft {
+  width: 100%;
+  min-width: 0;
+}
+
+#hudRight {
+  width: 100%;
+  min-width: 180px;
+  max-width: 220px;
   display: grid;
   gap: 6px;
 }
 
 #hudIdentity {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 10px;
+  display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 #hudAvatarWrap {
-  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+}
+
+#hudAvatar {
   width: 42px;
   height: 42px;
 }
 
-#hudAvatar {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  overflow: hidden;
+#hudLeft .line1 {
+  font-size: 12px;
+  margin-bottom: 2px;
 }
 
-#hudAvatarImg,
-#hudAvatarFallback {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
+#hudLeft .line2 {
+  font-size: 12px;
+  margin-bottom: 2px;
 }
 
-#hudAvatarImg {
-  display: none;
-  object-fit: cover;
-}
-
-#hudAvatarFallback {
-  display: grid;
-  place-items: center;
-}
-
-#hudUserMeta {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-#hudBadges {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-#hudLogoWrap {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-#hudRight {
-  display: grid;
-  gap: 9px;
+#hudLeft .line3 {
+  font-size: 11px;
 }
 
 .bar {
-  position: relative;
-  overflow: hidden;
-}
-
-.barFill {
-  width: 0%;
-  height: 100%;
+  height: 24px;
+  border-radius: 10px;
 }
 
 .barText {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
 }
 
-#hudRow[data-mode="mobile"] {
-  grid-template-columns: 1fr;
-}
+@media (max-width: 720px) {
+  #hudTop {
+    padding: 8px 8px 0;
+  }
 
-#hudRow[data-mode="tablet"] {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 170px;
+    gap: 8px;
+  }
 
-#hudRow[data-mode="desktop"] {
-  grid-template-columns: minmax(0, 1fr) auto minmax(320px, 390px);
+  #hudRight {
+    min-width: 170px;
+    max-width: 170px;
+  }
+
+  .hudPanel {
+    padding: 7px 8px;
+  }
+
+  #hudAvatarWrap {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+
+  #hudAvatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  .bar {
+    height: 22px;
+  }
+
+  .barText {
+    font-size: 10px;
+  }
 }
