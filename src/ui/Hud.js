@@ -167,11 +167,7 @@ export function startHud(store) {
     elWeaponName.textContent = weaponName;
     elWeaponName.title = weaponName;
 
-    if (elWeaponBonus) {
-      elWeaponBonus.textContent = `• ${bonusText}`;
-      elWeaponBonus.title = bonusText;
-      elWeaponBonus.style.display = "inline";
-    }
+
 
     const xp = Math.max(0, Number(p.xp || 0));
     const xpToNext = Math.max(1, Number(p.xpToNext || 100));
