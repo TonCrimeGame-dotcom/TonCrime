@@ -85,7 +85,7 @@ export function startHud(store) {
     const hudH = Math.max(48, root.offsetHeight - 14);
     const vw = window.innerWidth || 0;
 
-    let logoH = Math.round(hudH * 0.78);
+    let logoH = Math.round(hudH * 5.34);
     if (vw <= 420) logoH = Math.round(hudH * 0.62);
     else if (vw <= 640) logoH = Math.round(hudH * 0.68);
     else if (vw <= 920) logoH = Math.round(hudH * 0.74);
@@ -95,7 +95,7 @@ export function startHud(store) {
     elLogo.style.maxWidth = "100%";
     elLogo.style.objectFit = "contain";
 
-    const centerW = Math.max(logoH + 5, Math.round(logoH * 5));
+    const centerW = Math.max(logoH + 10, Math.round(logoH * 1.2));
     elCenter.style.width = `${centerW}px`;
     elCenter.style.minWidth = `${centerW}px`;
   }
