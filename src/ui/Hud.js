@@ -94,11 +94,30 @@ export function startHud(store) {
     };
   }
 
+  function bindAvatarClickOnce() {
+    if (!elAvatar || elAvatar.__profileBound) return;
+    elAvatar.__profileBound = true;
+
+    elAvatar.style.cursor = "pointer";
+    elAvatar.title = "Profili Aç";
+
+    elAvatar.addEventListener("click", () => {
+      try {
+        window.dispatchEvent(new Event("tc:openProfile"));
+      } catch (_) {}
+    });
+
+    elAvatar.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
+  }
+
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
 
   function updateHud() {
     bindAvatarImgEventsOnce();
+    bindAvatarClickOnce();
 
     const s = store.get() || {};
     const p = s.player || {};
