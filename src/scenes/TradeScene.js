@@ -1186,48 +1186,51 @@ export class TradeScene {
       }
     }
   }
+_drawButton(ctx, rect, text, style = "ghost") {
+  let fill = "rgba(255,255,255,0.05)";
+  let stroke = "rgba(255,255,255,0.10)";
+  let txt = "rgba(255,255,255,0.88)";
 
-  _drawButton(ctx, rect, text, style = "ghost") {
-    let fill = "rgba(255,255,255,0.05)";
-    let stroke = "rgba(255,255,255,0.10)";
-    let txt = "rgba(255,255,255,0.88)";
-
-    if (style === "primary") {
-      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(40,95,210,0.72)");
-      g.addColorStop(1, "rgba(18,54,140,0.78)");
-      fill = g;
-      stroke = "rgba(130,175,255,0.45)";
-      txt = "#ffffff";
-    } else if (style === "gold") {
-      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(130,94,28,0.68)");
-      g.addColorStop(1, "rgba(88,60,15,0.78)");
-      fill = g;
-      stroke = "rgba(255,214,120,0.34)";
-      txt = "#fff5dd";
-    } else if (style === "muted") {
-      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(255,255,255,0.08)");
-      g.addColorStop(1, "rgba(255,255,255,0.04)");
-      fill = g;
-      stroke = "rgba(255,255,255,0.10)";
-      txt = "rgba(255,255,255,0.84)";
-    }
-
-    ctx.fillStyle = fill;
-    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1;
-    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-    ctx.fillStyle = txt;
-    ctx.font = "800 12px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  if (style === "primary") {
+    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+    g.addColorStop(0, "rgba(40,95,210,0.72)");
+    g.addColorStop(1, "rgba(18,54,140,0.78)");
+    fill = g;
+    stroke = "rgba(130,175,255,0.45)";
+    txt = "#ffffff";
+  } else if (style === "gold") {
+    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+    g.addColorStop(0, "rgba(130,94,28,0.68)");
+    g.addColorStop(1, "rgba(88,60,15,0.78)");
+    fill = g;
+    stroke = "rgba(255,214,120,0.34)";
+    txt = "#fff5dd";
+  } else if (style === "muted") {
+    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+    g.addColorStop(0, "rgba(255,255,255,0.08)");
+    g.addColorStop(1, "rgba(255,255,255,0.04)");
+    fill = g;
+    stroke = "rgba(255,255,255,0.10)";
+    txt = "rgba(255,255,255,0.84)";
   }
+
+  ctx.fillStyle = fill;
+  fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+
+  ctx.fillStyle = txt;
+  ctx.font = "800 12px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
+
 
   _drawSearchBar(ctx, x, y, w, text) {
     const rect = { x, y, w, h: 46 };
@@ -1559,27 +1562,42 @@ export class TradeScene {
       this._drawButton(ctx, collectRect, "Topla", pendingCount > 0 ? "gold" : "muted");
 
       let rowY = y + 82;
-      for (const p of products) {
-        ctx.fillStyle = "rgba(255,255,255,0.04)";
-        fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
-        ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+for (const p of products) {
+  ctx.fillStyle = "rgba(255,255,255,0.04)";
+  fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
 
-        ctx.fillStyle = "#fff";
-        ctx.font = "900 18px system-ui";
-        ctx.fillText(p.icon || "📦", x + 22, rowY + 22);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
 
-        ctx.font = "900 13px system-ui";
-        ctx.fillText(p.name || "Ürün", x + 48, rowY + 18);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 18px system-ui";
+  ctx.fillText(p.icon || "📦", x + 22, rowY + 22);
 
-        ctx.fillStyle = rarityColor(p.rarity);
-        ctx.font = "800 10px system-ui";
-        ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 48, rowY + 34);
+  ctx.font = "900 13px system-ui";
+  ctx.fillText(p.name || "Ürün", x + 48, rowY + 18);
 
-        ctx.fillStyle = "rgba(255,255,255,0.70)";
-        ctx.font = "11px system-ui";
-        ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 110, rowY + 34);
+  ctx.fillStyle = rarityColor(p.rarity);
+  ctx.font = "800 10px system-ui";
+  ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 48, rowY + 34);
 
+  ctx.fillStyle = "rgba(255,255,255,0.70)";
+  ctx.font = "11px system-ui";
+  ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 110, rowY + 34);
+
+  const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
+  const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
+
+  this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
+  this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
+
+  this._drawButton(ctx, useRect, "Kullan", "primary");
+  this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
+
+  rowY += 62;
+}
+       
         const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
         const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
 
@@ -2114,6 +2132,7 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
     }
   }
 }
+
 
 
 
