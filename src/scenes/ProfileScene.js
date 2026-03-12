@@ -12,449 +12,378 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 }
+
 function fillRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.fill();
 }
+
 function strokeRoundRect(ctx, x, y, w, h, r) {
   roundRectPath(ctx, x, y, w, h, r);
   ctx.stroke();
 }
+
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
-function shortAddr(addr) {
-  const s = String(addr || "").trim();
-  if (!s) return "Bağlı değil";
-  if (s.length <= 14) return s;
-  return `${s.slice(0, 6)}...${s.slice(-6)}`;
-}
-function fmtNum(n) {
-  return Number(n || 0).toLocaleString("tr-TR");
-}
-function fmtDate(ts) {
-  const n = Number(ts || 0);
-  if (!n) return "-";
-  const d = new Date(n);
-  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString("tr-TR");
-}
-function calcWinRate(w, l) {
-  const total = Number(w || 0) + Number(l || 0);
-  if (!total) return 0;
-  return Math.round((Number(w || 0) / total) * 100);
+
+function getPlayerAvatar(player) {
+  return (
+    player?.avatarUrl ||
+    player?.avatar ||
+    player?.photoUrl ||
+    player?.photo_url ||
+    player?.telegramPhotoUrl ||
+    player?.telegram_photo_url ||
+    ""
+  );
 }
 
 export class ProfileScene {
-  constructor({ store, input, assets, scenes }) {
+  constructor({ store, input, scenes, assets }) {
     this.store = store;
     this.input = input;
-    this.assets = assets;
     this.scenes = scenes;
-    this.mode = "owner";
-    this.tab = "general";
-    this.hit = [];
+    this.assets = assets;
+
+    this.hitBack = null;
+    this.hitClose = null;
+    this.hitEditAvatar = null;
+    this.hitLeaderboard = null;
   }
 
-  onEnter(data = {}) {
-    this.mode = data?.mode === "public" ? "public" : "owner";
-    this.tab = data?.tab || "general";
-    this.ensureState();
-  }
-
-  ensureState() {
-    const s = this.store.get();
-    const p = s.player || {};
-    const profile = s.profile || {};
-    const leaderboard = s.leaderboard || {};
-    const finance = s.finance || {};
-    const pvpHistory = Array.isArray(s.pvpHistory) ? s.pvpHistory : [];
-    const weapons = s.weapons || { owned: {}, equippedId: null };
-    const stars = s.stars || { owned: {}, selectedId: null };
-
-    const tgId = String(p.telegramId || profile.telegramId || "");
-    const username = String(p.username || "Player");
-    const generatedId = `TC-${String(tgId || username.replace(/\s+/g, "").toUpperCase()).slice(0, 10) || "PLAYER"}`;
-
-    this.store.set({
-      profile: {
-        id: profile.id || generatedId,
-        avatar: profile.avatar || "😈",
-        bio: profile.bio || "TonCrime sokaklarında aktif.",
-        isPublic: profile.isPublic !== false,
-        telegramId: tgId,
-        walletAddress: profile.walletAddress || "",
-        premiumType: profile.premiumType || (s.premium ? "premium" : "none"),
-        premiumUntil: Number(profile.premiumUntil || 0),
-        joinedAt: Number(profile.joinedAt || Date.now())
-      },
-      leaderboard: {
-        rankGlobal: Number(leaderboard.rankGlobal || 0),
-        rankWeekly: Number(leaderboard.rankWeekly || 0),
-        pvpWins: Number(leaderboard.pvpWins || 0),
-        pvpLosses: Number(leaderboard.pvpLosses || 0)
-      },
-      finance: {
-        tonBalance: Number(finance.tonBalance || 0),
-        ytonBalance: Number(finance.ytonBalance || 0),
-        totalIncomeTon: Number(finance.totalIncomeTon || 0),
-        totalExpenseTon: Number(finance.totalExpenseTon || 0),
-        totalIncomeYton: Number(finance.totalIncomeYton || 0),
-        totalExpenseYton: Number(finance.totalExpenseYton || 0),
-        history: Array.isArray(finance.history) ? finance.history : []
-      },
-      pvpHistory,
-      weapons,
-      stars
-    });
-  }
-
-  tabs() {
-    return [
-      { key: "general", label: "Genel" },
-      { key: "inventory", label: "Envanter" },
-      { key: "leaderboard", label: "Liderlik" },
-      { key: "wallet", label: "Cüzdan" },
-      { key: "premium", label: "Premium" },
-      { key: "finance", label: "Finans" },
-      { key: "pvp", label: "PvP" }
-    ];
-  }
+  onEnter() {}
 
   update() {
-    const p = this.input.pointer || { x: 0, y: 0 };
+    const px = this.input.pointer.x;
+    const py = this.input.pointer.y;
+
     if (!this.input.justReleased()) return;
 
-    for (const h of this.hit) {
-      if (!pointInRect(p.x, p.y, h.rect)) continue;
-
-      if (h.type === "back") {
-        this.scenes.go("home");
-        return;
-      }
-      if (h.type === "mode") {
-        this.mode = this.mode === "owner" ? "public" : "owner";
-        return;
-      }
-      if (h.type === "tab") {
-        this.tab = h.key;
-        return;
-      }
-      if (h.type === "togglePublic") {
-        const s = this.store.get();
-        const pr = s.profile || {};
-        this.store.set({ profile: { ...pr, isPublic: !pr.isPublic } });
-        return;
-      }
-      if (h.type === "premium") {
-        const s = this.store.get();
-        const pr = s.profile || {};
-        const next = !s.premium;
-        this.store.set({
-          premium: next,
-          profile: {
-            ...pr,
-            premiumType: next ? "premium" : "none",
-            premiumUntil: next ? Date.now() + 30 * 24 * 60 * 60 * 1000 : 0
-          }
-        });
-        return;
-      }
-      if (h.type === "walletConnect") {
-        window.tcWallet?.open?.();
-        return;
-      }
-      if (h.type === "walletDisconnect") {
-        window.tcWallet?.disconnect?.();
-        return;
-      }
+    if (this.hitBack && pointInRect(px, py, this.hitBack)) {
+      this.scenes.go("home");
+      return;
     }
-  }
 
-  drawChip(ctx, rect, label, value, active = false) {
-    ctx.fillStyle = active ? "rgba(242,211,107,0.18)" : "rgba(255,255,255,0.06)";
-    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 14);
-    ctx.strokeStyle = active ? "rgba(242,211,107,0.42)" : "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, 14);
+    if (this.hitClose && pointInRect(px, py, this.hitClose)) {
+      this.scenes.go("home");
+      return;
+    }
 
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.textAlign = "left";
-    ctx.font = "12px system-ui";
-    ctx.fillText(label, rect.x + 12, rect.y + 18);
+    if (this.hitEditAvatar && pointInRect(px, py, this.hitEditAvatar)) {
+      console.log("[PROFILE] avatar edit yakında");
+      return;
+    }
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 16px system-ui";
-    ctx.fillText(value, rect.x + 12, rect.y + 40);
-  }
-
-  drawRow(ctx, x, y, w, label, value) {
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, x, y, w, 44, 12);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, 43, 12);
-
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.textAlign = "left";
-    ctx.font = "13px system-ui";
-    ctx.fillText(label, x + 12, y + 18);
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 14px system-ui";
-    ctx.fillText(value, x + 12, y + 34);
+    if (this.hitLeaderboard && pointInRect(px, py, this.hitLeaderboard)) {
+      console.log("[PROFILE] leaderboard yakında");
+      return;
+    }
   }
 
   render(ctx, w, h) {
-    this.hit = [];
-
-    const s = this.store.get();
+    const s = this.store.get() || {};
+    const p = s.player || {};
     const safe = s?.ui?.safe ?? { x: 0, y: 0, w, h };
-    const player = s.player || {};
-    const profile = s.profile || {};
-    const lb = s.leaderboard || {};
-    const finance = s.finance || {};
-    const pvpHistory = Array.isArray(s.pvpHistory) ? s.pvpHistory : [];
-    const weapons = s.weapons || { owned: {}, equippedId: null };
-    const stars = s.stars || { owned: {}, selectedId: null };
-    const bg = this.assets?.getImage?.("background");
 
-    if (bg) ctx.drawImage(bg, 0, 0, w, h);
-    else {
-      ctx.fillStyle = "#0b0b0f";
+    const bg = this.assets?.getImage?.("background") || this.assets?.get?.("background") || null;
+
+    if (bg) {
+      const iw = bg.width || 1;
+      const ih = bg.height || 1;
+      const scale = Math.max(w / iw, h / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      ctx.drawImage(bg, dx, dy, dw, dh);
+    } else {
+      ctx.fillStyle = "#090a0f";
       ctx.fillRect(0, 0, w, h);
     }
-    ctx.fillStyle = "rgba(4,6,12,0.82)";
+
+    ctx.fillStyle = "rgba(3,5,10,0.68)";
     ctx.fillRect(0, 0, w, h);
 
-    const panelX = safe.x + 14;
+    const panelW = Math.min(760, safe.w - 24);
+    const panelH = Math.min(650, safe.h - 30);
+    const panelX = safe.x + (safe.w - panelW) / 2;
     const panelY = safe.y + 14;
-    const panelW = safe.w - 28;
-    const panelH = safe.h - 28;
 
-    ctx.fillStyle = "rgba(0,0,0,0.48)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22);
+    const headerH = 62;
+
+    ctx.fillStyle = "rgba(8,10,18,0.82)";
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 24);
+
+    // header
+    ctx.fillStyle = "rgba(14,16,24,0.92)";
+    fillRoundRect(ctx, panelX + 8, panelY + 8, panelW - 16, headerH, 18);
+
+    const headerGrad = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY);
+    headerGrad.addColorStop(0, "rgba(255,255,255,0.03)");
+    headerGrad.addColorStop(0.5, "rgba(255,170,70,0.10)");
+    headerGrad.addColorStop(1, "rgba(255,255,255,0.03)");
+    ctx.strokeStyle = headerGrad;
+    strokeRoundRect(ctx, panelX + 8.5, panelY + 8.5, panelW - 17, headerH - 1, 18);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 26px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("PLAYER PROFILE", panelX + panelW / 2, panelY + 39);
+
+    this.hitClose = { x: panelX + panelW - 64, y: panelY + 16, w: 40, h: 40 };
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    fillRoundRect(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, 12);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = "900 24px system-ui";
+    ctx.fillText("×", this.hitClose.x + 20, this.hitClose.y + 21);
+
+    // main info block
+    const infoX = panelX + 18;
+    const infoY = panelY + 86;
+    const infoW = panelW - 36;
+    const infoH = 146;
+
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    fillRoundRect(ctx, infoX, infoY, infoW, infoH, 20);
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 22);
+    strokeRoundRect(ctx, infoX + 0.5, infoY + 0.5, infoW - 1, infoH - 1, 20);
 
-    const backRect = { x: panelX + 12, y: panelY + 12, w: 72, h: 34 };
-    const modeRect = { x: panelX + panelW - 132, y: panelY + 12, w: 120, h: 34 };
-    this.hit.push({ type: "back", rect: backRect }, { type: "mode", rect: modeRect });
+    // avatar
+    const avatarX = infoX + 14;
+    const avatarY = infoY + 14;
+    const avatarSize = 108;
 
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, backRect.x, backRect.y, backRect.w, backRect.h, 12);
-    fillRoundRect(ctx, modeRect.x, modeRect.y, modeRect.w, modeRect.h, 12);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    fillRoundRect(ctx, avatarX, avatarY, avatarSize, avatarSize, 16);
 
+    const avatarUrl = getPlayerAvatar(p);
+    const img = (() => {
+      if (!avatarUrl) return null;
+      const tmp = new Image();
+      tmp.src = avatarUrl;
+      return tmp;
+    })();
+
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.save();
+      roundRectPath(ctx, avatarX, avatarY, avatarSize, avatarSize, 16);
+      ctx.clip();
+      ctx.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      fillRoundRect(ctx, avatarX, avatarY, avatarSize, avatarSize, 16);
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 34px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const initial = String(p.username || "P").trim().slice(0, 1).toUpperCase() || "P";
+      ctx.fillText(initial, avatarX + avatarSize / 2, avatarY + avatarSize / 2);
+    }
+
+    // premium badge
+    const isPremium = !!(s.premium || p.premium || p.isPremium || p.membership === "premium");
+    if (isPremium) {
+      ctx.fillStyle = "#ffcc52";
+      fillRoundRect(ctx, avatarX - 6, avatarY - 8, 42, 26, 10);
+      ctx.fillStyle = "#1b1405";
+      ctx.font = "900 14px system-ui";
+      ctx.fillText("VIP", avatarX + 15, avatarY + 5);
+    }
+
+    // online badge
+    ctx.fillStyle = "#28d85a";
+    fillRoundRect(ctx, avatarX + 8, avatarY + avatarSize - 24, 74, 20, 10);
     ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.font = "bold 14px system-ui";
-    ctx.fillText("← Geri", backRect.x + backRect.w / 2, backRect.y + 22);
-    ctx.fillText(this.mode === "owner" ? "Açık Profil" : "Sahip Görünümü", modeRect.x + modeRect.w / 2, modeRect.y + 22);
+    ctx.font = "900 12px system-ui";
+    ctx.fillText("ONLINE", avatarX + 45, avatarY + avatarSize - 14);
 
-    const avatarSize = clamp(panelW * 0.18, 74, 104);
-    const avatarX = panelX + 18;
-    const avatarY = panelY + 60;
-
-    ctx.fillStyle = "rgba(242,211,107,0.14)";
-    fillRoundRect(ctx, avatarX, avatarY, avatarSize, avatarSize, 22);
-    ctx.strokeStyle = "rgba(242,211,107,0.36)";
-    strokeRoundRect(ctx, avatarX + 0.5, avatarY + 0.5, avatarSize - 1, avatarSize - 1, 22);
-
-    ctx.font = `${Math.floor(avatarSize * 0.52)}px system-ui`;
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.fillText(profile.avatar || "😈", avatarX + avatarSize / 2, avatarY + avatarSize * 0.66);
-
-    const infoX = avatarX + avatarSize + 16;
+    // texts
+    const nameX = avatarX + avatarSize + 24;
+    const nameY = avatarY + 26;
+    const username = String(p.username || "Player").trim() || "Player";
+    const playerId = String(p.id || p.telegramId || "player_main");
 
     ctx.textAlign = "left";
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 24px system-ui";
-    ctx.fillText(player.username || "Player", infoX, avatarY + 28);
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 24px system-ui";
+    ctx.fillText(username, nameX, nameY);
 
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "13px system-ui";
-    ctx.fillText(profile.id || "TC-PLAYER", infoX, avatarY + 50);
-    ctx.fillText(profile.bio || "-", infoX, avatarY + 70);
+    ctx.fillStyle = "rgba(255,255,255,0.58)";
+    ctx.font = "600 14px system-ui";
+    ctx.fillText(`#${playerId}`, nameX, nameY + 30);
 
-    const premiumRect = {
-      x: panelX + panelW - 116,
-      y: avatarY + 8,
-      w: 98,
-      h: 28
-    };
-    ctx.fillStyle = s.premium ? "rgba(242,211,107,0.18)" : "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, premiumRect.x, premiumRect.y, premiumRect.w, premiumRect.h, 999);
-    ctx.strokeStyle = s.premium ? "rgba(242,211,107,0.40)" : "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, premiumRect.x + 0.5, premiumRect.y + 0.5, premiumRect.w - 1, premiumRect.h - 1, 999);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.font = "bold 12px system-ui";
-    ctx.fillText(s.premium ? "PREMIUM" : "STANDARD", premiumRect.x + premiumRect.w / 2, premiumRect.y + 18);
+    const statTop = infoY + 78;
+    const leftColX = nameX;
+    const rightColX = infoX + infoW * 0.58;
 
-    const chipY = avatarY + avatarSize + 14;
-    const chipGap = 10;
-    const chipW = Math.floor((panelW - 36 - chipGap * 2) / 3);
+    const energy = Number(p.energy || 0);
+    const energyMax = Number(p.energyMax || 100);
+    const level = Number(p.level || 1);
 
-    this.drawChip(ctx, { x: panelX + 18, y: chipY, w: chipW, h: 52 }, "Level", String(player.level || 1), true);
-    this.drawChip(ctx, { x: panelX + 18 + chipW + chipGap, y: chipY, w: chipW, h: 52 }, "Coin", fmtNum(s.coins || 0));
-    this.drawChip(ctx, { x: panelX + 18 + (chipW + chipGap) * 2, y: chipY, w: chipW, h: 52 }, "PvP", `${fmtNum(lb.pvpWins || 0)}W / ${fmtNum(lb.pvpLosses || 0)}L`);
+    const clanName =
+      s?.clan?.name ||
+      s?.clan?.tag ||
+      "No Clan";
 
-    const tabsY = chipY + 66;
-    const tabs = this.tabs();
-    const tabGap = 8;
-    const tabW = Math.floor((panelW - 36 - tabGap * (tabs.length - 1)) / tabs.length);
+    const businessesOwned = Array.isArray(s?.businesses?.owned) ? s.businesses.owned.length : 0;
+    const inventoryItems = Array.isArray(s?.inventory?.items)
+      ? s.inventory.items.reduce((sum, item) => sum + Number(item.qty || 0), 0)
+      : 0;
 
-    tabs.forEach((tab, i) => {
-      const r = {
-        x: panelX + 18 + i * (tabW + tabGap),
-        y: tabsY,
-        w: tabW,
-        h: 34
-      };
-      this.hit.push({ type: "tab", key: tab.key, rect: r });
+    const totalInventoryValue = Array.isArray(s?.inventory?.items)
+      ? s.inventory.items.reduce((sum, item) => {
+          const price =
+            Number(item.marketPrice || item.sellPrice || item.price || 0);
+          return sum + price * Number(item.qty || 0);
+        }, 0)
+      : 0;
 
-      ctx.fillStyle = this.tab === tab.key ? "rgba(242,211,107,0.20)" : "rgba(255,255,255,0.06)";
-      fillRoundRect(ctx, r.x, r.y, r.w, r.h, 12);
-      ctx.strokeStyle = this.tab === tab.key ? "rgba(242,211,107,0.42)" : "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 12);
+    const wins = Number(s?.pvp?.wins || 0);
+    const losses = Number(s?.pvp?.losses || 0);
+    const totalFight = wins + losses;
+    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
+    const kd = losses > 0 ? (wins / losses).toFixed(2) : wins > 0 ? String(wins) : "0.00";
 
-      ctx.fillStyle = "#fff";
+    ctx.fillStyle = "#f5f7fb";
+    ctx.font = "700 17px system-ui";
+    ctx.fillText(`🏅  Level ${level}`, leftColX, statTop);
+    ctx.fillText(`⚡  Energy ${energy}/${energyMax}`, rightColX, statTop);
+
+    ctx.fillText(`☀  Clan ${clanName}`, leftColX, statTop + 38);
+    ctx.fillText(
+      `💰  Total Value ${Number(totalInventoryValue).toLocaleString("tr-TR")}`,
+      rightColX,
+      statTop + 38
+    );
+
+    // cards row
+    const cardGap = 14;
+    const cardY = infoY + infoH + 16;
+    const cardW = (infoW - cardGap * 2) / 3;
+    const cardH = 152;
+
+    const cards = [
+      {
+        x: infoX,
+        y: cardY,
+        title: "BUSINESSES",
+        big: `${businessesOwned}`,
+        sub: "Owned",
+        icon: "🏢",
+      },
+      {
+        x: infoX + cardW + cardGap,
+        y: cardY,
+        title: "INVENTORY",
+        big: `${inventoryItems}`,
+        sub: "Items",
+        icon: "📦",
+      },
+      {
+        x: infoX + (cardW + cardGap) * 2,
+        y: cardY,
+        title: "PVP STATS",
+        big: `${wins}`,
+        sub: `Wins • ${losses} Losses`,
+        icon: "☠",
+      },
+    ];
+
+    for (const c of cards) {
+      ctx.fillStyle = "rgba(255,255,255,0.04)";
+      fillRoundRect(ctx, c.x, c.y, cardW, cardH, 18);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      strokeRoundRect(ctx, c.x + 0.5, c.y + 0.5, cardW - 1, cardH - 1, 18);
+
+      ctx.fillStyle = "#f1f4f8";
       ctx.textAlign = "center";
-      ctx.font = "bold 12px system-ui";
-      ctx.fillText(tab.label, r.x + r.w / 2, r.y + 21);
-    });
+      ctx.font = "900 17px system-ui";
+      ctx.fillText(c.title, c.x + cardW / 2, c.y + 26);
 
-    const contentX = panelX + 18;
-    const contentY = tabsY + 48;
-    const contentW = panelW - 36;
-    const contentH = panelH - (contentY - panelY) - 18;
+      ctx.font = "900 48px system-ui";
+      ctx.fillText(c.icon, c.x + cardW / 2, c.y + 74);
 
+      ctx.font = "900 18px system-ui";
+      ctx.fillText(c.big, c.x + cardW / 2, c.y + 116);
+
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "700 14px system-ui";
+      ctx.fillText(c.sub, c.x + cardW / 2, c.y + 137);
+    }
+
+    // bottom stats row
+    const statsY = cardY + cardH + 16;
+    const statsH = 88;
     ctx.fillStyle = "rgba(255,255,255,0.04)";
-    fillRoundRect(ctx, contentX, contentY, contentW, contentH, 16);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, contentX + 0.5, contentY + 0.5, contentW - 1, contentH - 1, 16);
+    fillRoundRect(ctx, infoX, statsY, infoW, statsH, 18);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    strokeRoundRect(ctx, infoX + 0.5, statsY + 0.5, infoW - 1, statsH - 1, 18);
 
-    const rowX = contentX + 14;
-    const rowW = contentW - 28;
-    const publicMode = this.mode === "public";
+    const col1 = infoX + infoW / 6;
+    const col2 = infoX + infoW / 2;
+    const col3 = infoX + (infoW * 5) / 6;
 
-    if (this.tab === "general") {
-      this.drawRow(ctx, rowX, contentY + 14, rowW, "Oyuncu ID", profile.id || "-");
-      this.drawRow(ctx, rowX, contentY + 66, rowW, "Seviye / XP", `LVL ${player.level || 1} • ${fmtNum(player.xp || 0)}/${fmtNum(player.xpToNext || 100)} XP`);
-      this.drawRow(ctx, rowX, contentY + 118, rowW, "Seçili Silah", player.weaponName || "Silah Yok");
-      this.drawRow(ctx, rowX, contentY + 170, rowW, "Leaderboard", `Global #${fmtNum(lb.rankGlobal || 0)} • Haftalık #${fmtNum(lb.rankWeekly || 0)}`);
-      this.drawRow(ctx, rowX, contentY + 222, rowW, "Profil Görünürlüğü", `${profile.isPublic ? "Herkese Açık" : "Gizli"} • ${publicMode ? "Public görünüm" : "Sahip görünüm"}`);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.font = "700 14px system-ui";
+    ctx.fillText("Win Rate", col1, statsY + 24);
+    ctx.fillText("Kill / Death", col2, statsY + 24);
+    ctx.fillText("Top Rank", col3, statsY + 24);
 
-      if (!publicMode) {
-        const toggleRect = { x: rowX, y: contentY + 278, w: rowW, h: 40 };
-        this.hit.push({ type: "togglePublic", rect: toggleRect });
-        ctx.fillStyle = "rgba(242,211,107,0.16)";
-        fillRoundRect(ctx, toggleRect.x, toggleRect.y, toggleRect.w, toggleRect.h, 12);
-        ctx.strokeStyle = "rgba(242,211,107,0.36)";
-        strokeRoundRect(ctx, toggleRect.x + 0.5, toggleRect.y + 0.5, toggleRect.w - 1, toggleRect.h - 1, 12);
-        ctx.fillStyle = "#fff";
-        ctx.textAlign = "center";
-        ctx.font = "bold 14px system-ui";
-        ctx.fillText(profile.isPublic ? "Profili Gizliye Al" : "Profili Herkese Aç", toggleRect.x + toggleRect.w / 2, toggleRect.y + 25);
-      }
-    }
+    ctx.fillStyle = "#ffbe57";
+    ctx.font = "900 24px system-ui";
+    ctx.fillText(`${winRate}%`, col1, statsY + 56);
 
-    if (this.tab === "inventory") {
-      const weaponCount = Object.keys(weapons.owned || {}).length;
-      const starCount = Object.keys(stars.owned || {}).length;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(`${wins} / ${losses}`, col2, statsY + 56);
 
-      this.drawRow(ctx, rowX, contentY + 14, rowW, "Avatar", profile.avatar || "😈");
-      this.drawRow(ctx, rowX, contentY + 66, rowW, "Silah Envanteri", `${weaponCount} adet • Seçili: ${player.weaponName || "Silah Yok"}`);
-      this.drawRow(ctx, rowX, contentY + 118, rowW, "Yıldız / Koleksiyon", `${starCount} adet • Seçili: ${stars.selectedId || "Yok"}`);
-      this.drawRow(ctx, rowX, contentY + 170, rowW, "Enerji", `${fmtNum(player.energy || 0)} / ${fmtNum(player.energyMax || 10)}`);
-      this.drawRow(ctx, rowX, contentY + 222, rowW, "Premium İçerik", s.premium ? "Açık" : "Kapalı");
-    }
+    ctx.fillStyle = "#ffbe57";
+    ctx.fillText(`#${clamp(999 - wins, 1, 999)}`, col3, statsY + 56);
 
-    if (this.tab === "leaderboard") {
-      const wins = Number(lb.pvpWins || 0);
-      const losses = Number(lb.pvpLosses || 0);
+    // buttons
+    const btnY = statsY + statsH + 18;
+    const btnW = (infoW - 14) / 2;
+    const btnH = 58;
 
-      this.drawRow(ctx, rowX, contentY + 14, rowW, "Global Sıra", `#${fmtNum(lb.rankGlobal || 0)}`);
-      this.drawRow(ctx, rowX, contentY + 66, rowW, "Haftalık Sıra", `#${fmtNum(lb.rankWeekly || 0)}`);
-      this.drawRow(ctx, rowX, contentY + 118, rowW, "Galibiyet", fmtNum(wins));
-      this.drawRow(ctx, rowX, contentY + 170, rowW, "Mağlubiyet", fmtNum(losses));
-      this.drawRow(ctx, rowX, contentY + 222, rowW, "Kazanma Oranı", `%${calcWinRate(wins, losses)}`);
-    }
+    this.hitEditAvatar = { x: infoX, y: btnY, w: btnW, h: btnH };
+    this.hitLeaderboard = { x: infoX + btnW + 14, y: btnY, w: btnW, h: btnH };
+    this.hitBack = { x: panelX + 16, y: panelY + panelH - 54, w: 100, h: 36 };
 
-    if (this.tab === "wallet") {
-      if (publicMode) {
-        this.drawRow(ctx, rowX, contentY + 14, rowW, "Cüzdan", "Gizli");
-        this.drawRow(ctx, rowX, contentY + 66, rowW, "Durum", "Sadece profil sahibi görür");
-      } else {
-        this.drawRow(ctx, rowX, contentY + 14, rowW, "Bağlı Adres", shortAddr(profile.walletAddress));
-        this.drawRow(ctx, rowX, contentY + 66, rowW, "TON Bakiye", `${finance.tonBalance || 0} TON`);
-        this.drawRow(ctx, rowX, contentY + 118, rowW, "YTON Bakiye", `${finance.ytonBalance || 0} YTON`);
-        this.drawRow(ctx, rowX, contentY + 170, rowW, "Çekim Durumu", profile.walletAddress ? "Cüzdan bağlı" : "Cüzdan bağlantısı bekleniyor");
+    const drawBtn = (r, text, icon) => {
+      const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
+      g.addColorStop(0, "rgba(30,34,46,0.95)");
+      g.addColorStop(1, "rgba(10,12,18,0.98)");
+      ctx.fillStyle = g;
+      fillRoundRect(ctx, r.x, r.y, r.w, r.h, 18);
 
-        const connectRect = { x: rowX, y: contentY + 226, w: rowW, h: 42 };
-        this.hit.push({ type: profile.walletAddress ? "walletDisconnect" : "walletConnect", rect: connectRect });
+      ctx.strokeStyle = "rgba(255,190,90,0.24)";
+      strokeRoundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 18);
 
-        ctx.fillStyle = "rgba(242,211,107,0.16)";
-        fillRoundRect(ctx, connectRect.x, connectRect.y, connectRect.w, connectRect.h, 12);
-        ctx.strokeStyle = "rgba(242,211,107,0.36)";
-        strokeRoundRect(ctx, connectRect.x + 0.5, connectRect.y + 0.5, connectRect.w - 1, connectRect.h - 1, 12);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 18px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`${icon}  ${text}`, r.x + r.w / 2, r.y + r.h / 2);
+    };
 
-        ctx.fillStyle = "#fff";
-        ctx.textAlign = "center";
-        ctx.font = "bold 14px system-ui";
-        ctx.fillText(profile.walletAddress ? "Cüzdan Bağlantısını Kaldır" : "TON Cüzdanı Bağla", connectRect.x + connectRect.w / 2, connectRect.y + 26);
-      }
-    }
+    drawBtn(this.hitEditAvatar, "EDIT AVATAR", "📷");
+    drawBtn(this.hitLeaderboard, "LEADERBOARD", "🏆");
 
-    if (this.tab === "premium") {
-      this.drawRow(ctx, rowX, contentY + 14, rowW, "Paket", s.premium ? "Premium" : "Standart");
-      this.drawRow(ctx, rowX, contentY + 66, rowW, "Durum", s.premium ? "Aktif" : "Kapalı");
-      this.drawRow(ctx, rowX, contentY + 118, rowW, "Bitiş", s.premium ? fmtDate(profile.premiumUntil) : "-");
-      this.drawRow(ctx, rowX, contentY + 170, rowW, "Açıklama", s.premium ? "Premium ayrıcalıkları açık." : "Premium satın alınabilir.");
-
-      if (!publicMode) {
-        const btnRect = { x: rowX, y: contentY + 224, w: rowW, h: 42 };
-        this.hit.push({ type: "premium", rect: btnRect });
-
-        ctx.fillStyle = "rgba(242,211,107,0.16)";
-        fillRoundRect(ctx, btnRect.x, btnRect.y, btnRect.w, btnRect.h, 12);
-        ctx.strokeStyle = "rgba(242,211,107,0.36)";
-        strokeRoundRect(ctx, btnRect.x + 0.5, btnRect.y + 0.5, btnRect.w - 1, btnRect.h - 1, 12);
-
-        ctx.fillStyle = "#fff";
-        ctx.textAlign = "center";
-        ctx.font = "bold 14px system-ui";
-        ctx.fillText(s.premium ? "Premium'u Kapat (Test)" : "Premium'u Aç (Test)", btnRect.x + btnRect.w / 2, btnRect.y + 26);
-      }
-    }
-
-    if (this.tab === "finance") {
-      if (publicMode) {
-        this.drawRow(ctx, rowX, contentY + 14, rowW, "Finans", "Gizli");
-        this.drawRow(ctx, rowX, contentY + 66, rowW, "Not", "Gelir-gider detayları sadece profil sahibine görünür.");
-      } else {
-        this.drawRow(ctx, rowX, contentY + 14, rowW, "Toplam TON Gelir", `${finance.totalIncomeTon || 0} TON`);
-        this.drawRow(ctx, rowX, contentY + 66, rowW, "Toplam TON Gider", `${finance.totalExpenseTon || 0} TON`);
-        this.drawRow(ctx, rowX, contentY + 118, rowW, "Toplam YTON Gelir", `${finance.totalIncomeYton || 0} YTON`);
-        this.drawRow(ctx, rowX, contentY + 170, rowW, "Toplam YTON Gider", `${finance.totalExpenseYton || 0} YTON`);
-
-        const last = Array.isArray(finance.history) && finance.history.length ? finance.history[0] : null;
-        this.drawRow(ctx, rowX, contentY + 222, rowW, "Son Hareket", last ? `${last.label || last.type || "İşlem"} • ${fmtDate(last.ts)}` : "Henüz kayıt yok");
-      }
-    }
-
-    if (this.tab === "pvp") {
-      const rows = publicMode ? 4 : 5;
-      const visible = pvpHistory.slice(0, rows);
-
-      if (!visible.length) {
-        this.drawRow(ctx, rowX, contentY + 14, rowW, "Kayıt", "Henüz PvP geçmişi yok");
-      } else {
-        visible.forEach((match, i) => {
-          const result = match.result === "win" ? "Kazandı" : "Kaybetti";
-          const opp = match.opponentName || "Rakip";
-          const reward = match.rewardCoin ? ` • +${match.rewardCoin} coin` : "";
-          this.drawRow(ctx, rowX, contentY + 14 + i * 52, rowW, `${i + 1}. Maç`, `${result} • ${opp}${reward}`);
-        });
-      }
-    }
+    // mobile back helper
+    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    fillRoundRect(ctx, this.hitBack.x, this.hitBack.y, this.hitBack.w, this.hitBack.h, 12);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    strokeRoundRect(ctx, this.hitBack.x + 0.5, this.hitBack.y + 0.5, this.hitBack.w - 1, this.hitBack.h - 1, 12);
+    ctx.fillStyle = "#fff";
+    ctx.font = "800 14px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("← Geri", this.hitBack.x + this.hitBack.w / 2, this.hitBack.y + this.hitBack.h / 2);
   }
 }
