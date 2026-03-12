@@ -2,6 +2,10 @@ function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
 function roundRectPath(ctx, x, y, w, h, r) {
   const rr = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
@@ -23,8 +27,11 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
   ctx.stroke();
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+function getImgSafe(assets, key) {
+  if (!assets || !key) return null;
+  if (typeof assets.getImage === "function") return assets.getImage(key) || null;
+  if (typeof assets.get === "function") return assets.get(key) || null;
+  return assets.images?.[key] || null;
 }
 
 function getPlayerAvatar(player) {
@@ -39,6 +46,181 @@ function getPlayerAvatar(player) {
   );
 }
 
+function getInitials(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "P";
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return raw.slice(0, 2).toUpperCase();
+}
+
+function moneyFmt(n) {
+  const v = Number(n || 0);
+  return Number.isFinite(v) ? v.toLocaleString("tr-TR") : "0";
+}
+
+function buildAvatarCache(url) {
+  if (!url) return null;
+  const img = new Image();
+  img.src = url;
+  return img;
+}
+
+/* ===== ICON DRAW HELPERS ===== */
+
+function drawSoftGlow(ctx, x, y, w, h, color) {
+  ctx.save();
+  const g = ctx.createRadialGradient(
+    x + w / 2,
+    y + h / 2,
+    8,
+    x + w / 2,
+    y + h / 2,
+    Math.max(w, h) * 0.7
+  );
+  g.addColorStop(0, color);
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(x - w * 0.15, y - h * 0.15, w * 1.3, h * 1.3);
+  ctx.restore();
+}
+
+function drawBuildingIcon(ctx, x, y, w, h) {
+  ctx.save();
+  drawSoftGlow(ctx, x, y, w, h, "rgba(255,80,60,0.10)");
+
+  const base = ctx.createLinearGradient(x, y, x, y + h);
+  base.addColorStop(0, "#3c4658");
+  base.addColorStop(1, "#171d28");
+
+  ctx.fillStyle = base;
+  fillRoundRect(ctx, x + w * 0.18, y + h * 0.18, w * 0.64, h * 0.64, 10);
+
+  ctx.fillStyle = "#242c39";
+  fillRoundRect(ctx, x + w * 0.30, y + h * 0.05, w * 0.40, h * 0.18, 8);
+
+  ctx.fillStyle = "#0f141d";
+  fillRoundRect(ctx, x + w * 0.42, y + h * 0.56, w * 0.16, h * 0.26, 6);
+
+  const winCols = [0.28, 0.46, 0.64];
+  const winRows = [0.28, 0.42, 0.56];
+  ctx.fillStyle = "#7ed5ff";
+  for (const cy of winRows) {
+    for (const cx of winCols) {
+      fillRoundRect(ctx, x + w * cx, y + h * cy, w * 0.08, h * 0.08, 3);
+    }
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 2;
+  strokeRoundRect(ctx, x + w * 0.18, y + h * 0.18, w * 0.64, h * 0.64, 10);
+  ctx.restore();
+}
+
+function drawCrateIcon(ctx, x, y, w, h) {
+  ctx.save();
+  drawSoftGlow(ctx, x, y, w, h, "rgba(255,170,70,0.12)");
+
+  const body = ctx.createLinearGradient(x, y, x, y + h);
+  body.addColorStop(0, "#7f6348");
+  body.addColorStop(1, "#3d2c20");
+
+  ctx.fillStyle = body;
+  fillRoundRect(ctx, x + w * 0.16, y + h * 0.24, w * 0.68, h * 0.52, 10);
+
+  ctx.fillStyle = "#a88663";
+  fillRoundRect(ctx, x + w * 0.16, y + h * 0.16, w * 0.68, h * 0.16, 8);
+
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  fillRoundRect(ctx, x + w * 0.30, y + h * 0.24, w * 0.08, h * 0.52, 5);
+  fillRoundRect(ctx, x + w * 0.62, y + h * 0.24, w * 0.08, h * 0.52, 5);
+
+  ctx.fillStyle = "#ceb08a";
+  fillRoundRect(ctx, x + w * 0.45, y + h * 0.38, w * 0.10, h * 0.16, 5);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 2;
+  strokeRoundRect(ctx, x + w * 0.16, y + h * 0.24, w * 0.68, h * 0.52, 10);
+  ctx.restore();
+}
+
+function drawSkullEmblem(ctx, x, y, w, h) {
+  ctx.save();
+  drawSoftGlow(ctx, x, y, w, h, "rgba(255,70,70,0.14)");
+
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.lineWidth = 3;
+
+  // head
+  ctx.beginPath();
+  ctx.arc(x + w * 0.5, y + h * 0.40, w * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  // jaw
+  fillRoundRect(ctx, x + w * 0.40, y + h * 0.50, w * 0.20, h * 0.12, 6);
+
+  // eyes
+  ctx.fillStyle = "#141820";
+  ctx.beginPath();
+  ctx.arc(x + w * 0.45, y + h * 0.39, w * 0.03, 0, Math.PI * 2);
+  ctx.arc(x + w * 0.55, y + h * 0.39, w * 0.03, 0, Math.PI * 2);
+  ctx.fill();
+
+  // nose
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.50, y + h * 0.44);
+  ctx.lineTo(x + w * 0.47, y + h * 0.49);
+  ctx.lineTo(x + w * 0.53, y + h * 0.49);
+  ctx.closePath();
+  ctx.fill();
+
+  // crossed bones
+  ctx.strokeStyle = "rgba(255,255,255,0.70)";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.28, y + h * 0.72);
+  ctx.lineTo(x + w * 0.72, y + h * 0.22);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.72, y + h * 0.72);
+  ctx.lineTo(x + w * 0.28, y + h * 0.22);
+  ctx.stroke();
+
+  const boneEnds = [
+    [0.24, 0.76], [0.32, 0.68],
+    [0.68, 0.24], [0.76, 0.16],
+    [0.24, 0.16], [0.32, 0.24],
+    [0.68, 0.68], [0.76, 0.76],
+  ];
+  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  for (const [bx, by] of boneEnds) {
+    ctx.beginPath();
+    ctx.arc(x + w * bx, y + h * by, w * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawMiniStatBadge(ctx, x, y, w, h, accent) {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, "rgba(255,255,255,0.05)");
+  g.addColorStop(1, "rgba(255,255,255,0.01)");
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, 12);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 12);
+
+  ctx.fillStyle = accent;
+  fillRoundRect(ctx, x + 8, y + 8, 4, h - 16, 3);
+}
+
 export class ProfileScene {
   constructor({ store, input, scenes, assets }) {
     this.store = store;
@@ -50,6 +232,9 @@ export class ProfileScene {
     this.hitClose = null;
     this.hitEditAvatar = null;
     this.hitLeaderboard = null;
+
+    this._avatarUrlCached = "";
+    this._avatarImg = null;
   }
 
   onEnter() {}
@@ -71,22 +256,25 @@ export class ProfileScene {
     }
 
     if (this.hitEditAvatar && pointInRect(px, py, this.hitEditAvatar)) {
-      console.log("[PROFILE] avatar edit yakında");
+      console.log("[ProfileScene] Edit Avatar yakında");
       return;
     }
 
     if (this.hitLeaderboard && pointInRect(px, py, this.hitLeaderboard)) {
-      console.log("[PROFILE] leaderboard yakında");
+      console.log("[ProfileScene] Leaderboard yakında");
       return;
     }
   }
 
   render(ctx, w, h) {
-    const s = this.store.get() || {};
-    const p = s.player || {};
-    const safe = s?.ui?.safe ?? { x: 0, y: 0, w, h };
+    const state = this.store.get() || {};
+    const p = state.player || {};
+    const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
 
-    const bg = this.assets?.getImage?.("background") || this.assets?.get?.("background") || null;
+    const bg =
+      getImgSafe(this.assets, "background") ||
+      getImgSafe(this.assets, "trade") ||
+      null;
 
     if (bg) {
       const iw = bg.width || 1;
@@ -98,292 +286,519 @@ export class ProfileScene {
       const dy = (h - dh) / 2;
       ctx.drawImage(bg, dx, dy, dw, dh);
     } else {
-      ctx.fillStyle = "#090a0f";
+      ctx.fillStyle = "#090b11";
       ctx.fillRect(0, 0, w, h);
     }
 
-    ctx.fillStyle = "rgba(3,5,10,0.68)";
+    // dark cartel atmosphere
+    ctx.fillStyle = "rgba(6,7,12,0.72)";
     ctx.fillRect(0, 0, w, h);
 
-    const panelW = Math.min(760, safe.w - 24);
-    const panelH = Math.min(650, safe.h - 30);
+    const vignette = ctx.createRadialGradient(
+      w * 0.5,
+      h * 0.46,
+      50,
+      w * 0.5,
+      h * 0.46,
+      Math.max(w, h) * 0.72
+    );
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(0.72, "rgba(0,0,0,0.18)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.52)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+
+    const panelW = Math.min(760, safe.w - 28);
+    const panelH = Math.min(700, safe.h - 34);
     const panelX = safe.x + (safe.w - panelW) / 2;
     const panelY = safe.y + 14;
 
-    const headerH = 62;
+    // outer cartel frame
+    const outerGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    outerGrad.addColorStop(0, "rgba(24,18,22,0.92)");
+    outerGrad.addColorStop(1, "rgba(10,11,16,0.96)");
+    ctx.fillStyle = outerGrad;
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
-    ctx.fillStyle = "rgba(8,10,18,0.82)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
+    // outer red glow
+    ctx.save();
+    ctx.shadowColor = "rgba(255,50,50,0.08)";
+    ctx.shadowBlur = 26;
+    ctx.strokeStyle = "rgba(255,100,80,0.10)";
+    ctx.lineWidth = 2;
+    strokeRoundRect(ctx, panelX + 1, panelY + 1, panelW - 2, panelH - 2, 28);
+    ctx.restore();
 
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 24);
+    // inner panel
+    const innerX = panelX + 8;
+    const innerY = panelY + 8;
+    const innerW = panelW - 16;
+    const innerH = panelH - 16;
 
-    // header
-    ctx.fillStyle = "rgba(14,16,24,0.92)";
-    fillRoundRect(ctx, panelX + 8, panelY + 8, panelW - 16, headerH, 18);
+    const innerGrad = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerH);
+    innerGrad.addColorStop(0, "rgba(19,20,29,0.96)");
+    innerGrad.addColorStop(0.5, "rgba(12,13,20,0.97)");
+    innerGrad.addColorStop(1, "rgba(9,10,16,0.98)");
+    ctx.fillStyle = innerGrad;
+    fillRoundRect(ctx, innerX, innerY, innerW, innerH, 22);
 
-    const headerGrad = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY);
-    headerGrad.addColorStop(0, "rgba(255,255,255,0.03)");
-    headerGrad.addColorStop(0.5, "rgba(255,170,70,0.10)");
-    headerGrad.addColorStop(1, "rgba(255,255,255,0.03)");
-    ctx.strokeStyle = headerGrad;
-    strokeRoundRect(ctx, panelX + 8.5, panelY + 8.5, panelW - 17, headerH - 1, 18);
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, innerX + 0.5, innerY + 0.5, innerW - 1, innerH - 1, 22);
 
-    ctx.fillStyle = "#ffffff";
+    // subtle top shine
+    const shine = ctx.createLinearGradient(innerX, innerY, innerX, innerY + 90);
+    shine.addColorStop(0, "rgba(255,255,255,0.055)");
+    shine.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = shine;
+    fillRoundRect(ctx, innerX, innerY, innerW, 90, 22);
+
+    /* ===== HEADER ===== */
+    const headerX = innerX + 10;
+    const headerY = innerY + 10;
+    const headerW = innerW - 20;
+    const headerH = 64;
+
+    const headerGrad = ctx.createLinearGradient(headerX, headerY, headerX, headerY + headerH);
+    headerGrad.addColorStop(0, "rgba(30,22,24,0.94)");
+    headerGrad.addColorStop(1, "rgba(15,15,21,0.98)");
+    ctx.fillStyle = headerGrad;
+    fillRoundRect(ctx, headerX, headerY, headerW, headerH, 18);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    strokeRoundRect(ctx, headerX + 0.5, headerY + 0.5, headerW - 1, headerH - 1, 18);
+
+    // center amber line
+    const amberLine = ctx.createLinearGradient(headerX, 0, headerX + headerW, 0);
+    amberLine.addColorStop(0, "rgba(255,180,80,0)");
+    amberLine.addColorStop(0.5, "rgba(255,180,80,0.82)");
+    amberLine.addColorStop(1, "rgba(255,180,80,0)");
+    ctx.fillStyle = amberLine;
+    fillRoundRect(ctx, headerX + headerW * 0.24, headerY + headerH - 4, headerW * 0.52, 2, 1);
+
+    ctx.fillStyle = "#f3f6fb";
     ctx.font = "900 26px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("PLAYER PROFILE", panelX + panelW / 2, panelY + 39);
+    ctx.fillText("PROFILE", headerX + headerW / 2, headerY + headerH / 2 + 1);
 
-    this.hitClose = { x: panelX + panelW - 64, y: panelY + 16, w: 40, h: 40 };
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    fillRoundRect(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, 12);
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.font = "900 24px system-ui";
-    ctx.fillText("×", this.hitClose.x + 20, this.hitClose.y + 21);
+    this.hitClose = { x: headerX + headerW - 48, y: headerY + 12, w: 34, h: 34 };
+    const closeGrad = ctx.createLinearGradient(
+      this.hitClose.x,
+      this.hitClose.y,
+      this.hitClose.x,
+      this.hitClose.y + this.hitClose.h
+    );
+    closeGrad.addColorStop(0, "rgba(255,255,255,0.08)");
+    closeGrad.addColorStop(1, "rgba(255,255,255,0.03)");
+    ctx.fillStyle = closeGrad;
+    fillRoundRect(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, 10);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    strokeRoundRect(ctx, this.hitClose.x + 0.5, this.hitClose.y + 0.5, this.hitClose.w - 1, this.hitClose.h - 1, 10);
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "900 20px system-ui";
+    ctx.fillText("×", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + this.hitClose.h / 2 + 1);
 
-    // main info block
-    const infoX = panelX + 18;
-    const infoY = panelY + 86;
-    const infoW = panelW - 36;
-    const infoH = 146;
+    /* ===== DATA ===== */
+    const username = String(p.username || "Player").trim() || "Player";
+    const playerId = String(p.telegramId || p.id || "player_main");
 
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, infoX, infoY, infoW, infoH, 20);
+    const level = Math.max(1, Number(p.level || 1));
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+
+    const businessesOwned = Array.isArray(state?.businesses?.owned)
+      ? state.businesses.owned.length
+      : 0;
+
+    const inventoryList = Array.isArray(state?.inventory?.items)
+      ? state.inventory.items
+      : [];
+
+    const inventoryItems = inventoryList.reduce((sum, item) => {
+      return sum + Math.max(0, Number(item.qty || 0));
+    }, 0);
+
+    const totalInventoryValue = inventoryList.reduce((sum, item) => {
+      const price = Number(item.marketPrice || item.sellPrice || item.price || 0);
+      const qty = Number(item.qty || 0);
+      return sum + Math.max(0, price * qty);
+    }, 0);
+
+    const clanName =
+      String(
+        state?.clan?.name ||
+        state?.clan?.tag ||
+        "No Clan"
+      );
+
+    const wins = Math.max(0, Number(state?.pvp?.wins || 0));
+    const losses = Math.max(0, Number(state?.pvp?.losses || 0));
+    const totalFight = wins + losses;
+    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
+    const kdText =
+      losses > 0
+        ? (wins / losses).toFixed(2)
+        : wins > 0
+        ? String(wins)
+        : "0.00";
+    const topRank = clamp(999 - wins, 1, 999);
+
+    const isPremium = !!(
+      state.premium ||
+      p.premium ||
+      p.isPremium ||
+      p.membership === "premium"
+    );
+
+    /* ===== HERO PROFILE CARD ===== */
+    const heroX = innerX + 14;
+    const heroY = headerY + headerH + 14;
+    const heroW = innerW - 28;
+    const heroH = 180;
+
+    const heroGrad = ctx.createLinearGradient(heroX, heroY, heroX, heroY + heroH);
+    heroGrad.addColorStop(0, "rgba(26,25,36,0.88)");
+    heroGrad.addColorStop(1, "rgba(13,14,21,0.94)");
+    ctx.fillStyle = heroGrad;
+    fillRoundRect(ctx, heroX, heroY, heroW, heroH, 24);
+
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, infoX + 0.5, infoY + 0.5, infoW - 1, infoH - 1, 20);
+    strokeRoundRect(ctx, heroX + 0.5, heroY + 0.5, heroW - 1, heroH - 1, 24);
 
-    // avatar
-    const avatarX = infoX + 14;
-    const avatarY = infoY + 14;
-    const avatarSize = 108;
+    const redGlow = ctx.createLinearGradient(heroX, heroY, heroX + heroW, heroY);
+    redGlow.addColorStop(0, "rgba(255,90,90,0)");
+    redGlow.addColorStop(0.32, "rgba(255,90,90,0.07)");
+    redGlow.addColorStop(0.72, "rgba(255,170,90,0.07)");
+    redGlow.addColorStop(1, "rgba(255,90,90,0)");
+    ctx.fillStyle = redGlow;
+    fillRoundRect(ctx, heroX + 2, heroY + 2, heroW - 4, heroH * 0.44, 22);
 
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    fillRoundRect(ctx, avatarX, avatarY, avatarSize, avatarSize, 16);
+    // avatar plate
+    const avatarPlateX = heroX + 16;
+    const avatarPlateY = heroY + 16;
+    const avatarPlateW = 132;
+    const avatarPlateH = 132;
+
+    const avatarPlateGrad = ctx.createLinearGradient(
+      avatarPlateX,
+      avatarPlateY,
+      avatarPlateX,
+      avatarPlateY + avatarPlateH
+    );
+    avatarPlateGrad.addColorStop(0, "rgba(255,255,255,0.06)");
+    avatarPlateGrad.addColorStop(1, "rgba(255,255,255,0.02)");
+    ctx.fillStyle = avatarPlateGrad;
+    fillRoundRect(ctx, avatarPlateX, avatarPlateY, avatarPlateW, avatarPlateH, 18);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    strokeRoundRect(ctx, avatarPlateX + 0.5, avatarPlateY + 0.5, avatarPlateW - 1, avatarPlateH - 1, 18);
+
+    const avatarX = avatarPlateX + 8;
+    const avatarY = avatarPlateY + 8;
+    const avatarS = avatarPlateW - 16;
 
     const avatarUrl = getPlayerAvatar(p);
-    const img = (() => {
-      if (!avatarUrl) return null;
-      const tmp = new Image();
-      tmp.src = avatarUrl;
-      return tmp;
-    })();
+    if (avatarUrl !== this._avatarUrlCached) {
+      this._avatarUrlCached = avatarUrl;
+      this._avatarImg = buildAvatarCache(avatarUrl);
+    }
 
-    if (img && img.complete && img.naturalWidth > 0) {
-      ctx.save();
-      roundRectPath(ctx, avatarX, avatarY, avatarSize, avatarSize, 16);
-      ctx.clip();
-      ctx.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
-      ctx.restore();
+    ctx.save();
+    roundRectPath(ctx, avatarX, avatarY, avatarS, avatarS, 16);
+    ctx.clip();
+
+    if (this._avatarImg && this._avatarImg.complete && this._avatarImg.naturalWidth > 0) {
+      ctx.drawImage(this._avatarImg, avatarX, avatarY, avatarS, avatarS);
     } else {
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      fillRoundRect(ctx, avatarX, avatarY, avatarSize, avatarSize, 16);
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 34px system-ui";
+      const avGrad = ctx.createLinearGradient(avatarX, avatarY, avatarX, avatarY + avatarS);
+      avGrad.addColorStop(0, "#3d404b");
+      avGrad.addColorStop(1, "#22232c");
+      ctx.fillStyle = avGrad;
+      ctx.fillRect(avatarX, avatarY, avatarS, avatarS);
+
+      ctx.fillStyle = "#f3f6fb";
+      ctx.font = "900 44px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const initial = String(p.username || "P").trim().slice(0, 1).toUpperCase() || "P";
-      ctx.fillText(initial, avatarX + avatarSize / 2, avatarY + avatarSize / 2);
+      ctx.fillText(getInitials(username), avatarX + avatarS / 2, avatarY + avatarS / 2 + 2);
     }
+    ctx.restore();
 
-    // premium badge
-    const isPremium = !!(s.premium || p.premium || p.isPremium || p.membership === "premium");
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    strokeRoundRect(ctx, avatarX + 0.5, avatarY + 0.5, avatarS - 1, avatarS - 1, 16);
+
     if (isPremium) {
-      ctx.fillStyle = "#ffcc52";
-      fillRoundRect(ctx, avatarX - 6, avatarY - 8, 42, 26, 10);
-      ctx.fillStyle = "#1b1405";
+      const vipX = avatarPlateX - 4;
+      const vipY = avatarPlateY - 8;
+      const vipW = 48;
+      const vipH = 26;
+      const vipGrad = ctx.createLinearGradient(vipX, vipY, vipX, vipY + vipH);
+      vipGrad.addColorStop(0, "#ffe7a2");
+      vipGrad.addColorStop(1, "#ffbe57");
+      ctx.fillStyle = vipGrad;
+      fillRoundRect(ctx, vipX, vipY, vipW, vipH, 10);
+      ctx.fillStyle = "#2d1d08";
       ctx.font = "900 14px system-ui";
-      ctx.fillText("VIP", avatarX + 15, avatarY + 5);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("VIP", vipX + vipW / 2, vipY + vipH / 2 + 1);
     }
 
-    // online badge
-    ctx.fillStyle = "#28d85a";
-    fillRoundRect(ctx, avatarX + 8, avatarY + avatarSize - 24, 74, 20, 10);
-    ctx.fillStyle = "#fff";
+    const onlineX = avatarPlateX + 10;
+    const onlineY = avatarPlateY + avatarPlateH - 32;
+    const onlineW = 76;
+    const onlineH = 22;
+    ctx.fillStyle = "rgba(32,216,93,0.96)";
+    fillRoundRect(ctx, onlineX, onlineY, onlineW, onlineH, 10);
+    ctx.fillStyle = "#ffffff";
     ctx.font = "900 12px system-ui";
-    ctx.fillText("ONLINE", avatarX + 45, avatarY + avatarSize - 14);
+    ctx.textAlign = "center";
+    ctx.fillText("ONLINE", onlineX + onlineW / 2, onlineY + onlineH / 2 + 1);
 
-    // texts
-    const nameX = avatarX + avatarSize + 24;
-    const nameY = avatarY + 26;
-    const username = String(p.username || "Player").trim() || "Player";
-    const playerId = String(p.id || p.telegramId || "player_main");
+    // right hero content
+    const infoX = avatarPlateX + avatarPlateW + 20;
+    const infoY = heroY + 24;
+    const infoW = heroW - (infoX - heroX) - 18;
 
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 24px system-ui";
-    ctx.fillText(username, nameX, nameY);
-
-    ctx.fillStyle = "rgba(255,255,255,0.58)";
-    ctx.font = "600 14px system-ui";
-    ctx.fillText(`#${playerId}`, nameX, nameY + 30);
-
-    const statTop = infoY + 78;
-    const leftColX = nameX;
-    const rightColX = infoX + infoW * 0.58;
-
-    const energy = Number(p.energy || 0);
-    const energyMax = Number(p.energyMax || 100);
-    const level = Number(p.level || 1);
-
-    const clanName =
-      s?.clan?.name ||
-      s?.clan?.tag ||
-      "No Clan";
-
-    const businessesOwned = Array.isArray(s?.businesses?.owned) ? s.businesses.owned.length : 0;
-    const inventoryItems = Array.isArray(s?.inventory?.items)
-      ? s.inventory.items.reduce((sum, item) => sum + Number(item.qty || 0), 0)
-      : 0;
-
-    const totalInventoryValue = Array.isArray(s?.inventory?.items)
-      ? s.inventory.items.reduce((sum, item) => {
-          const price =
-            Number(item.marketPrice || item.sellPrice || item.price || 0);
-          return sum + price * Number(item.qty || 0);
-        }, 0)
-      : 0;
-
-    const wins = Number(s?.pvp?.wins || 0);
-    const losses = Number(s?.pvp?.losses || 0);
-    const totalFight = wins + losses;
-    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
-    const kd = losses > 0 ? (wins / losses).toFixed(2) : wins > 0 ? String(wins) : "0.00";
 
     ctx.fillStyle = "#f5f7fb";
-    ctx.font = "700 17px system-ui";
-    ctx.fillText(`🏅  Level ${level}`, leftColX, statTop);
-    ctx.fillText(`⚡  Energy ${energy}/${energyMax}`, rightColX, statTop);
+    ctx.font = "900 30px system-ui";
+    ctx.fillText(username, infoX, infoY + 4);
 
-    ctx.fillText(`☀  Clan ${clanName}`, leftColX, statTop + 38);
-    ctx.fillText(
-      `💰  Total Value ${Number(totalInventoryValue).toLocaleString("tr-TR")}`,
-      rightColX,
-      statTop + 38
-    );
+    ctx.fillStyle = "rgba(255,255,255,0.48)";
+    ctx.font = "700 14px system-ui";
+    ctx.fillText(`#${playerId}`, infoX, infoY + 34);
 
-    // cards row
-    const cardGap = 14;
-    const cardY = infoY + infoH + 16;
-    const cardW = (infoW - cardGap * 2) / 3;
-    const cardH = 152;
+    // stat badges
+    const badgeGap = 12;
+    const badgeW = (infoW - badgeGap) / 2;
+    const badgeH = 46;
+    const badge1Y = infoY + 58;
+    const badge2Y = badge1Y + badgeH + 12;
 
-    const cards = [
+    const badgeAccent1 = "rgba(255,170,80,0.92)";
+    const badgeAccent2 = "rgba(255,95,95,0.92)";
+    const badgeAccent3 = "rgba(255,214,112,0.92)";
+    const badgeAccent4 = "rgba(255,130,70,0.92)";
+
+    const b1 = { x: infoX, y: badge1Y, w: badgeW, h: badgeH };
+    const b2 = { x: infoX + badgeW + badgeGap, y: badge1Y, w: badgeW, h: badgeH };
+    const b3 = { x: infoX, y: badge2Y, w: badgeW, h: badgeH };
+    const b4 = { x: infoX + badgeW + badgeGap, y: badge2Y, w: badgeW, h: badgeH };
+
+    drawMiniStatBadge(ctx, b1.x, b1.y, b1.w, b1.h, badgeAccent1);
+    drawMiniStatBadge(ctx, b2.x, b2.y, b2.w, b2.h, badgeAccent2);
+    drawMiniStatBadge(ctx, b3.x, b3.y, b3.w, b3.h, badgeAccent3);
+    drawMiniStatBadge(ctx, b4.x, b4.y, b4.w, b4.h, badgeAccent4);
+
+    const drawBadgeText = (r, label, value) => {
+      ctx.fillStyle = "rgba(255,255,255,0.62)";
+      ctx.font = "700 11px system-ui";
+      ctx.fillText(label, r.x + 18, r.y + 15);
+
+      ctx.fillStyle = "#f3f6fb";
+      ctx.font = "900 19px system-ui";
+      ctx.fillText(value, r.x + 18, r.y + 31);
+    };
+
+    drawBadgeText(b1, "LEVEL", String(level));
+    drawBadgeText(b2, "ENERGY", `${energy}/${energyMax}`);
+    drawBadgeText(b3, "CLAN", clanName);
+    drawBadgeText(b4, "TOTAL VALUE", moneyFmt(totalInventoryValue));
+
+    /* ===== MID TILES ===== */
+    const tileGap = 14;
+    const tilesY = heroY + heroH + 16;
+    const tileW = (heroW - tileGap * 2) / 3;
+    const tileH = 172;
+
+    const tiles = [
       {
-        x: infoX,
-        y: cardY,
+        x: heroX,
+        y: tilesY,
+        w: tileW,
+        h: tileH,
         title: "BUSINESSES",
-        big: `${businessesOwned}`,
-        sub: "Owned",
-        icon: "🏢",
+        value: String(businessesOwned).padStart(2, "0"),
+        label: "Owned Properties",
+        accent: "rgba(255,90,90,0.16)",
+        icon: "building",
       },
       {
-        x: infoX + cardW + cardGap,
-        y: cardY,
+        x: heroX + tileW + tileGap,
+        y: tilesY,
+        w: tileW,
+        h: tileH,
         title: "INVENTORY",
-        big: `${inventoryItems}`,
-        sub: "Items",
-        icon: "📦",
+        value: String(inventoryItems),
+        label: "Stored Items",
+        accent: "rgba(255,170,70,0.16)",
+        icon: "crate",
       },
       {
-        x: infoX + (cardW + cardGap) * 2,
-        y: cardY,
+        x: heroX + (tileW + tileGap) * 2,
+        y: tilesY,
+        w: tileW,
+        h: tileH,
         title: "PVP STATS",
-        big: `${wins}`,
-        sub: `Wins • ${losses} Losses`,
-        icon: "☠",
+        value: `${wins}W`,
+        label: `${losses} Losses`,
+        accent: "rgba(255,70,70,0.16)",
+        icon: "skull",
       },
     ];
 
-    for (const c of cards) {
-      ctx.fillStyle = "rgba(255,255,255,0.04)";
-      fillRoundRect(ctx, c.x, c.y, cardW, cardH, 18);
+    for (const tile of tiles) {
+      const tg = ctx.createLinearGradient(tile.x, tile.y, tile.x, tile.y + tile.h);
+      tg.addColorStop(0, "rgba(25,25,36,0.94)");
+      tg.addColorStop(1, "rgba(11,12,18,0.98)");
+      ctx.fillStyle = tg;
+      fillRoundRect(ctx, tile.x, tile.y, tile.w, tile.h, 22);
+
       ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, c.x + 0.5, c.y + 0.5, cardW - 1, cardH - 1, 18);
+      ctx.lineWidth = 1;
+      strokeRoundRect(ctx, tile.x + 0.5, tile.y + 0.5, tile.w - 1, tile.h - 1, 22);
 
-      ctx.fillStyle = "#f1f4f8";
-      ctx.textAlign = "center";
-      ctx.font = "900 17px system-ui";
-      ctx.fillText(c.title, c.x + cardW / 2, c.y + 26);
+      const glowBar = ctx.createLinearGradient(tile.x, tile.y, tile.x + tile.w, tile.y);
+      glowBar.addColorStop(0, "rgba(255,255,255,0)");
+      glowBar.addColorStop(0.4, tile.accent);
+      glowBar.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glowBar;
+      fillRoundRect(ctx, tile.x + 8, tile.y + 8, tile.w - 16, 24, 10);
 
-      ctx.font = "900 48px system-ui";
-      ctx.fillText(c.icon, c.x + cardW / 2, c.y + 74);
-
-      ctx.font = "900 18px system-ui";
-      ctx.fillText(c.big, c.x + cardW / 2, c.y + 116);
-
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "700 14px system-ui";
-      ctx.fillText(c.sub, c.x + cardW / 2, c.y + 137);
-    }
-
-    // bottom stats row
-    const statsY = cardY + cardH + 16;
-    const statsH = 88;
-    ctx.fillStyle = "rgba(255,255,255,0.04)";
-    fillRoundRect(ctx, infoX, statsY, infoW, statsH, 18);
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, infoX + 0.5, statsY + 0.5, infoW - 1, statsH - 1, 18);
-
-    const col1 = infoX + infoW / 6;
-    const col2 = infoX + infoW / 2;
-    const col3 = infoX + (infoW * 5) / 6;
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.font = "700 14px system-ui";
-    ctx.fillText("Win Rate", col1, statsY + 24);
-    ctx.fillText("Kill / Death", col2, statsY + 24);
-    ctx.fillText("Top Rank", col3, statsY + 24);
-
-    ctx.fillStyle = "#ffbe57";
-    ctx.font = "900 24px system-ui";
-    ctx.fillText(`${winRate}%`, col1, statsY + 56);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(`${wins} / ${losses}`, col2, statsY + 56);
-
-    ctx.fillStyle = "#ffbe57";
-    ctx.fillText(`#${clamp(999 - wins, 1, 999)}`, col3, statsY + 56);
-
-    // buttons
-    const btnY = statsY + statsH + 18;
-    const btnW = (infoW - 14) / 2;
-    const btnH = 58;
-
-    this.hitEditAvatar = { x: infoX, y: btnY, w: btnW, h: btnH };
-    this.hitLeaderboard = { x: infoX + btnW + 14, y: btnY, w: btnW, h: btnH };
-    this.hitBack = { x: panelX + 16, y: panelY + panelH - 54, w: 100, h: 36 };
-
-    const drawBtn = (r, text, icon) => {
-      const g = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
-      g.addColorStop(0, "rgba(30,34,46,0.95)");
-      g.addColorStop(1, "rgba(10,12,18,0.98)");
-      ctx.fillStyle = g;
-      fillRoundRect(ctx, r.x, r.y, r.w, r.h, 18);
-
-      ctx.strokeStyle = "rgba(255,190,90,0.24)";
-      strokeRoundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 18);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "900 18px system-ui";
+      ctx.fillStyle = "#f3f6fb";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(`${icon}  ${text}`, r.x + r.w / 2, r.y + r.h / 2);
+      ctx.font = "900 18px system-ui";
+      ctx.fillText(tile.title, tile.x + tile.w / 2, tile.y + 22);
+
+      const iconBoxX = tile.x + tile.w * 0.24;
+      const iconBoxY = tile.y + 42;
+      const iconBoxW = tile.w * 0.52;
+      const iconBoxH = 62;
+
+      ctx.fillStyle = "rgba(255,255,255,0.03)";
+      fillRoundRect(ctx, iconBoxX, iconBoxY, iconBoxW, iconBoxH, 14);
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      strokeRoundRect(ctx, iconBoxX + 0.5, iconBoxY + 0.5, iconBoxW - 1, iconBoxH - 1, 14);
+
+      if (tile.icon === "building") drawBuildingIcon(ctx, iconBoxX, iconBoxY, iconBoxW, iconBoxH);
+      if (tile.icon === "crate") drawCrateIcon(ctx, iconBoxX, iconBoxY, iconBoxW, iconBoxH);
+      if (tile.icon === "skull") drawSkullEmblem(ctx, iconBoxX, iconBoxY, iconBoxW, iconBoxH);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 30px system-ui";
+      ctx.fillText(tile.value, tile.x + tile.w / 2, tile.y + 126);
+
+      ctx.fillStyle = "rgba(255,255,255,0.62)";
+      ctx.font = "700 14px system-ui";
+      ctx.fillText(tile.label, tile.x + tile.w / 2, tile.y + 148);
+    }
+
+    /* ===== BOTTOM STATS STRIP ===== */
+    const stripY = tilesY + tileH + 16;
+    const stripH = 92;
+
+    const stripGrad = ctx.createLinearGradient(heroX, stripY, heroX, stripY + stripH);
+    stripGrad.addColorStop(0, "rgba(28,22,25,0.90)");
+    stripGrad.addColorStop(1, "rgba(12,13,18,0.96)");
+    ctx.fillStyle = stripGrad;
+    fillRoundRect(ctx, heroX, stripY, heroW, stripH, 20);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    strokeRoundRect(ctx, heroX + 0.5, stripY + 0.5, heroW - 1, stripH - 1, 20);
+
+    const c1 = heroX + heroW / 6;
+    const c2 = heroX + heroW / 2;
+    const c3 = heroX + (heroW * 5) / 6;
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.fillStyle = "rgba(255,255,255,0.60)";
+    ctx.font = "700 13px system-ui";
+    ctx.fillText("WIN RATE", c1, stripY + 22);
+    ctx.fillText("K / D", c2, stripY + 22);
+    ctx.fillText("TOP RANK", c3, stripY + 22);
+
+    ctx.fillStyle = "#ffbe57";
+    ctx.font = "900 28px system-ui";
+    ctx.fillText(`${winRate}%`, c1, stripY + 56);
+
+    ctx.fillStyle = "#f3f6fb";
+    ctx.fillText(kdText, c2, stripY + 56);
+
+    ctx.fillStyle = "#ffbe57";
+    ctx.fillText(`#${topRank}`, c3, stripY + 56);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(heroX + heroW / 3, stripY + 16);
+    ctx.lineTo(heroX + heroW / 3, stripY + stripH - 16);
+    ctx.moveTo(heroX + (heroW * 2) / 3, stripY + 16);
+    ctx.lineTo(heroX + (heroW * 2) / 3, stripY + stripH - 16);
+    ctx.stroke();
+
+    /* ===== BUTTONS ===== */
+    const btnY = stripY + stripH + 18;
+    const btnGap = 14;
+    const btnW = (heroW - btnGap) / 2;
+    const btnH = 60;
+
+    this.hitEditAvatar = { x: heroX, y: btnY, w: btnW, h: btnH };
+    this.hitLeaderboard = { x: heroX + btnW + btnGap, y: btnY, w: btnW, h: btnH };
+
+    const drawActionButton = (r, text, icon, activeAccent) => {
+      const bgGrad = ctx.createLinearGradient(r.x, r.y, r.x, r.y + r.h);
+      bgGrad.addColorStop(0, "rgba(18,20,30,0.96)");
+      bgGrad.addColorStop(1, "rgba(8,9,15,0.99)");
+      ctx.fillStyle = bgGrad;
+      fillRoundRect(ctx, r.x, r.y, r.w, r.h, 18);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      strokeRoundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 18);
+
+      const accent = ctx.createLinearGradient(r.x, 0, r.x + r.w, 0);
+      accent.addColorStop(0, "rgba(255,255,255,0)");
+      accent.addColorStop(0.5, activeAccent);
+      accent.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = accent;
+      fillRoundRect(ctx, r.x + 16, r.y + r.h - 4, r.w - 32, 2, 1);
+
+      ctx.fillStyle = "#f3f6fb";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "900 20px system-ui";
+      ctx.fillText(`${icon}  ${text}`, r.x + r.w / 2, r.y + r.h / 2 + 1);
     };
 
-    drawBtn(this.hitEditAvatar, "EDIT AVATAR", "📷");
-    drawBtn(this.hitLeaderboard, "LEADERBOARD", "🏆");
+    drawActionButton(this.hitEditAvatar, "EDIT AVATAR", "📷", "rgba(255,95,95,0.85)");
+    drawActionButton(this.hitLeaderboard, "LEADERBOARD", "🏆", "rgba(255,180,80,0.85)");
 
-    // mobile back helper
-    ctx.fillStyle = "rgba(255,255,255,0.07)";
-    fillRoundRect(ctx, this.hitBack.x, this.hitBack.y, this.hitBack.w, this.hitBack.h, 12);
+    /* ===== BACK BUTTON ===== */
+    this.hitBack = { x: heroX, y: innerY + innerH - 52, w: 102, h: 36 };
+
+    const backGrad = ctx.createLinearGradient(
+      this.hitBack.x,
+      this.hitBack.y,
+      this.hitBack.x,
+      this.hitBack.y + this.hitBack.h
+    );
+    backGrad.addColorStop(0, "rgba(255,255,255,0.06)");
+    backGrad.addColorStop(1, "rgba(255,255,255,0.02)");
+    ctx.fillStyle = backGrad;
+    fillRoundRect(ctx, this.hitBack.x, this.hitBack.y, this.hitBack.w, this.hitBack.h, 14);
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, this.hitBack.x + 0.5, this.hitBack.y + 0.5, this.hitBack.w - 1, this.hitBack.h - 1, 12);
-    ctx.fillStyle = "#fff";
+    strokeRoundRect(ctx, this.hitBack.x + 0.5, this.hitBack.y + 0.5, this.hitBack.w - 1, this.hitBack.h - 1, 14);
+
+    ctx.fillStyle = "#f3f6fb";
     ctx.font = "800 14px system-ui";
     ctx.textAlign = "center";
-    ctx.fillText("← Geri", this.hitBack.x + this.hitBack.w / 2, this.hitBack.y + this.hitBack.h / 2);
+    ctx.textBaseline = "middle";
+    ctx.fillText("← Geri", this.hitBack.x + this.hitBack.w / 2, this.hitBack.y + this.hitBack.h / 2 + 1);
   }
 }
