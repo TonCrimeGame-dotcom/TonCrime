@@ -609,10 +609,10 @@ export class TradeScene {
     this._showToast(`+${gain} yton`);
   }
 
-  _listInventoryItem(itemId) {
+  async _listInventoryItem(itemId) {
     const s = this.store.get();
     const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const idx = items.findIndex((x) => x.id === itemId);
+    const idx = items.findIndex((x) => String(x.id) === String(itemId));
     if (idx < 0) return;
 
     const item = items[idx];
@@ -625,8 +625,9 @@ export class TradeScene {
       return;
     }
 
-    const qtyRaw = window.prompt("Kaç adet satmak istiyorsun?", "1");
+    const qtyRaw = window.prompt(`Kaç adet satmak istiyorsun? (Max ${Number(item.qty || 0)})`, "1");
     if (qtyRaw === null) return;
+
     const qty = clamp(parseInt(qtyRaw, 10) || 0, 1, Number(item.qty || 0));
     if (qty <= 0) {
       this._showToast("Geçersiz adet");
@@ -634,131 +635,120 @@ export class TradeScene {
     }
 
     const lowest = this._findLowestMarketPriceByName(item.name);
+    const defaultPrice = lowest > 0 ? lowest : Number(item.marketPrice || item.sellPrice || 10);
+
     const priceRaw = window.prompt(
       lowest > 0
         ? `Birim fiyat gir.\nPazardaki en düşük fiyat: ${lowest} yton`
         : "Birim satış fiyatını gir.",
-      String(item.marketPrice || item.sellPrice || 10)
+      String(defaultPrice)
     );
     if (priceRaw === null) return;
 
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
-    const myShop = this._ensurePlayerMarketShop();
-    const state2 = this.store.get();
-    const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
-    const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
-    const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
-    const idx2 = items2.findIndex((x) => x.id === itemId);
-    if (idx2 < 0) return;
-
-    const item2 = items2[idx2];
-    item2.qty = Math.max(0, Number(item2.qty || 0) - qty);
-
-    listings.unshift({
-      id: "listing_" + Date.now() + "_" + Math.floor(Math.random() * 9999),
-      shopId: myShop.id,
-      icon: item2.icon || "📦",
-      itemName: item2.name,
-      rarity: item2.rarity || "common",
-      stock: qty,
-      price,
-      energyGain: Number(item2.energyGain || 0),
-      usable: !!item2.usable,
-      desc: item2.desc || "Oyuncu pazarı ürünü.",
-    });
-
-    if (item2.qty <= 0) items2.splice(idx2, 1);
-    else items2[idx2] = item2;
-
-    for (const sh of shops) {
-      sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
-    }
-
-    this.store.set({
-      inventory: {
-        ...(state2.inventory || {}),
-        items: items2,
-      },
-      market: {
-        ...(state2.market || {}),
-        shops,
-        listings,
-      },
-    });
-
-    this._showToast(`${qty} adet pazara kondu`);
-  }
-
-  async _buyMarketItem(shopId, listingId) {
-    const s = this.store.get();
-    const listings = (s.market?.listings || []).map((x) => ({ ...x }));
-    const idx = listings.findIndex((x) => String(x.id) === String(listingId) && String(x.shopId) === String(shopId));
-    if (idx < 0) return;
-
-    const item = listings[idx];
 
     try {
       const profileId = await this._getProfileId();
 
-      await this._rpc("buy_market_listing", {
-        p_buyer_profile_id: profileId,
-        p_listing_id: listingId,
-        p_quantity: 1,
-      });
+      const { data: invRow, error: invError } = await supabase
+        .from("inventory_items")
+        .select("id, profile_id, item_key, item_name, quantity, meta")
+        .eq("profile_id", profileId)
+        .eq("item_key", String(item.id))
+        .maybeSingle();
 
-      item.stock = Math.max(0, Number(item.stock || 0) - 1);
-      if (item.stock <= 0) listings.splice(idx, 1);
-      else listings[idx] = item;
-
-      const current = this.store.get();
-      const invItems = (current.inventory?.items || []).map((x) => ({ ...x }));
-      const existing = invItems.find(
-        (x) =>
-          String(x.name || "").toLowerCase() === String(item.itemName || "").toLowerCase() &&
-          String(x.rarity || "") === String(item.rarity || "")
-      );
-
-      if (existing) {
-        existing.qty = Number(existing.qty || 0) + 1;
-      } else {
-        invItems.unshift({
-          id: "inv_" + Date.now() + "_" + Math.floor(Math.random() * 9999),
-          kind: item.usable ? "consumable" : "goods",
-          icon: item.icon || "📦",
-          name: item.itemName,
-          rarity: item.rarity || "common",
-          qty: 1,
-          usable: !!item.usable,
-          sellable: true,
-          marketable: true,
-          energyGain: Number(item.energyGain || 0),
-          sellPrice: Math.max(1, Math.floor(Number(item.price || 0) * 0.65)),
-          marketPrice: Number(item.price || 0),
-          desc: item.desc || "Market ürünü",
-        });
+      if (invError) throw invError;
+      if (!invRow?.id) {
+        throw new Error("Backend inventory kaydı bulunamadı");
       }
 
-      const shops = (current.market?.shops || []).map((x) => ({ ...x }));
-      for (const shop of shops) {
-        shop.totalListings = listings.filter((x) => x.shopId === shop.id).length;
+      const { data: marketBusiness, error: bizError } = await supabase
+        .from("businesses")
+        .select("id, name, business_type, owner_id")
+        .eq("owner_id", profileId)
+        .eq("business_type", "blackmarket")
+        .maybeSingle();
+
+      if (bizError) throw bizError;
+
+      if (!marketBusiness?.id) {
+        throw new Error("Inventory item satışı için blackmarket business kaydı gerekli");
+      }
+
+      const result = await this._rpc("create_market_listing", {
+        p_seller_profile_id: profileId,
+        p_business_id: marketBusiness.id,
+        p_inventory_item_id: invRow.id,
+        p_quantity: qty,
+        p_price_yton: price,
+      });
+
+      const row = Array.isArray(result) ? result[0] : result;
+
+      const state2 = this.store.get();
+      const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
+      const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
+      const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
+
+      const idx2 = items2.findIndex((x) => String(x.id) === String(itemId));
+      if (idx2 >= 0) {
+        items2[idx2].qty = Math.max(0, Number(items2[idx2].qty || 0) - qty);
+        if (items2[idx2].qty <= 0) items2.splice(idx2, 1);
+      }
+
+      let shop = shops.find((x) => String(x.businessId) === String(marketBusiness.id));
+      if (!shop) {
+        shop = {
+          id: "shop_" + marketBusiness.id,
+          businessId: String(marketBusiness.id),
+          type: "blackmarket",
+          icon: "🕶️",
+          name: marketBusiness.name || "Black Market",
+          ownerId: String(profileId),
+          ownerName: String(state2.player?.username || "Player"),
+          online: true,
+          theme: "dark",
+          rating: 5,
+          totalListings: 0,
+        };
+        shops.unshift(shop);
+      }
+
+      listings.unshift({
+        id: String(row?.id || "listing_" + Date.now()),
+        shopId: shop.id,
+        icon: item.icon || "📦",
+        itemName: item.name,
+        rarity: item.rarity || "common",
+        stock: qty,
+        price,
+        energyGain: Number(item.energyGain || 0),
+        usable: !!item.usable,
+        desc: item.desc || "Envanter ürünü",
+        inventoryItemId: String(invRow.id),
+        businessId: String(marketBusiness.id),
+      });
+
+      for (const sh of shops) {
+        sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
       }
 
       this.store.set({
         inventory: {
-          ...(current.inventory || {}),
-          items: invItems,
+          ...(state2.inventory || {}),
+          items: items2,
         },
         market: {
-          ...(current.market || {}),
+          ...(state2.market || {}),
           shops,
           listings,
         },
       });
 
-      this._showToast("Satın alındı");
+      this._showToast(`${qty} adet pazara kondu`);
     } catch (err) {
-      console.error("buy_market_listing error:", err);
-      this._showToast(err?.message || "Satın alma başarısız");
+      console.error("list_inventory_item error:", err);
+      this._showToast(err?.message || "İtem pazara konamadı");
     }
   }
 
@@ -2175,4 +2165,5 @@ export class TradeScene {
     }
   }
 }
+
 
