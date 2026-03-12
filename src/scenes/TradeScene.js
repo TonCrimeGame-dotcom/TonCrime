@@ -1997,8 +1997,8 @@ export class TradeScene {
     strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
 
-    this.hitBack = { x: panelX + 14, y: panelY + 16, w: 76, h: 34 };
-    this._drawButton(ctx, this.hitBack, "← Geri", "muted");
+  this.hitBack = { x: panelX + 12, y: panelY + 10, w: 40, h: 40 };
+this._drawButton(ctx, this.hitBack, "✕", "muted");
 
     
 
@@ -2114,6 +2114,7 @@ export class TradeScene {
     }
   }
 }
+
 
 
 
