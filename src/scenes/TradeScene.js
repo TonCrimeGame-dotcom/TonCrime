@@ -1598,17 +1598,8 @@ for (const p of products) {
   rowY += 62;
 }
        
-        const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
-        const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
-
-        this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
-        this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
-
-        this._drawButton(ctx, useRect, "Kullan", "primary");
-        this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
-
-        rowY += 62;
-      }
+    
+      
 
       y += cardH + 12;
     }
@@ -2132,6 +2123,7 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
     }
   }
 }
+
 
 
 
