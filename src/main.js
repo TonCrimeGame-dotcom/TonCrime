@@ -5,7 +5,7 @@ import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
 import { supabase } from "./supabase.js";
-
+import { ProfileScene } from "./scenes/ProfileScene.js";
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import { BootScene } from "./scenes/BootScene.js";
@@ -979,6 +979,10 @@ scenes.register("missions", new MissionsScene({ store, input, assets, scenes }))
 scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
 
 scenes.register(
+  "profile",
+  new ProfileScene({ store, input, scenes, assets })
+);
+scenes.register(
   "coffeeshop",
   new CoffeeShopScene({ store, input, i18n, assets, scenes })
 );
@@ -1045,6 +1049,9 @@ window.addEventListener("tc:pvp:lose", () => {
       pvpPlayed: Number(m.pvpPlayed || 0) + 1,
     },
   });
+});
+window.addEventListener("tc:openProfile", () => {
+  scenes.go("profile");
 });
 
 /* ===== UI ===== */
