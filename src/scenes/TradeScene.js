@@ -1996,13 +1996,6 @@ export class TradeScene {
     ctx.lineWidth = 1;
     strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
-    let headerH = trade.view === "main" ? 126 : 88;
-
-    const headerGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + headerH);
-    headerGrad.addColorStop(0, "rgba(10,14,20,0.34)");
-    headerGrad.addColorStop(1, "rgba(8,10,16,0.20)");
-    ctx.fillStyle = headerGrad;
-    fillRoundRect(ctx, panelX + 6, panelY + 6, panelW - 12, headerH, 22);
 
     this.hitBack = { x: panelX + 14, y: panelY + 16, w: 76, h: 34 };
     this._drawButton(ctx, this.hitBack, "← Geri", "muted");
@@ -2165,5 +2158,6 @@ export class TradeScene {
     }
   }
 }
+
 
 
