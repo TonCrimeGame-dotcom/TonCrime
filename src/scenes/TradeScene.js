@@ -2000,53 +2000,9 @@ export class TradeScene {
     this.hitBack = { x: panelX + 14, y: panelY + 16, w: 76, h: 34 };
     this._drawButton(ctx, this.hitBack, "← Geri", "muted");
 
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 22px system-ui";
-    ctx.fillText(trade.view === "shop" ? "Dükkan" : "Black Market", panelX + 102, panelY + 40);
+    
 
-    ctx.fillStyle = "rgba(255,255,255,0.68)";
-    ctx.font = "13px system-ui";
-    ctx.fillText(
-      trade.view === "shop"
-        ? "Ürünler • fiyatlar • stok"
-        : "Ekonomi merkezi • pazar • sandık • işletmeler",
-      panelX + 102,
-      panelY + 62
-    );
-
-    const stats = [
-      `YTON ${fmtNum(state.coins)}`,
-      `ENERJİ ${fmtNum(state.player?.energy)}/${fmtNum(state.player?.energyMax)}`,
-      `LV ${fmtNum(state.player?.level)}`
-    ];
-
-    let chipX = panelX + panelW - 14;
-    const chipY = panelY + 18;
-
-    ctx.font = "800 10px system-ui";
-    ctx.textAlign = "right";
-    ctx.textBaseline = "middle";
-
-    for (let i = stats.length - 1; i >= 0; i--) {
-      const text = stats[i];
-      const tw = Math.ceil(ctx.measureText(text).width) + 20;
-      chipX -= tw;
-
-      const chipRect = { x: chipX, y: chipY, w: tw, h: 20 };
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      fillRoundRect(ctx, chipRect.x, chipRect.y, chipRect.w, chipRect.h, 10);
-      ctx.strokeStyle = i === 0 ? "rgba(255,210,120,0.18)" : "rgba(255,255,255,0.08)";
-      strokeRoundRect(ctx, chipRect.x, chipRect.y, chipRect.w, chipRect.h, 10);
-
-      ctx.fillStyle = "#f4f6fb";
-      ctx.fillText(text, chipRect.x + chipRect.w - 10, chipRect.y + chipRect.h / 2);
-
-      chipX -= 8;
-    }
-
-    let contentTop = panelY + headerH + 16;
+    let contentTop = panelY + 58;
 
     if (trade.view === "main") {
       const tabs = [
@@ -2059,7 +2015,7 @@ export class TradeScene {
       ];
 
       let tx = panelX + 16;
-      let ty = panelY + 78;
+      let ty = panelY + 56;
       const limitX = panelX + panelW - 16;
 
       for (const tab of tabs) {
@@ -2158,6 +2114,7 @@ export class TradeScene {
     }
   }
 }
+
 
 
 
