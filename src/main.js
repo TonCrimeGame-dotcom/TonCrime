@@ -974,6 +974,7 @@ window.tc.dev = {
     location.reload();
   },
 };
+const PvpScene = window.PvpScene;
 
 /* ===== SCENES REGISTER ===== */
 scenes.register("boot", new BootScene({ assets, i18n, scenes }));
@@ -1002,8 +1003,7 @@ scenes.register(
 );
 
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
-scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
-
+scenes.register("pvp", new PvpScene({ store, input, scenes, assets }));
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 
 scenes.register(
