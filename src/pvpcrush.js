@@ -244,10 +244,9 @@
       }
     }
 
-    const fallback = Array.from({ length: GRID }, () =>
+    return Array.from({ length: GRID }, () =>
       Array.from({ length: GRID }, () => createTile(choice(NORMAL_TYPES)))
     );
-    return fallback;
   }
 
   function floodBombCells(r, c) {
@@ -330,9 +329,7 @@
         markRemove(cell.r, cell.c);
       }
 
-      if (bombCell) {
-        bombsToSpawn.push(bombCell);
-      }
+      if (bombCell) bombsToSpawn.push(bombCell);
     }
 
     const bombsOnBoard = [];
@@ -345,22 +342,16 @@
     }
 
     if (bombSwap) {
-      for (const b of bombsOnBoard) {
-        bombTriggers.push(b);
-      }
+      for (const b of bombsOnBoard) bombTriggers.push(b);
     } else {
       for (const b of bombsOnBoard) {
-        if (remove.has(b.r + ":" + b.c)) {
-          bombTriggers.push(b);
-        }
+        if (remove.has(b.r + ":" + b.c)) bombTriggers.push(b);
       }
     }
 
     for (const b of bombTriggers) {
       const blast = floodBombCells(b.r, b.c);
-      for (const cell of blast) {
-        markRemove(cell.r, cell.c);
-      }
+      for (const cell of blast) markRemove(cell.r, cell.c);
       damage += DAMAGE[TILE.BOMB];
     }
 
@@ -471,7 +462,6 @@
         overflow: hidden;
         touch-action: none;
       }
-
       #arena .tc-crush-root {
         position: absolute;
         inset: 0;
@@ -481,7 +471,6 @@
         padding: 10px;
         box-sizing: border-box;
       }
-
       #arena .tc-crush-head {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
@@ -490,7 +479,6 @@
         margin-bottom: 8px;
         flex: 0 0 auto;
       }
-
       #arena .tc-crush-chip {
         min-height: 34px;
         border-radius: 12px;
@@ -505,20 +493,17 @@
         backdrop-filter: blur(6px);
         text-align: center;
       }
-
       #arena .tc-crush-title {
         text-align: center;
         color: rgba(255,255,255,0.96);
         font: 900 12px system-ui, Arial;
       }
-
       #arena .tc-crush-title small {
         display: block;
         color: rgba(255,255,255,0.70);
         font: 600 10px system-ui, Arial;
         margin-top: 2px;
       }
-
       #arena .tc-crush-canvas {
         display: block;
         width: 100%;
@@ -527,7 +512,6 @@
         border-radius: 16px;
         touch-action: none;
       }
-
       #arena .tc-crush-toast {
         position: absolute;
         left: 50%;
@@ -547,32 +531,26 @@
         backdrop-filter: blur(10px);
         text-align: center;
       }
-
       #arena .tc-crush-toast.on {
         opacity: 1;
       }
-
       @media (max-width: 520px) {
         #arena .tc-crush-root {
           padding: 8px;
         }
-
         #arena .tc-crush-head {
           gap: 6px;
           margin-bottom: 6px;
         }
-
         #arena .tc-crush-chip {
           min-height: 30px;
           padding: 0 8px;
           font-size: 11px;
           border-radius: 10px;
         }
-
         #arena .tc-crush-title {
           font-size: 11px;
         }
-
         #arena .tc-crush-title small {
           font-size: 9px;
         }
@@ -592,7 +570,9 @@
     _lastSignature: "",
     _opponent: { username: "Rakip", isBot: true },
     _turnTimer: null,
+    _pointerDown: null,
     _releaseGuard: false,
+    _unbind: null,
 
     init(opts = {}) {
       injectStyle();
@@ -632,7 +612,7 @@
       };
 
       this._bindCanvas();
-      this._resizeCanvas();
+      this._safeResizeSequence();
       this.reset();
 
       this._inited = true;
@@ -645,19 +625,25 @@
           ? { ...opp }
           : { username: "Rakip", isBot: true };
 
-      if (this._state) {
-        this._updateHud();
-      }
+      if (this._state) this._updateHud();
     },
 
-    start() {
+    async start() {
       if (!this._inited) return;
+      await this._waitUntilVisible();
+
+      this._safeResizeSequence();
       this._running = true;
       this._locked = false;
       this._selected = null;
       this._setStatus("Grid Heist başladı");
       this._toast("Sıra sende");
       this._render();
+
+      requestAnimationFrame(() => {
+        this._safeResizeSequence();
+        this._render();
+      });
     },
 
     stop() {
@@ -676,6 +662,7 @@
       this._running = false;
       this._locked = false;
       this._selected = null;
+      this._pointerDown = null;
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -694,6 +681,7 @@
         info: "Yeni maç",
       };
 
+      this._safeResizeSequence();
       this._updateHud();
       this._render();
     },
@@ -762,7 +750,7 @@
       };
 
       const onResize = () => {
-        this._resizeCanvas();
+        this._safeResizeSequence();
         this._render();
       };
 
@@ -789,14 +777,54 @@
     },
 
     _resizeCanvas() {
-      if (!this._els?.canvas || !this._els?.ctx) return;
+      if (!this._els?.canvas || !this._els?.ctx) return false;
+
       const canvas = this._els.canvas;
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const width = Math.max(10, Math.floor(rect.width * dpr));
+      const height = Math.max(10, Math.floor(rect.height * dpr));
 
-      canvas.width = Math.max(10, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(10, Math.floor(rect.height * dpr));
+      if (!rect.width || !rect.height) return false;
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
       this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return true;
+    },
+
+    _safeResizeSequence() {
+      this._resizeCanvas();
+      setTimeout(() => {
+        this._resizeCanvas();
+        this._render();
+      }, 50);
+      setTimeout(() => {
+        this._resizeCanvas();
+        this._render();
+      }, 140);
+      requestAnimationFrame(() => {
+        this._resizeCanvas();
+        this._render();
+      });
+    },
+
+    async _waitUntilVisible() {
+      if (!this._els?.arena) return;
+
+      for (let i = 0; i < 20; i++) {
+        const rect = this._els.arena.getBoundingClientRect();
+        if (rect.width > 40 && rect.height > 40) {
+          this._resizeCanvas();
+          return;
+        }
+        await this._sleep(30);
+      }
+
+      this._resizeCanvas();
     },
 
     _hitTile(x, y) {
@@ -825,11 +853,8 @@
       if (!this._els || !this._state) return;
 
       const s = this._state;
-      const meScale = clamp(s.meHp, 0, 100) / 100;
-      const enemyScale = clamp(s.enemyHp, 0, 100) / 100;
-
-      this._els.meFill.style.transform = `scaleX(${meScale})`;
-      this._els.enemyFill.style.transform = `scaleX(${enemyScale})`;
+      this._els.meFill.style.transform = `scaleX(${clamp(s.meHp, 0, 100) / 100})`;
+      this._els.enemyFill.style.transform = `scaleX(${clamp(s.enemyHp, 0, 100) / 100})`;
       this._els.meHpText.textContent = Math.round(s.meHp);
       this._els.enemyHpText.textContent = Math.round(s.enemyHp);
 
@@ -915,9 +940,7 @@
       let totalExtra = 0;
 
       while (true) {
-        const preferred = swapB || null;
-        const res = evaluateBoard(board, preferred, swapA, swapB);
-
+        const res = evaluateBoard(board, swapB || null, swapA, swapB);
         if (!res.hasAction) break;
 
         chain += 1;
@@ -1001,7 +1024,6 @@
       if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
         this._running = false;
         this._locked = true;
-
         if (this._state.meHp >= this._state.enemyHp) {
           this._setStatus("Kazandın");
           this._toast("Kazandın");
@@ -1009,7 +1031,6 @@
           this._setStatus("Kaybettin");
           this._toast("Kaybettin");
         }
-
         this._render();
         return true;
       }
@@ -1022,13 +1043,15 @@
     },
 
     _render() {
-      if (!this._els?.ctx || !this._state) return;
+      if (!this._els?.ctx || !this._state || !this._els?.canvas) return;
 
       const ctx = this._els.ctx;
       const canvas = this._els.canvas;
       const rect = canvas.getBoundingClientRect();
       const w = Math.round(rect.width || 300);
       const h = Math.round(rect.height || 300);
+
+      if (w < 20 || h < 20) return;
 
       ctx.clearRect(0, 0, w, h);
 
@@ -1038,11 +1061,10 @@
       fillRoundRect(ctx, 0, 0, w, h, 16, bg);
 
       const boardPad = clamp(Math.round(w * 0.022), 8, 12);
-      const headSpace = 0;
       const usableW = w - boardPad * 2;
-      const usableH = h - boardPad * 2 - headSpace;
+      const usableH = h - boardPad * 2;
       const boardSize = Math.min(usableW, usableH);
-      const cell = Math.floor(boardSize / GRID);
+      const cell = Math.max(20, Math.floor(boardSize / GRID));
       const actual = cell * GRID;
       const ox = Math.floor((w - actual) / 2);
       const oy = Math.floor((h - actual) / 2);
@@ -1111,20 +1133,12 @@
             }
           }
 
-          this._tileRects.push({
-            r,
-            c,
-            x,
-            y,
-            w: cell,
-            h: cell,
-          });
+          this._tileRects.push({ r, c, x, y, w: cell, h: cell });
         }
       }
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-
       this._updateHud();
     },
   };
