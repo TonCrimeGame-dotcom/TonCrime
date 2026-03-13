@@ -407,7 +407,7 @@
       }
 #arena .tc-crush-close {
   position: absolute;
-top: -30px;
+top: -15px;
 right: 12px;
   z-index: 50;
 
