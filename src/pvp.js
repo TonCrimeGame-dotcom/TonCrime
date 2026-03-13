@@ -469,125 +469,200 @@
   }
 
   window.PvpScene = PvpScene;
+function loadClassicScriptOnce(paths) {
+  const list = Array.isArray(paths) ? paths : [paths];
 
- function loadClassicScriptOnce(src) {
   return new Promise((resolve, reject) => {
+    let i = 0;
 
-    const existing = document.querySelector(`script[data-pvp-src="${src}"]`);
-
-    if (existing) {
-      if (existing.dataset.loaded === "1") {
-        resolve();
+    const tryNext = () => {
+      if (i >= list.length) {
+        reject(new Error("Script yüklenemedi: " + list.join(" | ")));
         return;
       }
 
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Script yüklenemedi: " + src)), { once: true });
-      return;
-    }
+      const src = list[i++];
 
-    const s = document.createElement("script");
-    s.src = src;
-    s.defer = true;
-    s.dataset.pvpSrc = src;
+      const existing = document.querySelector(`script[data-pvp-src="${src}"]`);
+      if (existing) {
+        if (existing.dataset.loaded === "1") {
+          resolve(src);
+          return;
+        }
 
-    s.onload = () => {
-      s.dataset.loaded = "1";
-      resolve();
+        existing.addEventListener("load", () => resolve(src), { once: true });
+        existing.addEventListener(
+          "error",
+          () => tryNext(),
+          { once: true }
+        );
+        return;
+      }
+
+      const s = document.createElement("script");
+      s.src = src;
+      s.defer = true;
+      s.dataset.pvpSrc = src;
+
+      s.onload = () => {
+        s.dataset.loaded = "1";
+        resolve(src);
+      };
+
+      s.onerror = () => {
+        s.remove();
+        tryNext();
+      };
+
+      document.body.appendChild(s);
     };
 
-    s.onerror = () => reject(new Error("Script yüklenemedi: " + src));
-
-    document.body.appendChild(s);
+    tryNext();
   });
 }
 
 const TonCrimePVPRouter = {
-
+  _booted: false,
+  _inited: false,
+  _eventsBound: false,
   _engine: null,
   _mode: "grid",
   _opts: null,
   _opponent: { username: "Rakip", isBot: true },
 
   boot() {
+    if (this._booted) return;
+    this._booted = true;
     console.log("[TonCrime] PvP router booted");
   },
 
   async _loadEngine(mode) {
+    this._mode = mode || "grid";
 
-    this._mode = mode;
-
-    if (mode === "grid") {
-
-      await loadClassicScriptOnce("./src/pvpcrush.js");
+    if (this._mode === "grid") {
+      await loadClassicScriptOnce([
+        "./src/pvpcrush.js",
+        "./pvpcrush.js",
+      ]);
 
       if (!window.TonCrimePVP_CRUSH) {
-        throw new Error("pvpcrush.js yüklenemedi");
+        throw new Error("pvpcrush.js yüklendi ama TonCrimePVP_CRUSH bulunamadı");
       }
 
       this._engine = window.TonCrimePVP_CRUSH;
+      return this._engine;
     }
 
-    return this._engine;
+    throw new Error("Bu mod için engine yok: " + this._mode);
   },
 
-  async init(opts = {}) {
+  async _ensureEngine() {
+    if (this._engine) return this._engine;
+    return await this._loadEngine(this._mode || "grid");
+  },
 
-    this._opts = opts;
+  async _prepareEngine() {
+    const engine = await this._ensureEngine();
+
+    if (this._opts && engine?.init) {
+      engine.init(this._opts);
+    }
+
+    if (this._opponent && engine?.setOpponent) {
+      engine.setOpponent(this._opponent);
+    }
+
+    return engine;
+  },
+
+  _bindEvents() {
+    if (this._eventsBound) return;
+    this._eventsBound = true;
 
     window.addEventListener("tc:pvp:grid", async () => {
+      try {
+        this._mode = "grid";
+        const engine = await this._prepareEngine();
+        engine?.reset?.();
 
-      const engine = await this._loadEngine("grid");
-
-      engine.init(opts);
-      engine.setOpponent(this._opponent);
-      engine.reset();
-
-      console.log("[TonCrime] Grid Heist engine loaded");
-
+        const st = document.getElementById("pvpStatus");
+        if (st) st.textContent = "PvP • Grid Heist hazır";
+      } catch (err) {
+        console.error("[TonCrime] tc:pvp:grid error:", err);
+      }
     });
 
+    window.addEventListener("tc:pvp:arena", () => {
+      const st = document.getElementById("pvpStatus");
+      if (st) st.textContent = "PvP • Arena yakında";
+      console.warn("[TonCrime] Arena modu henüz bağlı değil.");
+    });
+  },
+
+  init(opts = {}) {
+    this.boot();
+    this._bindEvents();
+
+    this._opts = {
+      arenaId: opts.arenaId || "arena",
+      statusId: opts.statusId || "pvpStatus",
+      enemyFillId: opts.enemyFillId || "enemyFill",
+      meFillId: opts.meFillId || "meFill",
+      enemyHpTextId: opts.enemyHpTextId || "enemyHpText",
+      meHpTextId: opts.meHpTextId || "meHpText",
+    };
+
+    this._inited = true;
+    console.log("[TonCrime] PvP router init OK");
   },
 
   async setOpponent(opp) {
+    this._opponent =
+      opp && typeof opp.username === "string"
+        ? { ...opp }
+        : { username: "Rakip", isBot: true };
 
-    this._opponent = opp;
-
-    if (this._engine) {
-      this._engine.setOpponent?.(opp);
+    try {
+      if (this._engine?.setOpponent) {
+        this._engine.setOpponent(this._opponent);
+      }
+    } catch (err) {
+      console.error("[TonCrime] setOpponent error:", err);
     }
-
   },
 
   async reset() {
-
-    if (!this._engine) {
-      this._engine = await this._loadEngine(this._mode);
-      this._engine.init(this._opts);
+    try {
+      const engine = await this._prepareEngine();
+      engine?.reset?.();
+    } catch (err) {
+      console.error("[TonCrime] PvP reset error:", err);
+      const st = document.getElementById("pvpStatus");
+      if (st) st.textContent = "PvP • Reset hatası";
     }
-
-    this._engine.reset?.();
-
   },
 
   async start() {
-
-    if (!this._engine) {
-      this._engine = await this._loadEngine(this._mode);
-      this._engine.init(this._opts);
+    try {
+      const engine = await this._prepareEngine();
+      engine?.start?.();
+    } catch (err) {
+      console.error("[TonCrime] PvP start error:", err);
+      const st = document.getElementById("pvpStatus");
+      if (st) st.textContent = "PvP • Başlatılamadı";
     }
-
-    this._engine.start?.();
-
   },
 
-  stop() {
-
-    this._engine?.stop?.();
-
-  }
-
+  async stop() {
+    try {
+      const engine = await this._ensureEngine();
+      engine?.stop?.();
+    } catch (err) {
+      console.error("[TonCrime] PvP stop error:", err);
+    }
+  },
 };
 
 window.TonCrimePVP = TonCrimePVPRouter;
 })();
+
