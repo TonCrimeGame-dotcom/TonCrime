@@ -147,7 +147,6 @@ export class ClanScene {
     this.tab = "boss";
     this.buttons = [];
     this.clickCandidate = false;
-    this.backHit = null;
 
     this.scrollY = 0;
     this.maxScroll = 0;
@@ -167,7 +166,9 @@ export class ClanScene {
     this.reels = this.createReels();
     this.spinState = null;
     this.lastRaidId = null;
+
     this._bgImg = null;
+    this._bgRequested = false;
   }
 
   createReels() {
@@ -188,29 +189,40 @@ export class ClanScene {
     this.scrollY = 0;
     this.maxScroll = 0;
     this.dragging = false;
-
-    if (!this._bgImg) {
-      this._bgImg =
-        getImgSafe(this.assets, "clan_bg") ||
-        getImgSafe(this.assets, "clanbg") ||
-        getImgSafe(this.assets, "Clan-bg") ||
-        getImgSafe(this.assets, "clan") ||
-        null;
-
-      if (!this._bgImg) {
-        try {
-          const img = new Image();
-          img.src = "./src/assets/Clan-bg.png";
-          this._bgImg = img;
-        } catch (_) {}
-      }
-    }
-
+    this.dragMoved = 0;
+    this.ensureBackground();
     this.syncBossState(true);
   }
 
   onExit() {
     this.dragging = false;
+  }
+
+  ensureBackground() {
+    if (this._bgImg) return this._bgImg;
+
+    const fromAssets =
+      getImgSafe(this.assets, "clan") ||
+      getImgSafe(this.assets, "clanhub") ||
+      getImgSafe(this.assets, "clan_bg") ||
+      getImgSafe(this.assets, "Clan-bg") ||
+      getImgSafe(this.assets, "background");
+
+    if (fromAssets) {
+      this._bgImg = fromAssets;
+      return this._bgImg;
+    }
+
+    if (!this._bgRequested) {
+      this._bgRequested = true;
+      try {
+        const img = new Image();
+        img.src = "./src/assets/Clan-bg.png";
+        this._bgImg = img;
+      } catch (_) {}
+    }
+
+    return this._bgImg;
   }
 
   getClan() {
@@ -404,7 +416,7 @@ export class ClanScene {
     this.spinState.active = false;
   }
 
-  update(dt) {
+  update() {
     const wheel = wheelDelta(this.input);
     if (wheel) {
       this.scrollY = clamp(this.scrollY + wheel, 0, this.maxScroll);
@@ -469,76 +481,72 @@ export class ClanScene {
     this.syncBossState();
   }
 
-  render(ctx) {
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
+  render(ctx, w, h) {
+    const cw = Number(w || ctx.canvas?.clientWidth || ctx.canvas?.width || 0);
+    const ch = Number(h || ctx.canvas?.clientHeight || ctx.canvas?.height || 0);
 
     this.buttons = [];
+    this.ensureBackground();
 
-    ctx.clearRect(0, 0, w, h);
-
-
-    const wash = ctx.createLinearGradient(0, 0, 0, h);
-    wash.addColorStop(0, "rgba(4,7,12,0.28)");
-    wash.addColorStop(0.45, "rgba(0,0,0,0.36)");
-    wash.addColorStop(1, "rgba(0,0,0,0.62)");
-    ctx.fillStyle = wash;
-    ctx.fillRect(0, 0, w, h);
+    ctx.clearRect(0, 0, cw, ch);
 
     if (this._bgImg?.complete) {
-  const img = this._bgImg;
+      drawCoverImage(ctx, this._bgImg, 0, 0, cw, ch, 1);
+    } else {
+      const bg = ctx.createLinearGradient(0, 0, 0, ch);
+      bg.addColorStop(0, "#110f10");
+      bg.addColorStop(0.48, "#0b090a");
+      bg.addColorStop(1, "#050505");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, cw, ch);
+    }
 
-  const scale = Math.max(w / img.width, h / img.height); // cover
-  const iw = img.width * scale;
-  const ih = img.height * scale;
+    const warmWash = ctx.createLinearGradient(0, 0, 0, ch);
+    warmWash.addColorStop(0, "rgba(0,0,0,0.18)");
+    warmWash.addColorStop(0.35, "rgba(0,0,0,0.24)");
+    warmWash.addColorStop(1, "rgba(0,0,0,0.56)");
+    ctx.fillStyle = warmWash;
+    ctx.fillRect(0, 0, cw, ch);
 
-  const ix = (w - iw) / 2;
-  const iy = (h - ih) / 2;
-
-  ctx.drawImage(img, ix, iy, iw, ih);
-} else {
-  const bg = ctx.createLinearGradient(0, 0, 0, h);
-  bg.addColorStop(0, "#0a0d12");
-  bg.addColorStop(0.55, "#05070a");
-  bg.addColorStop(1, "#030405");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, w, h);
-}
-
-ctx.fillStyle = "rgba(0,0,0,0.22)";
-ctx.fillRect(0, 0, w, h);
-    const vignette = ctx.createRadialGradient(w * 0.5, h * 0.42, 20, w * 0.5, h * 0.42, Math.max(w, h) * 0.8);
-    vignette.addColorStop(0, "rgba(255,180,80,0.05)");
+    const vignette = ctx.createRadialGradient(
+      cw * 0.5,
+      ch * 0.42,
+      20,
+      cw * 0.5,
+      ch * 0.42,
+      Math.max(cw, ch) * 0.82
+    );
+    vignette.addColorStop(0, "rgba(255,170,80,0.04)");
     vignette.addColorStop(0.45, "rgba(0,0,0,0.08)");
-    vignette.addColorStop(1, "rgba(0,0,0,0.44)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.46)");
     ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, cw, ch);
 
     if (Date.now() < this.shakeUntil) {
       const sx = (Math.random() - 0.5) * 6;
       const sy = (Math.random() - 0.5) * 6;
       ctx.save();
       ctx.translate(sx, sy);
-      this.renderInner(ctx, w, h);
+      this.renderInner(ctx, cw, ch);
       ctx.restore();
     } else {
-      this.renderInner(ctx, w, h);
+      this.renderInner(ctx, cw, ch);
     }
 
     if (Date.now() < this.flashUntil) {
       ctx.fillStyle = "rgba(255,255,255,0.06)";
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, 0, cw, ch);
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
       ctx.font = "800 13px Arial";
-      const tw = Math.min(w - 40, Math.max(180, ctx.measureText(this.toastText).width + 34));
+      const tw = Math.min(cw - 40, Math.max(180, ctx.measureText(this.toastText).width + 34));
       const th = 40;
-      const tx = (w - tw) / 2;
-      const ty = h - 140;
+      const tx = (cw - tw) / 2;
+      const ty = ch - 140;
 
-      fillRR(ctx, tx, ty, tw, th, 12, "rgba(0,0,0,0.64)");
-      strokeRR(ctx, tx, ty, tw, th, 12, "rgba(255,190,50,0.28)");
+      fillRR(ctx, tx, ty, tw, th, 12, "rgba(0,0,0,0.70)");
+      strokeRR(ctx, tx, ty, tw, th, 12, "rgba(255,190,50,0.30)");
 
       ctx.fillStyle = "#fff";
       ctx.textAlign = "center";
@@ -557,14 +565,14 @@ ctx.fillRect(0, 0, w, h);
     const panelW = safe.w - 28;
     const panelH = safe.h - hudReservedTop - Math.max(18, bottomReserved * 0.28);
 
-    fillRR(ctx, panelX, panelY, panelW, panelH, 24, "rgba(6,8,12,0.12)");
-    strokeRR(ctx, panelX, panelY, panelW, panelH, 24, "rgba(255,255,255,0.09)");
+    fillRR(ctx, panelX, panelY, panelW, panelH, 24, "rgba(6,8,12,0.16)");
+    strokeRR(ctx, panelX, panelY, panelW, panelH, 24, "rgba(255,255,255,0.10)");
 
-    const panelGlow = ctx.createLinearGradient(0, panelY, 0, panelY + panelH);
-    panelGlow.addColorStop(0, "rgba(255,255,255,0.06)");
-    panelGlow.addColorStop(0.25, "rgba(255,255,255,0.015)");
-    panelGlow.addColorStop(1, "rgba(255,255,255,0)");
-    fillRR(ctx, panelX + 1, panelY + 1, panelW - 2, Math.max(90, panelH * 0.18), 24, panelGlow);
+    const topGlow = ctx.createLinearGradient(0, panelY, 0, panelY + panelH);
+    topGlow.addColorStop(0, "rgba(255,255,255,0.07)");
+    topGlow.addColorStop(0.24, "rgba(255,255,255,0.02)");
+    topGlow.addColorStop(1, "rgba(255,255,255,0)");
+    fillRR(ctx, panelX + 1, panelY + 1, panelW - 2, Math.max(90, panelH * 0.18), 24, topGlow);
 
     const clan = this.getClan();
     const boss = this.getBoss();
@@ -574,7 +582,7 @@ ctx.fillRect(0, 0, w, h);
     ctx.font = "900 22px Arial";
     ctx.fillText("CLAN", panelX + 16, panelY + 28);
 
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = "14px Arial";
     ctx.fillText(safeClanName(clan), panelX + 16, panelY + 50);
 
@@ -603,6 +611,7 @@ ctx.fillRect(0, 0, w, h);
     ctx.font = "800 13px Arial";
     for (const tab of tabs) {
       const tw = Math.max(76, ctx.measureText(tab.label).width + 24);
+
       fillRR(
         ctx,
         tx,
@@ -612,6 +621,7 @@ ctx.fillRect(0, 0, w, h);
         12,
         this.tab === tab.id ? "rgba(255,190,50,0.20)" : "rgba(255,255,255,0.08)"
       );
+
       strokeRR(
         ctx,
         tx,
@@ -642,7 +652,13 @@ ctx.fillRect(0, 0, w, h);
     ctx.save();
     ctx.clip();
 
-    fillRR(ctx, innerX, innerY, innerW, innerH, 18, "rgba(255,255,255,0.015)");
+    fillRR(ctx, innerX, innerY, innerW, innerH, 18, "rgba(255,255,255,0.018)");
+
+    const insideOverlay = ctx.createLinearGradient(0, innerY, 0, innerY + innerH);
+    insideOverlay.addColorStop(0, "rgba(0,0,0,0.14)");
+    insideOverlay.addColorStop(1, "rgba(0,0,0,0.34)");
+    ctx.fillStyle = insideOverlay;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
 
     let y = innerY + 14 - this.scrollY;
 
@@ -681,9 +697,16 @@ ctx.fillRect(0, 0, w, h);
   drawCard(ctx, x, y, w, h, title, subtitle = "") {
     fillRR(ctx, x, y, w, h, 18, "rgba(7,7,7,0.22)");
     strokeRR(ctx, x, y, w, h, 18, "rgba(255,255,255,0.07)");
+
+    const shine = ctx.createLinearGradient(0, y, 0, y + h * 0.55);
+    shine.addColorStop(0, "rgba(255,255,255,0.06)");
+    shine.addColorStop(1, "rgba(255,255,255,0)");
+    fillRR(ctx, x + 1, y + 1, w - 2, Math.max(40, h * 0.34), 18, shine);
+
     ctx.fillStyle = "#fff";
     ctx.font = "900 16px Arial";
     ctx.fillText(title, x + 16, y + 26);
+
     if (subtitle) {
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "13px Arial";
