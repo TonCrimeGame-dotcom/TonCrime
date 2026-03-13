@@ -3,6 +3,7 @@
   const START_HP = 100;
   const START_MOVES = 12;
   const ACTIONS_PER_TURN = 2;
+  const TURN_TIME_MS = 30000;
   const DRAG_THRESHOLD = 16;
 
   const TILE = {
@@ -255,10 +256,23 @@
     let damage = 0;
     let heal = 0;
     let extraMoves = 0;
+    const rowClears = [];
+    const extraMoveBursts = [];
 
     for (const m of matches) {
       const bonus = Math.max(0, m.len - 3);
-      if (m.len >= 4) extraMoves += 1;
+
+      if (m.len >= 4) {
+        extraMoves += 1;
+        extraMoveBursts.push({
+          type: m.type,
+          len: m.len,
+          cells: m.cells.map((cell) => ({ ...cell })),
+        });
+
+        const rowIndex = m.cells[Math.floor(m.cells.length / 2)]?.r ?? m.cells[0]?.r ?? 0;
+        if (!rowClears.includes(rowIndex)) rowClears.push(rowIndex);
+      }
 
       if (m.type === TILE.PUNCH) damage += SLOT_DAMAGE.punch + bonus * 2;
       if (m.type === TILE.KICK) damage += SLOT_DAMAGE.kick + bonus * 3;
@@ -271,6 +285,12 @@
       }
     }
 
+    for (const rowIndex of rowClears) {
+      for (let c = 0; c < GRID; c++) {
+        remove.add(rowIndex + ":" + c);
+      }
+    }
+
     return {
       hasAction: matches.length > 0,
       matches,
@@ -278,6 +298,8 @@
       damage,
       heal,
       extraMoves,
+      rowClears,
+      extraMoveBursts,
     };
   }
 
@@ -337,11 +359,15 @@
   function makeArenaMarkup() {
     return `
       <div class="tc-crush-root">
+        <button class="tc-crush-close" id="tcCrushClose" type="button" aria-label="Geri">✕</button>
         <div class="tc-crush-head">
           <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
-          <div class="tc-crush-title" id="tcCrushTurn">
-            <span class="tc-crush-neon">IQ ARENA</span>
-            <small>Rakip aranıyor...</small>
+          <div class="tc-crush-title-wrap">
+            <div class="tc-crush-title" id="tcCrushTurn">
+              <span class="tc-crush-neon">IQ ARENA</span>
+              <small>Rakip aranıyor...</small>
+            </div>
+            <div class="tc-crush-timer" id="tcCrushTimer">30</div>
           </div>
           <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
         </div>
@@ -377,13 +403,38 @@
         box-sizing: border-box;
         background: transparent;
       }
+      #arena .tc-crush-close {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 9;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 12px;
+        background: rgba(0,0,0,0.10);
+        color: rgba(255,255,255,0.96);
+        font: 900 16px system-ui, Arial;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+      }
+      #arena .tc-crush-close:active {
+        transform: scale(0.96);
+      }
       #arena .tc-crush-head {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         gap: 8px;
         align-items: center;
-        margin-bottom: 10px;
+        margin: 2px 42px 10px 0;
         flex: 0 0 auto;
+      }
+      #arena .tc-crush-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        justify-content: center;
       }
       #arena .tc-crush-chip {
         min-height: 32px;
@@ -404,6 +455,27 @@
         text-align: center;
         color: rgba(255,255,255,0.98);
         font: 900 12px system-ui, Arial;
+      }
+      #arena .tc-crush-timer {
+        min-width: 44px;
+        height: 32px;
+        padding: 0 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(0,0,0,0.10);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font: 900 14px system-ui, Arial;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+      }
+      #arena .tc-crush-timer.low {
+        color: #ff7676;
+        border-color: rgba(255,90,90,0.35);
+        text-shadow:
+          0 0 6px rgba(255,80,80,0.8),
+          0 0 14px rgba(255,44,44,0.55);
       }
       #arena .tc-crush-title small {
         display: block;
@@ -461,7 +533,7 @@
         padding: 10px 14px;
         min-width: 180px;
         border-radius: 14px;
-        background: rgba(0,0,0,0.48);
+        background: rgba(0,0,0,0.22);
         border: 1px solid rgba(255,255,255,0.12);
         color: #fff;
         font: 900 13px system-ui, Arial;
@@ -480,7 +552,7 @@
         }
         #arena .tc-crush-head {
           gap: 6px;
-          margin-bottom: 8px;
+          margin: 0 38px 8px 0;
         }
         #arena .tc-crush-chip {
           min-height: 30px;
@@ -490,6 +562,18 @@
         }
         #arena .tc-crush-title {
           font-size: 11px;
+        }
+        #arena .tc-crush-timer {
+          min-width: 38px;
+          height: 30px;
+          font-size: 12px;
+          border-radius: 10px;
+        }
+        #arena .tc-crush-close {
+          width: 32px;
+          height: 32px;
+          top: 4px;
+          right: 4px;
         }
         #arena .tc-crush-title small {
           font-size: 9px;
@@ -511,11 +595,14 @@
     _opponent: { username: "Rakip", isBot: true },
     _turnTimer: null,
     _queueTimer: null,
+    _timerTick: null,
+    _frameHandle: null,
     _pointerDown: null,
     _dragStart: null,
     _dragFromTile: null,
     _dragConsumed: false,
     _releaseGuard: false,
+    _fx: [],
     _unbind: null,
 
     init(opts = {}) {
@@ -558,11 +645,18 @@
         meMoves: arena.querySelector("#tcCrushMeMoves"),
         enemyMoves: arena.querySelector("#tcCrushEnemyMoves"),
         turn: arena.querySelector("#tcCrushTurn"),
+        timer: arena.querySelector("#tcCrushTimer"),
+        closeBtn: arena.querySelector("#tcCrushClose"),
         toast: arena.querySelector("#tcCrushToast"),
       };
 
+      if (this._els.closeBtn) {
+        this._els.closeBtn.onclick = () => this.close();
+      }
+
       this._bindCanvas();
       this._safeResizeSequence();
+      this._startFrameLoop();
       this.reset();
 
       this._inited = true;
@@ -607,8 +701,10 @@
       this._dragFromTile = null;
       clearTimeout(this._turnTimer);
       clearTimeout(this._queueTimer);
+      this._clearTurnTimer();
       this._turnTimer = null;
       this._queueTimer = null;
+      this._fx = [];
       if (this._state) {
         this._state.matchmaking = false;
         this._state.info = "Maç durduruldu";
@@ -620,6 +716,7 @@
     reset() {
       clearTimeout(this._turnTimer);
       clearTimeout(this._queueTimer);
+      this._clearTurnTimer();
       this._turnTimer = null;
       this._queueTimer = null;
       this._running = false;
@@ -645,6 +742,8 @@
         info: "Maç hazır",
         matchmaking: false,
         finished: false,
+        turnEndsAt: 0,
+        turnSecondsLeft: Math.ceil(TURN_TIME_MS / 1000),
       };
 
       this._safeResizeSequence();
@@ -660,8 +759,103 @@
       this._setStatus(`IQ ARENA • ${name} bulundu`);
       this._toast(`${name} maça girdi`);
       this._locked = false;
+      this._startTurnTimer("me");
       this._updateHud();
       this._render();
+    },
+
+    _startFrameLoop() {
+      if (this._frameHandle) return;
+      const step = () => {
+        if (!this._inited) {
+          this._frameHandle = null;
+          return;
+        }
+        this._render();
+        this._frameHandle = requestAnimationFrame(step);
+      };
+      this._frameHandle = requestAnimationFrame(step);
+    },
+
+    _stopFrameLoop() {
+      if (this._frameHandle) cancelAnimationFrame(this._frameHandle);
+      this._frameHandle = null;
+    },
+
+    _clearTurnTimer() {
+      clearInterval(this._timerTick);
+      this._timerTick = null;
+      if (this._state) {
+        this._state.turnEndsAt = 0;
+        this._state.turnSecondsLeft = 0;
+      }
+    },
+
+    _startTurnTimer(turn) {
+      if (!this._state || this._state.finished || this._state.matchmaking) return;
+      this._clearTurnTimer();
+      this._state.turn = turn;
+      this._state.turnEndsAt = Date.now() + TURN_TIME_MS;
+      this._state.turnSecondsLeft = Math.ceil(TURN_TIME_MS / 1000);
+      this._timerTick = setInterval(() => {
+        if (!this._state || this._state.finished || this._state.matchmaking) {
+          this._clearTurnTimer();
+          return;
+        }
+        const left = Math.max(0, this._state.turnEndsAt - Date.now());
+        this._state.turnSecondsLeft = Math.ceil(left / 1000);
+        if (left <= 0) {
+          this._clearTurnTimer();
+          this._onTurnExpired();
+        }
+      }, 120);
+    },
+
+    _queueFx(fx) {
+      this._fx.push({ ...fx, id: Date.now() + Math.random() });
+    },
+
+    _onTurnExpired() {
+      if (!this._running || !this._state || this._state.finished) return;
+
+      if (this._state.turn === "me") {
+        this._state.info = "Süre bitti • Raund rakibe geçti";
+        this._state.turn = "enemy";
+        this._state.enemyActionLeft = ACTIONS_PER_TURN;
+        this._toast("Süre doldu");
+        this._locked = true;
+        this._updateHud();
+        this._render();
+        this._turnTimer = setTimeout(() => this._enemyPlay(), 500);
+      } else {
+        this._state.info = "Rakibin süresi doldu";
+        this._state.turn = "me";
+        this._state.meActionLeft = ACTIONS_PER_TURN;
+        this._toast("Rakibin süresi doldu");
+        this._locked = false;
+        this._startTurnTimer("me");
+        this._updateHud();
+        this._render();
+      }
+    },
+
+    close() {
+      this.stop();
+      this._clearTurnTimer();
+      try {
+        const wrap = document.getElementById("pvpWrap");
+        if (wrap) {
+          wrap.classList.remove("open");
+          wrap.style.display = "none";
+        }
+        const layer = document.getElementById("pvpLayer");
+        if (layer) layer.style.pointerEvents = "none";
+        const fab = document.getElementById("pvpFab");
+        if (fab) fab.style.display = "";
+      } catch (_) {}
+      try {
+        window.dispatchEvent(new Event("tc:closePvp"));
+      } catch (_) {}
     },
 
     _bindCanvas() {
@@ -889,6 +1083,13 @@
           : `${s.info || "Grid Heist"} • Raund hamlesi ${s.turn === "me" ? s.meActionLeft : s.enemyActionLeft}/2`;
         this._els.turn.innerHTML = `<span class="tc-crush-neon">${who === "IQ ARENA" ? "IQ ARENA" : who}</span><small>${sub}</small>`;
       }
+      if (this._els.timer) {
+        const leftSec = s.matchmaking
+          ? 5
+          : Math.max(0, Number(s.turnSecondsLeft || Math.ceil(Math.max(0, (s.turnEndsAt || 0) - Date.now()) / 1000)));
+        this._els.timer.textContent = String(leftSec);
+        this._els.timer.classList.toggle("low", leftSec <= 10 && !s.matchmaking && !s.finished);
+      }
     },
 
     async _playerMove(a, b) {
@@ -936,6 +1137,7 @@
         this._state.turn = "me";
         this._state.meActionLeft = ACTIONS_PER_TURN;
         this._state.info = "Rakip hamle bulamadı";
+        this._startTurnTimer("me");
         this._updateHud();
         this._render();
         this._toast("Rakip hamle bulamadı");
@@ -966,6 +1168,7 @@
       let totalDamage = 0;
       let totalHeal = 0;
       let totalExtra = 0;
+      const rowClearCount = { value: 0 };
 
       while (true) {
         const res = evaluateBoard(board);
@@ -976,12 +1179,37 @@
         totalHeal += res.heal;
         totalExtra += res.extraMoves;
 
+        if (res.rowClears?.length) {
+          rowClearCount.value += res.rowClears.length;
+          for (const rowIndex of res.rowClears) {
+            this._queueFx({
+              kind: "rowClear",
+              row: rowIndex,
+              startAt: performance.now(),
+              endAt: performance.now() + 420,
+            });
+          }
+        }
+
+        if (res.extraMoveBursts?.length) {
+          for (const burst of res.extraMoveBursts) {
+            const cell = burst.cells[Math.floor(burst.cells.length / 2)] || burst.cells[0];
+            this._queueFx({
+              kind: "extraMove",
+              cell,
+              len: burst.len,
+              startAt: performance.now(),
+              endAt: performance.now() + 650,
+            });
+          }
+        }
+
         board = applyResolution(board, res);
         this._state.board = board;
         this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • Combo x${chain}`;
         this._updateHud();
         this._render();
-        await this._sleep(165);
+        await this._sleep(185);
       }
 
       if (!hasAnyPossibleMove(board)) {
@@ -991,19 +1219,26 @@
       this._lastSignature = boardSignature(board);
       this._state.board = board;
 
+      const bonusText = [];
+      if (rowClearCount.value > 0) bonusText.push(`Satır temizleme x${rowClearCount.value}`);
+      if (totalExtra > 0) bonusText.push(`Extra Move +${totalExtra}`);
+
       if (actor === "me") {
         this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
         this._state.meHp = clamp(this._state.meHp + totalHeal, 0, 100);
         this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, 100);
         this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1);
 
-        this._toast(totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`);
+        const baseToast = totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`;
+        this._toast(bonusText.length ? `${baseToast} • ${bonusText.join(" • ")}` : baseToast);
 
         if (this._state.meMoves <= 0 || this._state.meActionLeft <= 0) {
           this._state.turn = "enemy";
           this._state.enemyActionLeft = ACTIONS_PER_TURN;
+          this._startTurnTimer("enemy");
         } else {
           this._state.turn = "me";
+          this._startTurnTimer("me");
         }
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
@@ -1011,13 +1246,16 @@
         this._state.meHp = clamp(this._state.meHp - totalDamage, 0, 100);
         this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1);
 
-        this._toast(totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`);
+        const baseToast = totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`;
+        this._toast(bonusText.length ? `${baseToast} • ${bonusText.join(" • ")}` : baseToast);
 
         if (this._state.enemyMoves <= 0 || this._state.enemyActionLeft <= 0) {
           this._state.turn = "me";
           this._state.meActionLeft = ACTIONS_PER_TURN;
+          this._startTurnTimer("me");
         } else {
           this._state.turn = "enemy";
+          this._startTurnTimer("enemy");
         }
       }
 
@@ -1085,6 +1323,7 @@
       this._locked = true;
       clearTimeout(this._turnTimer);
       clearTimeout(this._queueTimer);
+      this._clearTurnTimer();
       this._turnTimer = null;
       this._queueTimer = null;
       this._setStatus(win ? "Kazandın" : "Kaybettin");
@@ -1146,6 +1385,30 @@
       inner.addColorStop(1, "rgba(10,14,28,0.92)");
       fillRoundRect(ctx, ox - 4, oy - 4, actual + 8, actual + 8, 18, inner);
 
+      const now = performance.now();
+      this._fx = (this._fx || []).filter((fx) => (fx.endAt || 0) > now);
+
+      for (const fx of this._fx) {
+        if (fx.kind !== "rowClear") continue;
+        const t = clamp((now - fx.startAt) / Math.max(1, fx.endAt - fx.startAt), 0, 1);
+        const y = oy + fx.row * cell;
+        const alpha = (1 - t) * 0.55;
+        const rowGlow = ctx.createLinearGradient(ox, y, ox + actual, y);
+        rowGlow.addColorStop(0, `rgba(255,230,140,${alpha * 0.15})`);
+        rowGlow.addColorStop(0.5, `rgba(255,255,255,${alpha})`);
+        rowGlow.addColorStop(1, `rgba(255,110,110,${alpha * 0.2})`);
+        fillRoundRect(ctx, ox + 2, y + 4, actual - 4, cell - 8, Math.max(8, Math.floor(cell * 0.18)), rowGlow);
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+        ctx.lineWidth = 2 + (1 - t) * 3;
+        ctx.beginPath();
+        ctx.moveTo(ox + 6, y + cell / 2);
+        ctx.lineTo(ox + actual - 6, y + cell / 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       for (let r = 0; r < GRID; r++) {
         for (let c = 0; c < GRID; c++) {
           const x = ox + c * cell;
@@ -1200,6 +1463,31 @@
 
           this._tileRects.push({ r, c, x, y, w: cell, h: cell });
         }
+      }
+
+      for (const fx of this._fx) {
+        if (fx.kind !== "extraMove" || !fx.cell) continue;
+        const t = clamp((now - fx.startAt) / Math.max(1, fx.endAt - fx.startAt), 0, 1);
+        const cx = ox + fx.cell.c * cell + cell / 2;
+        const cy = oy + fx.cell.r * cell + cell / 2;
+        const alpha = 1 - t;
+        const radius = cell * (0.20 + t * 0.34);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = "rgba(255,205,96,0.92)";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffd16f";
+        ctx.font = `900 ${Math.max(12, Math.floor(cell * 0.24))}px system-ui, Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("EXTRA", cx, cy - Math.max(12, cell * 0.32));
+        ctx.fillText(`+1`, cx, cy + Math.max(10, cell * 0.30));
+        ctx.restore();
       }
 
       ctx.textAlign = "left";
