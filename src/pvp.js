@@ -75,6 +75,21 @@
     return null;
   }
 
+  function getCanvasCssSize(canvas) {
+    const rect = canvas?.getBoundingClientRect?.();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+    let w = Math.round(rect?.width || 0);
+    let h = Math.round(rect?.height || 0);
+
+    if (!w || !h) {
+      w = Math.round((canvas?.width || window.innerWidth) / dpr);
+      h = Math.round((canvas?.height || window.innerHeight) / dpr);
+    }
+
+    return { w, h };
+  }
+
   class PvpScene {
     constructor({ store, input, scenes, assets }) {
       this.store = store;
@@ -89,6 +104,9 @@
       this.startScrollY = 0;
       this.velocityY = 0;
       this.lastPointerY = 0;
+      this.moved = 0;
+      this.clickCandidate = false;
+      this._wasPointerDown = false;
 
       this.panelRect = { x: 0, y: 0, w: 0, h: 0 };
       this.closeRect = null;
@@ -144,6 +162,9 @@
       this.scrollY = 0;
       this.velocityY = 0;
       this.dragging = false;
+      this.moved = 0;
+      this.clickCandidate = false;
+      this._wasPointerDown = false;
     }
 
     _headerText() {
@@ -163,28 +184,44 @@
     }
 
     update(dt) {
-      const p = this.input?.pointer;
-      if (!p) return;
+      const p = this.input?.pointer || {};
+      const px = Number(p.x || 0);
+      const py = Number(p.y || 0);
 
-      if (p.justDown) {
+      const isDown = !!(p.down || this.input?.isDown?.());
+      const justDown = !!(p.justDown || (isDown && !this._wasPointerDown));
+      const justUp = !!(!isDown && this._wasPointerDown);
+
+      if (justDown) {
         this.dragging = true;
-        this.downY = p.y;
-        this.lastPointerY = p.y;
+        this.downY = py;
+        this.lastPointerY = py;
         this.startScrollY = this.scrollY;
         this.velocityY = 0;
+        this.moved = 0;
+        this.clickCandidate = true;
       }
 
-      if (this.dragging && p.down) {
-        const dy = p.y - this.downY;
+      if (this.dragging && isDown) {
+        const dy = py - this.downY;
         this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
 
-        const step = this.lastPointerY - p.y;
+        const step = this.lastPointerY - py;
         this.velocityY = step;
-        this.lastPointerY = p.y;
+        this.lastPointerY = py;
+
+        this.moved = Math.max(this.moved, Math.abs(dy));
+        if (this.moved > 10) {
+          this.clickCandidate = false;
+        }
       }
 
-      if (!p.down) {
-        if (this.dragging) this.dragging = false;
+      if (this.dragging && justUp) {
+        this.dragging = false;
+
+        if (this.clickCandidate) {
+          this.pointerUp(px, py);
+        }
       }
 
       const wheel = Number(this.input?.wheelDelta || 0);
@@ -196,6 +233,8 @@
         this.scrollY = clamp(this.scrollY + this.velocityY, 0, this.maxScroll);
         this.velocityY *= 0.9;
       }
+
+      this._wasPointerDown = isDown;
     }
 
     pointerUp(x, y) {
@@ -235,8 +274,14 @@
 
     render(ctx) {
       const canvas = ctx.canvas;
-      const w = canvas.width;
-      const h = canvas.height;
+      const size = getCanvasCssSize(canvas);
+      const w = size.w;
+      const h = size.h;
+
+      const state = this.store?.get?.() || {};
+      const safe = state?.ui?.safe || { x: 0, y: 0, w, h };
+      const hudReservedTop = Number(state?.ui?.hudReservedTop || 92);
+      const chatReservedBottom = Number(state?.ui?.chatReservedBottom || 58);
 
       ctx.clearRect(0, 0, w, h);
 
@@ -249,14 +294,12 @@
       ctx.fillStyle = fade;
       ctx.fillRect(0, 0, w, h);
 
-      const side = Math.max(12, Math.round(w * 0.03));
-      const top = Math.max(102, Math.round(h * 0.14));
-      const bottom = Math.max(66, Math.round(h * 0.10));
-
-      const panelX = side;
-      const panelY = top;
-      const panelW = w - side * 2;
-      const panelH = h - top - bottom;
+      const side = clamp(Math.round(safe.w * 0.035), 12, 18);
+      const panelX = safe.x + side;
+      const panelY = safe.y + Math.max(6, hudReservedTop - 4);
+      const panelW = safe.w - side * 2;
+      const panelBottom = safe.y + safe.h - Math.max(10, chatReservedBottom - 6);
+      const panelH = Math.max(320, panelBottom - panelY);
 
       this.panelRect.x = panelX;
       this.panelRect.y = panelY;
@@ -315,8 +358,8 @@
               ? "Nightclub içi havuz"
               : this.source === "coffeeshop"
               ? "Coffeeshop içi havuz"
-              : "Şehir sokakları sıcak. En temiz komboyu yapan parayı toplar."
-        }
+              : "Şehir sokakları sıcak. En temiz komboyu yapan parayı toplar.",
+        },
       ];
 
       this.modePills = [];
@@ -348,6 +391,7 @@
       const cardH = clamp(Math.round(panelH * 0.22), 150, 188);
       const contentH = cards.length * cardH + Math.max(0, cards.length - 1) * cardGap;
       this.maxScroll = Math.max(0, contentH - viewportH);
+      this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
       ctx.beginPath();
       ctx.rect(panelX + 1, viewportTop, panelW - 2, viewportH);
@@ -363,7 +407,16 @@
         const cw = panelW - innerPad * 2;
 
         fillRoundRect(ctx, x, y, cw, cardH, 18, "rgba(6,10,18,0.56)");
-        strokeRoundRect(ctx, x, y, cw, cardH, 18, card.open ? "rgba(255,170,50,0.72)" : "rgba(255,255,255,0.14)", 1.4);
+        strokeRoundRect(
+          ctx,
+          x,
+          y,
+          cw,
+          cardH,
+          18,
+          card.open ? "rgba(255,170,50,0.72)" : "rgba(255,255,255,0.14)",
+          1.4
+        );
 
         const shine = ctx.createLinearGradient(x, y, x + cw, y + cardH);
         shine.addColorStop(0, "rgba(255,160,50,0.05)");
@@ -446,7 +499,7 @@
 
         this.cardRects.push({
           card,
-          btn: { x: btnX, y: btnY, w: btnW, h: btnH }
+          btn: { x: btnX, y: btnY, w: btnW, h: btnH },
         });
 
         y += cardH + cardGap;
@@ -469,200 +522,198 @@
   }
 
   window.PvpScene = PvpScene;
-function loadClassicScriptOnce(paths) {
-  const list = Array.isArray(paths) ? paths : [paths];
 
-  return new Promise((resolve, reject) => {
-    let i = 0;
+  function loadClassicScriptOnce(paths) {
+    const list = Array.isArray(paths) ? paths : [paths];
 
-    const tryNext = () => {
-      if (i >= list.length) {
-        reject(new Error("Script yüklenemedi: " + list.join(" | ")));
-        return;
-      }
+    return new Promise((resolve, reject) => {
+      let i = 0;
 
-      const src = list[i++];
-
-      const existing = document.querySelector(`script[data-pvp-src="${src}"]`);
-      if (existing) {
-        if (existing.dataset.loaded === "1") {
-          resolve(src);
+      const tryNext = () => {
+        if (i >= list.length) {
+          reject(new Error("Script yüklenemedi: " + list.join(" | ")));
           return;
         }
 
-        existing.addEventListener("load", () => resolve(src), { once: true });
-        existing.addEventListener(
-          "error",
-          () => tryNext(),
-          { once: true }
-        );
-        return;
-      }
+        const src = list[i++];
 
-      const s = document.createElement("script");
-      s.src = src;
-      s.defer = true;
-      s.dataset.pvpSrc = src;
+        const existing = document.querySelector(`script[data-pvp-src="${src}"]`);
+        if (existing) {
+          if (existing.dataset.loaded === "1") {
+            resolve(src);
+            return;
+          }
 
-      s.onload = () => {
-        s.dataset.loaded = "1";
-        resolve(src);
+          existing.addEventListener("load", () => resolve(src), { once: true });
+          existing.addEventListener("error", () => tryNext(), { once: true });
+          return;
+        }
+
+        const s = document.createElement("script");
+        s.src = src;
+        s.defer = true;
+        s.dataset.pvpSrc = src;
+
+        s.onload = () => {
+          s.dataset.loaded = "1";
+          resolve(src);
+        };
+
+        s.onerror = () => {
+          s.remove();
+          tryNext();
+        };
+
+        document.body.appendChild(s);
       };
 
-      s.onerror = () => {
-        s.remove();
-        tryNext();
-      };
+      tryNext();
+    });
+  }
 
-      document.body.appendChild(s);
-    };
+  const TonCrimePVPRouter = {
+    _booted: false,
+    _inited: false,
+    _eventsBound: false,
+    _engine: null,
+    _mode: "grid",
+    _opts: null,
+    _opponent: { username: "Rakip", isBot: true },
 
-    tryNext();
-  });
-}
+    boot() {
+      if (this._booted) return;
+      this._booted = true;
+      console.log("[TonCrime] PvP router booted");
+    },
 
-const TonCrimePVPRouter = {
-  _booted: false,
-  _inited: false,
-  _eventsBound: false,
-  _engine: null,
-  _mode: "grid",
-  _opts: null,
-  _opponent: { username: "Rakip", isBot: true },
+    async _loadEngine(mode) {
+      this._mode = mode || "grid";
 
-  boot() {
-    if (this._booted) return;
-    this._booted = true;
-    console.log("[TonCrime] PvP router booted");
-  },
+      if (this._mode === "grid") {
+        await loadClassicScriptOnce([
+          "./src/pvpcrush.js",
+          "./pvpcrush.js",
+        ]);
 
-  async _loadEngine(mode) {
-    this._mode = mode || "grid";
+        if (!window.TonCrimePVP_CRUSH) {
+          throw new Error("pvpcrush.js yüklendi ama TonCrimePVP_CRUSH bulunamadı");
+        }
 
-    if (this._mode === "grid") {
-      await loadClassicScriptOnce([
-        "./src/pvpcrush.js",
-        "./pvpcrush.js",
-      ]);
-
-      if (!window.TonCrimePVP_CRUSH) {
-        throw new Error("pvpcrush.js yüklendi ama TonCrimePVP_CRUSH bulunamadı");
+        this._engine = window.TonCrimePVP_CRUSH;
+        return this._engine;
       }
 
-      this._engine = window.TonCrimePVP_CRUSH;
-      return this._engine;
-    }
+      throw new Error("Bu mod için engine yok: " + this._mode);
+    },
 
-    throw new Error("Bu mod için engine yok: " + this._mode);
-  },
+    async _ensureEngine() {
+      if (this._engine) return this._engine;
+      return await this._loadEngine(this._mode || "grid");
+    },
 
-  async _ensureEngine() {
-    if (this._engine) return this._engine;
-    return await this._loadEngine(this._mode || "grid");
-  },
+    async _prepareEngine() {
+      const engine = await this._ensureEngine();
 
-  async _prepareEngine() {
-    const engine = await this._ensureEngine();
+      if (this._opts && engine?.init) {
+        engine.init(this._opts);
+      }
 
-    if (this._opts && engine?.init) {
-      engine.init(this._opts);
-    }
+      if (this._opponent && engine?.setOpponent) {
+        engine.setOpponent(this._opponent);
+      }
 
-    if (this._opponent && engine?.setOpponent) {
-      engine.setOpponent(this._opponent);
-    }
+      return engine;
+    },
 
-    return engine;
-  },
+    _bindEvents() {
+      if (this._eventsBound) return;
+      this._eventsBound = true;
 
-  _bindEvents() {
-    if (this._eventsBound) return;
-    this._eventsBound = true;
+      window.addEventListener("tc:pvp:grid", async () => {
+        try {
+          this._mode = "grid";
+          const engine = await this._prepareEngine();
+          engine?.reset?.();
 
-    window.addEventListener("tc:pvp:grid", async () => {
+          const st = document.getElementById("pvpStatus");
+          if (st) st.textContent = "PvP • Grid Heist hazır";
+        } catch (err) {
+          console.error("[TonCrime] tc:pvp:grid error:", err);
+          const st = document.getElementById("pvpStatus");
+          if (st) st.textContent = "PvP • Grid yüklenemedi";
+        }
+      });
+
+      window.addEventListener("tc:pvp:arena", () => {
+        const st = document.getElementById("pvpStatus");
+        if (st) st.textContent = "PvP • Arena yakında";
+        console.warn("[TonCrime] Arena modu henüz bağlı değil.");
+      });
+    },
+
+    init(opts = {}) {
+      this.boot();
+      this._bindEvents();
+
+      this._opts = {
+        arenaId: opts.arenaId || "arena",
+        statusId: opts.statusId || "pvpStatus",
+        enemyFillId: opts.enemyFillId || "enemyFill",
+        meFillId: opts.meFillId || "meFill",
+        enemyHpTextId: opts.enemyHpTextId || "enemyHpText",
+        meHpTextId: opts.meHpTextId || "meHpText",
+      };
+
+      this._inited = true;
+      console.log("[TonCrime] PvP router init OK");
+    },
+
+    async setOpponent(opp) {
+      this._opponent =
+        opp && typeof opp.username === "string"
+          ? { ...opp }
+          : { username: "Rakip", isBot: true };
+
       try {
-        this._mode = "grid";
+        if (this._engine?.setOpponent) {
+          this._engine.setOpponent(this._opponent);
+        }
+      } catch (err) {
+        console.error("[TonCrime] setOpponent error:", err);
+      }
+    },
+
+    async reset() {
+      try {
         const engine = await this._prepareEngine();
         engine?.reset?.();
-
-        const st = document.getElementById("pvpStatus");
-        if (st) st.textContent = "PvP • Grid Heist hazır";
       } catch (err) {
-        console.error("[TonCrime] tc:pvp:grid error:", err);
+        console.error("[TonCrime] PvP reset error:", err);
+        const st = document.getElementById("pvpStatus");
+        if (st) st.textContent = "PvP • Reset hatası";
       }
-    });
+    },
 
-    window.addEventListener("tc:pvp:arena", () => {
-      const st = document.getElementById("pvpStatus");
-      if (st) st.textContent = "PvP • Arena yakında";
-      console.warn("[TonCrime] Arena modu henüz bağlı değil.");
-    });
-  },
-
-  init(opts = {}) {
-    this.boot();
-    this._bindEvents();
-
-    this._opts = {
-      arenaId: opts.arenaId || "arena",
-      statusId: opts.statusId || "pvpStatus",
-      enemyFillId: opts.enemyFillId || "enemyFill",
-      meFillId: opts.meFillId || "meFill",
-      enemyHpTextId: opts.enemyHpTextId || "enemyHpText",
-      meHpTextId: opts.meHpTextId || "meHpText",
-    };
-
-    this._inited = true;
-    console.log("[TonCrime] PvP router init OK");
-  },
-
-  async setOpponent(opp) {
-    this._opponent =
-      opp && typeof opp.username === "string"
-        ? { ...opp }
-        : { username: "Rakip", isBot: true };
-
-    try {
-      if (this._engine?.setOpponent) {
-        this._engine.setOpponent(this._opponent);
+    async start() {
+      try {
+        const engine = await this._prepareEngine();
+        engine?.start?.();
+      } catch (err) {
+        console.error("[TonCrime] PvP start error:", err);
+        const st = document.getElementById("pvpStatus");
+        if (st) st.textContent = "PvP • Başlatılamadı";
       }
-    } catch (err) {
-      console.error("[TonCrime] setOpponent error:", err);
-    }
-  },
+    },
 
-  async reset() {
-    try {
-      const engine = await this._prepareEngine();
-      engine?.reset?.();
-    } catch (err) {
-      console.error("[TonCrime] PvP reset error:", err);
-      const st = document.getElementById("pvpStatus");
-      if (st) st.textContent = "PvP • Reset hatası";
-    }
-  },
+    async stop() {
+      try {
+        const engine = await this._ensureEngine();
+        engine?.stop?.();
+      } catch (err) {
+        console.error("[TonCrime] PvP stop error:", err);
+      }
+    },
+  };
 
-  async start() {
-    try {
-      const engine = await this._prepareEngine();
-      engine?.start?.();
-    } catch (err) {
-      console.error("[TonCrime] PvP start error:", err);
-      const st = document.getElementById("pvpStatus");
-      if (st) st.textContent = "PvP • Başlatılamadı";
-    }
-  },
-
-  async stop() {
-    try {
-      const engine = await this._ensureEngine();
-      engine?.stop?.();
-    } catch (err) {
-      console.error("[TonCrime] PvP stop error:", err);
-    }
-  },
-};
-
-window.TonCrimePVP = TonCrimePVPRouter;
+  window.TonCrimePVP = TonCrimePVPRouter;
 })();
-
