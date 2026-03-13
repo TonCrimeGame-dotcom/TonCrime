@@ -1,3 +1,4 @@
+// src/scenes/CoffeeShopScene.js
 
 const ITEMS = [
   { id: "amnesia_haze", name: "Amnesia Haze", price: 10, energy: 3, rarity: "common" },
