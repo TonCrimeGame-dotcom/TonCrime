@@ -252,6 +252,7 @@
       }
     }
 
+
 startGame(id) {
   const s = this.store?.get?.() || {};
   const pvp = { ...(s.pvp || {}) };
@@ -265,13 +266,13 @@ startGame(id) {
     window.dispatchEvent(new Event("tc:openPvp"));
   } catch (_) {}
 
-  if (this.scenes?.go) {
-    this.scenes.go("home");
-  }
-
   const go = () => {
     if (id === "grid") {
-      window.dispatchEvent(new CustomEvent("tc:pvp:grid", { detail: pvp }));
+      try {
+        window.dispatchEvent(new CustomEvent("tc:pvp:grid", { detail: pvp }));
+      } catch (err) {
+        console.error("[TonCrime] tc:pvp:grid dispatch error:", err);
+      }
 
       setTimeout(() => {
         try {
@@ -284,20 +285,23 @@ startGame(id) {
         } catch (err) {
           console.error("[TonCrime] Grid start error:", err);
         }
-      }, 120);
+      }, 160);
 
       return;
     }
 
     if (id === "arena") {
-      window.dispatchEvent(new CustomEvent("tc:pvp:arena", { detail: pvp }));
+      try {
+        window.dispatchEvent(new CustomEvent("tc:pvp:arena", { detail: pvp }));
+      } catch (err) {
+        console.error("[TonCrime] tc:pvp:arena dispatch error:", err);
+      }
       return;
     }
   };
 
-  setTimeout(go, 60);
+  setTimeout(go, 80);
 }
-    
 
     render(ctx) {
       const canvas = ctx.canvas;
