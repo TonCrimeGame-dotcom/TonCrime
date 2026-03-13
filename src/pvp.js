@@ -264,8 +264,8 @@
       this.panelRect.h = panelH;
 
       ctx.save();
-      fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(10,14,24,0.42)");
-      strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,181,74,0.72)", 1.4);
+      fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(10,14,24,0.20)");
+      strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,181,74,0.0)", 0);
 
       const gloss = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
       gloss.addColorStop(0, "rgba(255,255,255,0.06)");
