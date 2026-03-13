@@ -632,7 +632,6 @@ export class ProfileScene {
     drawButton(ctx, this.hitLeaderboard, "🏆  LEADERBOARD", "gold");
 
     // BACK
-    this.hitBack = { x: innerX + 8, y: innerY + innerH - 48, w: 92, h: 32 };
-    drawButton(ctx, this.hitBack, "← Geri", "muted");
+this.hitBack = { x: innerX + innerW - 100, y: innerY + 12, w: 92, h: 32 };
   }
 }
