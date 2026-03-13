@@ -252,47 +252,51 @@
       }
     }
 
-    startGame(id) {
-      const s = this.store?.get?.() || {};
-      const pvp = { ...(s.pvp || {}) };
+startGame(id) {
+  const s = this.store?.get?.() || {};
+  const pvp = { ...(s.pvp || {}) };
 
-      pvp.selectedMode = id;
-      pvp.source = this.source || "general";
+  pvp.selectedMode = id;
+  pvp.source = this.source || "general";
 
-      this.store?.set?.({ pvp });
+  this.store?.set?.({ pvp });
 
-      try {
-        window.dispatchEvent(new Event("tc:openPvp"));
-      } catch (_) {}
+  try {
+    window.dispatchEvent(new Event("tc:openPvp"));
+  } catch (_) {}
 
-      const go = () => {
-        if (id === "grid") {
-          window.dispatchEvent(new CustomEvent("tc:pvp:grid", { detail: pvp }));
+  if (this.scenes?.go) {
+    this.scenes.go("home");
+  }
 
-          setTimeout(() => {
-            try {
-              window.TonCrimePVP?.setOpponent?.({
-                username: "ShadowWolf",
-                isBot: true,
-              });
-              window.TonCrimePVP?.reset?.();
-              window.TonCrimePVP?.start?.();
-            } catch (err) {
-              console.error("[TonCrime] Grid start error:", err);
-            }
-          }, 80);
+  const go = () => {
+    if (id === "grid") {
+      window.dispatchEvent(new CustomEvent("tc:pvp:grid", { detail: pvp }));
 
-          return;
+      setTimeout(() => {
+        try {
+          window.TonCrimePVP?.setOpponent?.({
+            username: "ShadowWolf",
+            isBot: true,
+          });
+          window.TonCrimePVP?.reset?.();
+          window.TonCrimePVP?.start?.();
+        } catch (err) {
+          console.error("[TonCrime] Grid start error:", err);
         }
+      }, 120);
 
-        if (id === "arena") {
-          window.dispatchEvent(new CustomEvent("tc:pvp:arena", { detail: pvp }));
-          return;
-        }
-      };
-
-      setTimeout(go, 40);
+      return;
     }
+
+    if (id === "arena") {
+      window.dispatchEvent(new CustomEvent("tc:pvp:arena", { detail: pvp }));
+      return;
+    }
+  };
+
+  setTimeout(go, 60);
+}
     
 
     render(ctx) {
