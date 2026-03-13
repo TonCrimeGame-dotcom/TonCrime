@@ -1,38 +1,48 @@
-// src/scenes/CoffeeShopScene.js
 
 const ITEMS = [
-  { id: "amnesia_haze", name: "Amnesia Haze", price: 10, energy: 3 },
-  { id: "white_widow", name: "White Widow", price: 12, energy: 4 },
-  { id: "northern_lights", name: "Northern Lights", price: 14, energy: 5 },
-  { id: "super_skunk", name: "Super Skunk", price: 16, energy: 6 },
-  { id: "purple_haze", name: "Purple Haze", price: 18, energy: 7 },
-  { id: "orange_bud", name: "Orange Bud", price: 20, energy: 8 },
-  { id: "blue_dream", name: "Blue Dream", price: 22, energy: 9 },
-  { id: "gelato", name: "Gelato", price: 24, energy: 10 },
-  { id: "gorilla_glue", name: "Gorilla Glue", price: 26, energy: 11 },
-  { id: "green_crack", name: "Green Crack", price: 28, energy: 12 },
+  { id: "amnesia_haze", name: "Amnesia Haze", price: 10, energy: 3, rarity: "common" },
+  { id: "white_widow", name: "White Widow", price: 12, energy: 4, rarity: "common" },
+  { id: "northern_lights", name: "Northern Lights", price: 14, energy: 5, rarity: "common" },
+  { id: "super_skunk", name: "Super Skunk", price: 16, energy: 6, rarity: "common" },
+  { id: "purple_haze", name: "Purple Haze", price: 18, energy: 7, rarity: "common" },
+  { id: "orange_bud", name: "Orange Bud", price: 20, energy: 8, rarity: "common" },
+  { id: "blue_dream", name: "Blue Dream", price: 22, energy: 9, rarity: "rare" },
+  { id: "gelato", name: "Gelato", price: 24, energy: 10, rarity: "rare" },
+  { id: "gorilla_glue", name: "Gorilla Glue", price: 26, energy: 11, rarity: "rare" },
+  { id: "green_crack", name: "Green Crack", price: 28, energy: 12, rarity: "rare" },
 
-  { id: "ak47", name: "AK-47", price: 30, energy: 13 },
-  { id: "super_silver", name: "Super Silver Haze", price: 32, energy: 14 },
-  { id: "jack_herer", name: "Jack Herer", price: 34, energy: 15 },
-  { id: "og_kush", name: "OG Kush", price: 36, energy: 16 },
-  { id: "girl_scout", name: "Girl Scout Cookies", price: 38, energy: 17 },
-  { id: "sour_diesel", name: "Sour Diesel", price: 40, energy: 18 },
-  { id: "zkittlez", name: "Zkittlez", price: 42, energy: 19 },
-  { id: "wedding_cake", name: "Wedding Cake", price: 44, energy: 20 },
-  { id: "banana_kush", name: "Banana Kush", price: 46, energy: 21 },
-  { id: "mimosa", name: "Mimosa", price: 48, energy: 22 },
+  { id: "ak47", name: "AK-47", price: 30, energy: 13, rarity: "rare" },
+  { id: "super_silver", name: "Super Silver Haze", price: 32, energy: 14, rarity: "rare" },
+  { id: "jack_herer", name: "Jack Herer", price: 34, energy: 15, rarity: "rare" },
+  { id: "og_kush", name: "OG Kush", price: 36, energy: 16, rarity: "epic" },
+  { id: "girl_scout", name: "Girl Scout Cookies", price: 38, energy: 17, rarity: "epic" },
+  { id: "sour_diesel", name: "Sour Diesel", price: 40, energy: 18, rarity: "epic" },
+  { id: "zkittlez", name: "Zkittlez", price: 42, energy: 19, rarity: "epic" },
+  { id: "wedding_cake", name: "Wedding Cake", price: 44, energy: 20, rarity: "epic" },
+  { id: "banana_kush", name: "Banana Kush", price: 46, energy: 21, rarity: "epic" },
+  { id: "mimosa", name: "Mimosa", price: 48, energy: 22, rarity: "epic" },
 
-  { id: "choco_haze", name: "Choco Haze", price: 50, energy: 23 },
-  { id: "rainbow_belts", name: "Rainbow Belts", price: 53, energy: 24 },
-  { id: "moon_rocks", name: "Moon Rocks", price: 56, energy: 25 },
-  { id: "ice_hash", name: "Ice Hash", price: 59, energy: 26 },
-  { id: "amsterdam_gold", name: "Amsterdam Gold", price: 62, energy: 27 },
-  { id: "black_tuna", name: "Black Tuna", price: 65, energy: 28 },
-  { id: "platinum_kush", name: "Platinum Kush", price: 68, energy: 29 },
-  { id: "ghost_train", name: "Ghost Train Haze", price: 71, energy: 30 },
-  { id: "diamond_resin", name: "Diamond Resin", price: 75, energy: 32 },
-  { id: "dam_crown", name: "Dam Crown", price: 80, energy: 35 },
+  { id: "choco_haze", name: "Choco Haze", price: 50, energy: 23, rarity: "epic" },
+  { id: "rainbow_belts", name: "Rainbow Belts", price: 53, energy: 24, rarity: "epic" },
+  { id: "moon_rocks", name: "Moon Rocks", price: 56, energy: 25, rarity: "legendary" },
+  { id: "ice_hash", name: "Ice Hash", price: 59, energy: 26, rarity: "legendary" },
+  { id: "amsterdam_gold", name: "Amsterdam Gold", price: 62, energy: 27, rarity: "legendary" },
+  { id: "black_tuna", name: "Black Tuna", price: 65, energy: 28, rarity: "legendary" },
+  { id: "platinum_kush", name: "Platinum Kush", price: 68, energy: 29, rarity: "legendary" },
+  { id: "ghost_train", name: "Ghost Train Haze", price: 71, energy: 30, rarity: "legendary" },
+  { id: "diamond_resin", name: "Diamond Resin", price: 75, energy: 32, rarity: "legendary" },
+  { id: "dam_crown", name: "Dam Crown", price: 80, energy: 35, rarity: "legendary" },
+];
+
+const VISITOR_POOL = [
+  { id: "v1", name: "Rico", tier: "Sokak", power: 8, rewardMin: 8, rewardMax: 18, avatar: "😎" },
+  { id: "v2", name: "Varga", tier: "Sokak", power: 10, rewardMin: 10, rewardMax: 20, avatar: "🧥" },
+  { id: "v3", name: "Niko", tier: "Kulüp", power: 13, rewardMin: 14, rewardMax: 24, avatar: "💨" },
+  { id: "v4", name: "Milan", tier: "Kulüp", power: 15, rewardMin: 15, rewardMax: 28, avatar: "🕶️" },
+  { id: "v5", name: "Sergio", tier: "VIP", power: 18, rewardMin: 20, rewardMax: 34, avatar: "💼" },
+  { id: "v6", name: "Dante", tier: "VIP", power: 21, rewardMin: 24, rewardMax: 40, avatar: "🔥" },
+  { id: "v7", name: "Klaus", tier: "Elite", power: 24, rewardMin: 28, rewardMax: 46, avatar: "👑" },
+  { id: "v8", name: "Roman", tier: "Elite", power: 26, rewardMin: 30, rewardMax: 52, avatar: "💣" },
 ];
 
 function clamp(n, a, b) {
@@ -40,7 +50,40 @@ function clamp(n, a, b) {
 }
 
 function pointInRect(px, py, r) {
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString("tr-TR");
+}
+
+function rarityColor(r) {
+  switch (String(r || "").toLowerCase()) {
+    case "common":
+      return "#9ca3af";
+    case "rare":
+      return "#58a6ff";
+    case "epic":
+      return "#c77dff";
+    case "legendary":
+      return "#ffcc66";
+    default:
+      return "#9ca3af";
+  }
+}
+
+function randInt(min, max) {
+  const a = Math.ceil(min);
+  const b = Math.floor(max);
+  return Math.floor(Math.random() * (b - a + 1)) + a;
+}
+
+function chance(v) {
+  return Math.random() < v;
+}
+
+function makeId(prefix = "id") {
+  return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
 }
 
 export class CoffeeShopScene {
@@ -60,7 +103,7 @@ export class CoffeeShopScene {
     this.moved = 0;
     this.clickCandidate = false;
 
-    this.hit = [];
+    this.hitButtons = [];
     this.backHit = null;
 
     this.toastText = "";
@@ -74,7 +117,7 @@ export class CoffeeShopScene {
 
     this.blurUntil = 0;
     this.slowUntil = 0;
-    this.jackpotUntil = 0;
+    this.flashUntil = 0;
     this.lastFrameAt = 0;
   }
 
@@ -84,32 +127,17 @@ export class CoffeeShopScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
-    this.hit = [];
+    this.hitButtons = [];
     this.backHit = null;
     this.toastText = "";
     this.toastUntil = 0;
     this.blurUntil = 0;
     this.slowUntil = 0;
-    this.jackpotUntil = 0;
+    this.flashUntil = 0;
     this.lastFrameAt = performance.now();
 
-    const s = this.store.get();
-    const p = s.player || {};
-    const patch = {};
-
-    if (!Number.isFinite(Number(p.coffeeshopUses))) patch.coffeeshopUses = 0;
-    if (!Number.isFinite(Number(p.coffeeshopTolerance))) patch.coffeeshopTolerance = 0;
-
-    if (Object.keys(patch).length) {
-      this.store.set({
-        player: {
-          ...p,
-          ...patch,
-        },
-      });
-    }
-
-    this._seedSmoke(18);
+    this._ensureState();
+    this._seedSmoke(20);
     this._ensureMusic();
   }
 
@@ -122,6 +150,72 @@ export class CoffeeShopScene {
     }
   }
 
+  _ensureState() {
+    const s = this.store.get() || {};
+    const p = s.player || {};
+    const missions = s.missions || {};
+    const inventory = s.inventory || {};
+    const cs = s.coffeeshop || {};
+
+    const visitors =
+      Array.isArray(cs.visitors) && cs.visitors.length
+        ? cs.visitors
+        : this._freshVisitors();
+
+    this.store.set({
+      missions: {
+        ...missions,
+        pvpPlayed: Number(missions.pvpPlayed || 0),
+      },
+      inventory: {
+        ...inventory,
+        items: Array.isArray(inventory.items) ? inventory.items : [],
+      },
+      player: {
+        ...p,
+        xp: Number(p.xp || 0),
+        xpToNext: Math.max(100, Number(p.xpToNext || 100)),
+        level: Math.max(1, Number(p.level || 1)),
+        energy: Number(p.energy ?? 10),
+        energyMax: Math.max(10, Number(p.energyMax ?? 100)),
+        coffeeshopUses: Number(p.coffeeshopUses || 0),
+        coffeeshopTolerance: Number(p.coffeeshopTolerance || 0),
+        pvpPlayed: Number(p.pvpPlayed || 0),
+        pvpWins: Number(p.pvpWins || 0),
+        pvpLosses: Number(p.pvpLosses || 0),
+        coffeeshopPvpPlayed: Number(p.coffeeshopPvpPlayed || 0),
+        coffeeshopPvpWins: Number(p.coffeeshopPvpWins || 0),
+        coffeeshopPvpLosses: Number(p.coffeeshopPvpLosses || 0),
+        coffeeshopScore: Number(p.coffeeshopScore || 0),
+      },
+      coffeeshop: {
+        ...cs,
+        visitors,
+        giftsClaimed: Number(cs.giftsClaimed || 0),
+        securityHits: Number(cs.securityHits || 0),
+        totalSpent: Number(cs.totalSpent || 0),
+        totalBought: Number(cs.totalBought || 0),
+        pvpLog: Array.isArray(cs.pvpLog) ? cs.pvpLog.slice(0, 30) : [],
+        leaderboard: Array.isArray(cs.leaderboard) ? cs.leaderboard : [],
+      },
+    });
+  }
+
+  _freshVisitors() {
+    const shuffled = [...VISITOR_POOL].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 4).map((v) => ({
+      ...v,
+      hp: 100,
+      mood: ["Calm", "High", "Aggro", "Watching"][randInt(0, 3)],
+      online: true,
+    }));
+  }
+
+  _playerName() {
+    const s = this.store.get() || {};
+    return String(s.player?.username || "Player");
+  }
+
   _ensureMusic() {
     if (this.musicStarted) return;
     this.musicStarted = true;
@@ -129,7 +223,7 @@ export class CoffeeShopScene {
     try {
       this.music = new Audio("./src/assets/reggae.mp3");
       this.music.loop = true;
-      this.music.volume = 0.32;
+      this.music.volume = 0.28;
 
       const play = () => {
         if (!this.music) return;
@@ -190,7 +284,7 @@ export class CoffeeShopScene {
   }
 
   _showToast(text, ms = 1600) {
-    this.toastText = text;
+    this.toastText = String(text || "");
     this.toastUntil = Date.now() + ms;
   }
 
@@ -240,12 +334,9 @@ export class CoffeeShopScene {
     const now = performance.now();
     let dt = this.lastFrameAt ? (now - this.lastFrameAt) / 16.6667 : 1;
     this.lastFrameAt = now;
-
     dt = clamp(dt, 0.4, 2.2);
 
-    if (Date.now() < this.slowUntil) {
-      dt *= 0.45;
-    }
+    if (Date.now() < this.slowUntil) dt *= 0.45;
 
     const safe = this._safeRect();
 
@@ -279,54 +370,462 @@ export class CoffeeShopScene {
     return Math.max(1, Math.floor(itemEnergy * 0.7));
   }
 
-  _buy(item, hitRect = null) {
+  _gainXp(amount) {
+    const s = this.store.get();
+    const p = { ...(s.player || {}) };
+
+    let xp = Number(p.xp || 0) + Number(amount || 0);
+    let level = Math.max(1, Number(p.level || 1));
+    let xpToNext = Math.max(100, Number(p.xpToNext || 100));
+
+    while (xp >= xpToNext) {
+      xp -= xpToNext;
+      level += 1;
+    }
+
+    this.store.set({
+      player: {
+        ...p,
+        xp,
+        level,
+        xpToNext,
+      },
+    });
+  }
+
+  _addInventoryItem(item) {
+    const s = this.store.get();
+    const inv = (s.inventory?.items || []).map((x) => ({ ...x }));
+
+    const existing = inv.find(
+      (x) =>
+        String(x.name || "").toLowerCase() === String(item.name || "").toLowerCase() &&
+        String(x.kind || "") === String(item.kind || "")
+    );
+
+    if (existing) {
+      existing.qty = Number(existing.qty || 0) + Number(item.qty || 1);
+    } else {
+      inv.unshift({
+        id: item.id || makeId("inv"),
+        kind: item.kind || "goods",
+        icon: item.icon || "📦",
+        name: item.name || "Item",
+        rarity: item.rarity || "common",
+        qty: Number(item.qty || 1),
+        usable: !!item.usable,
+        sellable: item.sellable !== false,
+        marketable: item.marketable !== false,
+        energyGain: Number(item.energyGain || 0),
+        sellPrice: Number(item.sellPrice || 0),
+        marketPrice: Number(item.marketPrice || 0),
+        desc: item.desc || "",
+        source: item.source || "coffeeshop",
+      });
+    }
+
+    this.store.set({
+      inventory: {
+        ...(s.inventory || {}),
+        items: inv,
+      },
+    });
+  }
+
+  _makeWeedInventoryItem(item) {
+    return {
+      id: makeId("weed"),
+      kind: "goods",
+      icon: "🌿",
+      name: item.name,
+      rarity: item.rarity || "common",
+      qty: 1,
+      usable: true,
+      sellable: true,
+      marketable: true,
+      energyGain: Number(item.energy || 0),
+      sellPrice: Math.max(1, Math.floor(Number(item.price || 0) * 0.65)),
+      marketPrice: Number(item.price || 0),
+      desc: "Coffeeshop ürünü. İster kullan ister pazarda sat.",
+      source: "coffeeshop",
+    };
+  }
+
+  _giftPool() {
+    return [
+      {
+        kind: "girls",
+        icon: "💋",
+        name: "VIP Girl",
+        rarity: "epic",
+        qty: 1,
+        usable: true,
+        sellable: true,
+        marketable: true,
+        energyGain: 22,
+        sellPrice: 65,
+        marketPrice: 92,
+        desc: "İçeride tanıştığın özel hediye.",
+        source: "coffeeshop_gift",
+      },
+      {
+        kind: "consumable",
+        icon: "🍾",
+        name: "Premium Champagne",
+        rarity: "rare",
+        qty: 1,
+        usable: true,
+        sellable: true,
+        marketable: true,
+        energyGain: 14,
+        sellPrice: 28,
+        marketPrice: 44,
+        desc: "İçeriden gelen alkollü hediye.",
+        source: "coffeeshop_gift",
+      },
+      {
+        kind: "goods",
+        icon: "🌿",
+        name: "Moon Rocks",
+        rarity: "rare",
+        qty: 1,
+        usable: true,
+        sellable: true,
+        marketable: true,
+        energyGain: 18,
+        sellPrice: 22,
+        marketPrice: 34,
+        desc: "İçeridekilerden gelen ot hediyesi.",
+        source: "coffeeshop_gift",
+      },
+      {
+        kind: "rare",
+        icon: "📦",
+        name: "Mystery Crate",
+        rarity: "legendary",
+        qty: 1,
+        usable: false,
+        sellable: true,
+        marketable: true,
+        energyGain: 0,
+        sellPrice: 55,
+        marketPrice: 78,
+        desc: "Rastgele içerik veren kasa hediyesi.",
+        source: "coffeeshop_gift",
+      },
+    ];
+  }
+
+  _maybeGift() {
+    if (!chance(0.30)) return null;
+
+    const gift = this._giftPool()[randInt(0, this._giftPool().length - 1)];
+    this._addInventoryItem({ ...gift, id: makeId("gift") });
+
+    const s = this.store.get();
+    const cs = s.coffeeshop || {};
+
+    this.store.set({
+      coffeeshop: {
+        ...cs,
+        giftsClaimed: Number(cs.giftsClaimed || 0) + 1,
+      },
+    });
+
+    return gift;
+  }
+
+  _applySecurityBeat() {
+    if (!chance(0.30)) return null;
+
+    const s = this.store.get();
+    const p = s.player || {};
+    const cs = s.coffeeshop || {};
+
+    const coinLoss = Math.min(Number(s.coins || 0), randInt(6, 24));
+    const energyLoss = Math.min(Number(p.energy || 0), randInt(5, 16));
+
+    this.store.set({
+      coins: Math.max(0, Number(s.coins || 0) - coinLoss),
+      player: {
+        ...p,
+        energy: Math.max(0, Number(p.energy || 0) - energyLoss),
+      },
+      coffeeshop: {
+        ...cs,
+        securityHits: Number(cs.securityHits || 0) + 1,
+      },
+    });
+
+    this.blurUntil = Date.now() + 2200;
+    this.slowUntil = Date.now() + 1500;
+    this.flashUntil = Date.now() + 220;
+
+    return { coinLoss, energyLoss };
+  }
+
+  _buyUse(item, hitRect = null) {
     const s = this.store.get();
     const coins = Number(s.coins || 0);
     const p = s.player || {};
+    const cs = s.coffeeshop || {};
+
+    if (coins < Number(item.price || 0)) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
     const energy = Number(p.energy || 0);
-    const energyMax = Math.max(1, Number(p.energyMax || 10));
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
 
-    if (coins < item.price) {
-      this._showToast("Yetersiz coin");
-      return;
-    }
-
-    if (energy >= energyMax) {
-      this._showToast("Enerji full");
-      return;
-    }
+    let usedFromShop = true;
+    let toast = "";
 
     const uses = Number(p.coffeeshopUses || 0) + 1;
     const tolerant = uses >= 10;
-    const adjustedEnergy = this._applyToleranceEnergy(item.energy, uses);
-    const add = Math.min(adjustedEnergy, energyMax - energy);
+    const adjustedEnergy = this._applyToleranceEnergy(Number(item.energy || 0), uses);
 
-    let nextCoins = coins - item.price;
-    let nextEnergy = energy + add;
+    if (energy >= energyMax) {
+      usedFromShop = false;
 
-    let toast = `+${add} enerji / -${item.price} yton`;
+      this.store.set({
+        coins: coins - Number(item.price || 0),
+        player: {
+          ...p,
+          coffeeshopUses: uses,
+          coffeeshopTolerance: tolerant ? 1 : 0,
+        },
+        coffeeshop: {
+          ...cs,
+          totalSpent: Number(cs.totalSpent || 0) + Number(item.price || 0),
+          totalBought: Number(cs.totalBought || 0) + 1,
+        },
+      });
 
-    if (tolerant) {
-      toast = `Bağışıklık aktif: +${add} enerji`;
+      this._addInventoryItem(this._makeWeedInventoryItem(item));
+      toast = "Enerji full, ürün envantere eklendi.";
+    } else {
+      const gain = Math.min(adjustedEnergy, energyMax - energy);
+
+      this.store.set({
+        coins: coins - Number(item.price || 0),
+        player: {
+          ...p,
+          energy: energy + gain,
+          coffeeshopUses: uses,
+          coffeeshopTolerance: tolerant ? 1 : 0,
+        },
+        coffeeshop: {
+          ...cs,
+          totalSpent: Number(cs.totalSpent || 0) + Number(item.price || 0),
+          totalBought: Number(cs.totalBought || 0) + 1,
+        },
+      });
+
+      toast = tolerant
+        ? `Bağışıklık aktif: +${gain} enerji`
+        : `+${gain} enerji / -${item.price} yton`;
     }
 
-    if (Math.random() < 0.30) {
-      const stolenCoins = Math.min(nextCoins, Math.max(1, Math.floor(nextCoins * 0.2)));
-      const stolenEnergy = Math.min(nextEnergy, Math.max(1, Math.floor(nextEnergy * 0.2)));
-      nextCoins = Math.max(0, nextCoins - stolenCoins);
-      nextEnergy = Math.max(0, nextEnergy - stolenEnergy);
-      toast = "Sokakta dayak yedin! Enerji ve yton çalındı.";
-      this.blurUntil = Date.now() + 2200;
-      this.slowUntil = Date.now() + 1600;
+    if (hitRect) {
+      this._spawnJointFx(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.45);
+      this._spawnSmokeBurst(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.45, 6);
     }
 
-    let jackpotHit = false;
-    if (Math.random() < 0.05) {
-      jackpotHit = true;
-      nextCoins += 25;
-      nextEnergy = Math.min(energyMax, nextEnergy + 15);
-      this.jackpotUntil = Date.now() + 2600;
-      toast = "🎰 Rare Weed Jackpot! +25 yton ve +15 enerji";
+    const gift = this._maybeGift();
+    const beat = this._applySecurityBeat();
+
+    if (gift && beat) {
+      this._showToast(
+        `🎁 ${gift.name} geldi ama güvenlik dövdü: -${beat.energyLoss} enerji / -${beat.coinLoss} yton`,
+        2400
+      );
+    } else if (gift) {
+      this._showToast(`🎁 Hediye geldi: ${gift.name}`, 2200);
+    } else if (beat) {
+      this._showToast(
+        `Güvenliklerden dayak yedin! -${beat.energyLoss} enerji / -${beat.coinLoss} yton`,
+        2200
+      );
+    } else {
+      this._showToast(toast, usedFromShop ? 1600 : 1800);
+    }
+  }
+
+  _buyInventory(item, hitRect = null) {
+    const s = this.store.get();
+    const coins = Number(s.coins || 0);
+    const p = s.player || {};
+    const cs = s.coffeeshop || {};
+
+    if (coins < Number(item.price || 0)) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
+    this.store.set({
+      coins: coins - Number(item.price || 0),
+      coffeeshop: {
+        ...cs,
+        totalSpent: Number(cs.totalSpent || 0) + Number(item.price || 0),
+        totalBought: Number(cs.totalBought || 0) + 1,
+      },
+      player: {
+        ...p,
+      },
+    });
+
+    this._addInventoryItem(this._makeWeedInventoryItem(item));
+
+    if (hitRect) {
+      this._spawnJointFx(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.45);
+      this._spawnSmokeBurst(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.45, 5);
+    }
+
+    const gift = this._maybeGift();
+    const beat = this._applySecurityBeat();
+
+    if (gift && beat) {
+      this._showToast(
+        `🌿 Envantere eklendi. 🎁 ${gift.name} geldi ama dayak yedin.`,
+        2400
+      );
+    } else if (gift) {
+      this._showToast(`🌿 Envantere eklendi. 🎁 ${gift.name} hediyesi geldi.`, 2200);
+    } else if (beat) {
+      this._showToast(
+        `Envantere eklendi ama güvenlik dövdü: -${beat.energyLoss} enerji / -${beat.coinLoss} yton`,
+        2200
+      );
+    } else {
+      this._showToast("Ürün envantere eklendi", 1800);
+    }
+  }
+
+  _recordCoffeeshopPvp(visitor, didWin, scoreDelta, rewardCoins) {
+    const s = this.store.get();
+    const p = s.player || {};
+    const missions = s.missions || {};
+    const cs = s.coffeeshop || {};
+    const playerName = this._playerName();
+
+    const playerPatch = {
+      ...p,
+      pvpPlayed: Number(p.pvpPlayed || 0) + 1,
+      coffeeshopPvpPlayed: Number(p.coffeeshopPvpPlayed || 0) + 1,
+      coffeeshopScore: Number(p.coffeeshopScore || 0) + Number(scoreDelta || 0),
+      pvpWins: Number(p.pvpWins || 0) + (didWin ? 1 : 0),
+      pvpLosses: Number(p.pvpLosses || 0) + (didWin ? 0 : 1),
+      coffeeshopPvpWins: Number(p.coffeeshopPvpWins || 0) + (didWin ? 1 : 0),
+      coffeeshopPvpLosses: Number(p.coffeeshopPvpLosses || 0) + (didWin ? 0 : 1),
+    };
+
+    const leaderboard = Array.isArray(cs.leaderboard)
+      ? cs.leaderboard.map((x) => ({ ...x }))
+      : [];
+
+    let row = leaderboard.find((x) => String(x.name) === playerName);
+    if (!row) {
+      row = {
+        id: makeId("lb"),
+        name: playerName,
+        wins: 0,
+        losses: 0,
+        played: 0,
+        score: 0,
+        coinsWon: 0,
+      };
+      leaderboard.push(row);
+    }
+
+    row.played = Number(row.played || 0) + 1;
+    row.wins = Number(row.wins || 0) + (didWin ? 1 : 0);
+    row.losses = Number(row.losses || 0) + (didWin ? 0 : 1);
+    row.score = Number(row.score || 0) + Number(scoreDelta || 0);
+    row.coinsWon = Number(row.coinsWon || 0) + Number(rewardCoins || 0);
+
+    leaderboard.sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return Number(b.wins || 0) - Number(a.wins || 0);
+    });
+
+    const log = Array.isArray(cs.pvpLog) ? cs.pvpLog.map((x) => ({ ...x })) : [];
+    log.unshift({
+      id: makeId("pvp"),
+      ts: Date.now(),
+      result: didWin ? "win" : "lose",
+      enemy: visitor.name,
+      enemyTier: visitor.tier,
+      scoreDelta,
+      rewardCoins,
+    });
+
+    this.store.set({
+      missions: {
+        ...missions,
+        pvpPlayed: Number(missions.pvpPlayed || 0) + 1,
+      },
+      player: playerPatch,
+      coffeeshop: {
+        ...cs,
+        leaderboard: leaderboard.slice(0, 20),
+        pvpLog: log.slice(0, 20),
+      },
+    });
+  }
+
+  _attackVisitor(visitor, hitRect = null) {
+    const s = this.store.get();
+    const p = s.player || {};
+    const cs = s.coffeeshop || {};
+
+    const attackCost = 6;
+    const curEnergy = Number(p.energy || 0);
+
+    if (curEnergy < attackCost) {
+      this._showToast(`PvP için ${attackCost} enerji lazım`);
+      return;
+    }
+
+    let winChance = 0.48 + Number(p.level || 1) * 0.004 - Number(visitor.power || 0) * 0.006;
+    winChance = clamp(winChance, 0.20, 0.82);
+
+    const didWin = Math.random() < winChance;
+    const scoreGain = didWin ? randInt(16, 34) : -randInt(6, 14);
+
+    let nextCoins = Number(s.coins || 0);
+    let nextEnergy = Math.max(0, curEnergy - attackCost);
+    let rewardCoins = 0;
+    let loseCoins = 0;
+
+    if (didWin) {
+      rewardCoins = randInt(visitor.rewardMin || 8, visitor.rewardMax || 20);
+      nextCoins += rewardCoins;
+      this._gainXp(randInt(8, 16));
+      this.flashUntil = Date.now() + 180;
+      this._showToast(
+        `⚔️ ${visitor.name} yenildi! +${rewardCoins} yton / skor +${scoreGain}`,
+        2200
+      );
+    } else {
+      const extraEnergyLoss = randInt(4, 11);
+      loseCoins = Math.min(nextCoins, randInt(4, 18));
+      nextCoins = Math.max(0, nextCoins - loseCoins);
+      nextEnergy = Math.max(0, nextEnergy - extraEnergyLoss);
+      this.blurUntil = Date.now() + 1400;
+      this.slowUntil = Date.now() + 900;
+      this._showToast(
+        `💥 ${visitor.name} seni dağıttı! -${loseCoins} yton / -${extraEnergyLoss} enerji`,
+        2200
+      );
+    }
+
+    const visitors = (cs.visitors || []).map((x) => ({ ...x }));
+    const idx = visitors.findIndex((x) => String(x.id) === String(visitor.id));
+    if (idx >= 0) {
+      visitors[idx].mood = didWin ? "Shaken" : "Mocking";
+      visitors[idx].power = clamp(Number(visitors[idx].power || 0) + (didWin ? 1 : 0), 6, 30);
     }
 
     this.store.set({
@@ -334,21 +833,18 @@ export class CoffeeShopScene {
       player: {
         ...p,
         energy: nextEnergy,
-        coffeeshopUses: uses,
-        coffeeshopTolerance: tolerant ? 1 : 0,
+      },
+      coffeeshop: {
+        ...cs,
+        visitors,
       },
     });
 
-    if (hitRect) {
-      this._spawnJointFx(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.4);
-      this._spawnSmokeBurst(
-        hitRect.x + hitRect.w * 0.5,
-        hitRect.y + hitRect.h * 0.5,
-        jackpotHit ? 10 : 6
-      );
-    }
+    this._recordCoffeeshopPvp(visitor, didWin, scoreGain, rewardCoins);
 
-    this._showToast(toast, jackpotHit ? 2200 : 1600);
+    if (hitRect) {
+      this._spawnSmokeBurst(hitRect.x + hitRect.w * 0.5, hitRect.y + hitRect.h * 0.5, didWin ? 8 : 6);
+    }
   }
 
   update() {
@@ -357,7 +853,7 @@ export class CoffeeShopScene {
     const px = this.input?.pointer?.x || 0;
     const py = this.input?.pointer?.y || 0;
 
-    if (this.input.justPressed()) {
+    if (this.input?.justPressed?.()) {
       this.dragging = true;
       this.downY = py;
       this.startScroll = this.scrollY;
@@ -366,14 +862,14 @@ export class CoffeeShopScene {
       this._ensureMusic();
     }
 
-    if (this.dragging && this.input.isDown()) {
+    if (this.dragging && this.input?.isDown?.()) {
       const dy = py - this.downY;
       this.scrollY = clamp(this.startScroll - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
       if (this.moved > 10) this.clickCandidate = false;
     }
 
-    if (this.dragging && this.input.justReleased()) {
+    if (this.dragging && this.input?.justReleased?.()) {
       this.dragging = false;
 
       if (!this.clickCandidate) return;
@@ -383,9 +879,33 @@ export class CoffeeShopScene {
         return;
       }
 
-      for (const r of this.hit) {
-        if (pointInRect(px, py, r)) {
-          this._buy(r.item, r);
+      for (const h of this.hitButtons) {
+        if (!pointInRect(px, py, h.rect)) continue;
+
+        if (h.action === "buy_use") {
+          this._buyUse(h.item, h.rect);
+          return;
+        }
+
+        if (h.action === "buy_inventory") {
+          this._buyInventory(h.item, h.rect);
+          return;
+        }
+
+        if (h.action === "attack") {
+          this._attackVisitor(h.visitor, h.rect);
+          return;
+        }
+
+        if (h.action === "refresh_visitors") {
+          const s = this.store.get();
+          this.store.set({
+            coffeeshop: {
+              ...(s.coffeeshop || {}),
+              visitors: this._freshVisitors(),
+            },
+          });
+          this._showToast("İçerideki tipler değişti", 1400);
           return;
         }
       }
@@ -479,6 +999,49 @@ export class CoffeeShopScene {
     }
   }
 
+  _drawButton(ctx, rect, text, variant = "ghost") {
+    let fill = "rgba(0,0,0,0.42)";
+    let stroke = "rgba(255,255,255,0.16)";
+    let txt = "rgba(255,255,255,0.96)";
+
+    if (variant === "green") {
+      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+      g.addColorStop(0, "rgba(34,110,60,0.86)");
+      g.addColorStop(1, "rgba(18,70,38,0.92)");
+      fill = g;
+      stroke = "rgba(120,255,170,0.38)";
+    } else if (variant === "gold") {
+      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+      g.addColorStop(0, "rgba(135,96,26,0.84)");
+      g.addColorStop(1, "rgba(88,61,14,0.92)");
+      fill = g;
+      stroke = "rgba(255,214,120,0.34)";
+      txt = "#fff4db";
+    } else if (variant === "red") {
+      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
+      g.addColorStop(0, "rgba(138,48,48,0.85)");
+      g.addColorStop(1, "rgba(92,28,28,0.92)");
+      fill = g;
+      stroke = "rgba(255,140,140,0.34)";
+    }
+
+    this._rr(ctx, rect.x, rect.y, rect.w, rect.h, 12);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = txt;
+    ctx.font = "900 11px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 0.5);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
   render(ctx) {
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const W = Math.floor(ctx.canvas.width / dpr);
@@ -501,6 +1064,13 @@ export class CoffeeShopScene {
     ctx.fillStyle = "rgba(0,0,0,0.38)";
     ctx.fillRect(0, 0, W, H);
 
+    if (Date.now() < this.flashUntil) {
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
     this._drawSmoke(ctx);
 
     const panelX = safe.x + 12;
@@ -515,15 +1085,6 @@ export class CoffeeShopScene {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    if (Date.now() < this.jackpotUntil) {
-      ctx.save();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(255,215,90,0.95)";
-      this._rr(ctx, panelX + 2, panelY + 2, panelW - 4, panelH - 4, 18);
-      ctx.stroke();
-      ctx.restore();
-    }
-
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
 
@@ -531,121 +1092,221 @@ export class CoffeeShopScene {
     ctx.font = "900 20px system-ui";
     ctx.fillText("Amsterdam Coffeeshop", panelX + 16, panelY + 28);
 
-    ctx.fillStyle = "rgba(255,255,255,0.76)";
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = "12px system-ui";
-    ctx.fillText("Ot al, enerjini doldur.", panelX + 16, panelY + 48);
+    ctx.fillText("Satın al • envantere at • içeridekilere saldır", panelX + 16, panelY + 48);
 
     const s = this.store.get();
     const coins = Number(s.coins || 0);
     const player = s.player || {};
+    const cs = s.coffeeshop || {};
+
     const energy = Number(player.energy || 0);
-    const energyMax = Number(player.energyMax || 10);
+    const energyMax = Number(player.energyMax || 100);
     const uses = Number(player.coffeeshopUses || 0);
     const tolerant = uses >= 10;
+    const lb = Array.isArray(cs.leaderboard) ? cs.leaderboard : [];
+    const meRow = lb.find((x) => String(x.name) === this._playerName());
 
     ctx.fillStyle = "rgba(255,214,120,0.96)";
     ctx.font = "800 12px system-ui";
-    ctx.fillText(`Coin: ${coins}`, panelX + 16, panelY + 70);
+    ctx.fillText(`YTON: ${fmtNum(coins)}`, panelX + 16, panelY + 70);
 
     ctx.fillStyle = "rgba(255,255,255,0.86)";
-    ctx.fillText(`Enerji: ${energy}/${energyMax}`, panelX + 104, panelY + 70);
+    ctx.fillText(`Enerji: ${fmtNum(energy)}/${fmtNum(energyMax)}`, panelX + 122, panelY + 70);
 
     ctx.fillStyle = tolerant ? "rgba(140,255,160,0.96)" : "rgba(255,255,255,0.70)";
-    ctx.fillText(`Bağışıklık: ${tolerant ? "AKTİF" : `${uses}/10`}`, panelX + 220, panelY + 70);
+    ctx.fillText(`Bağışıklık: ${tolerant ? "AKTİF" : `${uses}/10`}`, panelX + 260, panelY + 70);
+
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.fillText(
+      `Profil PvP: ${fmtNum(player.coffeeshopPvpWins || 0)}W / ${fmtNum(player.coffeeshopPvpLosses || 0)}L`,
+      panelX + 16,
+      panelY + 88
+    );
+
+    ctx.fillText(
+      `Skor: ${fmtNum(player.coffeeshopScore || 0)}${meRow ? ` • Sıra: #${lb.indexOf(meRow) + 1}` : ""}`,
+      panelX + 190,
+      panelY + 88
+    );
 
     const backW = 78;
     const backH = 30;
     const backX = panelX + panelW - backW - 14;
     const backY = panelY + 12;
     this.backHit = { x: backX, y: backY, w: backW, h: backH };
+    this._drawButton(ctx, this.backHit, "Geri");
 
-    this._rr(ctx, backX, backY, backW, backH, 10);
-    ctx.fillStyle = "rgba(0,0,0,0.42)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.16)";
-    ctx.stroke();
+    const contentX = panelX + 10;
+    const contentY = panelY + 102;
+    const contentW = panelW - 20;
+    const contentH = panelH - 114;
 
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "800 12px system-ui";
-    ctx.fillText("Geri", backX + backW / 2, backY + 19);
+    const visitors = Array.isArray(cs.visitors) ? cs.visitors : [];
+    const top5 = lb.slice(0, 5);
 
-    const listX = panelX + 10;
-    const listY = panelY + 88;
-    const listW = panelW - 20;
-    const listH = panelH - 100;
+    const visitorSectionH = 150;
+    const leaderboardSectionH = 138;
+    const rowH = 86;
+    const productSectionTop = visitorSectionH + leaderboardSectionH + 30;
+    const productListH = ITEMS.length * rowH;
 
-    const rowH = 68;
-    const contentH = ITEMS.length * rowH + 8;
-
-    this.maxScroll = Math.max(0, contentH - listH);
+    const fullContentH = productSectionTop + productListH + 20;
+    this.maxScroll = Math.max(0, fullContentH - contentH);
     this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
-    this.hit = [];
+    this.hitButtons = [];
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(listX, listY, listW, listH);
+    ctx.rect(contentX, contentY, contentW, contentH);
     ctx.clip();
 
     if (Date.now() < this.slowUntil) {
       ctx.save();
       ctx.globalAlpha = 0.08;
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(listX, listY, listW, listH);
+      ctx.fillRect(contentX, contentY, contentW, contentH);
       ctx.restore();
     }
 
+    let y = contentY - this.scrollY;
+
+    // Visitors header
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
+    ctx.font = "900 14px system-ui";
+    ctx.fillText("İçeridekiler • Sadece bina içi PvP", contentX + 2, y + 14);
+
+    const refreshRect = { x: contentX + contentW - 104, y: y - 10, w: 96, h: 28 };
+    this.hitButtons.push({ rect: refreshRect, action: "refresh_visitors" });
+    this._drawButton(ctx, refreshRect, "Tipleri Yenile", "ghost");
+
+    y += 24;
+
+    const visitorGap = 8;
+    const visitorCardW = Math.floor((contentW - visitorGap * 3) / 4);
+
+    for (let i = 0; i < 4; i++) {
+      const v = visitors[i];
+      if (!v) continue;
+
+      const x = contentX + i * (visitorCardW + visitorGap);
+      const h = 104;
+
+      this._rr(ctx, x, y, visitorCardW, h, 14);
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = "900 22px system-ui";
+      ctx.fillText(v.avatar || "😶", x + 12, y + 28);
+
+      ctx.font = "900 12px system-ui";
+      ctx.fillText(v.name, x + 44, y + 20);
+
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(`${v.tier} • Power ${fmtNum(v.power)}`, x + 44, y + 38);
+      ctx.fillText(`Mood: ${v.mood}`, x + 12, y + 58);
+
+      const atkRect = { x: x + 12, y: y + 68, w: visitorCardW - 24, h: 26 };
+      this.hitButtons.push({ rect: atkRect, action: "attack", visitor: v });
+      this._drawButton(ctx, atkRect, "Saldır", "red");
+    }
+
+    y += visitorSectionH;
+
+    // Leaderboard
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
+    ctx.font = "900 14px system-ui";
+    ctx.fillText("Coffeeshop Leaderboard", contentX + 2, y + 14);
+    y += 24;
+
+    const boardH = 96;
+    this._rr(ctx, contentX, y, contentW, boardH, 14);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.stroke();
+
+    const rowsToDraw = Math.max(1, Math.min(5, top5.length || 1));
+    for (let i = 0; i < rowsToDraw; i++) {
+      const row = top5[i] || {
+        name: i === 0 ? this._playerName() : "—",
+        wins: 0,
+        losses: 0,
+        score: 0,
+      };
+
+      const ry = y + 22 + i * 14;
+      ctx.fillStyle = i === 0 ? "rgba(255,214,120,0.96)" : "rgba(255,255,255,0.86)";
+      ctx.font = i === 0 ? "900 11px system-ui" : "800 11px system-ui";
+      ctx.fillText(
+        `#${i + 1} ${row.name}`,
+        contentX + 12,
+        ry
+      );
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.fillText(
+        `${fmtNum(row.wins)}W / ${fmtNum(row.losses)}L • ${fmtNum(row.score)} skor`,
+        contentX + contentW - 12,
+        ry
+      );
+      ctx.textAlign = "left";
+    }
+
+    y += leaderboardSectionH;
+
+    // Product header
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
+    ctx.font = "900 14px system-ui";
+    ctx.fillText("Ürünler • Kullan veya Envantere At", contentX + 2, y + 14);
+    y += 24;
+
     for (let i = 0; i < ITEMS.length; i++) {
       const item = ITEMS[i];
-      const y = listY + i * rowH - this.scrollY;
+      const rowY = y + i * rowH;
 
-      if (y > listY + listH + 10 || y + 58 < listY - 10) continue;
+      if (rowY > contentY + contentH + 12 || rowY + 72 < contentY - 12) continue;
 
-      this._rr(ctx, listX, y, listW, 58, 14);
+      this._rr(ctx, contentX, rowY, contentW, 72, 14);
       ctx.fillStyle = "rgba(255,255,255,0.08)";
       ctx.fill();
 
-      if (Date.now() < this.jackpotUntil && i % 3 === 0) {
-        ctx.save();
-        ctx.strokeStyle = "rgba(255,215,90,0.35)";
-        ctx.lineWidth = 1.5;
-        this._rr(ctx, listX + 1, y + 1, listW - 2, 56, 14);
-        ctx.stroke();
-        ctx.restore();
-      }
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      ctx.textAlign = "left";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "800 13px system-ui";
-      ctx.fillText(item.name, listX + 12, y + 20);
+      ctx.font = "900 13px system-ui";
+      ctx.fillText(item.name, contentX + 12, rowY + 20);
+
+      ctx.fillStyle = rarityColor(item.rarity);
+      ctx.font = "800 11px system-ui";
+      ctx.fillText(String(item.rarity || "common").toUpperCase(), contentX + 12, rowY + 38);
 
       const previewEnergy = this._applyToleranceEnergy(item.energy, uses + 1);
 
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`+${previewEnergy} enerji`, listX + 12, y + 41);
+      ctx.fillText(`+${previewEnergy} enerji`, contentX + 92, rowY + 38);
 
       ctx.fillStyle = "rgba(255,214,120,0.96)";
-      ctx.fillText(`${item.price} yton`, listX + 104, y + 41);
+      ctx.fillText(`${item.price} yton`, contentX + 168, rowY + 38);
 
-      const btnW = 98;
-      const btnH = 34;
-      const btnX = listX + listW - btnW - 10;
-      const btnY = y + 12;
+      const useRect = { x: contentX + contentW - 196, y: rowY + 19, w: 88, h: 34 };
+      const invRect = { x: contentX + contentW - 98, y: rowY + 19, w: 88, h: 34 };
 
-      this._rr(ctx, btnX, btnY, btnW, btnH, 12);
-      ctx.fillStyle = "rgba(0,0,0,0.42)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      ctx.stroke();
+      this.hitButtons.push({ rect: useRect, action: "buy_use", item });
+      this.hitButtons.push({ rect: invRect, action: "buy_inventory", item });
 
-      ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "900 12px system-ui";
-      ctx.fillText("Satın Al", btnX + btnW / 2, btnY + 21);
-
-      this.hit.push({ x: btnX, y: btnY, w: btnW, h: btnH, item });
+      this._drawButton(ctx, useRect, "Kullan", "green");
+      this._drawButton(ctx, invRect, "Envanter", "gold");
     }
 
     ctx.restore();
@@ -654,9 +1315,9 @@ export class CoffeeShopScene {
 
     if (this.maxScroll > 0) {
       const trackX = panelX + panelW - 6;
-      const trackY = listY;
-      const trackH = listH;
-      const thumbH = Math.max(36, (listH / contentH) * trackH);
+      const trackY = contentY;
+      const trackH = contentH;
+      const thumbH = Math.max(36, (contentH / fullContentH) * trackH);
       const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
 
       ctx.fillStyle = "rgba(255,255,255,0.10)";
@@ -667,16 +1328,13 @@ export class CoffeeShopScene {
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(320, panelW - 36);
-      const th = 36;
+      const tw = Math.min(360, panelW - 36);
+      const th = 40;
       const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - 48;
+      const ty = panelY + panelH - 52;
 
       this._rr(ctx, tx, ty, tw, th, 12);
-      ctx.fillStyle =
-        Date.now() < this.jackpotUntil
-          ? "rgba(70,50,0,0.88)"
-          : "rgba(0,0,0,0.76)";
+      ctx.fillStyle = "rgba(0,0,0,0.78)";
       ctx.fill();
       ctx.strokeStyle = "rgba(255,255,255,0.16)";
       ctx.stroke();
@@ -684,7 +1342,8 @@ export class CoffeeShopScene {
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "800 12px system-ui";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + 22);
+      ctx.fillText(this.toastText, tx + tw / 2, ty + 24);
+      ctx.textAlign = "left";
     }
 
     if (Date.now() < this.slowUntil) {
