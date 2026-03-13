@@ -1,9 +1,9 @@
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-
 function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -66,11 +66,21 @@ function makeImage(url) {
   return img;
 }
 
-function drawGlassPanel(ctx, x, y, w, h, r = 24) {
+function textFit(ctx, text, maxWidth, startSize, weight = 900, family = "system-ui") {
+  let size = startSize;
+  while (size > 10) {
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) return size;
+    size -= 1;
+  }
+  return 10;
+}
+
+function drawGlassPanel(ctx, x, y, w, h, r = 22) {
   const g = ctx.createLinearGradient(x, y, x, y + h);
-  g.addColorStop(0, "rgba(22,28,38,0.34)");
-  g.addColorStop(0.28, "rgba(12,16,24,0.26)");
-  g.addColorStop(1, "rgba(5,8,14,0.40)");
+  g.addColorStop(0, "rgba(28,33,44,0.42)");
+  g.addColorStop(0.25, "rgba(17,21,30,0.26)");
+  g.addColorStop(1, "rgba(6,9,14,0.50)");
   ctx.fillStyle = g;
   fillRoundRect(ctx, x, y, w, h, r);
 
@@ -78,14 +88,14 @@ function drawGlassPanel(ctx, x, y, w, h, r = 24) {
   ctx.lineWidth = 1;
   strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
 
-  const shine = ctx.createLinearGradient(x, y, x, y + h * 0.45);
-  shine.addColorStop(0, "rgba(255,255,255,0.10)");
-  shine.addColorStop(1, "rgba(255,255,255,0.00)");
+  const shine = ctx.createLinearGradient(x, y, x, y + h * 0.38);
+  shine.addColorStop(0, "rgba(255,255,255,0.11)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = shine;
-  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.34, Math.max(10, r - 3));
+  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.34, Math.max(8, r - 2));
 }
 
-function drawSoftGlow(ctx, x, y, w, h, color = "rgba(255,170,80,0.08)", blur = 22) {
+function drawSoftGlow(ctx, x, y, w, h, color = "rgba(255,170,80,0.08)", blur = 18) {
   ctx.save();
   ctx.shadowColor = color;
   ctx.shadowBlur = blur;
@@ -93,69 +103,6 @@ function drawSoftGlow(ctx, x, y, w, h, color = "rgba(255,170,80,0.08)", blur = 2
   ctx.lineWidth = 1;
   strokeRoundRect(ctx, x + 1, y + 1, w - 2, h - 2, 22);
   ctx.restore();
-}
-
-function drawButton(ctx, rect, text, style = "muted") {
-  let fill;
-  let stroke;
-  let txt = "#f3f6fb";
-
-  if (style === "primary") {
-    fill = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    fill.addColorStop(0, "rgba(70,110,190,0.55)");
-    fill.addColorStop(1, "rgba(25,46,92,0.70)");
-    stroke = "rgba(138,178,255,0.42)";
-  } else if (style === "gold") {
-    fill = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    fill.addColorStop(0, "rgba(170,118,38,0.56)");
-    fill.addColorStop(1, "rgba(92,58,16,0.74)");
-    stroke = "rgba(255,208,118,0.34)";
-    txt = "#fff1d5";
-  } else {
-    fill = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    fill.addColorStop(0, "rgba(255,255,255,0.10)");
-    fill.addColorStop(1, "rgba(255,255,255,0.04)");
-    stroke = "rgba(255,255,255,0.12)";
-  }
-
-  ctx.fillStyle = fill;
-  fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-  ctx.strokeStyle = stroke;
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, 16);
-
-ctx.fillStyle = "#f1f3f7";
-ctx.textAlign = "center";
-ctx.textBaseline = "middle";
-ctx.font = "900 20px system-ui";
-ctx.fillText("X", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + this.hitClose.h / 2 + 1);
-
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-}
-
-function drawBadge(ctx, x, y, w, h, text, type = "green") {
-  let fill = "#27d85c";
-  let txt = "#ffffff";
-
-  if (type === "gold") {
-    fill = "#f1b24e";
-    txt = "#2f1d06";
-  } else if (type === "dark") {
-    fill = "rgba(255,255,255,0.10)";
-    txt = "#ffffff";
-  }
-
-  ctx.fillStyle = fill;
-  fillRoundRect(ctx, x, y, w, h, h / 2);
-  ctx.fillStyle = txt;
-  ctx.font = "900 11px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, x + w / 2, y + h / 2 + 1);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
 }
 
 function drawDivider(ctx, x1, y1, x2, y2, alpha = 0.12) {
@@ -167,50 +114,80 @@ function drawDivider(ctx, x1, y1, x2, y2, alpha = 0.12) {
   ctx.stroke();
 }
 
+function drawButtonPlate(ctx, x, y, w, h, accent = "muted") {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  if (accent === "gold") {
+    g.addColorStop(0, "rgba(177,124,43,0.60)");
+    g.addColorStop(1, "rgba(79,49,14,0.74)");
+  } else if (accent === "blue") {
+    g.addColorStop(0, "rgba(74,116,196,0.56)");
+    g.addColorStop(1, "rgba(23,44,88,0.72)");
+  } else {
+    g.addColorStop(0, "rgba(255,255,255,0.10)");
+    g.addColorStop(1, "rgba(255,255,255,0.04)");
+  }
+
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, 16);
+
+  ctx.strokeStyle =
+    accent === "gold"
+      ? "rgba(255,211,128,0.28)"
+      : accent === "blue"
+      ? "rgba(137,178,255,0.30)"
+      : "rgba(255,255,255,0.12)";
+
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 16);
+
+  const shine = ctx.createLinearGradient(x, y, x, y + h * 0.5);
+  shine.addColorStop(0, "rgba(255,255,255,0.14)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shine;
+  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.42, 15);
+}
+
+function drawBadge(ctx, x, y, w, h, text, type = "green") {
+  let fill = "#27d85c";
+  let txt = "#ffffff";
+
+  if (type === "gold") {
+    fill = "#f1b24e";
+    txt = "#2e1d08";
+  }
+
+  ctx.fillStyle = fill;
+  fillRoundRect(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = txt;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "900 11px system-ui";
+  ctx.fillText(text, x + w / 2, y + h / 2 + 1);
+}
+
 function drawBusinessArtwork(ctx, x, y, w, h) {
   const bg = ctx.createLinearGradient(x, y, x, y + h);
-  bg.addColorStop(0, "#1a2130");
-  bg.addColorStop(1, "#0d1119");
+  bg.addColorStop(0, "#171d29");
+  bg.addColorStop(1, "#0c1017");
   ctx.fillStyle = bg;
-  fillRoundRect(ctx, x, y, w, h, 14);
-
-  const glow = ctx.createRadialGradient(x + w * 0.62, y + h * 0.50, 6, x + w * 0.62, y + h * 0.50, w * 0.70);
-  glow.addColorStop(0, "rgba(255,170,80,0.18)");
-  glow.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = glow;
-  fillRoundRect(ctx, x, y, w, h, 14);
+  fillRoundRect(ctx, x, y, w, h, 12);
 
   ctx.fillStyle = "#232b38";
   fillRoundRect(ctx, x + w * 0.08, y + h * 0.36, w * 0.42, h * 0.36, 6);
-
   ctx.fillStyle = "#202834";
   fillRoundRect(ctx, x + w * 0.52, y + h * 0.34, w * 0.26, h * 0.36, 6);
 
   ctx.fillStyle = "#ffb74d";
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 3; c++) {
-      fillRoundRect(
-        ctx,
-        x + w * (0.12 + c * 0.10),
-        y + h * (0.41 + r * 0.12),
-        w * 0.05,
-        h * 0.06,
-        2
-      );
+      fillRoundRect(ctx, x + w * (0.12 + c * 0.10), y + h * (0.41 + r * 0.12), w * 0.05, h * 0.06, 2);
     }
   }
 
   ctx.fillStyle = "#87c8ff";
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 2; c++) {
-      fillRoundRect(
-        ctx,
-        x + w * (0.56 + c * 0.10),
-        y + h * (0.40 + r * 0.13),
-        w * 0.06,
-        h * 0.07,
-        2
-      );
+      fillRoundRect(ctx, x + w * (0.56 + c * 0.10), y + h * (0.40 + r * 0.13), w * 0.06, h * 0.07, 2);
     }
   }
 }
@@ -220,7 +197,7 @@ function drawCrateArtwork(ctx, x, y, w, h) {
   bg.addColorStop(0, "#1a1d25");
   bg.addColorStop(1, "#0d1118");
   ctx.fillStyle = bg;
-  fillRoundRect(ctx, x, y, w, h, 14);
+  fillRoundRect(ctx, x, y, w, h, 12);
 
   const wood = ctx.createLinearGradient(x, y + h * 0.18, x, y + h * 0.82);
   wood.addColorStop(0, "#bb8a42");
@@ -244,7 +221,7 @@ function drawSkullArtwork(ctx, x, y, w, h) {
   bg.addColorStop(0, "#191c23");
   bg.addColorStop(1, "#0d1016");
   ctx.fillStyle = bg;
-  fillRoundRect(ctx, x, y, w, h, 14);
+  fillRoundRect(ctx, x, y, w, h, 12);
 
   ctx.strokeStyle = "rgba(255,255,255,0.46)";
   ctx.lineWidth = 4.5;
@@ -295,16 +272,16 @@ function drawStatCard(ctx, x, y, w, h, title, value1, value2, art = "default") {
   else drawGlassPanel(ctx, artX, artY, artW, artH, 14);
 
   ctx.fillStyle = "#f3f6fb";
-  ctx.font = "900 12px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
+  ctx.font = "900 12px system-ui";
   ctx.fillText(title, x + w / 2, y + 122);
 
   ctx.font = "900 18px system-ui";
   ctx.fillText(String(value1), x + w / 2, y + 146);
 
   if (value2 != null && value2 !== "") {
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "800 12px system-ui";
     ctx.fillText(String(value2), x + w / 2, y + 165);
   }
@@ -319,7 +296,7 @@ export class ProfileScene {
     this.scenes = scenes;
     this.assets = assets;
 
-    this.hitBack = null;
+    this.hitClose = null;
     this.hitEditAvatar = null;
     this.hitLeaderboard = null;
 
@@ -335,7 +312,7 @@ export class ProfileScene {
 
     if (!this.input?.justReleased?.()) return;
 
-    if (this.hitBack && pointInRect(px, py, this.hitBack)) {
+    if (this.hitClose && pointInRect(px, py, this.hitClose)) {
       this.scenes.go("home");
       return;
     }
@@ -355,7 +332,7 @@ export class ProfileScene {
     const state = this.store.get() || {};
     const p = state.player || {};
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
-    const topReserved = Number(state?.ui?.hudReservedTop || 110);
+    const topReserved = Number(state?.ui?.hudReservedTop || 108);
     const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
 
     const bg =
@@ -457,13 +434,26 @@ export class ProfileScene {
       p.membership === "premium"
     );
 
-    // HERO
     const heroX = innerX + 8;
     const heroY = innerY + 8;
     const heroW = innerW - 16;
     const heroH = 158;
 
     drawGlassPanel(ctx, heroX, heroY, heroW, heroH, 22);
+
+    this.hitClose = {
+      x: heroX + heroW - 48,
+      y: heroY + 12,
+      w: 36,
+      h: 36
+    };
+    drawButtonPlate(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, "muted");
+
+    ctx.fillStyle = "#f1f3f7";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "900 20px system-ui";
+    ctx.fillText("X", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + this.hitClose.h / 2 + 1);
 
     const avatarFrameX = heroX + 16;
     const avatarFrameY = heroY + 16;
@@ -519,8 +509,10 @@ export class ProfileScene {
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
+
+    const nameSize = textFit(ctx, username, infoW * 0.65, 28, 900);
+    ctx.font = `900 ${nameSize}px system-ui`;
     ctx.fillStyle = "#f3f6fb";
-    ctx.font = "900 28px system-ui";
     ctx.fillText(username, infoX, infoY + 12);
 
     ctx.fillStyle = "rgba(255,255,255,0.48)";
@@ -567,7 +559,6 @@ export class ProfileScene {
     ctx.font = "900 16px system-ui";
     ctx.fillText(moneyFmt(totalInventoryValue), infoX + infoW * 0.58 + 138, infoY + 110);
 
-    // STAT CARDS
     const cardsY = heroY + heroH + 14;
     const cardGap = 12;
     const cardW = Math.floor((innerW - 16 - cardGap * 2) / 3);
@@ -579,9 +570,19 @@ export class ProfileScene {
 
     drawStatCard(ctx, card1X, cardsY, cardW, cardH, "BUSINESSES", `${businessesOwned} Owned`, "", "business");
     drawStatCard(ctx, card2X, cardsY, cardW, cardH, "INVENTORY", `${inventoryItems} Items`, "", "crate");
-    drawStatCard(ctx, card3X, cardsY, cardW, cardH, "PVP STATS", `${wins} / ${losses}`, "WINS   LOSSES", "skull");
 
-    // BOTTOM STATS BAR
+    drawGlassPanel(ctx, card3X, cardsY, cardW, cardH, 20);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "900 12px system-ui";
+    ctx.fillText("PVP STATS", card3X + cardW / 2, cardsY + 122);
+    drawSkullArtwork(ctx, card3X + 14, cardsY + 14, cardW - 28, 74);
+    ctx.font = "900 16px system-ui";
+    ctx.fillText("WINS   LOSSES", card3X + cardW / 2, cardsY + 146);
+    ctx.font = "900 18px system-ui";
+    ctx.fillText(`${wins}      ${losses}`, card3X + cardW / 2, cardsY + 168);
+
     const statsY = cardsY + cardH + 14;
     const statsH = 84;
     const statsX = innerX + 8;
@@ -598,7 +599,6 @@ export class ProfileScene {
 
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-
     ctx.fillStyle = "rgba(255,255,255,0.62)";
     ctx.font = "800 12px system-ui";
     ctx.fillText("Win Rate", col1, statsY + 22);
@@ -617,9 +617,6 @@ export class ProfileScene {
     ctx.font = "900 18px system-ui";
     ctx.fillText("♛", col3, statsY + 72);
 
-    ctx.textAlign = "left";
-
-    // BUTTONS
     const btnY = statsY + statsH + 16;
     const btnGap = 16;
     const btnW = Math.floor((statsW - btnGap) / 2);
@@ -628,10 +625,14 @@ export class ProfileScene {
     this.hitEditAvatar = { x: statsX, y: btnY, w: btnW, h: btnH };
     this.hitLeaderboard = { x: statsX + btnW + btnGap, y: btnY, w: btnW, h: btnH };
 
-    drawButton(ctx, this.hitEditAvatar, "📷  EDIT AVATAR", "muted");
-    drawButton(ctx, this.hitLeaderboard, "🏆  LEADERBOARD", "gold");
+    drawButtonPlate(ctx, this.hitEditAvatar.x, this.hitEditAvatar.y, this.hitEditAvatar.w, this.hitEditAvatar.h, "blue");
+    drawButtonPlate(ctx, this.hitLeaderboard.x, this.hitLeaderboard.y, this.hitLeaderboard.w, this.hitLeaderboard.h, "gold");
 
-    // BACK
-this.hitBack = { x: innerX + innerW - 100, y: innerY + 12, w: 92, h: 32 };
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "900 18px system-ui";
+    ctx.fillText("📷  EDIT AVATAR", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + this.hitEditAvatar.h / 2 + 1);
+    ctx.fillText("🏆  LEADERBOARD", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + this.hitLeaderboard.h / 2 + 1);
   }
 }
