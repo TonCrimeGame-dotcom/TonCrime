@@ -163,44 +163,7 @@ export class CoffeeShopScene {
         ? cs.visitors
         : this._freshVisitors();
 
-    this.store.set({
-      missions: {
-        ...missions,
-        pvpPlayed: Number(missions.pvpPlayed || 0),
-      },
-      inventory: {
-        ...inventory,
-        items: Array.isArray(inventory.items) ? inventory.items : [],
-      },
-      player: {
-        ...p,
-        xp: Number(p.xp || 0),
-        xpToNext: Math.max(100, Number(p.xpToNext || 100)),
-        level: Math.max(1, Number(p.level || 1)),
-        energy: Number(p.energy ?? 10),
-        energyMax: Math.max(10, Number(p.energyMax ?? 100)),
-        coffeeshopUses: Number(p.coffeeshopUses || 0),
-        coffeeshopTolerance: Number(p.coffeeshopTolerance || 0),
-        pvpPlayed: Number(p.pvpPlayed || 0),
-        pvpWins: Number(p.pvpWins || 0),
-        pvpLosses: Number(p.pvpLosses || 0),
-        coffeeshopPvpPlayed: Number(p.coffeeshopPvpPlayed || 0),
-        coffeeshopPvpWins: Number(p.coffeeshopPvpWins || 0),
-        coffeeshopPvpLosses: Number(p.coffeeshopPvpLosses || 0),
-        coffeeshopScore: Number(p.coffeeshopScore || 0),
-      },
-      coffeeshop: {
-        ...cs,
-        visitors,
-        giftsClaimed: Number(cs.giftsClaimed || 0),
-        securityHits: Number(cs.securityHits || 0),
-        totalSpent: Number(cs.totalSpent || 0),
-        totalBought: Number(cs.totalBought || 0),
-        pvpLog: Array.isArray(cs.pvpLog) ? cs.pvpLog.slice(0, 30) : [],
-        leaderboard: Array.isArray(cs.leaderboard) ? cs.leaderboard : [],
-      },
-    });
-  }
+   
 
   _freshVisitors() {
     const shuffled = [...VISITOR_POOL].sort(() => Math.random() - 0.5);
@@ -721,61 +684,7 @@ export class CoffeeShopScene {
       coffeeshopPvpLosses: Number(p.coffeeshopPvpLosses || 0) + (didWin ? 0 : 1),
     };
 
-    const leaderboard = Array.isArray(cs.leaderboard)
-      ? cs.leaderboard.map((x) => ({ ...x }))
-      : [];
-
-    let row = leaderboard.find((x) => String(x.name) === playerName);
-    if (!row) {
-      row = {
-        id: makeId("lb"),
-        name: playerName,
-        wins: 0,
-        losses: 0,
-        played: 0,
-        score: 0,
-        coinsWon: 0,
-      };
-      leaderboard.push(row);
-    }
-
-    row.played = Number(row.played || 0) + 1;
-    row.wins = Number(row.wins || 0) + (didWin ? 1 : 0);
-    row.losses = Number(row.losses || 0) + (didWin ? 0 : 1);
-    row.score = Number(row.score || 0) + Number(scoreDelta || 0);
-    row.coinsWon = Number(row.coinsWon || 0) + Number(rewardCoins || 0);
-
-    leaderboard.sort((a, b) => {
-      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return Number(b.wins || 0) - Number(a.wins || 0);
-    });
-
-    const log = Array.isArray(cs.pvpLog) ? cs.pvpLog.map((x) => ({ ...x })) : [];
-    log.unshift({
-      id: makeId("pvp"),
-      ts: Date.now(),
-      result: didWin ? "win" : "lose",
-      enemy: visitor.name,
-      enemyTier: visitor.tier,
-      scoreDelta,
-      rewardCoins,
-    });
-
-    this.store.set({
-      missions: {
-        ...missions,
-        pvpPlayed: Number(missions.pvpPlayed || 0) + 1,
-      },
-      player: playerPatch,
-      coffeeshop: {
-        ...cs,
-        leaderboard: leaderboard.slice(0, 20),
-        pvpLog: log.slice(0, 20),
-      },
-    });
-  }
-
+    
   _attackVisitor(visitor, hitRect = null) {
     const s = this.store.get();
     const p = s.player || {};
@@ -1106,8 +1015,7 @@ export class CoffeeShopScene {
     const energyMax = Number(player.energyMax || 100);
     const uses = Number(player.coffeeshopUses || 0);
     const tolerant = uses >= 10;
-    const lb = Array.isArray(cs.leaderboard) ? cs.leaderboard : [];
-    const meRow = lb.find((x) => String(x.name) === this._playerName());
+  
 
     ctx.fillStyle = "rgba(255,214,120,0.96)";
     ctx.font = "800 12px system-ui";
@@ -1145,7 +1053,7 @@ export class CoffeeShopScene {
     const contentH = panelH - 114;
 
     const visitors = Array.isArray(cs.visitors) ? cs.visitors : [];
-    const top5 = lb.slice(0, 5);
+  
 
     const visitorSectionH = 150;
     const leaderboardSectionH = 138;
@@ -1220,49 +1128,7 @@ export class CoffeeShopScene {
 
     y += visitorSectionH;
 
-    // Leaderboard
-    ctx.fillStyle = "rgba(255,255,255,0.94)";
-    ctx.font = "900 14px system-ui";
-    ctx.fillText("Coffeeshop Leaderboard", contentX + 2, y + 14);
-    y += 24;
-
-    const boardH = 96;
-    this._rr(ctx, contentX, y, contentW, boardH, 14);
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.stroke();
-
-    const rowsToDraw = Math.max(1, Math.min(5, top5.length || 1));
-    for (let i = 0; i < rowsToDraw; i++) {
-      const row = top5[i] || {
-        name: i === 0 ? this._playerName() : "—",
-        wins: 0,
-        losses: 0,
-        score: 0,
-      };
-
-      const ry = y + 22 + i * 14;
-      ctx.fillStyle = i === 0 ? "rgba(255,214,120,0.96)" : "rgba(255,255,255,0.86)";
-      ctx.font = i === 0 ? "900 11px system-ui" : "800 11px system-ui";
-      ctx.fillText(
-        `#${i + 1} ${row.name}`,
-        contentX + 12,
-        ry
-      );
-
-      ctx.textAlign = "right";
-      ctx.fillStyle = "rgba(255,255,255,0.70)";
-      ctx.fillText(
-        `${fmtNum(row.wins)}W / ${fmtNum(row.losses)}L • ${fmtNum(row.score)} skor`,
-        contentX + contentW - 12,
-        ry
-      );
-      ctx.textAlign = "left";
-    }
-
-    y += leaderboardSectionH;
-
+   
     // Product header
     ctx.fillStyle = "rgba(255,255,255,0.94)";
     ctx.font = "900 14px system-ui";
