@@ -441,9 +441,12 @@
     return `
       <div class="tc-crush-root">
         <div class="tc-crush-head">
-          <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
-          <div class="tc-crush-title" id="tcCrushTurn">SEN<small>7x7 Grid Heist</small></div>
-          <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
+          <div class="tc-crush-chip tc-left-chip" id="tcCrushMeMoves">Hamle: 12</div>
+          <div class="tc-crush-title" id="tcCrushTurn">
+            <span class="tc-crush-neon">IQ ARENA</span>
+            <small>Rakip aranıyor...</small>
+          </div>
+          <div class="tc-crush-chip tc-right-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
         </div>
         <canvas class="tc-crush-canvas"></canvas>
         <div class="tc-crush-toast" id="tcCrushToast"></div>
@@ -458,10 +461,47 @@
     const style = document.createElement("style");
     style.id = id;
     style.textContent = `
+      #pvpWrap {
+        border: 1px solid rgba(255,255,255,0.10) !important;
+        background: rgba(6,10,18,0.14) !important;
+        backdrop-filter: blur(14px) !important;
+        box-shadow: none !important;
+      }
+      #pvpHeader {
+        background: transparent !important;
+        border-bottom: 0 !important;
+        padding: 10px 12px 4px !important;
+      }
+      #pvpBars {
+        padding: 4px 12px 8px !important;
+        gap: 10px !important;
+        background: transparent !important;
+      }
+      #pvpWrap .pvpBtns,
+      #pvpWrap #pvpStart,
+      #pvpWrap #pvpStop,
+      #pvpWrap #pvpReset {
+        display: none !important;
+      }
+      #pvpOpponentRow {
+        color: rgba(255,255,255,0.82) !important;
+      }
+      #pvpOpponentRow b {
+        color: rgba(255,255,255,0.96) !important;
+      }
+      .pvpBar {
+        background: rgba(255,255,255,0.06) !important;
+        border: 1px solid rgba(255,255,255,0.10) !important;
+      }
+      .pvpFill {
+        background: linear-gradient(90deg, rgba(255,255,255,0.88), rgba(210,220,255,0.55)) !important;
+      }
       #arena {
         position: relative;
         overflow: hidden;
         touch-action: none;
+        background: transparent !important;
+        border-radius: 22px !important;
       }
       #arena .tc-crush-root {
         position: absolute;
@@ -469,8 +509,9 @@
         z-index: 5;
         display: flex;
         flex-direction: column;
-        padding: 10px;
+        padding: 4px 2px 0;
         box-sizing: border-box;
+        background: transparent;
       }
       #arena .tc-crush-head {
         display: grid;
@@ -479,12 +520,13 @@
         align-items: center;
         margin-bottom: 8px;
         flex: 0 0 auto;
+        background: transparent;
       }
       #arena .tc-crush-chip {
         min-height: 34px;
         border-radius: 12px;
         border: 1px solid rgba(255,255,255,0.14);
-        background: rgba(0,0,0,0.34);
+        background: rgba(0,0,0,0.18);
         color: #fff;
         display: flex;
         align-items: center;
@@ -493,16 +535,34 @@
         font: 800 12px system-ui, Arial;
         backdrop-filter: blur(6px);
         text-align: center;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      }
+      #arena .tc-left-chip,
+      #arena .tc-right-chip {
+        background: rgba(0,0,0,0.26);
       }
       #arena .tc-crush-title {
         text-align: center;
         color: rgba(255,255,255,0.96);
         font: 900 12px system-ui, Arial;
+        min-width: 120px;
+      }
+      #arena .tc-crush-neon {
+        display: inline-block;
+        font: 900 18px system-ui, Arial;
+        letter-spacing: 1.2px;
+        color: #ff4d9d;
+        text-shadow:
+          0 0 4px rgba(255,77,157,0.9),
+          0 0 10px rgba(255,77,157,0.9),
+          0 0 18px rgba(255,90,180,0.75),
+          0 0 28px rgba(255,110,200,0.60);
+        animation: tcArenaNeonPulse 1.25s ease-in-out infinite alternate;
       }
       #arena .tc-crush-title small {
         display: block;
-        color: rgba(255,255,255,0.70);
-        font: 600 10px system-ui, Arial;
+        color: rgba(255,255,255,0.78);
+        font: 700 10px system-ui, Arial;
         margin-top: 2px;
       }
       #arena .tc-crush-canvas {
@@ -510,8 +570,9 @@
         width: 100%;
         height: 100%;
         flex: 1 1 auto;
-        border-radius: 16px;
+        border-radius: 20px;
         touch-action: none;
+        background: transparent;
       }
       #arena .tc-crush-toast {
         position: absolute;
@@ -522,7 +583,7 @@
         padding: 10px 14px;
         min-width: 180px;
         border-radius: 14px;
-        background: rgba(0,0,0,0.62);
+        background: rgba(0,0,0,0.52);
         border: 1px solid rgba(255,255,255,0.14);
         color: #fff;
         font: 900 13px system-ui, Arial;
@@ -535,9 +596,30 @@
       #arena .tc-crush-toast.on {
         opacity: 1;
       }
+      @keyframes tcArenaNeonPulse {
+        0% {
+          opacity: 0.82;
+          text-shadow:
+            0 0 3px rgba(255,77,157,0.75),
+            0 0 8px rgba(255,77,157,0.72),
+            0 0 16px rgba(255,90,180,0.46);
+        }
+        100% {
+          opacity: 1;
+          text-shadow:
+            0 0 5px rgba(255,77,157,0.98),
+            0 0 12px rgba(255,77,157,0.98),
+            0 0 22px rgba(255,90,180,0.84),
+            0 0 34px rgba(255,110,200,0.65);
+        }
+      }
       @media (max-width: 520px) {
-        #arena .tc-crush-root {
-          padding: 8px;
+        #pvpHeader {
+          padding: 8px 10px 2px !important;
+        }
+        #pvpBars {
+          padding: 2px 10px 8px !important;
+          gap: 8px !important;
         }
         #arena .tc-crush-head {
           gap: 6px;
@@ -549,8 +631,8 @@
           font-size: 11px;
           border-radius: 10px;
         }
-        #arena .tc-crush-title {
-          font-size: 11px;
+        #arena .tc-crush-neon {
+          font-size: 16px;
         }
         #arena .tc-crush-title small {
           font-size: 9px;
@@ -558,6 +640,137 @@
       }
     `;
     document.head.appendChild(style);
+  }
+
+  function getStoreState() {
+    return window.tcStore && typeof window.tcStore.get === "function" ? window.tcStore.get() || {} : {};
+  }
+
+  function setStorePatch(patch) {
+    if (window.tcStore && typeof window.tcStore.set === "function") {
+      window.tcStore.set(patch || {});
+    }
+  }
+
+  function dispatchGameEvent(name, detail) {
+    try {
+      window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
+    } catch (_) {}
+  }
+
+  function upsertLeaderboardEntry(board, entry) {
+    const next = Array.isArray(board) ? board.map((x) => ({ ...x })) : [];
+    const key = String(entry?.telegramId || entry?.username || "player");
+    const idx = next.findIndex((x) => String(x.telegramId || x.username || "") === key);
+    if (idx >= 0) next[idx] = { ...next[idx], ...entry };
+    else next.push({ ...entry });
+    next.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.wins || 0) - Number(a.wins || 0));
+    return next.slice(0, 50);
+  }
+
+  function persistMatchResult(result) {
+    const state = getStoreState();
+    const player = { ...(state.player || {}) };
+    const pvp = { ...(state.pvp || {}) };
+    const wins = Math.max(0, Number(pvp.wins || 0)) + (result === "win" ? 1 : 0);
+    const losses = Math.max(0, Number(pvp.losses || 0)) + (result === "lose" ? 1 : 0);
+    const rating = Math.max(600, Number(pvp.rating || 1000) + (result === "win" ? 14 : -9));
+    const rewardCoins = result === "win" ? 24 : 8;
+    const rewardXp = result === "win" ? 16 : 6;
+    const xpNow = Math.max(0, Number(player.xp || 0));
+    const xpToNext = Math.max(1, Number(player.xpToNext || 100));
+    let nextXp = xpNow + rewardXp;
+    let nextLevel = Math.max(1, Number(player.level || 1));
+    let nextXpToNext = xpToNext;
+
+    while (nextXp >= nextXpToNext) {
+      nextXp -= nextXpToNext;
+      nextLevel += 1;
+      nextXpToNext = 100;
+    }
+
+    const match = {
+      id: "pvp_" + Date.now(),
+      mode: "iq_arena",
+      opponent: pvp.currentOpponent || null,
+      result,
+      createdAt: Date.now(),
+    };
+
+    const recentMatches = [match, ...((Array.isArray(pvp.recentMatches) ? pvp.recentMatches : []).map((x) => ({ ...x })))].slice(0, 12);
+    const leaderboard = upsertLeaderboardEntry(pvp.leaderboard, {
+      telegramId: String(player.telegramId || player.id || "player_main"),
+      username: String(player.username || "Player"),
+      rating,
+      wins,
+      losses,
+      updatedAt: Date.now(),
+    });
+
+    setStorePatch({
+      coins: Math.max(0, Number(state.coins || 0) + rewardCoins),
+      player: {
+        ...player,
+        xp: nextXp,
+        xpToNext: nextXpToNext,
+        level: nextLevel,
+      },
+      pvp: {
+        ...pvp,
+        wins,
+        losses,
+        rating,
+        recentMatches,
+        leaderboard,
+      },
+    });
+
+    dispatchGameEvent(result === "win" ? "tc:pvp:win" : "tc:pvp:lose", {
+      mode: "iq_arena",
+      rewardCoins,
+      rewardXp,
+      opponent: pvp.currentOpponent || null,
+    });
+  }
+
+  function fakeOpponentPool() {
+    return [
+      { username: "ShadowWolf", isBot: true, skill: 0.82 },
+      { username: "NightTiger", isBot: true, skill: 0.78 },
+      { username: "IronFist", isBot: true, skill: 0.8 },
+      { username: "GhostKiller", isBot: true, skill: 0.76 },
+      { username: "KartelKing", isBot: true, skill: 0.84 },
+    ];
+  }
+
+  function calcHumanLikeBotMove(board, skill = 0.82) {
+    const moves = [];
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        const dirs = [{ r: 0, c: 1 }, { r: 1, c: 0 }];
+        for (const d of dirs) {
+          const rr = r + d.r;
+          const cc = c + d.c;
+          if (!inBounds(rr, cc)) continue;
+          const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
+          const res = evaluateBoard(swapped, { r: rr, c: cc }, { r, c }, { r: rr, c: cc });
+          if (!res.hasAction) continue;
+          let score = 0;
+          score += res.damage * 3.2;
+          score += res.heal * 1.2;
+          score += res.coins * 0.7;
+          score += res.shield * 0.9;
+          score += res.extraMoves * 20;
+          for (const m of res.matches) score += m.len * 4;
+          score += Math.random() * 5;
+          moves.push({ a: { r, c }, b: { r: rr, c: cc }, score });
+        }
+      }
+    }
+    if (!moves.length) return null;
+    moves.sort((a, b) => b.score - a.score);
+    const maxPick = skill >= 0.86 ? 1 : skill >= 0.8 ? Math.min(2, moves.length) : Math.min(4, moves.length);
+    return moves[randInt(0, maxPick - 1)];
   }
 
   const api = {
@@ -569,8 +782,11 @@
     _selected: null,
     _tileRects: [],
     _lastSignature: "",
-    _opponent: { username: "Rakip", isBot: true },
+    _opponent: { username: "Rakip", isBot: true, skill: 0.82 },
     _turnTimer: null,
+    _matchTimer: null,
+    _searchToken: 0,
+    _lastResultKey: "",
     _pointerDown: null,
     _dragStart: null,
     _dragFromTile: null,
@@ -587,13 +803,30 @@
       const meFill = document.getElementById(opts.meFillId || "meFill");
       const enemyHpText = document.getElementById(opts.enemyHpTextId || "enemyHpText");
       const meHpText = document.getElementById(opts.meHpTextId || "meHpText");
+      const opponentLabel = document.getElementById("pvpOpponent");
+      const spinner = document.getElementById("pvpSpinner");
+      const btnWrap = document.querySelector("#pvpWrap .pvpBtns");
+      const startBtn = document.getElementById("pvpStart");
+      const stopBtn = document.getElementById("pvpStop");
+      const resetBtn = document.getElementById("pvpReset");
+      const wrap = document.getElementById("pvpWrap");
 
       if (!arena || !status || !enemyFill || !meFill || !enemyHpText || !meHpText) {
         console.warn("[TonCrimePVP_CRUSH] arena/status/bar elementleri bulunamadı");
         return;
       }
 
+      if (btnWrap) btnWrap.style.display = "none";
+      if (startBtn) startBtn.style.display = "none";
+      if (stopBtn) stopBtn.style.display = "none";
+      if (resetBtn) resetBtn.style.display = "none";
+      if (wrap) {
+        wrap.style.background = "rgba(6,10,18,0.14)";
+        wrap.style.borderColor = "rgba(255,255,255,0.10)";
+      }
+
       this._destroyCanvasEvents();
+      this.stop();
 
       arena.innerHTML = makeArenaMarkup();
 
@@ -607,6 +840,8 @@
         meFill,
         enemyHpText,
         meHpText,
+        opponentLabel,
+        spinner,
         canvas,
         ctx,
         meMoves: arena.querySelector("#tcCrushMeMoves"),
@@ -620,14 +855,30 @@
       this.reset();
 
       this._inited = true;
-      this._setStatus("Grid Heist hazır");
+      this._setStatus("IQ ARENA hazır");
     },
 
     setOpponent(opp) {
       this._opponent =
         opp && typeof opp.username === "string"
-          ? { ...opp }
-          : { username: "Rakip", isBot: true };
+          ? { skill: 0.82, ...opp }
+          : { username: "Rakip", isBot: true, skill: 0.82 };
+
+      const state = getStoreState();
+      setStorePatch({
+        pvp: {
+          ...(state.pvp || {}),
+          currentOpponent: {
+            username: this._opponent.username,
+            isBot: !!this._opponent.isBot,
+            foundAt: Date.now(),
+          },
+        },
+      });
+
+      if (this._els?.opponentLabel) {
+        this._els.opponentLabel.textContent = this._opponent.username;
+      }
 
       if (this._state) this._updateHud();
     },
@@ -635,13 +886,13 @@
     async start() {
       if (!this._inited) return;
       await this._waitUntilVisible();
+      this.reset();
 
       this._safeResizeSequence();
-      this._running = true;
-      this._locked = false;
+      this._running = false;
+      this._locked = true;
       this._selected = null;
-      this._setStatus("Grid Heist başladı");
-      this._toast("Sıra sende");
+      this._startMatchmaking();
       this._render();
 
       requestAnimationFrame(() => {
@@ -658,14 +909,19 @@
       this._dragStart = null;
       this._dragFromTile = null;
       clearTimeout(this._turnTimer);
+      clearTimeout(this._matchTimer);
       this._turnTimer = null;
-      this._setStatus("Durduruldu");
+      this._matchTimer = null;
+      if (this._els?.spinner) this._els.spinner.classList.add("hidden");
+      this._setStatus("Hazır");
       this._render();
     },
 
     reset() {
       clearTimeout(this._turnTimer);
+      clearTimeout(this._matchTimer);
       this._turnTimer = null;
+      this._matchTimer = null;
       this._running = false;
       this._locked = false;
       this._selected = null;
@@ -673,6 +929,7 @@
       this._dragStart = null;
       this._dragFromTile = null;
       this._dragConsumed = false;
+      this._lastResultKey = "";
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -688,10 +945,54 @@
         enemyArmor: 0,
         meCoins: 0,
         enemyCoins: 0,
-        info: "Yeni maç",
+        info: "Maç bekleniyor",
       };
 
+      if (this._els?.opponentLabel) this._els.opponentLabel.textContent = "aranıyor...";
+      if (this._els?.spinner) this._els.spinner.classList.remove("hidden");
       this._safeResizeSequence();
+      this._updateHud();
+      this._render();
+    },
+
+    _startMatchmaking() {
+      const token = ++this._searchToken;
+      this._setStatus("Rakip aranıyor...");
+      this._toast("Rakip aranıyor...");
+      if (this._els?.spinner) this._els.spinner.classList.remove("hidden");
+      if (this._els?.opponentLabel) this._els.opponentLabel.textContent = "aranıyor...";
+      this._state.info = "Eşleşme aranıyor";
+      this._updateHud();
+
+      const maybeHuman = Math.random() < 0.38;
+      if (maybeHuman) {
+        const humanNames = ["MertX", "Ares77", "KartelBey", "NoirKid", "VelvetFox"];
+        const delay = randInt(1800, 4400);
+        this._matchTimer = setTimeout(() => {
+          if (token !== this._searchToken) return;
+          this.setOpponent({ username: choice(humanNames), isBot: false, skill: 0.76 + Math.random() * 0.08 });
+          this._beginLiveMatch();
+        }, delay);
+      }
+
+      setTimeout(() => {
+        if (token !== this._searchToken || this._running) return;
+        this.setOpponent(choice(fakeOpponentPool()));
+        this._beginLiveMatch();
+      }, 5000);
+    },
+
+    _beginLiveMatch() {
+      clearTimeout(this._matchTimer);
+      this._matchTimer = null;
+      this._running = true;
+      this._locked = false;
+      this._selected = null;
+      if (this._els?.spinner) this._els.spinner.classList.add("hidden");
+      this._state.turn = "me";
+      this._state.info = this._opponent.isBot ? "Bot rakip hazır" : "Canlı rakip hazır";
+      this._setStatus(this._opponent.isBot ? "Bot rakip bulundu" : "Rakip bulundu");
+      this._toast("Sıra sende");
       this._updateHud();
       this._render();
     },
@@ -947,8 +1248,12 @@
       if (this._els.meMoves) this._els.meMoves.textContent = `Hamle: ${s.meMoves}`;
       if (this._els.enemyMoves) this._els.enemyMoves.textContent = `${this._opponent.username}: ${s.enemyMoves}`;
       if (this._els.turn) {
-        const who = s.turn === "me" ? "SEN" : this._opponent.username.toUpperCase();
-        this._els.turn.innerHTML = `${who}<small>${s.info || "7x7 Grid Heist"}</small>`;
+        const turnText = !this._running
+          ? "Rakip aranıyor..."
+          : s.turn === "me"
+          ? "Sıra sende"
+          : `${this._opponent.username} düşünüyor`;
+        this._els.turn.innerHTML = `<span class="tc-crush-neon">IQ ARENA</span><small>${turnText} • ${s.info || "Neon Heist"}</small>`;
       }
     },
 
@@ -977,7 +1282,7 @@
       if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimer = setTimeout(() => this._enemyPlay(), 520);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(760, 1700));
       } else {
         this._locked = false;
       }
@@ -987,7 +1292,7 @@
       if (!this._running || !this._state || this._state.turn !== "enemy") return;
       this._locked = true;
 
-      const move = calcBotMove(this._state.board);
+      const move = calcHumanLikeBotMove(this._state.board, Number(this._opponent.skill || 0.82));
       if (!move) {
         this._state.turn = "me";
         this._state.info = "Rakip hamle bulamadı";
@@ -1003,14 +1308,15 @@
       this._updateHud();
       this._render();
 
-      await this._sleep(220);
+      const thinkDelay = randInt(640, 1680);
+      await this._sleep(thinkDelay);
       await this._resolveTurn("enemy", move.a, move.b);
 
       if (!this._running) return;
       if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimer = setTimeout(() => this._enemyPlay(), 480);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(720, 1650));
       } else {
         this._locked = false;
       }
@@ -1087,39 +1393,41 @@
       this._render();
     },
 
+    _finalizeMatch(result) {
+      if (!this._state) return true;
+      const key = result + "_" + this._state.meHp + "_" + this._state.enemyHp + "_" + this._state.meMoves + "_" + this._state.enemyMoves;
+      if (this._lastResultKey === key) return true;
+      this._lastResultKey = key;
+      this._running = false;
+      this._locked = true;
+      clearTimeout(this._turnTimer);
+      this._turnTimer = null;
+      if (this._els?.spinner) this._els.spinner.classList.add("hidden");
+      if (result === "win") {
+        this._setStatus("Kazandın");
+        this._toast("Kazandın • +24 YTON +16 XP");
+      } else {
+        this._setStatus("Kaybettin");
+        this._toast("Kaybettin • +8 YTON +6 XP");
+      }
+      persistMatchResult(result);
+      this._render();
+      return true;
+    },
+
     _checkFinish() {
       if (!this._state) return false;
 
       if (this._state.enemyHp <= 0) {
-        this._running = false;
-        this._locked = true;
-        this._setStatus("Kazandın");
-        this._toast("Kazandın");
-        this._render();
-        return true;
+        return this._finalizeMatch("win");
       }
 
       if (this._state.meHp <= 0) {
-        this._running = false;
-        this._locked = true;
-        this._setStatus("Kaybettin");
-        this._toast("Kaybettin");
-        this._render();
-        return true;
+        return this._finalizeMatch("lose");
       }
 
       if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
-        this._running = false;
-        this._locked = true;
-        if (this._state.meHp >= this._state.enemyHp) {
-          this._setStatus("Kazandın");
-          this._toast("Kazandın");
-        } else {
-          this._setStatus("Kaybettin");
-          this._toast("Kaybettin");
-        }
-        this._render();
-        return true;
+        return this._finalizeMatch(this._state.meHp >= this._state.enemyHp ? "win" : "lose");
       }
 
       return false;
@@ -1143,8 +1451,8 @@
       ctx.clearRect(0, 0, w, h);
 
       const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "rgba(18,20,28,0.92)");
-      bg.addColorStop(1, "rgba(8,9,14,0.98)");
+      bg.addColorStop(0, "rgba(18,20,28,0.34)");
+      bg.addColorStop(1, "rgba(8,9,14,0.14)");
       fillRoundRect(ctx, 0, 0, w, h, 16, bg);
 
       const boardPad = clamp(Math.round(w * 0.022), 8, 12);
