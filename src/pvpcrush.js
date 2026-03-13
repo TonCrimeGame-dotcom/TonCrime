@@ -1,4 +1,3 @@
-// src/pvpcrush.js
 (function () {
   const GRID = 7;
   const START_HP = 100;
@@ -24,13 +23,13 @@
   ];
 
   const TILE_META = {
-    [TILE.PUNCH]: { emoji: "👊", label: "Yumruk", color: "#ffb24a" },
-    [TILE.GUN]: { emoji: "🔫", label: "Silah", color: "#ff7a59" },
-    [TILE.KNIFE]: { emoji: "🔪", label: "Bıçak", color: "#d66bff" },
-    [TILE.MED]: { emoji: "💊", label: "İlaç", color: "#58d68d" },
-    [TILE.CASH]: { emoji: "💰", label: "Coin", color: "#ffd166" },
-    [TILE.SHIELD]: { emoji: "🛡️", label: "Kalkan", color: "#6fb8ff" },
-    [TILE.BOMB]: { emoji: "💣", label: "Bomba", color: "#ffffff" },
+    [TILE.PUNCH]: { emoji: "👊", color: "#ffb24a", label: "Yumruk" },
+    [TILE.GUN]: { emoji: "🔫", color: "#ff7b59", label: "Silah" },
+    [TILE.KNIFE]: { emoji: "🔪", color: "#d77dff", label: "Bıçak" },
+    [TILE.MED]: { emoji: "💊", color: "#58d68d", label: "İlaç" },
+    [TILE.CASH]: { emoji: "💰", color: "#ffd166", label: "Coin" },
+    [TILE.SHIELD]: { emoji: "🛡️", color: "#69b7ff", label: "Kalkan" },
+    [TILE.BOMB]: { emoji: "💣", color: "#ffffff", label: "Bomba" },
   };
 
   const DAMAGE = {
@@ -40,8 +39,8 @@
     [TILE.BOMB]: 18,
   };
 
-  function clamp(n, a, b) {
-    return Math.max(a, Math.min(b, n));
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
   }
 
   function randInt(min, max) {
@@ -73,94 +72,31 @@
     ctx.fill();
   }
 
-  function strokeRoundRect(ctx, x, y, w, h, r, stroke, lineWidth = 1) {
+  function strokeRoundRect(ctx, x, y, w, h, r, stroke, lw) {
     roundRectPath(ctx, x, y, w, h, r);
-    ctx.lineWidth = lineWidth;
+    ctx.lineWidth = lw;
     ctx.strokeStyle = stroke;
     ctx.stroke();
   }
 
   function makeId() {
-    return `tile_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return "tile_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
   }
 
   function createTile(type) {
-    return {
-      id: makeId(),
-      type,
-    };
+    return { id: makeId(), type };
   }
 
   function cloneBoard(board) {
     return board.map((row) => row.map((cell) => (cell ? { ...cell } : null)));
   }
 
-  function shuffleTypes() {
-    const arr = NORMAL_TYPES.slice();
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = randInt(0, i);
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
+  function inBounds(r, c) {
+    return r >= 0 && r < GRID && c >= 0 && c < GRID;
   }
 
-  function getWeightedType(seedBias) {
-    const types = shuffleTypes();
-    if (seedBias % 3 === 0) return choice(types);
-    if (seedBias % 3 === 1) return choice(types.slice(0, 5));
-    return choice(types.slice(1));
-  }
-
-  function buildFreshBoard(lastSignature) {
-    let tries = 0;
-
-    while (tries < 60) {
-      tries += 1;
-
-      const seedBias = Date.now() + tries * 17 + randInt(1, 99999);
-      const board = Array.from({ length: GRID }, () =>
-        Array.from({ length: GRID }, () => null)
-      );
-
-      for (let r = 0; r < GRID; r++) {
-        for (let c = 0; c < GRID; c++) {
-          let t = getWeightedType(seedBias + r * 31 + c * 13);
-          let safe = 0;
-
-          while (
-            safe < 20 &&
-            ((c >= 2 &&
-              board[r][c - 1] &&
-              board[r][c - 2] &&
-              board[r][c - 1].type === t &&
-              board[r][c - 2].type === t) ||
-              (r >= 2 &&
-                board[r - 1][c] &&
-                board[r - 2][c] &&
-                board[r - 1][c].type === t &&
-                board[r - 2][c].type === t))
-          ) {
-            t = getWeightedType(seedBias + safe * 7 + c * 5);
-            safe += 1;
-          }
-
-          board[r][c] = createTile(t);
-        }
-      }
-
-      const sig = boardSignature(board);
-      if (sig !== lastSignature && findMatches(board).length === 0 && hasAnyPossibleMove(board)) {
-        return board;
-      }
-    }
-
-    return Array.from({ length: GRID }, () =>
-      Array.from({ length: GRID }, () => createTile(choice(NORMAL_TYPES)))
-    );
-  }
-
-  function boardSignature(board) {
-    return board.map((row) => row.map((c) => (c ? c.type[0] : "_")).join("")).join("|");
+  function isAdjacent(a, b) {
+    return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1;
   }
 
   function swapCells(board, a, b) {
@@ -171,68 +107,42 @@
     return next;
   }
 
-  function isAdjacent(a, b) {
-    return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1;
+  function boardSignature(board) {
+    return board.map((row) => row.map((c) => (c ? c.type[0] : "_")).join("")).join("|");
   }
 
-  function inBounds(r, c) {
-    return r >= 0 && r < GRID && c >= 0 && c < GRID;
-  }
-
-  function floodBombCells(r, c) {
-    const out = [];
-    for (let rr = r - 1; rr <= r + 1; rr++) {
-      for (let cc = c - 1; cc <= c + 1; cc++) {
-        if (inBounds(rr, cc)) out.push({ r: rr, c: cc });
-      }
+  function getWeightedType(seedBias) {
+    const arr = NORMAL_TYPES.slice();
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = (seedBias + i * 17 + randInt(0, 999)) % (i + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-    return out;
+    return arr[(seedBias + randInt(0, 999)) % arr.length];
   }
 
   function findMatches(board) {
     const matches = [];
-    const used = new Set();
-
-    function key(r, c) {
-      return `${r}:${c}`;
-    }
 
     for (let r = 0; r < GRID; r++) {
       let c = 0;
       while (c < GRID) {
         const cell = board[r][c];
-        if (!cell) {
-          c += 1;
-          continue;
-        }
-        const t = cell.type;
-        if (t === TILE.BOMB) {
+        if (!cell || cell.type === TILE.BOMB) {
           c += 1;
           continue;
         }
 
+        const t = cell.type;
         let end = c + 1;
-        while (
-          end < GRID &&
-          board[r][end] &&
-          board[r][end].type === t
-        ) {
+        while (end < GRID && board[r][end] && board[r][end].type === t) {
           end += 1;
         }
 
         const len = end - c;
         if (len >= 3) {
           const cells = [];
-          for (let i = c; i < end; i++) {
-            cells.push({ r, c: i });
-            used.add(key(r, i));
-          }
-          matches.push({
-            type: t,
-            len,
-            dir: "h",
-            cells,
-          });
+          for (let i = c; i < end; i++) cells.push({ r, c: i });
+          matches.push({ dir: "h", type: t, len, cells });
         }
 
         c = end;
@@ -243,41 +153,22 @@
       let r = 0;
       while (r < GRID) {
         const cell = board[r][c];
-        if (!cell) {
-          r += 1;
-          continue;
-        }
-        const t = cell.type;
-        if (t === TILE.BOMB) {
+        if (!cell || cell.type === TILE.BOMB) {
           r += 1;
           continue;
         }
 
+        const t = cell.type;
         let end = r + 1;
-        while (
-          end < GRID &&
-          board[end][c] &&
-          board[end][c].type === t
-        ) {
+        while (end < GRID && board[end][c] && board[end][c].type === t) {
           end += 1;
         }
 
         const len = end - r;
         if (len >= 3) {
           const cells = [];
-          for (let i = r; i < end; i++) {
-            if (!used.has(key(i, c))) {
-              cells.push({ r: i, c });
-            } else {
-              cells.push({ r: i, c });
-            }
-          }
-          matches.push({
-            type: t,
-            len,
-            dir: "v",
-            cells,
-          });
+          for (let i = r; i < end; i++) cells.push({ r: i, c });
+          matches.push({ dir: "v", type: t, len, cells });
         }
 
         r = end;
@@ -302,10 +193,80 @@
 
           const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
           if (findMatches(swapped).length > 0) return true;
+
+          const a = swapped[r][c];
+          const b = swapped[rr][cc];
+          if ((a && a.type === TILE.BOMB) || (b && b.type === TILE.BOMB)) return true;
         }
       }
     }
     return false;
+  }
+
+  function buildFreshBoard(lastSignature) {
+    for (let tries = 0; tries < 80; tries++) {
+      const seedBias = Date.now() + tries * 31 + randInt(1, 99999);
+      const board = Array.from({ length: GRID }, () =>
+        Array.from({ length: GRID }, () => null)
+      );
+
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
+          let type = getWeightedType(seedBias + r * 13 + c * 17);
+          let guard = 0;
+
+          while (
+            guard < 20 &&
+            (
+              (c >= 2 &&
+                board[r][c - 1] &&
+                board[r][c - 2] &&
+                board[r][c - 1].type === type &&
+                board[r][c - 2].type === type) ||
+              (r >= 2 &&
+                board[r - 1][c] &&
+                board[r - 2][c] &&
+                board[r - 1][c].type === type &&
+                board[r - 2][c].type === type)
+            )
+          ) {
+            type = getWeightedType(seedBias + guard * 7 + c * 19);
+            guard += 1;
+          }
+
+          board[r][c] = createTile(type);
+        }
+      }
+
+      const sig = boardSignature(board);
+      if (sig !== lastSignature && findMatches(board).length === 0 && hasAnyPossibleMove(board)) {
+        return board;
+      }
+    }
+
+    const fallback = Array.from({ length: GRID }, () =>
+      Array.from({ length: GRID }, () => createTile(choice(NORMAL_TYPES)))
+    );
+    return fallback;
+  }
+
+  function floodBombCells(r, c) {
+    const out = [];
+    for (let rr = r - 1; rr <= r + 1; rr++) {
+      for (let cc = c - 1; cc <= c + 1; cc++) {
+        if (inBounds(rr, cc)) out.push({ r: rr, c: cc });
+      }
+    }
+    return out;
+  }
+
+  function chooseBombSpawnCell(match, preferred) {
+    if (preferred) {
+      for (const cell of match.cells) {
+        if (cell.r === preferred.r && cell.c === preferred.c) return cell;
+      }
+    }
+    return match.cells[Math.floor(match.cells.length / 2)];
   }
 
   function collapseBoard(board) {
@@ -332,100 +293,88 @@
     return next;
   }
 
-  function chooseBombSpawnCell(match, preferredCell) {
-    if (preferredCell) {
-      for (const p of match.cells) {
-        if (p.r === preferredCell.r && p.c === preferredCell.c) return p;
-      }
-    }
-    return match.cells[Math.floor(match.cells.length / 2)];
-  }
-
-  function evaluateMatches(board, matches, actor, preferredSpawn) {
+  function evaluateBoard(board, preferredSpawnCell, swapA, swapB) {
+    const matches = findMatches(board);
     const remove = new Set();
     const bombsToSpawn = [];
+    const bombTriggers = [];
     let damage = 0;
     let heal = 0;
     let coins = 0;
     let shield = 0;
     let extraMoves = 0;
-    const triggeredBombs = [];
 
-    function addRemove(r, c) {
-      remove.add(`${r}:${c}`);
+    const bombSwap =
+      (swapA && board[swapA.r]?.[swapA.c]?.type === TILE.BOMB) ||
+      (swapB && board[swapB.r]?.[swapB.c]?.type === TILE.BOMB);
+
+    function markRemove(r, c) {
+      remove.add(r + ":" + c);
     }
 
     for (const m of matches) {
-      if (m.len >= 4) {
-        extraMoves += 1;
-      }
+      if (m.len >= 4) extraMoves += 1;
 
-      if (m.type === TILE.PUNCH) {
-        damage += DAMAGE[TILE.PUNCH] + Math.max(0, m.len - 3) * 2;
-      } else if (m.type === TILE.GUN) {
-        damage += DAMAGE[TILE.GUN] + Math.max(0, m.len - 3) * 3;
-      } else if (m.type === TILE.KNIFE) {
-        damage += DAMAGE[TILE.KNIFE] + Math.max(0, m.len - 3) * 2;
-      } else if (m.type === TILE.MED) {
-        heal += 8 + Math.max(0, m.len - 3) * 3;
-      } else if (m.type === TILE.CASH) {
-        coins += 5 + Math.max(0, m.len - 3) * 3;
-      } else if (m.type === TILE.SHIELD) {
-        shield += 6 + Math.max(0, m.len - 3) * 2;
-      }
+      if (m.type === TILE.PUNCH) damage += DAMAGE[TILE.PUNCH] + Math.max(0, m.len - 3) * 2;
+      if (m.type === TILE.GUN) damage += DAMAGE[TILE.GUN] + Math.max(0, m.len - 3) * 3;
+      if (m.type === TILE.KNIFE) damage += DAMAGE[TILE.KNIFE] + Math.max(0, m.len - 3) * 2;
+      if (m.type === TILE.MED) heal += 8 + Math.max(0, m.len - 3) * 3;
+      if (m.type === TILE.CASH) coins += 5 + Math.max(0, m.len - 3) * 3;
+      if (m.type === TILE.SHIELD) shield += 6 + Math.max(0, m.len - 3) * 2;
 
-      const spawnCell = m.len >= 5 ? chooseBombSpawnCell(m, preferredSpawn) : null;
+      const bombCell = m.len >= 5 ? chooseBombSpawnCell(m, preferredSpawnCell) : null;
+      if (bombCell) extraMoves += 1;
 
       for (const cell of m.cells) {
-        if (spawnCell && cell.r === spawnCell.r && cell.c === spawnCell.c) continue;
-        addRemove(cell.r, cell.c);
+        if (bombCell && cell.r === bombCell.r && cell.c === bombCell.c) continue;
+        markRemove(cell.r, cell.c);
       }
 
-      if (spawnCell) {
-        bombsToSpawn.push(spawnCell);
+      if (bombCell) {
+        bombsToSpawn.push(bombCell);
       }
     }
 
-    const bombSources = [];
+    const bombsOnBoard = [];
     for (let r = 0; r < GRID; r++) {
       for (let c = 0; c < GRID; c++) {
-        const cell = board[r][c];
-        if (!cell || cell.type !== TILE.BOMB) continue;
-
-        const left = c > 0 ? board[r][c - 1] : null;
-        const right = c < GRID - 1 ? board[r][c + 1] : null;
-        const up = r > 0 ? board[r - 1][c] : null;
-        const down = r < GRID - 1 ? board[r + 1][c] : null;
-
-        const armed =
-          (left && right && left.type === right.type && left.type !== TILE.BOMB) ||
-          (up && down && up.type === down.type && up.type !== TILE.BOMB);
-
-        if (armed) {
-          bombSources.push({ r, c });
+        if (board[r][c] && board[r][c].type === TILE.BOMB) {
+          bombsOnBoard.push({ r, c });
         }
       }
     }
 
-    for (const src of bombSources) {
-      triggeredBombs.push(src);
-      const blast = floodBombCells(src.r, src.c);
-      for (const b of blast) {
-        addRemove(b.r, b.c);
+    if (bombSwap) {
+      for (const b of bombsOnBoard) {
+        bombTriggers.push(b);
+      }
+    } else {
+      for (const b of bombsOnBoard) {
+        if (remove.has(b.r + ":" + b.c)) {
+          bombTriggers.push(b);
+        }
+      }
+    }
+
+    for (const b of bombTriggers) {
+      const blast = floodBombCells(b.r, b.c);
+      for (const cell of blast) {
+        markRemove(cell.r, cell.c);
       }
       damage += DAMAGE[TILE.BOMB];
     }
 
     return {
-      actor,
+      hasAction: matches.length > 0 || bombTriggers.length > 0,
+      remove,
+      bombsToSpawn,
+      bombTriggers,
       damage,
       heal,
       coins,
       shield,
       extraMoves,
-      remove,
-      bombsToSpawn,
-      triggeredBombs,
+      matches,
     };
   }
 
@@ -437,22 +386,11 @@
       next[r][c] = null;
     }
 
-    for (const bombCell of resolution.bombsToSpawn) {
-      next[bombCell.r][bombCell.c] = createTile(TILE.BOMB);
+    for (const b of resolution.bombsToSpawn) {
+      next[b.r][b.c] = createTile(TILE.BOMB);
     }
 
     return collapseBoard(next);
-  }
-
-  function firstDifference(before, after) {
-    for (let r = 0; r < GRID; r++) {
-      for (let c = 0; c < GRID; c++) {
-        const a = before[r][c]?.id || "";
-        const b = after[r][c]?.id || "";
-        if (a !== b) return { r, c };
-      }
-    }
-    return null;
   }
 
   function calcBotMove(board) {
@@ -460,36 +398,43 @@
 
     for (let r = 0; r < GRID; r++) {
       for (let c = 0; c < GRID; c++) {
-        const swaps = [
-          { r2: r, c2: c + 1 },
-          { r2: r + 1, c2: c },
+        const dirs = [
+          { r: 0, c: 1 },
+          { r: 1, c: 0 },
         ];
 
-        for (const s of swaps) {
-          if (!inBounds(s.r2, s.c2)) continue;
-          const swapped = swapCells(board, { r, c }, { r: s.r2, c: s.c2 });
-          const matches = findMatches(swapped);
-          if (!matches.length) continue;
+        for (const d of dirs) {
+          const rr = r + d.r;
+          const cc = c + d.c;
+          if (!inBounds(rr, cc)) continue;
+
+          const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
+          const res = evaluateBoard(swapped, { r: rr, c: cc }, { r, c }, { r: rr, c: cc });
+          if (!res.hasAction) continue;
 
           let score = 0;
-          for (const m of matches) {
-            score += m.len * 10;
-            if (m.type === TILE.GUN) score += 8;
+          score += res.damage * 3;
+          score += res.heal * 1.1;
+          score += res.coins * 0.7;
+          score += res.shield * 0.8;
+          score += res.extraMoves * 18;
+
+          for (const m of res.matches) {
+            score += m.len * 4;
+            if (m.type === TILE.GUN) score += 9;
             if (m.type === TILE.PUNCH) score += 6;
-            if (m.type === TILE.KNIFE) score += 6;
-            if (m.type === TILE.MED) score += 3;
+            if (m.type === TILE.KNIFE) score += 7;
+            if (m.type === TILE.MED) score += 4;
+            if (m.type === TILE.SHIELD) score += 4;
             if (m.type === TILE.CASH) score += 2;
-            if (m.type === TILE.SHIELD) score += 3;
-            if (m.len >= 4) score += 12;
-            if (m.len >= 5) score += 18;
           }
 
-          score += Math.random() * 4;
+          score += Math.random() * 3;
 
           if (!best || score > best.score) {
             best = {
               a: { r, c },
-              b: { r: s.r2, c: s.c2 },
+              b: { r: rr, c: cc },
               score,
             };
           }
@@ -500,28 +445,158 @@
     return best;
   }
 
-  function dispatch(name, detail) {
-    window.dispatchEvent(new CustomEvent(name, { detail }));
+  function makeArenaMarkup() {
+    return `
+      <div class="tc-crush-root">
+        <div class="tc-crush-head">
+          <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
+          <div class="tc-crush-title" id="tcCrushTurn">SEN<small>7x7 Grid Heist</small></div>
+          <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
+        </div>
+        <canvas class="tc-crush-canvas"></canvas>
+        <div class="tc-crush-toast" id="tcCrushToast"></div>
+      </div>
+    `;
+  }
+
+  function injectStyle() {
+    const id = "tc-pvp-crush-style";
+    if (document.getElementById(id)) return;
+
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      #arena {
+        position: relative;
+        overflow: hidden;
+        touch-action: none;
+      }
+
+      #arena .tc-crush-root {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        padding: 10px;
+        box-sizing: border-box;
+      }
+
+      #arena .tc-crush-head {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+        flex: 0 0 auto;
+      }
+
+      #arena .tc-crush-chip {
+        min-height: 34px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.34);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 10px;
+        font: 800 12px system-ui, Arial;
+        backdrop-filter: blur(6px);
+        text-align: center;
+      }
+
+      #arena .tc-crush-title {
+        text-align: center;
+        color: rgba(255,255,255,0.96);
+        font: 900 12px system-ui, Arial;
+      }
+
+      #arena .tc-crush-title small {
+        display: block;
+        color: rgba(255,255,255,0.70);
+        font: 600 10px system-ui, Arial;
+        margin-top: 2px;
+      }
+
+      #arena .tc-crush-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        flex: 1 1 auto;
+        border-radius: 16px;
+        touch-action: none;
+      }
+
+      #arena .tc-crush-toast {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 8;
+        padding: 10px 14px;
+        min-width: 180px;
+        border-radius: 14px;
+        background: rgba(0,0,0,0.62);
+        border: 1px solid rgba(255,255,255,0.14);
+        color: #fff;
+        font: 900 13px system-ui, Arial;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .16s ease;
+        backdrop-filter: blur(10px);
+        text-align: center;
+      }
+
+      #arena .tc-crush-toast.on {
+        opacity: 1;
+      }
+
+      @media (max-width: 520px) {
+        #arena .tc-crush-root {
+          padding: 8px;
+        }
+
+        #arena .tc-crush-head {
+          gap: 6px;
+          margin-bottom: 6px;
+        }
+
+        #arena .tc-crush-chip {
+          min-height: 30px;
+          padding: 0 8px;
+          font-size: 11px;
+          border-radius: 10px;
+        }
+
+        #arena .tc-crush-title {
+          font-size: 11px;
+        }
+
+        #arena .tc-crush-title small {
+          font-size: 9px;
+        }
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   const api = {
     _inited: false,
     _running: false,
     _locked: false,
-    _turnTimeout: null,
     _els: null,
     _state: null,
     _selected: null,
-    _pointerDown: null,
     _tileRects: [],
-    _lastBoardSignature: "",
+    _lastSignature: "",
     _opponent: { username: "Rakip", isBot: true },
-
-    boot() {
-      console.log("[TonCrimePVP_CRUSH] boot");
-    },
+    _turnTimer: null,
+    _releaseGuard: false,
 
     init(opts = {}) {
+      injectStyle();
+
       const arena = document.getElementById(opts.arenaId || "arena");
       const status = document.getElementById(opts.statusId || "pvpStatus");
       const enemyFill = document.getElementById(opts.enemyFillId || "enemyFill");
@@ -530,52 +605,80 @@
       const meHpText = document.getElementById(opts.meHpTextId || "meHpText");
 
       if (!arena || !status || !enemyFill || !meFill || !enemyHpText || !meHpText) {
-        console.warn("[TonCrimePVP_CRUSH] gerekli elementler yok");
+        console.warn("[TonCrimePVP_CRUSH] arena/status/bar elementleri bulunamadı");
         return;
       }
 
-      this._injectStyle(arena.id || "arena");
-      this._els = { arena, status, enemyFill, meFill, enemyHpText, meHpText };
-      this._bindArena();
-      this._inited = true;
+      this._destroyCanvasEvents();
+
+      arena.innerHTML = makeArenaMarkup();
+
+      const canvas = arena.querySelector(".tc-crush-canvas");
+      const ctx = canvas.getContext("2d");
+
+      this._els = {
+        arena,
+        status,
+        enemyFill,
+        meFill,
+        enemyHpText,
+        meHpText,
+        canvas,
+        ctx,
+        meMoves: arena.querySelector("#tcCrushMeMoves"),
+        enemyMoves: arena.querySelector("#tcCrushEnemyMoves"),
+        turn: arena.querySelector("#tcCrushTurn"),
+        toast: arena.querySelector("#tcCrushToast"),
+      };
+
+      this._bindCanvas();
+      this._resizeCanvas();
       this.reset();
+
+      this._inited = true;
+      this._setStatus("Grid Heist hazır");
     },
 
     setOpponent(opp) {
-      if (opp && typeof opp.username === "string") {
-        this._opponent = { ...this._opponent, ...opp };
+      this._opponent =
+        opp && typeof opp.username === "string"
+          ? { ...opp }
+          : { username: "Rakip", isBot: true };
+
+      if (this._state) {
+        this._updateHud();
       }
     },
 
     start() {
       if (!this._inited) return;
-      this.reset();
       this._running = true;
-      this._setStatus(`Grid Heist • ${this._opponent.username}`);
-      this._toast(`Sıra sende`);
+      this._locked = false;
+      this._selected = null;
+      this._setStatus("Grid Heist başladı");
+      this._toast("Sıra sende");
       this._render();
     },
 
     stop() {
       this._running = false;
       this._locked = false;
-      clearTimeout(this._turnTimeout);
-      this._turnTimeout = null;
+      this._selected = null;
+      clearTimeout(this._turnTimer);
+      this._turnTimer = null;
       this._setStatus("Durduruldu");
       this._render();
     },
 
     reset() {
-      if (!this._inited) return;
-
-      clearTimeout(this._turnTimeout);
-      this._turnTimeout = null;
+      clearTimeout(this._turnTimer);
+      this._turnTimer = null;
+      this._running = false;
       this._locked = false;
       this._selected = null;
-      this._pointerDown = null;
 
-      const board = buildFreshBoard(this._lastBoardSignature);
-      this._lastBoardSignature = boardSignature(board);
+      const board = buildFreshBoard(this._lastSignature);
+      this._lastSignature = boardSignature(board);
 
       this._state = {
         board,
@@ -588,180 +691,62 @@
         enemyArmor: 0,
         meCoins: 0,
         enemyCoins: 0,
-        lastFx: null,
-        lastInfo: "Yeni maç",
+        info: "Yeni maç",
       };
 
-      this._updateBars();
-      this._setStatus("Hazır");
+      this._updateHud();
       this._render();
     },
 
-    _injectStyle(arenaId) {
-      const styleId = "tc-pvp-crush-style";
-      if (document.getElementById(styleId)) return;
-
-      const css = `
-#${arenaId}{
-  position:relative;
-  overflow:hidden;
-  touch-action:none;
-}
-#${arenaId} .tc-crush-root{
-  position:absolute;
-  inset:0;
-  z-index:3;
-  display:flex;
-  flex-direction:column;
-  padding:10px;
-  box-sizing:border-box;
-}
-#${arenaId} .tc-crush-top{
-  display:grid;
-  grid-template-columns:1fr auto 1fr;
-  align-items:center;
-  gap:8px;
-  margin-bottom:8px;
-}
-#${arenaId} .tc-crush-pill{
-  min-height:34px;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.14);
-  background:rgba(0,0,0,.34);
-  color:#fff;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:0 10px;
-  font:800 12px system-ui, Arial;
-  backdrop-filter: blur(6px);
-}
-#${arenaId} .tc-crush-center{
-  text-align:center;
-  color:rgba(255,255,255,.95);
-  font:900 12px system-ui, Arial;
-}
-#${arenaId} .tc-crush-center small{
-  display:block;
-  color:rgba(255,255,255,.72);
-  font:600 10px system-ui, Arial;
-  margin-top:2px;
-}
-#${arenaId} .tc-crush-canvas{
-  flex:1 1 auto;
-  width:100%;
-  height:100%;
-  display:block;
-  border-radius:16px;
-}
-#${arenaId} .tc-crush-toast{
-  position:absolute;
-  left:50%;
-  top:50%;
-  transform:translate(-50%, -50%);
-  z-index:8;
-  pointer-events:none;
-  padding:10px 14px;
-  border-radius:14px;
-  background:rgba(0,0,0,.62);
-  border:1px solid rgba(255,255,255,.14);
-  color:#fff;
-  font:900 13px system-ui, Arial;
-  opacity:0;
-  transition:opacity .16s ease;
-  backdrop-filter: blur(10px);
-  text-align:center;
-  min-width:180px;
-}
-#${arenaId} .tc-crush-toast.on{
-  opacity:1;
-}
-`;
-      const st = document.createElement("style");
-      st.id = styleId;
-      st.textContent = css;
-      document.head.appendChild(st);
-    },
-
-    _bindArena() {
-      const arena = this._els.arena;
-      arena.innerHTML = `
-        <div class="tc-crush-root">
-          <div class="tc-crush-top">
-            <div class="tc-crush-pill" id="tcCrushMeMoves">Hamle: 12</div>
-            <div class="tc-crush-center" id="tcCrushTurn">SEN<small>7x7 Grid Heist</small></div>
-            <div class="tc-crush-pill" id="tcCrushEnemyMoves">Rakip: 12</div>
-          </div>
-          <canvas class="tc-crush-canvas"></canvas>
-          <div class="tc-crush-toast" id="tcCrushToast"></div>
-        </div>
-      `;
-
-      this._els.canvas = arena.querySelector(".tc-crush-canvas");
-      this._els.ctx = this._els.canvas.getContext("2d");
-      this._els.turn = arena.querySelector("#tcCrushTurn");
-      this._els.meMoves = arena.querySelector("#tcCrushMeMoves");
-      this._els.enemyMoves = arena.querySelector("#tcCrushEnemyMoves");
-      this._els.toast = arena.querySelector("#tcCrushToast");
-
+    _bindCanvas() {
       const canvas = this._els.canvas;
 
-      const resize = () => {
+      const getPos = (ev) => {
         const rect = canvas.getBoundingClientRect();
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
-        canvas.width = Math.max(10, Math.floor(rect.width * dpr));
-        canvas.height = Math.max(10, Math.floor(rect.height * dpr));
-        this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        this._render();
+        const touch = ev.touches?.[0] || ev.changedTouches?.[0];
+        const clientX = touch ? touch.clientX : ev.clientX;
+        const clientY = touch ? touch.clientY : ev.clientY;
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top,
+        };
       };
 
-      this._resizeHandler = resize;
-      window.addEventListener("resize", resize);
-      resize();
-
-      const getPos = (e) => {
-        const r = canvas.getBoundingClientRect();
-        const clientX = e.touches?.[0]?.clientX ?? e.clientX;
-        const clientY = e.touches?.[0]?.clientY ?? e.clientY;
-        return { x: clientX - r.left, y: clientY - r.top };
-      };
-
-      const onDown = (e) => {
-        if (!this._running || this._locked || this._state.turn !== "me") return;
-        const p = getPos(e);
+      const onDown = (ev) => {
+        if (!this._running || this._locked || this._state?.turn !== "me") return;
+        const p = getPos(ev);
         const hit = this._hitTile(p.x, p.y);
         if (!hit) return;
+
         this._pointerDown = hit;
-        e.preventDefault?.();
+        this._releaseGuard = false;
+        ev.preventDefault?.();
       };
 
-      const onUp = (e) => {
-        if (!this._running || this._locked || this._state.turn !== "me") return;
+      const onUp = (ev) => {
+        if (!this._running || this._locked || this._state?.turn !== "me") return;
         if (!this._pointerDown) return;
+        if (this._releaseGuard) return;
 
-        const p = getPos(e);
+        this._releaseGuard = true;
+
+        const p = getPos(ev);
         const hit = this._hitTile(p.x, p.y);
-
-        if (!hit) {
-          this._selected = this._pointerDown;
-          this._pointerDown = null;
-          this._render();
-          return;
-        }
-
-        if (
-          this._selected &&
-          this._selected.r === hit.r &&
-          this._selected.c === hit.c
-        ) {
-          this._selected = null;
-          this._pointerDown = null;
-          this._render();
-          return;
-        }
 
         const from = this._selected || this._pointerDown;
         this._pointerDown = null;
+
+        if (!hit) {
+          this._selected = from;
+          this._render();
+          return;
+        }
+
+        if (this._selected && this._selected.r === hit.r && this._selected.c === hit.c) {
+          this._selected = null;
+          this._render();
+          return;
+        }
 
         if (!from) return;
 
@@ -773,92 +758,97 @@
 
         this._selected = null;
         this._playerMove(from, hit);
-        e.preventDefault?.();
+        ev.preventDefault?.();
+      };
+
+      const onResize = () => {
+        this._resizeCanvas();
+        this._render();
       };
 
       canvas.addEventListener("mousedown", onDown);
       canvas.addEventListener("mouseup", onUp);
       canvas.addEventListener("touchstart", onDown, { passive: false });
       canvas.addEventListener("touchend", onUp, { passive: false });
+      window.addEventListener("resize", onResize);
 
-      this._unbindCanvas = () => {
-        window.removeEventListener("resize", resize);
+      this._unbind = () => {
         canvas.removeEventListener("mousedown", onDown);
         canvas.removeEventListener("mouseup", onUp);
         canvas.removeEventListener("touchstart", onDown);
         canvas.removeEventListener("touchend", onUp);
+        window.removeEventListener("resize", onResize);
       };
     },
 
+    _destroyCanvasEvents() {
+      if (this._unbind) {
+        this._unbind();
+        this._unbind = null;
+      }
+    },
+
+    _resizeCanvas() {
+      if (!this._els?.canvas || !this._els?.ctx) return;
+      const canvas = this._els.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      canvas.width = Math.max(10, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(10, Math.floor(rect.height * dpr));
+      this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    },
+
+    _hitTile(x, y) {
+      for (const r of this._tileRects) {
+        if (pointInRect(x, y, r)) return r;
+      }
+      return null;
+    },
+
     _setStatus(text) {
-      if (this._els?.status) this._els.status.textContent = "PvP • " + text;
+      if (this._els?.status) {
+        this._els.status.textContent = "PvP • " + text;
+      }
     },
 
     _toast(text) {
       const el = this._els?.toast;
       if (!el) return;
-      el.innerHTML = String(text || "");
+      el.textContent = String(text || "");
       el.classList.add("on");
-      clearTimeout(el._offT);
-      el._offT = setTimeout(() => el.classList.remove("on"), 1100);
+      clearTimeout(el._offTimer);
+      el._offTimer = setTimeout(() => el.classList.remove("on"), 1100);
     },
 
-    _updateBars() {
+    _updateHud() {
       if (!this._els || !this._state) return;
-      const s = this._state;
 
-      this._els.meFill.style.transform = `scaleX(${clamp(s.meHp, 0, 100) / 100})`;
-      this._els.enemyFill.style.transform = `scaleX(${clamp(s.enemyHp, 0, 100) / 100})`;
-      this._els.meHpText.textContent = Math.max(0, Math.round(s.meHp));
-      this._els.enemyHpText.textContent = Math.max(0, Math.round(s.enemyHp));
+      const s = this._state;
+      const meScale = clamp(s.meHp, 0, 100) / 100;
+      const enemyScale = clamp(s.enemyHp, 0, 100) / 100;
+
+      this._els.meFill.style.transform = `scaleX(${meScale})`;
+      this._els.enemyFill.style.transform = `scaleX(${enemyScale})`;
+      this._els.meHpText.textContent = Math.round(s.meHp);
+      this._els.enemyHpText.textContent = Math.round(s.enemyHp);
 
       if (this._els.meMoves) this._els.meMoves.textContent = `Hamle: ${s.meMoves}`;
-      if (this._els.enemyMoves) this._els.enemyMoves.textContent = `Rakip: ${s.enemyMoves}`;
+      if (this._els.enemyMoves) this._els.enemyMoves.textContent = `${this._opponent.username}: ${s.enemyMoves}`;
       if (this._els.turn) {
-        this._els.turn.innerHTML =
-          `${s.turn === "me" ? "SEN" : this._opponent.username.toUpperCase()}<small>${s.lastInfo || "7x7 Grid Heist"}</small>`;
+        const who = s.turn === "me" ? "SEN" : this._opponent.username.toUpperCase();
+        this._els.turn.innerHTML = `${who}<small>${s.info || "7x7 Grid Heist"}</small>`;
       }
-    },
-
-    _finish(result) {
-      this._running = false;
-      this._locked = true;
-      clearTimeout(this._turnTimeout);
-      this._turnTimeout = null;
-
-      if (result === "win") {
-        this._setStatus("Kazandın");
-        this._toast("Kazandın");
-        dispatch("tc:pvp:win", {
-          mode: "grid",
-          opponent: this._opponent,
-          coins: this._state?.meCoins || 0,
-        });
-      } else {
-        this._setStatus("Kaybettin");
-        this._toast("Kaybettin");
-        dispatch("tc:pvp:lose", {
-          mode: "grid",
-          opponent: this._opponent,
-          coins: this._state?.meCoins || 0,
-        });
-      }
-
-      this._render();
     },
 
     async _playerMove(a, b) {
       if (!this._running || this._locked) return;
       this._locked = true;
 
-      const before = this._state.board;
-      const swapped = swapCells(before, a, b);
-      const matches = findMatches(swapped);
+      const swapped = swapCells(this._state.board, a, b);
+      const evalNow = evaluateBoard(swapped, b, a, b);
 
-      const bombSwap =
-        swapped[a.r][a.c]?.type === TILE.BOMB || swapped[b.r][b.c]?.type === TILE.BOMB;
-
-      if (!matches.length && !bombSwap) {
+      if (!evalNow.hasAction) {
         this._toast("Geçersiz hamle");
         this._locked = false;
         this._render();
@@ -869,73 +859,55 @@
       this._render();
       await this._sleep(120);
 
-      await this._resolveTurn("me", { a, b });
+      await this._resolveTurn("me", a, b);
 
       if (!this._running) return;
-
-      if (this._state.enemyHp <= 0) {
-        this._finish("win");
-        return;
-      }
-
-      if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
-        this._finish(this._state.meHp >= this._state.enemyHp ? "win" : "lose");
-        return;
-      }
+      if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimeout = setTimeout(() => this._enemyPlay(), 550);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), 520);
       } else {
         this._locked = false;
       }
     },
 
     async _enemyPlay() {
-      if (!this._running) return;
+      if (!this._running || !this._state || this._state.turn !== "enemy") return;
       this._locked = true;
 
-      const botMove = calcBotMove(this._state.board);
-      if (!botMove) {
+      const move = calcBotMove(this._state.board);
+      if (!move) {
         this._state.turn = "me";
-        this._state.lastInfo = "Rakip hamle bulamadı";
-        this._updateBars();
+        this._state.info = "Rakip hamle bulamadı";
+        this._updateHud();
         this._render();
-        this._locked = false;
         this._toast("Rakip hamle bulamadı");
+        this._locked = false;
         return;
       }
 
-      const swapped = swapCells(this._state.board, botMove.a, botMove.b);
-      this._state.board = swapped;
-      this._state.lastInfo = "Rakip oynuyor";
-      this._updateBars();
+      this._state.board = swapCells(this._state.board, move.a, move.b);
+      this._state.info = "Rakip oynuyor";
+      this._updateHud();
       this._render();
 
-      await this._sleep(240);
-      await this._resolveTurn("enemy", botMove);
+      await this._sleep(220);
+      await this._resolveTurn("enemy", move.a, move.b);
 
       if (!this._running) return;
-
-      if (this._state.meHp <= 0) {
-        this._finish("lose");
-        return;
-      }
-
-      if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
-        this._finish(this._state.meHp >= this._state.enemyHp ? "win" : "lose");
-        return;
-      }
+      if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimeout = setTimeout(() => this._enemyPlay(), 520);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), 480);
       } else {
         this._locked = false;
       }
     },
 
-    async _resolveTurn(actor, moveMeta) {
-      let chain = 0;
+    async _resolveTurn(actor, swapA, swapB) {
       let board = this._state.board;
+      let chain = 0;
+
       let totalDamage = 0;
       let totalHeal = 0;
       let totalCoins = 0;
@@ -943,98 +915,110 @@
       let totalExtra = 0;
 
       while (true) {
-        const matches = findMatches(board);
-        const preferredSpawn =
-          chain === 0 && moveMeta ? firstDifference(this._state.board, board) || moveMeta.b : null;
+        const preferred = swapB || null;
+        const res = evaluateBoard(board, preferred, swapA, swapB);
 
-        const resolution = evaluateMatches(board, matches, actor, preferredSpawn);
-
-        if (
-          !matches.length &&
-          resolution.triggeredBombs.length === 0
-        ) {
-          break;
-        }
+        if (!res.hasAction) break;
 
         chain += 1;
-        totalDamage += resolution.damage;
-        totalHeal += resolution.heal;
-        totalCoins += resolution.coins;
-        totalShield += resolution.shield;
-        totalExtra += resolution.extraMoves;
+        totalDamage += res.damage;
+        totalHeal += res.heal;
+        totalCoins += res.coins;
+        totalShield += res.shield;
+        totalExtra += res.extraMoves;
 
-        board = applyResolution(board, resolution);
+        board = applyResolution(board, res);
         this._state.board = board;
-        this._state.lastInfo = `${actor === "me" ? "SEN" : this._opponent.username} • Combo x${chain}`;
-        this._updateBars();
+        this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • Combo x${chain}`;
+        this._updateHud();
         this._render();
-        await this._sleep(180);
+        await this._sleep(170);
       }
 
       if (!hasAnyPossibleMove(board)) {
-        board = buildFreshBoard(this._lastBoardSignature);
+        board = buildFreshBoard(this._lastSignature);
       }
 
-      this._lastBoardSignature = boardSignature(board);
+      this._lastSignature = boardSignature(board);
       this._state.board = board;
 
       if (actor === "me") {
         this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
 
         const enemyBlock = Math.min(this._state.enemyArmor, totalDamage);
-        const finalDamage = Math.max(0, totalDamage - enemyBlock);
+        const dealt = Math.max(0, totalDamage - enemyBlock);
+
         this._state.enemyArmor = Math.max(0, this._state.enemyArmor - totalDamage);
-        this._state.enemyHp = clamp(this._state.enemyHp - finalDamage, 0, 100);
+        this._state.enemyHp = clamp(this._state.enemyHp - dealt, 0, 100);
         this._state.meHp = clamp(this._state.meHp + totalHeal, 0, 100);
-        this._state.meCoins += totalCoins;
         this._state.meArmor = clamp(this._state.meArmor + totalShield, 0, 40);
+        this._state.meCoins += totalCoins;
 
-        this._toast(
-          totalExtra > 0
-            ? `Vuruş ${finalDamage} • +${totalExtra} hamle`
-            : `Vuruş ${finalDamage}`
-        );
-
+        this._toast(totalExtra > 0 ? `Vuruş ${dealt} • +${totalExtra} hamle` : `Vuruş ${dealt}`);
         this._state.turn = totalExtra > 0 && this._state.meMoves > 0 ? "me" : "enemy";
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
 
         const meBlock = Math.min(this._state.meArmor, totalDamage);
-        const finalDamage = Math.max(0, totalDamage - meBlock);
+        const dealt = Math.max(0, totalDamage - meBlock);
+
         this._state.meArmor = Math.max(0, this._state.meArmor - totalDamage);
-        this._state.meHp = clamp(this._state.meHp - finalDamage, 0, 100);
+        this._state.meHp = clamp(this._state.meHp - dealt, 0, 100);
         this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, 100);
-        this._state.enemyCoins += totalCoins;
         this._state.enemyArmor = clamp(this._state.enemyArmor + totalShield, 0, 40);
+        this._state.enemyCoins += totalCoins;
 
-        this._toast(
-          totalExtra > 0
-            ? `Rakip ${finalDamage} vurdu • +${totalExtra} hamle`
-            : `Rakip ${finalDamage} vurdu`
-        );
-
+        this._toast(totalExtra > 0 ? `Rakip ${dealt} vurdu • +${totalExtra} hamle` : `Rakip ${dealt} vurdu`);
         this._state.turn = totalExtra > 0 && this._state.enemyMoves > 0 ? "enemy" : "me";
       }
 
-      this._state.lastInfo =
-        `${actor === "me" ? "SEN" : this._opponent.username} • ${chain || 1} chain`;
-
-      this._updateBars();
+      this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • ${Math.max(1, chain)} chain`;
+      this._updateHud();
       this._render();
+    },
 
-      if (this._state.meHp <= 0 || this._state.enemyHp <= 0) return;
-      if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) return;
+    _checkFinish() {
+      if (!this._state) return false;
+
+      if (this._state.enemyHp <= 0) {
+        this._running = false;
+        this._locked = true;
+        this._setStatus("Kazandın");
+        this._toast("Kazandın");
+        this._render();
+        return true;
+      }
+
+      if (this._state.meHp <= 0) {
+        this._running = false;
+        this._locked = true;
+        this._setStatus("Kaybettin");
+        this._toast("Kaybettin");
+        this._render();
+        return true;
+      }
+
+      if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
+        this._running = false;
+        this._locked = true;
+
+        if (this._state.meHp >= this._state.enemyHp) {
+          this._setStatus("Kazandın");
+          this._toast("Kazandın");
+        } else {
+          this._setStatus("Kaybettin");
+          this._toast("Kaybettin");
+        }
+
+        this._render();
+        return true;
+      }
+
+      return false;
     },
 
     _sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
-    },
-
-    _hitTile(x, y) {
-      for (const r of this._tileRects) {
-        if (pointInRect(x, y, r)) return r;
-      }
-      return null;
     },
 
     _render() {
@@ -1042,8 +1026,9 @@
 
       const ctx = this._els.ctx;
       const canvas = this._els.canvas;
-      const w = canvas.clientWidth || 300;
-      const h = canvas.clientHeight || 300;
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.round(rect.width || 300);
+      const h = Math.round(rect.height || 300);
 
       ctx.clearRect(0, 0, w, h);
 
@@ -1052,26 +1037,27 @@
       bg.addColorStop(1, "rgba(8,9,14,0.98)");
       fillRoundRect(ctx, 0, 0, w, h, 16, bg);
 
-      const boardPad = Math.max(10, Math.round(w * 0.028));
-      const boardSize = Math.min(w - boardPad * 2, h - boardPad * 2);
+      const boardPad = clamp(Math.round(w * 0.022), 8, 12);
+      const headSpace = 0;
+      const usableW = w - boardPad * 2;
+      const usableH = h - boardPad * 2 - headSpace;
+      const boardSize = Math.min(usableW, usableH);
       const cell = Math.floor(boardSize / GRID);
-      const actualBoard = cell * GRID;
-      const ox = Math.floor((w - actualBoard) / 2);
-      const oy = Math.floor((h - actualBoard) / 2);
+      const actual = cell * GRID;
+      const ox = Math.floor((w - actual) / 2);
+      const oy = Math.floor((h - actual) / 2);
 
       this._tileRects = [];
 
-      fillRoundRect(ctx, ox - 8, oy - 8, actualBoard + 16, actualBoard + 16, 18, "rgba(255,255,255,0.03)");
-      strokeRoundRect(ctx, ox - 8, oy - 8, actualBoard + 16, actualBoard + 16, 18, "rgba(255,255,255,0.08)", 1);
+      fillRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, "rgba(255,255,255,0.03)");
+      strokeRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, "rgba(255,255,255,0.08)", 1);
 
       for (let r = 0; r < GRID; r++) {
         for (let c = 0; c < GRID; c++) {
           const x = ox + c * cell;
           const y = oy + r * cell;
           const tile = this._state.board[r][c];
-
-          const isSelected =
-            this._selected && this._selected.r === r && this._selected.c === c;
+          const selected = this._selected && this._selected.r === r && this._selected.c === c;
 
           fillRoundRect(
             ctx,
@@ -1080,7 +1066,7 @@
             cell - 4,
             cell - 4,
             Math.max(10, Math.floor(cell * 0.18)),
-            isSelected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)"
+            selected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)"
           );
 
           strokeRoundRect(
@@ -1090,8 +1076,8 @@
             cell - 4,
             cell - 4,
             Math.max(10, Math.floor(cell * 0.18)),
-            isSelected ? "rgba(255,181,74,0.92)" : "rgba(255,255,255,0.08)",
-            isSelected ? 2 : 1
+            selected ? "rgba(255,181,74,0.92)" : "rgba(255,255,255,0.08)",
+            selected ? 2 : 1
           );
 
           if (tile) {
@@ -1139,15 +1125,7 @@
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
 
-      this._updateBars();
-    },
-
-    destroy() {
-      this.stop();
-      if (this._unbindCanvas) this._unbindCanvas();
-      this._inited = false;
-      this._els = null;
-      this._state = null;
+      this._updateHud();
     },
   };
 
