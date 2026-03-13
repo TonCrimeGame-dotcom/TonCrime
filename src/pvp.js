@@ -470,14 +470,124 @@
 
   window.PvpScene = PvpScene;
 
-  window.TonCrimePVP = {
-    boot() {
-      console.log("[TonCrime] PvP booted");
-    },
-    init() {},
-    start() {},
-    stop() {},
-    reset() {},
-    setOpponent() {}
-  };
+ function loadClassicScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+
+    const existing = document.querySelector(`script[data-pvp-src="${src}"]`);
+
+    if (existing) {
+      if (existing.dataset.loaded === "1") {
+        resolve();
+        return;
+      }
+
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Script yüklenemedi: " + src)), { once: true });
+      return;
+    }
+
+    const s = document.createElement("script");
+    s.src = src;
+    s.defer = true;
+    s.dataset.pvpSrc = src;
+
+    s.onload = () => {
+      s.dataset.loaded = "1";
+      resolve();
+    };
+
+    s.onerror = () => reject(new Error("Script yüklenemedi: " + src));
+
+    document.body.appendChild(s);
+  });
+}
+
+const TonCrimePVPRouter = {
+
+  _engine: null,
+  _mode: "grid",
+  _opts: null,
+  _opponent: { username: "Rakip", isBot: true },
+
+  boot() {
+    console.log("[TonCrime] PvP router booted");
+  },
+
+  async _loadEngine(mode) {
+
+    this._mode = mode;
+
+    if (mode === "grid") {
+
+      await loadClassicScriptOnce("./src/pvpcrush.js");
+
+      if (!window.TonCrimePVP_CRUSH) {
+        throw new Error("pvpcrush.js yüklenemedi");
+      }
+
+      this._engine = window.TonCrimePVP_CRUSH;
+    }
+
+    return this._engine;
+  },
+
+  async init(opts = {}) {
+
+    this._opts = opts;
+
+    window.addEventListener("tc:pvp:grid", async () => {
+
+      const engine = await this._loadEngine("grid");
+
+      engine.init(opts);
+      engine.setOpponent(this._opponent);
+      engine.reset();
+
+      console.log("[TonCrime] Grid Heist engine loaded");
+
+    });
+
+  },
+
+  async setOpponent(opp) {
+
+    this._opponent = opp;
+
+    if (this._engine) {
+      this._engine.setOpponent?.(opp);
+    }
+
+  },
+
+  async reset() {
+
+    if (!this._engine) {
+      this._engine = await this._loadEngine(this._mode);
+      this._engine.init(this._opts);
+    }
+
+    this._engine.reset?.();
+
+  },
+
+  async start() {
+
+    if (!this._engine) {
+      this._engine = await this._loadEngine(this._mode);
+      this._engine.init(this._opts);
+    }
+
+    this._engine.start?.();
+
+  },
+
+  stop() {
+
+    this._engine?.stop?.();
+
+  }
+
+};
+
+window.TonCrimePVP = TonCrimePVPRouter;
 })();
