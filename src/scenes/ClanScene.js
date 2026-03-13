@@ -477,16 +477,34 @@ export class ClanScene {
 
     ctx.clearRect(0, 0, w, h);
 
-    if (this._bgImg?.complete) {
-      drawCoverImage(ctx, this._bgImg, 0, 0, w, h, 1);
-    } else {
-      const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#0a0d12");
-      bg.addColorStop(0.55, "#05070a");
-      bg.addColorStop(1, "#030405");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, w, h);
-    }
+if (this._bgImg?.complete) {
+
+  const img = this._bgImg;
+
+  const scale = Math.min(
+    w / img.width,
+    h / img.height
+  );
+
+  const iw = img.width * scale;
+  const ih = img.height * scale;
+
+  const ix = (w - iw) / 2;
+  const iy = (h - ih) / 2;
+
+  ctx.drawImage(img, ix, iy, iw, ih);
+
+} else {
+
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#0a0d12");
+  bg.addColorStop(0.55, "#05070a");
+  bg.addColorStop(1, "#030405");
+
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+}
 
     const wash = ctx.createLinearGradient(0, 0, 0, h);
     wash.addColorStop(0, "rgba(4,7,12,0.28)");
