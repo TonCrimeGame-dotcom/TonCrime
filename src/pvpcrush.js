@@ -3,6 +3,7 @@
   const START_HP = 100;
   const START_MOVES = 12;
   const DRAG_THRESHOLD = 16;
+  const TURN_MS = 30000;
 
   const TILE = {
     PUNCH: "punch",
@@ -80,6 +81,20 @@
     ctx.stroke();
   }
 
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
   function makeId() {
     return "tile_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
   }
@@ -135,9 +150,7 @@
 
         const t = cell.type;
         let end = c + 1;
-        while (end < GRID && board[r][end] && board[r][end].type === t) {
-          end += 1;
-        }
+        while (end < GRID && board[r][end] && board[r][end].type === t) end += 1;
 
         const len = end - c;
         if (len >= 3) {
@@ -145,7 +158,6 @@
           for (let i = c; i < end; i++) cells.push({ r, c: i });
           matches.push({ dir: "h", type: t, len, cells });
         }
-
         c = end;
       }
     }
@@ -161,9 +173,7 @@
 
         const t = cell.type;
         let end = r + 1;
-        while (end < GRID && board[end][c] && board[end][c].type === t) {
-          end += 1;
-        }
+        while (end < GRID && board[end][c] && board[end][c].type === t) end += 1;
 
         const len = end - r;
         if (len >= 3) {
@@ -171,7 +181,6 @@
           for (let i = r; i < end; i++) cells.push({ r: i, c });
           matches.push({ dir: "v", type: t, len, cells });
         }
-
         r = end;
       }
     }
@@ -441,15 +450,27 @@
     return `
       <div class="tc-crush-root">
         <div class="tc-crush-head">
-          <div class="tc-crush-chip tc-left-chip" id="tcCrushMeMoves">Hamle: 12</div>
+          <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
           <div class="tc-crush-title" id="tcCrushTurn">
-            <span class="tc-crush-neon">IQ ARENA</span>
-            <small>Rakip aranıyor...</small>
+            SEN
+            <small id="tcCrushSub">7x7 Grid Heist</small>
           </div>
-          <div class="tc-crush-chip tc-right-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
+          <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
         </div>
+
+        <div class="tc-crush-timer-row">
+          <div class="tc-crush-timer-track"><div class="tc-crush-timer-fill" id="tcCrushTimerFill"></div></div>
+          <div class="tc-crush-timer-text" id="tcCrushTimerText">30s</div>
+        </div>
+
+        <div class="tc-crush-combo-row">
+          <div class="tc-crush-combo-track"><div class="tc-crush-combo-fill" id="tcCrushComboFill"></div></div>
+          <div class="tc-crush-combo-text" id="tcCrushComboText">Combo x0</div>
+        </div>
+
         <canvas class="tc-crush-canvas"></canvas>
         <div class="tc-crush-toast" id="tcCrushToast"></div>
+        <div class="tc-crush-overlay" id="tcCrushOverlay"></div>
       </div>
     `;
   }
@@ -461,72 +482,36 @@
     const style = document.createElement("style");
     style.id = id;
     style.textContent = `
-      #pvpWrap {
-        border: 1px solid rgba(255,255,255,0.10) !important;
-        background: rgba(6,10,18,0.14) !important;
-        backdrop-filter: blur(14px) !important;
-        box-shadow: none !important;
-      }
-      #pvpHeader {
-        background: transparent !important;
-        border-bottom: 0 !important;
-        padding: 10px 12px 4px !important;
-      }
-      #pvpBars {
-        padding: 4px 12px 8px !important;
-        gap: 10px !important;
-        background: transparent !important;
-      }
-      #pvpWrap .pvpBtns,
-      #pvpWrap #pvpStart,
-      #pvpWrap #pvpStop,
-      #pvpWrap #pvpReset {
-        display: none !important;
-      }
-      #pvpOpponentRow {
-        color: rgba(255,255,255,0.82) !important;
-      }
-      #pvpOpponentRow b {
-        color: rgba(255,255,255,0.96) !important;
-      }
-      .pvpBar {
-        background: rgba(255,255,255,0.06) !important;
-        border: 1px solid rgba(255,255,255,0.10) !important;
-      }
-      .pvpFill {
-        background: linear-gradient(90deg, rgba(255,255,255,0.88), rgba(210,220,255,0.55)) !important;
-      }
       #arena {
         position: relative;
         overflow: hidden;
         touch-action: none;
-        background: transparent !important;
-        border-radius: 22px !important;
       }
+
       #arena .tc-crush-root {
         position: absolute;
         inset: 0;
         z-index: 5;
         display: flex;
         flex-direction: column;
-        padding: 4px 2px 0;
+        padding: 10px;
         box-sizing: border-box;
-        background: transparent;
       }
+
       #arena .tc-crush-head {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         gap: 8px;
         align-items: center;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         flex: 0 0 auto;
-        background: transparent;
       }
+
       #arena .tc-crush-chip {
         min-height: 34px;
         border-radius: 12px;
         border: 1px solid rgba(255,255,255,0.14);
-        background: rgba(0,0,0,0.18);
+        background: rgba(0,0,0,0.34);
         color: #fff;
         display: flex;
         align-items: center;
@@ -535,55 +520,85 @@
         font: 800 12px system-ui, Arial;
         backdrop-filter: blur(6px);
         text-align: center;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
       }
-      #arena .tc-left-chip,
-      #arena .tc-right-chip {
-        background: rgba(0,0,0,0.26);
-      }
+
       #arena .tc-crush-title {
         text-align: center;
         color: rgba(255,255,255,0.96);
         font: 900 12px system-ui, Arial;
-        min-width: 120px;
       }
-      #arena .tc-crush-neon {
-        display: inline-block;
-        font: 900 18px system-ui, Arial;
-        letter-spacing: 1.2px;
-        color: #ff4d9d;
-        text-shadow:
-          0 0 4px rgba(255,77,157,0.9),
-          0 0 10px rgba(255,77,157,0.9),
-          0 0 18px rgba(255,90,180,0.75),
-          0 0 28px rgba(255,110,200,0.60);
-        animation: tcArenaNeonPulse 1.25s ease-in-out infinite alternate;
-      }
+
       #arena .tc-crush-title small {
         display: block;
-        color: rgba(255,255,255,0.78);
-        font: 700 10px system-ui, Arial;
+        color: rgba(255,255,255,0.70);
+        font: 600 10px system-ui, Arial;
         margin-top: 2px;
       }
+
+      #arena .tc-crush-timer-row,
+      #arena .tc-crush-combo-row {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+        flex: 0 0 auto;
+      }
+
+      #arena .tc-crush-timer-track,
+      #arena .tc-crush-combo-track {
+        position: relative;
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.07);
+      }
+
+      #arena .tc-crush-timer-fill {
+        height: 100%;
+        width: 100%;
+        transform-origin: left center;
+        background: linear-gradient(90deg, rgba(255,188,93,0.95), rgba(255,103,86,0.95));
+        transition: transform 0.1s linear;
+      }
+
+      #arena .tc-crush-combo-fill {
+        height: 100%;
+        width: 0%;
+        transform-origin: left center;
+        background: linear-gradient(90deg, rgba(134,100,255,0.95), rgba(255,118,219,0.95));
+        transition: transform 0.18s ease;
+      }
+
+      #arena .tc-crush-timer-text,
+      #arena .tc-crush-combo-text {
+        min-width: 72px;
+        color: rgba(255,255,255,0.95);
+        font: 900 12px system-ui, Arial;
+        text-align: right;
+      }
+
       #arena .tc-crush-canvas {
         display: block;
         width: 100%;
         height: 100%;
         flex: 1 1 auto;
-        border-radius: 20px;
+        border-radius: 16px;
         touch-action: none;
-        background: transparent;
       }
+
       #arena .tc-crush-toast {
         position: absolute;
         left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
+        top: 16%;
+        transform: translateX(-50%);
         z-index: 8;
         padding: 10px 14px;
         min-width: 180px;
         border-radius: 14px;
-        background: rgba(0,0,0,0.52);
+        background: rgba(0,0,0,0.62);
         border: 1px solid rgba(255,255,255,0.14);
         color: #fff;
         font: 900 13px system-ui, Arial;
@@ -593,184 +608,65 @@
         backdrop-filter: blur(10px);
         text-align: center;
       }
+
       #arena .tc-crush-toast.on {
         opacity: 1;
       }
-      @keyframes tcArenaNeonPulse {
-        0% {
-          opacity: 0.82;
-          text-shadow:
-            0 0 3px rgba(255,77,157,0.75),
-            0 0 8px rgba(255,77,157,0.72),
-            0 0 16px rgba(255,90,180,0.46);
-        }
-        100% {
-          opacity: 1;
-          text-shadow:
-            0 0 5px rgba(255,77,157,0.98),
-            0 0 12px rgba(255,77,157,0.98),
-            0 0 22px rgba(255,90,180,0.84),
-            0 0 34px rgba(255,110,200,0.65);
-        }
+
+      #arena .tc-crush-overlay {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        font: 1000 34px system-ui, Arial;
+        color: rgba(255,255,255,0.96);
+        text-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        opacity: 0;
+        transform: scale(0.9);
+        transition: opacity .24s ease, transform .24s ease;
       }
+
+      #arena .tc-crush-overlay.on {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      #arena .tc-crush-overlay.win {
+        background: radial-gradient(circle, rgba(75,255,157,0.14), rgba(0,0,0,0));
+      }
+
+      #arena .tc-crush-overlay.lose {
+        background: radial-gradient(circle, rgba(255,95,95,0.14), rgba(0,0,0,0));
+      }
+
       @media (max-width: 520px) {
-        #pvpHeader {
-          padding: 8px 10px 2px !important;
+        #arena .tc-crush-root {
+          padding: 8px;
         }
-        #pvpBars {
-          padding: 2px 10px 8px !important;
-          gap: 8px !important;
-        }
+
         #arena .tc-crush-head {
           gap: 6px;
           margin-bottom: 6px;
         }
+
         #arena .tc-crush-chip {
           min-height: 30px;
           padding: 0 8px;
           font-size: 11px;
           border-radius: 10px;
         }
-        #arena .tc-crush-neon {
-          font-size: 16px;
+
+        #arena .tc-crush-title {
+          font-size: 11px;
         }
+
         #arena .tc-crush-title small {
           font-size: 9px;
         }
       }
     `;
     document.head.appendChild(style);
-  }
-
-  function getStoreState() {
-    return window.tcStore && typeof window.tcStore.get === "function" ? window.tcStore.get() || {} : {};
-  }
-
-  function setStorePatch(patch) {
-    if (window.tcStore && typeof window.tcStore.set === "function") {
-      window.tcStore.set(patch || {});
-    }
-  }
-
-  function dispatchGameEvent(name, detail) {
-    try {
-      window.dispatchEvent(new CustomEvent(name, { detail: detail || {} }));
-    } catch (_) {}
-  }
-
-  function upsertLeaderboardEntry(board, entry) {
-    const next = Array.isArray(board) ? board.map((x) => ({ ...x })) : [];
-    const key = String(entry?.telegramId || entry?.username || "player");
-    const idx = next.findIndex((x) => String(x.telegramId || x.username || "") === key);
-    if (idx >= 0) next[idx] = { ...next[idx], ...entry };
-    else next.push({ ...entry });
-    next.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.wins || 0) - Number(a.wins || 0));
-    return next.slice(0, 50);
-  }
-
-  function persistMatchResult(result) {
-    const state = getStoreState();
-    const player = { ...(state.player || {}) };
-    const pvp = { ...(state.pvp || {}) };
-    const wins = Math.max(0, Number(pvp.wins || 0)) + (result === "win" ? 1 : 0);
-    const losses = Math.max(0, Number(pvp.losses || 0)) + (result === "lose" ? 1 : 0);
-    const rating = Math.max(600, Number(pvp.rating || 1000) + (result === "win" ? 14 : -9));
-    const rewardCoins = result === "win" ? 24 : 8;
-    const rewardXp = result === "win" ? 16 : 6;
-    const xpNow = Math.max(0, Number(player.xp || 0));
-    const xpToNext = Math.max(1, Number(player.xpToNext || 100));
-    let nextXp = xpNow + rewardXp;
-    let nextLevel = Math.max(1, Number(player.level || 1));
-    let nextXpToNext = xpToNext;
-
-    while (nextXp >= nextXpToNext) {
-      nextXp -= nextXpToNext;
-      nextLevel += 1;
-      nextXpToNext = 100;
-    }
-
-    const match = {
-      id: "pvp_" + Date.now(),
-      mode: "iq_arena",
-      opponent: pvp.currentOpponent || null,
-      result,
-      createdAt: Date.now(),
-    };
-
-    const recentMatches = [match, ...((Array.isArray(pvp.recentMatches) ? pvp.recentMatches : []).map((x) => ({ ...x })))].slice(0, 12);
-    const leaderboard = upsertLeaderboardEntry(pvp.leaderboard, {
-      telegramId: String(player.telegramId || player.id || "player_main"),
-      username: String(player.username || "Player"),
-      rating,
-      wins,
-      losses,
-      updatedAt: Date.now(),
-    });
-
-    setStorePatch({
-      coins: Math.max(0, Number(state.coins || 0) + rewardCoins),
-      player: {
-        ...player,
-        xp: nextXp,
-        xpToNext: nextXpToNext,
-        level: nextLevel,
-      },
-      pvp: {
-        ...pvp,
-        wins,
-        losses,
-        rating,
-        recentMatches,
-        leaderboard,
-      },
-    });
-
-    dispatchGameEvent(result === "win" ? "tc:pvp:win" : "tc:pvp:lose", {
-      mode: "iq_arena",
-      rewardCoins,
-      rewardXp,
-      opponent: pvp.currentOpponent || null,
-    });
-  }
-
-  function fakeOpponentPool() {
-    return [
-      { username: "ShadowWolf", isBot: true, skill: 0.82 },
-      { username: "NightTiger", isBot: true, skill: 0.78 },
-      { username: "IronFist", isBot: true, skill: 0.8 },
-      { username: "GhostKiller", isBot: true, skill: 0.76 },
-      { username: "KartelKing", isBot: true, skill: 0.84 },
-    ];
-  }
-
-  function calcHumanLikeBotMove(board, skill = 0.82) {
-    const moves = [];
-    for (let r = 0; r < GRID; r++) {
-      for (let c = 0; c < GRID; c++) {
-        const dirs = [{ r: 0, c: 1 }, { r: 1, c: 0 }];
-        for (const d of dirs) {
-          const rr = r + d.r;
-          const cc = c + d.c;
-          if (!inBounds(rr, cc)) continue;
-          const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
-          const res = evaluateBoard(swapped, { r: rr, c: cc }, { r, c }, { r: rr, c: cc });
-          if (!res.hasAction) continue;
-          let score = 0;
-          score += res.damage * 3.2;
-          score += res.heal * 1.2;
-          score += res.coins * 0.7;
-          score += res.shield * 0.9;
-          score += res.extraMoves * 20;
-          for (const m of res.matches) score += m.len * 4;
-          score += Math.random() * 5;
-          moves.push({ a: { r, c }, b: { r: rr, c: cc }, score });
-        }
-      }
-    }
-    if (!moves.length) return null;
-    moves.sort((a, b) => b.score - a.score);
-    const maxPick = skill >= 0.86 ? 1 : skill >= 0.8 ? Math.min(2, moves.length) : Math.min(4, moves.length);
-    return moves[randInt(0, maxPick - 1)];
   }
 
   const api = {
@@ -782,17 +678,24 @@
     _selected: null,
     _tileRects: [],
     _lastSignature: "",
-    _opponent: { username: "Rakip", isBot: true, skill: 0.82 },
+    _opponent: { username: "Rakip", isBot: true },
     _turnTimer: null,
-    _matchTimer: null,
-    _searchToken: 0,
-    _lastResultKey: "",
+    _countdownInterval: null,
     _pointerDown: null,
     _dragStart: null,
     _dragFromTile: null,
     _dragConsumed: false,
+    _dragVector: { dx: 0, dy: 0 },
     _releaseGuard: false,
     _unbind: null,
+    _swapAnim: null,
+    _floatTexts: [],
+    _particles: [],
+    _screenFlash: null,
+    _overlayTimer: null,
+    _shake: null,
+    _comboLevel: 0,
+    _comboDecayTimer: null,
 
     init(opts = {}) {
       injectStyle();
@@ -803,30 +706,13 @@
       const meFill = document.getElementById(opts.meFillId || "meFill");
       const enemyHpText = document.getElementById(opts.enemyHpTextId || "enemyHpText");
       const meHpText = document.getElementById(opts.meHpTextId || "meHpText");
-      const opponentLabel = document.getElementById("pvpOpponent");
-      const spinner = document.getElementById("pvpSpinner");
-      const btnWrap = document.querySelector("#pvpWrap .pvpBtns");
-      const startBtn = document.getElementById("pvpStart");
-      const stopBtn = document.getElementById("pvpStop");
-      const resetBtn = document.getElementById("pvpReset");
-      const wrap = document.getElementById("pvpWrap");
 
       if (!arena || !status || !enemyFill || !meFill || !enemyHpText || !meHpText) {
         console.warn("[TonCrimePVP_CRUSH] arena/status/bar elementleri bulunamadı");
         return;
       }
 
-      if (btnWrap) btnWrap.style.display = "none";
-      if (startBtn) startBtn.style.display = "none";
-      if (stopBtn) stopBtn.style.display = "none";
-      if (resetBtn) resetBtn.style.display = "none";
-      if (wrap) {
-        wrap.style.background = "rgba(6,10,18,0.14)";
-        wrap.style.borderColor = "rgba(255,255,255,0.10)";
-      }
-
       this._destroyCanvasEvents();
-      this.stop();
 
       arena.innerHTML = makeArenaMarkup();
 
@@ -840,14 +726,18 @@
         meFill,
         enemyHpText,
         meHpText,
-        opponentLabel,
-        spinner,
         canvas,
         ctx,
         meMoves: arena.querySelector("#tcCrushMeMoves"),
         enemyMoves: arena.querySelector("#tcCrushEnemyMoves"),
         turn: arena.querySelector("#tcCrushTurn"),
+        sub: arena.querySelector("#tcCrushSub"),
         toast: arena.querySelector("#tcCrushToast"),
+        overlay: arena.querySelector("#tcCrushOverlay"),
+        timerFill: arena.querySelector("#tcCrushTimerFill"),
+        timerText: arena.querySelector("#tcCrushTimerText"),
+        comboFill: arena.querySelector("#tcCrushComboFill"),
+        comboText: arena.querySelector("#tcCrushComboText"),
       };
 
       this._bindCanvas();
@@ -855,30 +745,14 @@
       this.reset();
 
       this._inited = true;
-      this._setStatus("IQ ARENA hazır");
+      this._setStatus("Grid Heist hazır");
     },
 
     setOpponent(opp) {
       this._opponent =
         opp && typeof opp.username === "string"
-          ? { skill: 0.82, ...opp }
-          : { username: "Rakip", isBot: true, skill: 0.82 };
-
-      const state = getStoreState();
-      setStorePatch({
-        pvp: {
-          ...(state.pvp || {}),
-          currentOpponent: {
-            username: this._opponent.username,
-            isBot: !!this._opponent.isBot,
-            foundAt: Date.now(),
-          },
-        },
-      });
-
-      if (this._els?.opponentLabel) {
-        this._els.opponentLabel.textContent = this._opponent.username;
-      }
+          ? { ...opp }
+          : { username: "Rakip", isBot: true };
 
       if (this._state) this._updateHud();
     },
@@ -886,13 +760,14 @@
     async start() {
       if (!this._inited) return;
       await this._waitUntilVisible();
-      this.reset();
 
       this._safeResizeSequence();
-      this._running = false;
-      this._locked = true;
+      this._running = true;
+      this._locked = false;
       this._selected = null;
-      this._startMatchmaking();
+      this._setStatus("Grid Heist başladı");
+      this._toast("Sıra sende");
+      this._setTurn("me", "SEN • Düşünme süresi başladı");
       this._render();
 
       requestAnimationFrame(() => {
@@ -908,20 +783,25 @@
       this._pointerDown = null;
       this._dragStart = null;
       this._dragFromTile = null;
+      this._dragVector = { dx: 0, dy: 0 };
       clearTimeout(this._turnTimer);
-      clearTimeout(this._matchTimer);
       this._turnTimer = null;
-      this._matchTimer = null;
-      if (this._els?.spinner) this._els.spinner.classList.add("hidden");
-      this._setStatus("Hazır");
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+      clearTimeout(this._comboDecayTimer);
+      this._comboDecayTimer = null;
+      this._setStatus("Durduruldu");
       this._render();
     },
 
     reset() {
       clearTimeout(this._turnTimer);
-      clearTimeout(this._matchTimer);
       this._turnTimer = null;
-      this._matchTimer = null;
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+      clearTimeout(this._comboDecayTimer);
+      this._comboDecayTimer = null;
+
       this._running = false;
       this._locked = false;
       this._selected = null;
@@ -929,7 +809,14 @@
       this._dragStart = null;
       this._dragFromTile = null;
       this._dragConsumed = false;
-      this._lastResultKey = "";
+      this._dragVector = { dx: 0, dy: 0 };
+      this._swapAnim = null;
+      this._floatTexts = [];
+      this._particles = [];
+      this._screenFlash = null;
+      this._shake = null;
+      this._comboLevel = 0;
+      this._hideOverlay();
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -945,54 +832,11 @@
         enemyArmor: 0,
         meCoins: 0,
         enemyCoins: 0,
-        info: "Maç bekleniyor",
+        turnDeadline: Date.now() + TURN_MS,
+        info: "Yeni maç",
       };
 
-      if (this._els?.opponentLabel) this._els.opponentLabel.textContent = "aranıyor...";
-      if (this._els?.spinner) this._els.spinner.classList.remove("hidden");
       this._safeResizeSequence();
-      this._updateHud();
-      this._render();
-    },
-
-    _startMatchmaking() {
-      const token = ++this._searchToken;
-      this._setStatus("Rakip aranıyor...");
-      this._toast("Rakip aranıyor...");
-      if (this._els?.spinner) this._els.spinner.classList.remove("hidden");
-      if (this._els?.opponentLabel) this._els.opponentLabel.textContent = "aranıyor...";
-      this._state.info = "Eşleşme aranıyor";
-      this._updateHud();
-
-      const maybeHuman = Math.random() < 0.38;
-      if (maybeHuman) {
-        const humanNames = ["MertX", "Ares77", "KartelBey", "NoirKid", "VelvetFox"];
-        const delay = randInt(1800, 4400);
-        this._matchTimer = setTimeout(() => {
-          if (token !== this._searchToken) return;
-          this.setOpponent({ username: choice(humanNames), isBot: false, skill: 0.76 + Math.random() * 0.08 });
-          this._beginLiveMatch();
-        }, delay);
-      }
-
-      setTimeout(() => {
-        if (token !== this._searchToken || this._running) return;
-        this.setOpponent(choice(fakeOpponentPool()));
-        this._beginLiveMatch();
-      }, 5000);
-    },
-
-    _beginLiveMatch() {
-      clearTimeout(this._matchTimer);
-      this._matchTimer = null;
-      this._running = true;
-      this._locked = false;
-      this._selected = null;
-      if (this._els?.spinner) this._els.spinner.classList.add("hidden");
-      this._state.turn = "me";
-      this._state.info = this._opponent.isBot ? "Bot rakip hazır" : "Canlı rakip hazır";
-      this._setStatus(this._opponent.isBot ? "Bot rakip bulundu" : "Rakip bulundu");
-      this._toast("Sıra sende");
       this._updateHud();
       this._render();
     },
@@ -1037,6 +881,7 @@
         this._dragStart = p;
         this._dragFromTile = hit;
         this._dragConsumed = false;
+        this._dragVector = { dx: 0, dy: 0 };
         this._releaseGuard = false;
         this._render();
         ev.preventDefault?.();
@@ -1050,6 +895,9 @@
         const dx = p.x - this._dragStart.x;
         const dy = p.y - this._dragStart.y;
 
+        this._dragVector = { dx, dy };
+        this._render();
+
         const target = directionTarget(this._dragFromTile, dx, dy);
         if (!target) return;
 
@@ -1057,6 +905,7 @@
         this._selected = null;
         this._pointerDown = null;
         this._dragStart = null;
+        this._dragVector = { dx: 0, dy: 0 };
 
         this._playerMove(this._dragFromTile, target);
         ev.preventDefault?.();
@@ -1078,6 +927,7 @@
         this._dragStart = null;
         this._dragFromTile = null;
         this._dragConsumed = false;
+        this._dragVector = { dx: 0, dy: 0 };
 
         if (!startedDrag) return;
         if (dragConsumed) return;
@@ -1122,6 +972,7 @@
         this._dragFromTile = null;
         this._dragConsumed = false;
         this._releaseGuard = false;
+        this._dragVector = { dx: 0, dy: 0 };
       };
 
       const onResize = () => {
@@ -1222,9 +1073,7 @@
     },
 
     _setStatus(text) {
-      if (this._els?.status) {
-        this._els.status.textContent = "PvP • " + text;
-      }
+      if (this._els?.status) this._els.status.textContent = "PvP • " + text;
     },
 
     _toast(text) {
@@ -1234,6 +1083,89 @@
       el.classList.add("on");
       clearTimeout(el._offTimer);
       el._offTimer = setTimeout(() => el.classList.remove("on"), 1100);
+    },
+
+    _showOverlay(text, mode) {
+      const el = this._els?.overlay;
+      if (!el) return;
+      clearTimeout(this._overlayTimer);
+      el.textContent = text;
+      el.className = `tc-crush-overlay on ${mode || ""}`.trim();
+      this._overlayTimer = setTimeout(() => {
+        this._hideOverlay();
+      }, 1800);
+    },
+
+    _hideOverlay() {
+      const el = this._els?.overlay;
+      if (!el) return;
+      el.className = "tc-crush-overlay";
+      el.textContent = "";
+    },
+
+    _setTurn(turn, infoText) {
+      if (!this._state) return;
+      this._state.turn = turn;
+      this._state.turnDeadline = Date.now() + TURN_MS;
+      if (infoText) this._state.info = infoText;
+      this._startCountdownLoop();
+      this._updateHud();
+      this._render();
+    },
+
+    _startCountdownLoop() {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = setInterval(() => {
+        if (!this._running || !this._state) return;
+
+        const msLeft = Math.max(0, this._state.turnDeadline - Date.now());
+        this._updateHud();
+
+        if (msLeft <= 0) {
+          clearInterval(this._countdownInterval);
+          this._countdownInterval = null;
+          this._handleTurnTimeout();
+        }
+      }, 100);
+    },
+
+    _handleTurnTimeout() {
+      if (!this._running || !this._state) return;
+
+      if (this._state.turn === "me") {
+        this._toast("Süre doldu • sıra rakibe geçti");
+        this._spawnFloatingText("SÜRE BİTTİ", 0.5, 0.18, "#ff8b8b", 22);
+        this._spawnShake(7, 260);
+        this._locked = false;
+        this._selected = null;
+        this._setTurn("enemy", `${this._opponent.username} • Süre avantajı`);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), 450);
+      } else {
+        this._toast("Rakibin süresi doldu");
+        this._spawnFloatingText("EXTRA ŞANS", 0.5, 0.18, "#9affbc", 22);
+        this._spawnShake(4, 180);
+        this._locked = false;
+        this._setTurn("me", "SEN • Rakibin süresi bitti");
+      }
+    },
+
+    _setCombo(level) {
+      this._comboLevel = clamp(level, 0, 8);
+      if (this._els?.comboFill) {
+        this._els.comboFill.style.transform = `scaleX(${this._comboLevel / 8})`;
+      }
+      if (this._els?.comboText) {
+        this._els.comboText.textContent = `Combo x${this._comboLevel}`;
+      }
+
+      clearTimeout(this._comboDecayTimer);
+      if (this._comboLevel > 0) {
+        this._comboDecayTimer = setTimeout(() => {
+          this._comboLevel = 0;
+          if (this._els?.comboFill) this._els.comboFill.style.transform = "scaleX(0)";
+          if (this._els?.comboText) this._els.comboText.textContent = "Combo x0";
+        }, 1800);
+      }
     },
 
     _updateHud() {
@@ -1247,19 +1179,163 @@
 
       if (this._els.meMoves) this._els.meMoves.textContent = `Hamle: ${s.meMoves}`;
       if (this._els.enemyMoves) this._els.enemyMoves.textContent = `${this._opponent.username}: ${s.enemyMoves}`;
-      if (this._els.turn) {
-        const turnText = !this._running
-          ? "Rakip aranıyor..."
-          : s.turn === "me"
-          ? "Sıra sende"
-          : `${this._opponent.username} düşünüyor`;
-        this._els.turn.innerHTML = `<span class="tc-crush-neon">IQ ARENA</span><small>${turnText} • ${s.info || "Neon Heist"}</small>`;
+
+      const who = s.turn === "me" ? "SEN" : this._opponent.username.toUpperCase();
+      if (this._els.turn) this._els.turn.childNodes[0].nodeValue = who;
+      if (this._els.sub) this._els.sub.textContent = s.info || "7x7 Grid Heist";
+
+      const msLeft = Math.max(0, Number(s.turnDeadline || 0) - Date.now());
+      const ratio = clamp(msLeft / TURN_MS, 0, 1);
+      if (this._els.timerFill) this._els.timerFill.style.transform = `scaleX(${ratio})`;
+      if (this._els.timerText) this._els.timerText.textContent = `${Math.ceil(msLeft / 1000)}s`;
+
+      if (this._els.comboFill) this._els.comboFill.style.transform = `scaleX(${this._comboLevel / 8})`;
+      if (this._els.comboText) this._els.comboText.textContent = `Combo x${this._comboLevel}`;
+    },
+
+    _spawnFloatingText(text, rx, ry, color, size = 18) {
+      this._floatTexts.push({
+        text,
+        rx,
+        ry,
+        color,
+        size,
+        life: 1,
+        vy: -0.45,
+      });
+    },
+
+    _spawnBurst(rx, ry, color, count = 16, spread = 1) {
+      for (let i = 0; i < count; i++) {
+        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+        const spd = (1.1 + Math.random() * 2.2) * spread;
+        this._particles.push({
+          rx,
+          ry,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
+          life: 1,
+          color,
+          radius: 2 + Math.random() * 4,
+        });
       }
+    },
+
+    _spawnShake(power, duration) {
+      this._shake = {
+        power,
+        duration,
+        started: performance.now(),
+      };
+      requestAnimationFrame(() => this._animateFxFrame());
+    },
+
+    _spawnBombFx(cell) {
+      const rx = (cell.c + 0.5) / GRID;
+      const ry = (cell.r + 0.5) / GRID;
+      this._spawnBurst(rx, ry, "rgba(255,160,100,0.95)", 24, 1.25);
+      this._spawnFloatingText("💣 BOOM", rx, ry, "#ffd3a1", 20);
+      this._screenFlash = { color: "rgba(255,160,80,0.16)", life: 1 };
+      this._spawnShake(10, 240);
+    },
+
+    _spawnExtraMoveFx(extra) {
+      this._spawnFloatingText(`+${extra} HAMLE`, 0.5, 0.22, "#ffcf78", 24);
+      this._spawnBurst(0.5, 0.24, "rgba(255,210,120,0.92)", 18, 0.8);
+    },
+
+    _spawnWinFx() {
+      this._showOverlay("KAZANDIN", "win");
+      this._spawnBurst(0.5, 0.45, "rgba(94,255,162,0.95)", 34, 1.6);
+      this._spawnFloatingText("VICTORY", 0.5, 0.40, "#9affbc", 28);
+      this._screenFlash = { color: "rgba(94,255,162,0.16)", life: 1 };
+      this._spawnShake(8, 360);
+    },
+
+    _spawnLoseFx() {
+      this._showOverlay("KAYBETTİN", "lose");
+      this._spawnBurst(0.5, 0.45, "rgba(255,104,104,0.95)", 28, 1.35);
+      this._spawnFloatingText("DEFEAT", 0.5, 0.40, "#ff9e9e", 28);
+      this._screenFlash = { color: "rgba(255,104,104,0.14)", life: 1 };
+      this._spawnShake(6, 300);
+    },
+
+    async _animateSwap(a, b) {
+      this._swapAnim = {
+        a: { ...a },
+        b: { ...b },
+        tileA: this._state.board[a.r][a.c],
+        tileB: this._state.board[b.r][b.c],
+        startedAt: performance.now(),
+        duration: 145,
+      };
+
+      return new Promise((resolve) => {
+        const tick = () => {
+          if (!this._swapAnim) return resolve();
+          const t = clamp((performance.now() - this._swapAnim.startedAt) / this._swapAnim.duration, 0, 1);
+          this._swapAnim.progress = easeOutCubic(t);
+          this._render();
+          if (t >= 1) {
+            this._swapAnim = null;
+            this._render();
+            return resolve();
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    },
+
+    _animateFxFrame() {
+      let needs = false;
+
+      if (this._floatTexts.length) {
+        needs = true;
+        for (let i = this._floatTexts.length - 1; i >= 0; i--) {
+          const fx = this._floatTexts[i];
+          fx.life -= 0.03;
+          fx.ry += fx.vy * 0.01;
+          if (fx.life <= 0) this._floatTexts.splice(i, 1);
+        }
+      }
+
+      if (this._particles.length) {
+        needs = true;
+        for (let i = this._particles.length - 1; i >= 0; i--) {
+          const p = this._particles[i];
+          p.life -= 0.03;
+          p.rx += p.vx * 0.0028;
+          p.ry += p.vy * 0.0028;
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+          p.radius *= 0.99;
+          if (p.life <= 0 || p.radius < 0.5) this._particles.splice(i, 1);
+        }
+      }
+
+      if (this._screenFlash) {
+        needs = true;
+        this._screenFlash.life -= 0.05;
+        if (this._screenFlash.life <= 0) this._screenFlash = null;
+      }
+
+      if (this._shake) {
+        needs = true;
+        const t = clamp((performance.now() - this._shake.started) / this._shake.duration, 0, 1);
+        this._shake.progress = t;
+        if (t >= 1) this._shake = null;
+      }
+
+      if (needs) requestAnimationFrame(() => this._animateFxFrame());
+      this._render();
     },
 
     async _playerMove(a, b) {
       if (!this._running || this._locked) return;
       this._locked = true;
+
+      await this._animateSwap(a, b);
 
       const swapped = swapCells(this._state.board, a, b);
       const evalNow = evaluateBoard(swapped, b, a, b);
@@ -1274,7 +1350,7 @@
 
       this._state.board = swapped;
       this._render();
-      await this._sleep(120);
+      await this._sleep(90);
 
       await this._resolveTurn("me", a, b);
 
@@ -1282,7 +1358,7 @@
       if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(760, 1700));
+        this._turnTimer = setTimeout(() => this._enemyPlay(), 520);
       } else {
         this._locked = false;
       }
@@ -1292,31 +1368,29 @@
       if (!this._running || !this._state || this._state.turn !== "enemy") return;
       this._locked = true;
 
-      const move = calcHumanLikeBotMove(this._state.board, Number(this._opponent.skill || 0.82));
+      const move = calcBotMove(this._state.board);
       if (!move) {
-        this._state.turn = "me";
-        this._state.info = "Rakip hamle bulamadı";
-        this._updateHud();
-        this._render();
+        this._setTurn("me", "SEN • Rakip hamle bulamadı");
         this._toast("Rakip hamle bulamadı");
         this._locked = false;
         return;
       }
+
+      await this._animateSwap(move.a, move.b);
 
       this._state.board = swapCells(this._state.board, move.a, move.b);
       this._state.info = "Rakip oynuyor";
       this._updateHud();
       this._render();
 
-      const thinkDelay = randInt(640, 1680);
-      await this._sleep(thinkDelay);
+      await this._sleep(160);
       await this._resolveTurn("enemy", move.a, move.b);
 
       if (!this._running) return;
       if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(720, 1650));
+        this._turnTimer = setTimeout(() => this._enemyPlay(), 480);
       } else {
         this._locked = false;
       }
@@ -1342,6 +1416,24 @@
         totalCoins += res.coins;
         totalShield += res.shield;
         totalExtra += res.extraMoves;
+        this._setCombo(chain);
+
+        if (res.extraMoves > 0) this._spawnExtraMoveFx(res.extraMoves);
+        if (res.bombTriggers?.length) {
+          for (const bomb of res.bombTriggers) this._spawnBombFx(bomb);
+        }
+
+        for (const m of res.matches) {
+          if (m.len >= 5) {
+            const c = m.cells[Math.floor(m.cells.length / 2)];
+            this._spawnFloatingText("BOMBA!", (c.c + 0.5) / GRID, (c.r + 0.5) / GRID, "#ffe2a8", 18);
+          } else if (m.len >= 4) {
+            const c = m.cells[Math.floor(m.cells.length / 2)];
+            this._spawnFloatingText("EXTRA", (c.c + 0.5) / GRID, (c.r + 0.5) / GRID, "#ffd777", 16);
+          }
+        }
+
+        this._animateFxFrame();
 
         board = applyResolution(board, res);
         this._state.board = board;
@@ -1370,8 +1462,15 @@
         this._state.meArmor = clamp(this._state.meArmor + totalShield, 0, 40);
         this._state.meCoins += totalCoins;
 
+        if (dealt > 0) this._spawnFloatingText(`-${dealt}`, 0.78, 0.12, "#ff9b86", 22);
+        if (totalHeal > 0) this._spawnFloatingText(`+${totalHeal} HP`, 0.22, 0.12, "#8df7b7", 18);
+        this._animateFxFrame();
+
         this._toast(totalExtra > 0 ? `Vuruş ${dealt} • +${totalExtra} hamle` : `Vuruş ${dealt}`);
-        this._state.turn = totalExtra > 0 && this._state.meMoves > 0 ? "me" : "enemy";
+        this._setTurn(
+          totalExtra > 0 && this._state.meMoves > 0 ? "me" : "enemy",
+          `${actor === "me" ? "SEN" : this._opponent.username} • ${Math.max(1, chain)} chain`
+        );
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
 
@@ -1384,50 +1483,67 @@
         this._state.enemyArmor = clamp(this._state.enemyArmor + totalShield, 0, 40);
         this._state.enemyCoins += totalCoins;
 
+        if (dealt > 0) this._spawnFloatingText(`-${dealt}`, 0.22, 0.12, "#ff9b86", 22);
+        if (totalHeal > 0) this._spawnFloatingText(`+${totalHeal} HP`, 0.78, 0.12, "#8df7b7", 18);
+        this._animateFxFrame();
+
         this._toast(totalExtra > 0 ? `Rakip ${dealt} vurdu • +${totalExtra} hamle` : `Rakip ${dealt} vurdu`);
-        this._state.turn = totalExtra > 0 && this._state.enemyMoves > 0 ? "enemy" : "me";
+        this._setTurn(
+          totalExtra > 0 && this._state.enemyMoves > 0 ? "enemy" : "me",
+          `${actor === "me" ? "SEN" : this._opponent.username} • ${Math.max(1, chain)} chain`
+        );
       }
-
-      this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • ${Math.max(1, chain)} chain`;
-      this._updateHud();
-      this._render();
-    },
-
-    _finalizeMatch(result) {
-      if (!this._state) return true;
-      const key = result + "_" + this._state.meHp + "_" + this._state.enemyHp + "_" + this._state.meMoves + "_" + this._state.enemyMoves;
-      if (this._lastResultKey === key) return true;
-      this._lastResultKey = key;
-      this._running = false;
-      this._locked = true;
-      clearTimeout(this._turnTimer);
-      this._turnTimer = null;
-      if (this._els?.spinner) this._els.spinner.classList.add("hidden");
-      if (result === "win") {
-        this._setStatus("Kazandın");
-        this._toast("Kazandın • +24 YTON +16 XP");
-      } else {
-        this._setStatus("Kaybettin");
-        this._toast("Kaybettin • +8 YTON +6 XP");
-      }
-      persistMatchResult(result);
-      this._render();
-      return true;
     },
 
     _checkFinish() {
       if (!this._state) return false;
 
       if (this._state.enemyHp <= 0) {
-        return this._finalizeMatch("win");
+        this._running = false;
+        this._locked = true;
+        clearInterval(this._countdownInterval);
+        this._countdownInterval = null;
+        this._setStatus("Kazandın");
+        this._toast("Kazandın");
+        this._spawnWinFx();
+        window.dispatchEvent(new CustomEvent("tc:pvp:win"));
+        this._render();
+        return true;
       }
 
       if (this._state.meHp <= 0) {
-        return this._finalizeMatch("lose");
+        this._running = false;
+        this._locked = true;
+        clearInterval(this._countdownInterval);
+        this._countdownInterval = null;
+        this._setStatus("Kaybettin");
+        this._toast("Kaybettin");
+        this._spawnLoseFx();
+        window.dispatchEvent(new CustomEvent("tc:pvp:lose"));
+        this._render();
+        return true;
       }
 
       if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
-        return this._finalizeMatch(this._state.meHp >= this._state.enemyHp ? "win" : "lose");
+        this._running = false;
+        this._locked = true;
+        clearInterval(this._countdownInterval);
+        this._countdownInterval = null;
+
+        if (this._state.meHp >= this._state.enemyHp) {
+          this._setStatus("Kazandın");
+          this._toast("Kazandın");
+          this._spawnWinFx();
+          window.dispatchEvent(new CustomEvent("tc:pvp:win"));
+        } else {
+          this._setStatus("Kaybettin");
+          this._toast("Kaybettin");
+          this._spawnLoseFx();
+          window.dispatchEvent(new CustomEvent("tc:pvp:lose"));
+        }
+
+        this._render();
+        return true;
       }
 
       return false;
@@ -1435,6 +1551,58 @@
 
     _sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
+    },
+
+    _drawTile(ctx, tile, x, y, cell, selected) {
+      const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
+
+      fillRoundRect(
+        ctx,
+        x + 2,
+        y + 2,
+        cell - 4,
+        cell - 4,
+        Math.max(10, Math.floor(cell * 0.18)),
+        selected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)"
+      );
+
+      strokeRoundRect(
+        ctx,
+        x + 2,
+        y + 2,
+        cell - 4,
+        cell - 4,
+        Math.max(10, Math.floor(cell * 0.18)),
+        selected ? "rgba(255,181,74,0.92)" : "rgba(255,255,255,0.08)",
+        selected ? 2 : 1
+      );
+
+      const glow = ctx.createRadialGradient(
+        x + cell / 2,
+        y + cell / 2,
+        4,
+        x + cell / 2,
+        y + cell / 2,
+        cell * 0.48
+      );
+      glow.addColorStop(0, meta.color + "55");
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = `900 ${Math.floor(cell * 0.46)}px system-ui, Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(meta.emoji, x + cell / 2, y + cell / 2 + 1);
+
+      if (tile.type === TILE.BOMB) {
+        ctx.font = `800 ${Math.max(8, Math.floor(cell * 0.16))}px system-ui, Arial`;
+        ctx.fillStyle = "rgba(255,255,255,0.86)";
+        ctx.fillText("3x3", x + cell / 2, y + cell - Math.max(9, cell * 0.16));
+      }
     },
 
     _render() {
@@ -1448,11 +1616,23 @@
 
       if (w < 20 || h < 20) return;
 
+      let shakeX = 0;
+      let shakeY = 0;
+      if (this._shake) {
+        const t = clamp((performance.now() - this._shake.started) / this._shake.duration, 0, 1);
+        const fade = 1 - t;
+        const amp = this._shake.power * fade;
+        shakeX = (Math.random() * 2 - 1) * amp;
+        shakeY = (Math.random() * 2 - 1) * amp;
+      }
+
       ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(shakeX, shakeY);
 
       const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "rgba(18,20,28,0.34)");
-      bg.addColorStop(1, "rgba(8,9,14,0.14)");
+      bg.addColorStop(0, "rgba(18,20,28,0.92)");
+      bg.addColorStop(1, "rgba(8,9,14,0.98)");
       fillRoundRect(ctx, 0, 0, w, h, 16, bg);
 
       const boardPad = clamp(Math.round(w * 0.022), 8, 12);
@@ -1469,6 +1649,12 @@
       fillRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, "rgba(255,255,255,0.03)");
       strokeRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, "rgba(255,255,255,0.08)", 1);
 
+      const hiddenBySwap = new Set();
+      if (this._swapAnim?.a && this._swapAnim?.b) {
+        hiddenBySwap.add(`${this._swapAnim.a.r}:${this._swapAnim.a.c}`);
+        hiddenBySwap.add(`${this._swapAnim.b.r}:${this._swapAnim.b.c}`);
+      }
+
       for (let r = 0; r < GRID; r++) {
         for (let c = 0; c < GRID; c++) {
           const x = ox + c * cell;
@@ -1476,61 +1662,68 @@
           const tile = this._state.board[r][c];
           const selected = this._selected && this._selected.r === r && this._selected.c === c;
 
-          fillRoundRect(
-            ctx,
-            x + 2,
-            y + 2,
-            cell - 4,
-            cell - 4,
-            Math.max(10, Math.floor(cell * 0.18)),
-            selected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)"
-          );
-
-          strokeRoundRect(
-            ctx,
-            x + 2,
-            y + 2,
-            cell - 4,
-            cell - 4,
-            Math.max(10, Math.floor(cell * 0.18)),
-            selected ? "rgba(255,181,74,0.92)" : "rgba(255,255,255,0.08)",
-            selected ? 2 : 1
-          );
-
-          if (tile) {
-            const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
-
-            const glow = ctx.createRadialGradient(
-              x + cell / 2,
-              y + cell / 2,
-              4,
-              x + cell / 2,
-              y + cell / 2,
-              cell * 0.48
-            );
-            glow.addColorStop(0, meta.color + "55");
-            glow.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.fillStyle = glow;
-            ctx.beginPath();
-            ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.font = `900 ${Math.floor(cell * 0.46)}px system-ui, Arial`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillStyle = "#fff";
-            ctx.fillText(meta.emoji, x + cell / 2, y + cell / 2 + 1);
-
-            if (tile.type === TILE.BOMB) {
-              ctx.font = `800 ${Math.max(8, Math.floor(cell * 0.16))}px system-ui, Arial`;
-              ctx.fillStyle = "rgba(255,255,255,0.86)";
-              ctx.fillText("3x3", x + cell / 2, y + cell - Math.max(9, cell * 0.16));
+          if (tile && !hiddenBySwap.has(`${r}:${c}`)) {
+            let dx = 0;
+            let dy = 0;
+            if (selected && this._dragStart && !this._dragConsumed) {
+              dx = clamp(this._dragVector.dx, -cell * 0.32, cell * 0.32);
+              dy = clamp(this._dragVector.dy, -cell * 0.32, cell * 0.32);
             }
+            this._drawTile(ctx, tile, x + dx, y + dy, cell, selected);
           }
 
           this._tileRects.push({ r, c, x, y, w: cell, h: cell });
         }
       }
+
+      if (this._swapAnim) {
+        const { a, b, tileA, tileB, progress = 0 } = this._swapAnim;
+        const t = easeOutBack(progress);
+
+        const ax = ox + a.c * cell;
+        const ay = oy + a.r * cell;
+        const bx = ox + b.c * cell;
+        const by = oy + b.r * cell;
+
+        const curAx = lerp(ax, bx, t);
+        const curAy = lerp(ay, by, t);
+        const curBx = lerp(bx, ax, t);
+        const curBy = lerp(by, ay, t);
+
+        if (tileA) this._drawTile(ctx, tileA, curAx, curAy, cell, false);
+        if (tileB) this._drawTile(ctx, tileB, curBx, curBy, cell, false);
+      }
+
+      for (const p of this._particles) {
+        ctx.save();
+        ctx.globalAlpha = clamp(p.life, 0, 1);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(ox + p.rx * actual, oy + p.ry * actual, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      for (const fx of this._floatTexts) {
+        ctx.save();
+        ctx.globalAlpha = clamp(fx.life, 0, 1);
+        ctx.fillStyle = fx.color;
+        ctx.font = `900 ${fx.size}px system-ui, Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(fx.text, ox + fx.rx * actual, oy + fx.ry * actual);
+        ctx.restore();
+      }
+
+      if (this._screenFlash) {
+        ctx.save();
+        ctx.globalAlpha = clamp(this._screenFlash.life, 0, 1);
+        ctx.fillStyle = this._screenFlash.color;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
+
+      ctx.restore();
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
