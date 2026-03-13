@@ -414,9 +414,10 @@ addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
 addImage("clan_bg", "./src/assets/Clan-bg.png");
 addImage("xxx", "./src/assets/xxx.jpg");
+addImage("xxx_bg", "./src/assets/xxx-bg.png");
 addImage("tata", "./src/assets/tata.png");
 
-addImage("xxx_bg", "./src/assets/xxx-bg.png");
+
 
 /* BLACK MARKET */
 addImage("blackmarket", "./src/assets/BlackMarket.png");
