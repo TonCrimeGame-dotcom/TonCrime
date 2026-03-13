@@ -894,7 +894,7 @@ export class CoffeeShopScene {
     const backX = panelX + panelW - backW - 14;
     const backY = panelY + 12;
     this.backHit = { x: backX, y: backY, w: backW, h: backH };
-    this._drawButton(ctx, this.backHit, "Geri", "ghost");
+    this._drawButton(ctx, this.backHit, "X", "ghost");
 
     const contentX = panelX + 10;
     const contentY = panelY + 102;
