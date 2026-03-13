@@ -261,16 +261,39 @@
 
       this.store?.set?.({ pvp });
 
-      if (id === "grid") {
-        window.dispatchEvent(new CustomEvent("tc:pvp:grid", { detail: pvp }));
-        return;
-      }
+      try {
+        window.dispatchEvent(new Event("tc:openPvp"));
+      } catch (_) {}
 
-      if (id === "arena") {
-        window.dispatchEvent(new CustomEvent("tc:pvp:arena", { detail: pvp }));
-        return;
-      }
+      const go = () => {
+        if (id === "grid") {
+          window.dispatchEvent(new CustomEvent("tc:pvp:grid", { detail: pvp }));
+
+          setTimeout(() => {
+            try {
+              window.TonCrimePVP?.setOpponent?.({
+                username: "ShadowWolf",
+                isBot: true,
+              });
+              window.TonCrimePVP?.reset?.();
+              window.TonCrimePVP?.start?.();
+            } catch (err) {
+              console.error("[TonCrime] Grid start error:", err);
+            }
+          }, 80);
+
+          return;
+        }
+
+        if (id === "arena") {
+          window.dispatchEvent(new CustomEvent("tc:pvp:arena", { detail: pvp }));
+          return;
+        }
+      };
+
+      setTimeout(go, 40);
     }
+    
 
     render(ctx) {
       const canvas = ctx.canvas;
