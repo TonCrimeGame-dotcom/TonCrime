@@ -79,38 +79,29 @@ export class StarsScene {
     this._fallbackBg = null;
   }
 
-  onEnter() {
-    const s = this.store.get();
+ onEnter() {
+  const s = this.store.get();
 
-    if (!s.stars) {
-      this.store.set({
-        stars: {
-          owned: {},
-          selectedId: null,
-          lastClaimTs: {},
-          twinBonusClaimed: {},
-        },
-      });
-    }
-
-    this.scrollY = 0;
-    this.maxScroll = 0;
-    this.dragging = false;
-    this.moved = 0;
-    this.clickCandidate = false;
-
-    this._bgImg =
-      getImgSafe(this.assets, "xxx_bg") ||
-      getImgSafe(this.assets, "xxx-bg") ||
-      getImgSafe(this.assets, "xxx") ||
-      null;
-
-    if (!this._bgImg) {
-      this._fallbackBg = new Image();
-      this._fallbackBg.src = "./src/assets/xxx-bg.png";
-      this._bgImg = this._fallbackBg;
-    }
+  if (!s.stars) {
+    this.store.set({
+      stars: {
+        owned: {},
+        selectedId: null,
+        lastClaimTs: {},
+        twinBonusClaimed: {},
+      },
+    });
   }
+
+  this.scrollY = 0;
+  this.maxScroll = 0;
+  this.dragging = false;
+  this.moved = 0;
+  this.clickCandidate = false;
+
+  this._bgImg = new Image();
+  this._bgImg.src = "./src/assets/xxx-bg.png";
+}
 
   onExit() {
     this.dragging = false;
@@ -448,3 +439,4 @@ export class StarsScene {
     ctx.textBaseline = "alphabetic";
   }
 }
+
