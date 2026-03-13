@@ -2,6 +2,7 @@
   const GRID = 7;
   const START_HP = 100;
   const START_MOVES = 12;
+  const DRAG_THRESHOLD = 16;
 
   const TILE = {
     PUNCH: "punch",
@@ -571,6 +572,9 @@
     _opponent: { username: "Rakip", isBot: true },
     _turnTimer: null,
     _pointerDown: null,
+    _dragStart: null,
+    _dragFromTile: null,
+    _dragConsumed: false,
     _releaseGuard: false,
     _unbind: null,
 
@@ -650,6 +654,9 @@
       this._running = false;
       this._locked = false;
       this._selected = null;
+      this._pointerDown = null;
+      this._dragStart = null;
+      this._dragFromTile = null;
       clearTimeout(this._turnTimer);
       this._turnTimer = null;
       this._setStatus("Durduruldu");
@@ -663,6 +670,9 @@
       this._locked = false;
       this._selected = null;
       this._pointerDown = null;
+      this._dragStart = null;
+      this._dragFromTile = null;
+      this._dragConsumed = false;
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -700,6 +710,21 @@
         };
       };
 
+      const directionTarget = (from, dx, dy) => {
+        if (!from) return null;
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return null;
+
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          const nc = from.c + (dx > 0 ? 1 : -1);
+          if (!inBounds(from.r, nc)) return null;
+          return { r: from.r, c: nc };
+        }
+
+        const nr = from.r + (dy > 0 ? 1 : -1);
+        if (!inBounds(nr, from.c)) return null;
+        return { r: nr, c: from.c };
+      };
+
       const onDown = (ev) => {
         if (!this._running || this._locked || this._state?.turn !== "me") return;
         const p = getPos(ev);
@@ -707,36 +732,77 @@
         if (!hit) return;
 
         this._pointerDown = hit;
+        this._selected = hit;
+        this._dragStart = p;
+        this._dragFromTile = hit;
+        this._dragConsumed = false;
         this._releaseGuard = false;
+        this._render();
+        ev.preventDefault?.();
+      };
+
+      const onMove = (ev) => {
+        if (!this._running || this._locked || this._state?.turn !== "me") return;
+        if (!this._dragStart || !this._dragFromTile || this._dragConsumed) return;
+
+        const p = getPos(ev);
+        const dx = p.x - this._dragStart.x;
+        const dy = p.y - this._dragStart.y;
+
+        const target = directionTarget(this._dragFromTile, dx, dy);
+        if (!target) return;
+
+        this._dragConsumed = true;
+        this._selected = null;
+        this._pointerDown = null;
+        this._dragStart = null;
+
+        this._playerMove(this._dragFromTile, target);
         ev.preventDefault?.();
       };
 
       const onUp = (ev) => {
         if (!this._running || this._locked || this._state?.turn !== "me") return;
-        if (!this._pointerDown) return;
         if (this._releaseGuard) return;
-
         this._releaseGuard = true;
+
+        const from = this._selected || this._pointerDown;
+        const startedDrag = !!this._dragFromTile;
+        const dragConsumed = !!this._dragConsumed;
 
         const p = getPos(ev);
         const hit = this._hitTile(p.x, p.y);
 
-        const from = this._selected || this._pointerDown;
         this._pointerDown = null;
+        this._dragStart = null;
+        this._dragFromTile = null;
+        this._dragConsumed = false;
 
-        if (!hit) {
-          this._selected = from;
-          this._render();
-          return;
-        }
+        if (!startedDrag) return;
+        if (dragConsumed) return;
 
-        if (this._selected && this._selected.r === hit.r && this._selected.c === hit.c) {
+        if (!from && !hit) {
           this._selected = null;
           this._render();
           return;
         }
 
-        if (!from) return;
+        if (!hit) {
+          this._selected = from || null;
+          this._render();
+          return;
+        }
+
+        if (this._selected && this._selected.r === hit.r && this._selected.c === hit.c) {
+          this._render();
+          return;
+        }
+
+        if (!from) {
+          this._selected = hit;
+          this._render();
+          return;
+        }
 
         if (!isAdjacent(from, hit)) {
           this._selected = hit;
@@ -749,22 +815,42 @@
         ev.preventDefault?.();
       };
 
+      const onCancel = () => {
+        this._pointerDown = null;
+        this._dragStart = null;
+        this._dragFromTile = null;
+        this._dragConsumed = false;
+        this._releaseGuard = false;
+      };
+
       const onResize = () => {
         this._safeResizeSequence();
         this._render();
       };
 
       canvas.addEventListener("mousedown", onDown);
+      canvas.addEventListener("mousemove", onMove);
       canvas.addEventListener("mouseup", onUp);
+      canvas.addEventListener("mouseleave", onCancel);
+
       canvas.addEventListener("touchstart", onDown, { passive: false });
+      canvas.addEventListener("touchmove", onMove, { passive: false });
       canvas.addEventListener("touchend", onUp, { passive: false });
+      canvas.addEventListener("touchcancel", onCancel, { passive: false });
+
       window.addEventListener("resize", onResize);
 
       this._unbind = () => {
         canvas.removeEventListener("mousedown", onDown);
+        canvas.removeEventListener("mousemove", onMove);
         canvas.removeEventListener("mouseup", onUp);
+        canvas.removeEventListener("mouseleave", onCancel);
+
         canvas.removeEventListener("touchstart", onDown);
+        canvas.removeEventListener("touchmove", onMove);
         canvas.removeEventListener("touchend", onUp);
+        canvas.removeEventListener("touchcancel", onCancel);
+
         window.removeEventListener("resize", onResize);
       };
     },
@@ -876,6 +962,7 @@
       if (!evalNow.hasAction) {
         this._toast("Geçersiz hamle");
         this._locked = false;
+        this._selected = a;
         this._render();
         return;
       }
