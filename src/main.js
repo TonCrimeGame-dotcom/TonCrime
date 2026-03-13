@@ -416,7 +416,7 @@ addImage("clan_bg", "./src/assets/Clan-bg.png");
 addImage("xxx", "./src/assets/xxx.jpg");
 addImage("tata", "./src/assets/tata.png");
 
-
+addImage("xxx_bg", "./src/assets/xxx-bg.png");
 
 /* BLACK MARKET */
 addImage("blackmarket", "./src/assets/BlackMarket.png");
