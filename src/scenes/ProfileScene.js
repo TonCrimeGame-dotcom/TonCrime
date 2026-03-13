@@ -125,11 +125,11 @@ function drawButton(ctx, rect, text, style = "muted") {
   ctx.lineWidth = 1;
   strokeRoundRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, 16);
 
-  ctx.fillStyle = txt;
-  ctx.font = "900 12px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+ctx.fillStyle = "#f1f3f7";
+ctx.textAlign = "center";
+ctx.textBaseline = "middle";
+ctx.font = "900 20px system-ui";
+ctx.fillText("X", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + this.hitClose.h / 2 + 1);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
