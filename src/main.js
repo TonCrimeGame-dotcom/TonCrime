@@ -412,8 +412,10 @@ addImage("pvp", "./src/assets/pvp.jpg");
 addImage("weapons", "./src/assets/weapons.jpg");
 addImage("nightclub", "./src/assets/nightclub.jpg");
 addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
+addImage("clan_bg", "./src/assets/Clan-bg.png");
 addImage("xxx", "./src/assets/xxx.jpg");
 addImage("tata", "./src/assets/tata.png");
+
 
 /* BLACK MARKET */
 addImage("blackmarket", "./src/assets/BlackMarket.png");
