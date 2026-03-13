@@ -358,22 +358,24 @@
 
   function makeArenaMarkup() {
     return `
-      <div class="tc-crush-root">
-        <button class="tc-crush-close" id="tcCrushClose" type="button" aria-label="Geri">✕</button>
-        <div class="tc-crush-head">
-          <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
-          <div class="tc-crush-title-wrap">
-            <div class="tc-crush-title" id="tcCrushTurn">
-              <span class="tc-crush-neon">IQ ARENA</span>
-              <small>Rakip aranıyor...</small>
-            </div>
-            <div class="tc-crush-timer" id="tcCrushTimer">30</div>
-          </div>
-          <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
-        </div>
-        <canvas class="tc-crush-canvas"></canvas>
-        <div class="tc-crush-toast" id="tcCrushToast"></div>
+<div class="tc-crush-root">
+  <button class="tc-crush-close" id="tcCrushClose" type="button" aria-label="Geri">×</button>
+
+  <div class="tc-crush-head">
+    <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
+    <div class="tc-crush-title-wrap">
+      <div class="tc-crush-title" id="tcCrushTurn">
+        <span class="tc-crush-neon">IQ ARENA</span>
+        <small>Rakip aranıyor...</small>
       </div>
+      <div class="tc-crush-timer" id="tcCrushTimer">30</div>
+    </div>
+    <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
+  </div>
+
+  <canvas class="tc-crush-canvas"></canvas>
+  <div class="tc-crush-toast" id="tcCrushToast"></div>
+</div>
     `;
   }
 
