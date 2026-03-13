@@ -523,20 +523,21 @@
       document.body.appendChild(el);
     }
 
-    window.addEventListener("DOMContentLoaded", async () => {
-      try {
-        await loadClassicFirst([
-          "./src/pvp.js",
-          "./pvp.js"
-        ]);
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await loadClassicFirst([
+      "./src/pvp.js",
+      "./pvp.js"
+    ]);
 
-        await loadFirst([
-          "./src/main.js",
-          "./main.js"
-        ]);
+    await loadFirst([
+      "./src/main.js",
+      "./main.js"
+    ]);
 
-        window.TonCrimePVP?.boot?.();
-      } catch (err) {
+    window.TonCrimePVP?.boot?.();
+    initPvpUi();
+  } catch (err) {
         console.error(err);
         showBootError("Oyun dosyaları yüklenemedi. main.js / pvp.js yolu veya deploy klasör yapısı hatalı.");
       }
@@ -927,6 +928,7 @@
   </script>
 </body>
 </html>
+
 
 
 
