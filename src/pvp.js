@@ -1,4 +1,4 @@
-export class PvpScene {
+class PvpScene {
   constructor({ store, input, scenes, assets }) {
     this.store = store;
     this.input = input;
@@ -213,3 +213,86 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 
   ctx.fillText(line, x, y);
 }
+window.PvpScene = PvpScene;
+window.TonCrimePVP = {
+  arena: null,
+  enemyFill: null,
+  meFill: null,
+  enemyHpText: null,
+  meHpText: null,
+
+  enemyHp: 100,
+  meHp: 100,
+  running: false,
+
+  init(cfg) {
+    this.arena = document.getElementById(cfg.arenaId);
+    this.enemyFill = document.getElementById(cfg.enemyFillId);
+    this.meFill = document.getElementById(cfg.meFillId);
+    this.enemyHpText = document.getElementById(cfg.enemyHpTextId);
+    this.meHpText = document.getElementById(cfg.meHpTextId);
+  },
+
+  boot() {
+    console.log("[TonCrime] PvP booted");
+  },
+
+  start() {
+    this.running = true;
+    this.enemyHp = 100;
+    this.meHp = 100;
+    this.updateBars();
+    this.loop();
+  },
+
+  stop() {
+    this.running = false;
+  },
+
+  reset() {
+    this.enemyHp = 100;
+    this.meHp = 100;
+    this.updateBars();
+  },
+
+  setOpponent(opp) {
+    console.log("Opponent:", opp);
+  },
+
+  loop() {
+    if (!this.running) return;
+
+    const enemyHit = Math.floor(Math.random() * 8);
+    const meHit = Math.floor(Math.random() * 8);
+
+    this.enemyHp -= enemyHit;
+    this.meHp -= meHit;
+
+    this.enemyHp = Math.max(0, this.enemyHp);
+    this.meHp = Math.max(0, this.meHp);
+
+    this.updateBars();
+
+    if (this.enemyHp <= 0) {
+      this.running = false;
+      window.dispatchEvent(new CustomEvent("tc:pvp:win"));
+      return;
+    }
+
+    if (this.meHp <= 0) {
+      this.running = false;
+      window.dispatchEvent(new CustomEvent("tc:pvp:lose"));
+      return;
+    }
+
+    setTimeout(() => this.loop(), 900);
+  },
+
+  updateBars() {
+    if (this.enemyFill) this.enemyFill.style.transform = `scaleX(${this.enemyHp / 100})`;
+    if (this.meFill) this.meFill.style.transform = `scaleX(${this.meHp / 100})`;
+
+    if (this.enemyHpText) this.enemyHpText.textContent = this.enemyHp;
+    if (this.meHpText) this.meHpText.textContent = this.meHp;
+  }
+};
