@@ -405,28 +405,28 @@
       }
 #arena .tc-crush-close {
   position: absolute;
-  top: 22px;
-  right: 22px;
-  z-index: 9;
+  top: 58px;
+  right: 18px;
+  z-index: 50;
 
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 
-  border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 12px;
-
-  background: rgba(0,0,0,0.25);
-
-  color: #ff3b3b;
-  font: 900 18px system-ui, Arial;
-
+  color: #ff2b2b;
+  font: 900 34px/1 system-ui, Arial;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 
-  backdrop-filter: blur(6px);
-
-  box-shadow:
-    0 0 8px rgba(255,0,0,0.4),
-    inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow: none;
+  backdrop-filter: none;
+  text-shadow:
+    0 0 6px rgba(255, 40, 40, 0.9),
+    0 0 14px rgba(255, 40, 40, 0.55);
 }
       #arena .tc-crush-close:active {
         transform: scale(0.96);
