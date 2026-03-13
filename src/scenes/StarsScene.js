@@ -13,139 +13,75 @@ export class StarsScene {
 
     this.hit = [];
 
-    this._binded = false;
     this._down = false;
-    this._pid = null;
-    this._downX = 0;
     this._downY = 0;
     this._startScroll = 0;
 
-    this._top = 70;
-    this._bottomPad = 90;
+    this.bg = null;
   }
 
   onEnter() {
     const s = this.store.get();
+
     if (!s.stars) {
       this.store.set({
-        stars: { owned: {}, selectedId: null, lastClaimTs: {}, twinBonusClaimed: {} },
+        stars: {
+          owned: {},
+          selectedId: null
+        }
       });
     }
-    this._bindPointer();
-  }
 
-  onExit() {
-    this._unbindPointer();
+    this.bg =
+      this.assets.get?.("xxx_bg") ||
+      this.assets.images?.["xxx_bg"] ||
+      null;
   }
 
   _clamp(n, a, b) {
     return Math.max(a, Math.min(b, n));
   }
 
-  _canvas() {
-    return document.getElementById("game");
-  }
+  update() {
+    const p = this.input.pointer || {};
 
-  _toCanvasXY(clientX, clientY) {
-    const c = this._canvas();
-    if (!c) return { x: clientX, y: clientY };
-    const r = c.getBoundingClientRect();
-    return { x: clientX - r.left, y: clientY - r.top };
-  }
-
-  _bindPointer() {
-    if (this._binded) return;
-    const c = this._canvas();
-    if (!c) return;
-
-    c.style.touchAction = "none";
-
-    this._onPD = (e) => {
-      if (this._down) return;
-
-      const { x, y } = this._toCanvasXY(e.clientX, e.clientY);
-
+    if (this.input.justPressed?.()) {
       this._down = true;
-      this._pid = e.pointerId;
-      this._downX = x;
-      this._downY = y;
+      this._downY = p.y;
       this._startScroll = this.scrollY;
+    }
 
-      c.setPointerCapture?.(e.pointerId);
-      e.preventDefault();
-    };
-
-    this._onPM = (e) => {
-      if (!this._down) return;
-      if (this._pid != null && e.pointerId !== this._pid) return;
-
-      const { y } = this._toCanvasXY(e.clientX, e.clientY);
-      const dy = y - this._downY;
-
+    if (this._down && this.input.isDown?.()) {
+      const dy = p.y - this._downY;
       this.scrollY = this._clamp(this._startScroll - dy, 0, this.maxScroll);
-      e.preventDefault();
-    };
+    }
 
-    this._onPU = (e) => {
-      if (!this._down) return;
-      if (this._pid != null && e.pointerId !== this._pid) return;
-
-      const { x, y } = this._toCanvasXY(e.clientX, e.clientY);
-      const moved = Math.abs(x - this._downX) + Math.abs(y - this._downY);
-
+    if (this._down && this.input.justReleased?.()) {
       this._down = false;
-      this._pid = null;
 
-      if (moved < 10) this.onTap(x, y);
+      for (const r of this.hit) {
+        if (
+          p.x >= r.x &&
+          p.x <= r.x + r.w &&
+          p.y >= r.y &&
+          p.y <= r.y + r.h
+        ) {
+          if (r.type === "back") {
+            this.scenes.go("home");
+            return;
+          }
 
-      e.preventDefault();
-    };
+          const s = this.store.get();
+          const owned = s.stars?.owned || {};
 
-    this._onWheel = (e) => {
-      this.scrollY = this._clamp(this.scrollY + e.deltaY, 0, this.maxScroll);
-      e.preventDefault();
-    };
-
-    c.addEventListener("pointerdown", this._onPD, { passive: false });
-    c.addEventListener("pointermove", this._onPM, { passive: false });
-    c.addEventListener("pointerup", this._onPU, { passive: false });
-    c.addEventListener("pointercancel", this._onPU, { passive: false });
-    c.addEventListener("wheel", this._onWheel, { passive: false });
-
-    this._binded = true;
-  }
-
-  _unbindPointer() {
-    if (!this._binded) return;
-    const c = this._canvas();
-    if (!c) return;
-
-    c.removeEventListener("pointerdown", this._onPD);
-    c.removeEventListener("pointermove", this._onPM);
-    c.removeEventListener("pointerup", this._onPU);
-    c.removeEventListener("pointercancel", this._onPU);
-    c.removeEventListener("wheel", this._onWheel);
-
-    this._binded = false;
-    this._down = false;
-    this._pid = null;
-  }
-
-  _computeLayout(H) {
-    const HEADER_H = 56;
-
-    const hud = document.getElementById("hudTop");
-    const chat = document.getElementById("chatDrawer");
-
-    const hudH = hud ? hud.offsetHeight : 0;
-    const top = Math.max(HEADER_H + 14, hudH + 14);
-    const bottomPad = chat ? 110 : 90;
-    const viewH = Math.max(120, H - top - bottomPad);
-
-    this._top = top;
-    this._bottomPad = bottomPad;
-
-    return { HEADER_H, top, bottomPad, viewH };
+          if (!owned[r.star.id]) {
+            this.buyStar(r.star);
+          } else {
+            this.selectStar(r.star.id);
+          }
+        }
+      }
+    }
   }
 
   buyStar(star) {
@@ -154,186 +90,166 @@ export class StarsScene {
     const coins = Number(s.coins || 0);
     const cost = Number(star.coinValue || 0);
 
-    const player = s.player || {};
-    const energy = Number(player.energy || 0);
-    const energyMax = Number(player.energyMax || 10);
-
-    const starsState =
-      s.stars || { owned: {}, selectedId: null, lastClaimTs: {}, twinBonusClaimed: {} };
-    const owned = starsState.owned || {};
-
-    if (owned[star.id]) return true;
     if (coins < cost) {
       window.dispatchEvent(
-        new CustomEvent("tc:toast", { detail: { text: "Yetersiz coin" } })
+        new CustomEvent("tc:toast", {
+          detail: { text: "Yetersiz coin" }
+        })
       );
-      return false;
-    }
-
-    const gain = Number(star.energyGain || 0);
-    const newEnergyMax = energyMax + gain;
-    const newEnergy = Math.min(newEnergyMax, energy + gain);
-
-    this.store.set({
-      coins: coins - cost,
-      player: { ...player, energyMax: newEnergyMax, energy: newEnergy },
-      stars: { ...starsState, owned: { ...owned, [star.id]: true }, selectedId: star.id },
-    });
-
-    window.dispatchEvent(new CustomEvent("tc:stars:open", { detail: { starId: star.id } }));
-    return true;
-  }
-
-  onTap(x, y) {
-    if (y <= 56 && x <= 90) {
-      this.scenes.go("home");
       return;
     }
 
-    for (const r of this.hit) {
-      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-        const s = this.store.get();
-        const owned = s.stars?.owned || {};
-        const isOwned = !!owned[r.star.id];
+    const starsState = s.stars || { owned: {} };
+    const owned = starsState.owned || {};
 
-        if (!isOwned) {
-          this.buyStar(r.star);
-          return;
-        }
-
-        this.selectStar(r.star.id);
-        return;
+    this.store.set({
+      coins: coins - cost,
+      stars: {
+        ...starsState,
+        owned: { ...owned, [star.id]: true },
+        selectedId: star.id
       }
-    }
+    });
   }
 
-  selectStar(starId) {
+  selectStar(id) {
     const s = this.store.get();
-    const starsState =
-      s.stars || { owned: {}, selectedId: null, lastClaimTs: {}, twinBonusClaimed: {} };
+    const starsState = s.stars || {};
 
-    this.store.set({ stars: { ...starsState, selectedId: starId } });
-    window.dispatchEvent(new CustomEvent("tc:stars:open", { detail: { starId } }));
-  }
-
-  _fitText(ctx, text, maxW, startSize, minSize, weight = "700") {
-    let size = startSize;
-    while (size > minSize) {
-      ctx.font = `${weight} ${size}px sans-serif`;
-      if (ctx.measureText(text).width <= maxW) return size;
-      size -= 1;
-    }
-    return minSize;
-  }
-
-  _drawClampedText(ctx, text, x, y, maxW) {
-    let out = String(text || "");
-    while (out.length > 0 && ctx.measureText(out).width > maxW) {
-      out = out.slice(0, -1);
-    }
-    if (out !== text && out.length > 1) out = out.slice(0, -1) + "…";
-    ctx.fillText(out, x, y);
+    this.store.set({
+      stars: {
+        ...starsState,
+        selectedId: id
+      }
+    });
   }
 
   render(ctx) {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const W = Math.floor(ctx.canvas.width / dpr);
-    const H = Math.floor(ctx.canvas.height / dpr);
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
 
-    const { top, bottomPad, viewH } = this._computeLayout(H);
+    this.hit = [];
 
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#0b0b0b";
+
+    /* BACKGROUND */
+
+    if (this.bg) {
+      ctx.drawImage(this.bg, 0, 0, W, H);
+    } else {
+      ctx.fillStyle = "#0b0b0b";
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = "#121212";
-    ctx.fillRect(0, 0, W, 56);
+    /* HEADER */
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, W, 70);
+
     ctx.fillStyle = "#fff";
-    ctx.font = "20px sans-serif";
-    ctx.fillText("GENEL EV", 110, 35);
-    ctx.font = "16px sans-serif";
-    ctx.fillText("< Geri", 16, 35);
+    ctx.font = "700 22px Arial";
+    ctx.fillText("GENEL EV", 20, 42);
+
+    /* X BUTTON */
+
+    const bx = W - 60;
+    const by = 16;
+
+    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, 40, 40, 10);
+    ctx.fill();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 20px Arial";
+    ctx.fillText("X", bx + 14, by + 26);
+
+    this.hit.push({
+      type: "back",
+      x: bx,
+      y: by,
+      w: 40,
+      h: 40
+    });
 
     const s = this.store.get();
     const owned = s.stars?.owned || {};
-    const selectedId = s.stars?.selectedId ?? null;
+    const selected = s.stars?.selectedId;
 
-    const pad = W <= 420 ? 10 : 12;
-    const cols = W <= 420 ? 2 : 3;
-    const cardW = Math.floor((W - pad * (cols + 1)) / cols);
-    const imgH = W <= 420 ? 96 : 84;
-    const cardH = W <= 420 ? 170 : 155;
+    /* LIST */
 
-    const rows = Math.ceil(stars.length / cols);
-    const contentH = rows * (cardH + pad) + pad;
+    const startY = 90 - this.scrollY;
+    const rowH = 80;
+    const pad = 14;
 
-    this.maxScroll = Math.max(0, contentH - viewH);
-    this.scrollY = this._clamp(this.scrollY, 0, this.maxScroll);
+    let y = startY;
 
-    const contentY = top - this.scrollY;
-    this.hit = [];
-
-    for (let i = 0; i < stars.length; i++) {
-      const star = stars[i];
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-
-      const x = pad + col * (cardW + pad);
-      const y = contentY + row * (cardH + pad);
-
-      if (y > H - bottomPad + 80 || y < -cardH - 80) continue;
-
+    for (const star of stars) {
       const isOwned = !!owned[star.id];
-      const isSelected = selectedId === star.id;
+      const isSelected = selected === star.id;
 
-      ctx.fillStyle = isSelected ? "#1f6f2a" : "#1a1a1a";
-      ctx.fillRect(x, y, cardW, cardH);
+      ctx.fillStyle = isSelected
+        ? "rgba(0,200,120,0.25)"
+        : "rgba(0,0,0,0.5)";
+
+      ctx.beginPath();
+      ctx.roundRect(14, y, W - 28, rowH, 14);
+      ctx.fill();
 
       const img =
-        (typeof this.assets.get === "function" ? this.assets.get(star.image) : null) ||
+        this.assets.get?.(star.image) ||
         this.assets.images?.[star.image];
 
       if (img) {
-        ctx.drawImage(img, x + 8, y + 8, cardW - 16, imgH);
-      } else {
-        ctx.fillStyle = "#2b2b2b";
-        ctx.fillRect(x + 8, y + 8, cardW - 16, imgH);
+        ctx.drawImage(img, 24, y + 10, 60, 60);
       }
 
-      const titleMaxW = cardW - 20;
-      const titleSize = this._fitText(ctx, star.name, titleMaxW, W <= 420 ? 12 : 13, 10, "700");
       ctx.fillStyle = "#fff";
-      ctx.font = `700 ${titleSize}px sans-serif`;
-      this._drawClampedText(ctx, star.name, x + 10, y + imgH + 26, titleMaxW);
+      ctx.font = "700 16px Arial";
+      ctx.fillText(star.name, 100, y + 30);
 
-      ctx.fillStyle = "#d9d9d9";
-      ctx.font = `${W <= 420 ? 11 : 12}px sans-serif`;
-      this._drawClampedText(ctx, `+Enerji: ${star.energyGain}`, x + 10, y + imgH + 46, titleMaxW);
-      this._drawClampedText(ctx, `Fiyat: ${star.coinValue} coin`, x + 10, y + imgH + 62, titleMaxW);
+      ctx.fillStyle = "#cfcfcf";
+      ctx.font = "13px Arial";
+      ctx.fillText(
+        `+Enerji: ${star.energyGain}`,
+        100,
+        y + 52
+      );
 
-      if (star.twinId) {
-        ctx.fillStyle = "#ff4fd0";
-        ctx.fillRect(x + 8, y + 8, 46, 18);
-        ctx.fillStyle = "#000";
-        ctx.font = "11px sans-serif";
-        ctx.fillText("TWIN", x + 14, y + 21);
-      }
+      const btnW = 90;
+      const bx2 = W - btnW - 26;
 
-      if (isOwned) {
-        ctx.fillStyle = "#00d0ff";
-        ctx.fillRect(x + cardW - 52, y + 8, 44, 18);
-        ctx.fillStyle = "#000";
-        ctx.font = "11px sans-serif";
-        ctx.fillText("OWN", x + cardW - 44, y + 21);
-      } else {
-        ctx.fillStyle = "rgba(255,255,255,0.10)";
-        ctx.fillRect(x + cardW - 64, y + 8, 56, 18);
-        ctx.fillStyle = "#fff";
-        ctx.font = "11px sans-serif";
-        ctx.fillText("BUY", x + cardW - 48, y + 21);
-      }
+      ctx.fillStyle = isOwned
+        ? "rgba(80,80,80,0.7)"
+        : "rgba(255,180,40,0.9)";
 
-      this.hit.push({ x, y, w: cardW, h: cardH, star });
+      ctx.beginPath();
+      ctx.roundRect(bx2, y + 20, btnW, 36, 10);
+      ctx.fill();
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "700 14px Arial";
+      ctx.fillText(
+        isOwned ? "SEÇ" : `${star.coinValue} COIN`,
+        bx2 + 12,
+        y + 43
+      );
+
+      this.hit.push({
+        star,
+        x: 14,
+        y,
+        w: W - 28,
+        h: rowH
+      });
+
+      y += rowH + pad;
     }
+
+    const contentH = y - startY;
+    this.maxScroll = Math.max(0, contentH - (H - 120));
   }
 }
