@@ -535,7 +535,7 @@
           "./main.js"
         ]);
 
-        initPvpUi();
+        window.TonCrimePVP?.boot?.();
       } catch (err) {
         console.error(err);
         showBootError("Oyun dosyaları yüklenemedi. main.js / pvp.js yolu veya deploy klasör yapısı hatalı.");
