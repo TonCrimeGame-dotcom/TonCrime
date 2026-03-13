@@ -431,6 +431,15 @@
           accent: "#ff9340",
         },
         {
+          id: "roulette",
+          title: "Russian Roulette",
+          subtitle: "3 Kişilik Ölüm Masası",
+          desc: "6 patlar revolver, tek mermi, 3 oyuncu ve 2 hak. Kimde silah patlarsa elenir. Son kalan tüm ödülü toplar.",
+          tags: ["3 Oyuncu", "Tek Mermi", "2 Hak", "Coin", "XP"],
+          open: true,
+          accent: "#ff4a4a",
+        },
+        {
           id: "tournament",
           title: "Kartel Turnuvası",
           subtitle: "Sezonluk PvP",
@@ -472,10 +481,10 @@
 
     _availableCards() {
       if (this.source === "nightclub") {
-        return this.cards.filter((c) => c.id === "grid" || c.id === "arena");
+        return this.cards.filter((c) => c.id === "grid" || c.id === "arena" || c.id === "roulette");
       }
       if (this.source === "coffeeshop") {
-        return this.cards.filter((c) => c.id === "grid");
+        return this.cards.filter((c) => c.id === "grid" || c.id === "roulette");
       }
       return this.cards;
     }
@@ -586,6 +595,7 @@
             meFillId: "meFill",
             enemyHpTextId: "enemyHpText",
             meHpTextId: "meHpText",
+            store: this.store,
           });
 
           window.TonCrimePVP.setOpponent?.({
@@ -642,6 +652,84 @@
 
         if (id === "arena") {
           if (dom.status) dom.status.textContent = "PvP • Arena yakında";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          this._launchingGame = false;
+          return;
+        }
+
+        if (id === "roulette") {
+          await loadPvpGameScript([
+            "./src/RussianRouletteScene.js",
+            "./RussianRouletteScene.js",
+          ]);
+
+          if (!window.TonCrimePVP_ROULETTE) {
+            throw new Error("TonCrimePVP_ROULETTE bulunamadı");
+          }
+
+          window.TonCrimePVP = window.TonCrimePVP_ROULETTE;
+
+          window.TonCrimePVP.init?.({
+            arenaId: "arena",
+            statusId: "pvpStatus",
+            enemyFillId: "enemyFill",
+            meFillId: "meFill",
+            enemyHpTextId: "enemyHpText",
+            meHpTextId: "meHpText",
+            store: this.store,
+            buyInCoin: 500,
+            buyInEnergy: 2,
+          });
+
+          window.TonCrimePVP.setOpponent?.({
+            username: "2 Rakip",
+            isBot: true,
+          });
+
+          if (dom.opponent) dom.opponent.textContent = "2 Rakip";
+          if (dom.enemyHpText) dom.enemyHpText.textContent = "2";
+          if (dom.meHpText) dom.meHpText.textContent = "2";
+          if (dom.enemyFill) dom.enemyFill.style.transform = "scaleX(1)";
+          if (dom.meFill) dom.meFill.style.transform = "scaleX(1)";
+
+          if (dom.startBtn) {
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Roulette start button error:", err);
+              }
+            };
+          }
+
+          if (dom.stopBtn) {
+            dom.stopBtn.onclick = () => {
+              try {
+                window.TonCrimePVP.stop?.();
+              } catch (err) {
+                console.error("[TonCrime] Roulette stop button error:", err);
+              }
+            };
+          }
+
+          if (dom.resetBtn) {
+            dom.resetBtn.onclick = () => {
+              try {
+                window.TonCrimePVP.reset?.();
+              } catch (err) {
+                console.error("[TonCrime] Roulette reset button error:", err);
+              }
+            };
+          }
+
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.reset?.();
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.start?.();
+
+          if (dom.status) dom.status.textContent = "PvP • Russian Roulette başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           return;
