@@ -7,29 +7,12 @@
     finalRefundCoin: 50,
     chamberSize: 6,
     livesPerPlayer: 2,
-    assetPath: "./src/assets/roulette/",
-    assetNames: [
-      "rr_frame_01.png",
-      "rr_frame_02.png",
-      "rr_frame_03.png",
-      "rr_frame_04.png",
-      "rr_frame_05.png",
-      "rr_frame_06.png",
-    ],
   };
 
   const BOT_NAMES = ["ShadowWolf", "NightViper"];
 
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
-  }
-
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  function easeInOutCubic(t) {
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   }
 
   function roundRectPath(ctx, x, y, w, h, r) {
@@ -199,13 +182,10 @@
     });
   }
 
-  function makeImage(src) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve({ ok: true, img, src });
-      img.onerror = () => resolve({ ok: false, img: null, src });
-      img.src = src;
-    });
+  function loadImg(src) {
+    const img = new Image();
+    img.src = src;
+    return img;
   }
 
   class RussianRouletteEngine {
@@ -250,22 +230,24 @@
       this.winnerId = null;
       this._raf = 0;
       this.players = [];
-      this.assetsReady = false;
-      this.assets = [];
-      this.assetSources = [];
-
-      this.intro = {
-        active: false,
-        startedAt: 0,
-        duration: 4.25,
-        phase: 0,
-        done: false,
-      };
 
       this._resizeHandler = () => fitCanvasToParent(this.canvas);
+
+      this.assets = {
+        bg: loadImg("/src/assets/rr_table_bg.jpg"),
+        revolverIdle: loadImg("/src/assets/rr_revolver_idle.png"),
+        revolverSpin: loadImg("/src/assets/rr_revolver_spin.png"),
+        revolverFire: loadImg("/src/assets/rr_revolver_fire.png"),
+        bullet: loadImg("/src/assets/rr_bullet.png"),
+        smoke: loadImg("/src/assets/rr_smoke.png"),
+      };
     }
 
-    async init(opts = {}) {
+    hasLoaded(img) {
+      return !!img && img.complete && (img.naturalWidth || img.width);
+    }
+
+    init(opts = {}) {
       ensureStyle();
 
       this.opts = {
@@ -276,11 +258,7 @@
         finalRefundCoin: Number.isFinite(Number(opts.finalRefundCoin)) ? Number(opts.finalRefundCoin) : DEFAULTS.finalRefundCoin,
         chamberSize: Number.isFinite(Number(opts.chamberSize)) ? Number(opts.chamberSize) : DEFAULTS.chamberSize,
         livesPerPlayer: Number.isFinite(Number(opts.livesPerPlayer)) ? Number(opts.livesPerPlayer) : DEFAULTS.livesPerPlayer,
-        assetPath: typeof opts.assetPath === "string" ? opts.assetPath : DEFAULTS.assetPath,
-        assetNames: Array.isArray(opts.assetNames) && opts.assetNames.length ? opts.assetNames.slice() : DEFAULTS.assetNames.slice(),
       };
-
-      this.assetSources = this.opts.assetNames.map((n) => this.opts.assetPath + n);
 
       this.store = opts.store || null;
       this.statusEl = document.getElementById(opts.statusId || "pvpStatus");
@@ -288,7 +266,7 @@
       this.meFillEl = document.getElementById(opts.meFillId || "meFill");
       this.enemyHpTextEl = document.getElementById(opts.enemyHpTextId || "enemyHpText");
       this.meHpTextEl = document.getElementById(opts.meHpTextId || "meHpText");
-      this.opponentEl = document.getElementById(opts.opponentId || "pvpOpponent");
+      this.opponentEl = document.getElementById("pvpOpponent");
 
       const arena = document.getElementById(opts.arenaId || "arena");
       if (!arena) throw new Error("RussianRouletteScene: arena bulunamadı");
@@ -314,12 +292,7 @@
       window.addEventListener("resize", this._resizeHandler);
 
       this.triggerBtn.onclick = () => {
-        if (this.ended) {
-          this.reset(true);
-          this.start();
-          return;
-        }
-        if (!this.running || !this.awaitingShot || this.processing || this.ended || this.intro.active) return;
+        if (!this.running || !this.awaitingShot || this.processing || this.ended) return;
         const actor = this.players[this.turnIndex];
         if (!actor || actor.isBot || !actor.alive) return;
         this.fireCurrent();
@@ -329,23 +302,8 @@
         this.close();
       };
 
-      this.setStatus("Russian Roulette • Assetler yükleniyor");
-      this.message = "Animasyon kareleri yükleniyor...";
-      this.assetsReady = false;
-      this.assets = [];
-      this.preloadAssets();
-
       this.reset(true);
       this.startLoop();
-    }
-
-    async preloadAssets() {
-      const results = await Promise.all(this.assetSources.map(makeImage));
-      this.assets = results.map((r) => (r.ok ? r.img : null));
-      this.assetsReady = this.assets.some(Boolean);
-      if (!this.assetsReady) {
-        this.message = "Asset bulunamadı. Yedek çizim kullanılacak.";
-      }
     }
 
     close() {
@@ -369,7 +327,7 @@
         s?.player?.username ||
         s?.profile?.username ||
         s?.username ||
-        "Sen";
+        "Player";
 
       this.players = [
         {
@@ -417,10 +375,6 @@
       this.spin = 0;
       this.pulse = 0;
       this.winnerId = null;
-      this.intro.active = false;
-      this.intro.startedAt = 0;
-      this.intro.phase = 0;
-      this.intro.done = false;
       this.buildPlayers();
       this.setStatus("Russian Roulette • Hazır");
       this.updateHudBars();
@@ -462,30 +416,13 @@
       this.running = true;
       this.processing = false;
       this.ended = false;
-      this.awaitingShot = false;
+      this.awaitingShot = true;
       this.stage = this.aliveCount() === 3 ? "triple" : "final";
-      this.message = "Tambur açılıyor...";
+      this.message = `${this.players[this.turnIndex].name} sırada`;
       this.setStatus(`Russian Roulette • Raund ${this.roundNumber}`);
       this.updateHudBars();
-      this.startIntroSequence();
       this.updateTrigger();
-    }
 
-    startIntroSequence() {
-      this.intro.active = true;
-      this.intro.startedAt = performance.now();
-      this.intro.phase = 0;
-      this.intro.done = false;
-      this.message = "Tambur açılıyor...";
-    }
-
-    finishIntroSequence() {
-      this.intro.active = false;
-      this.intro.done = true;
-      this.awaitingShot = true;
-      const actor = this.players[this.turnIndex];
-      this.message = actor ? `${actor.name} sırada` : "Tetik hazır";
-      this.updateTrigger();
       if (this.players[this.turnIndex]?.isBot) {
         this.scheduleBotShot();
       }
@@ -495,7 +432,6 @@
       this.running = false;
       this.awaitingShot = false;
       this.processing = false;
-      this.intro.active = false;
       this.clearTimers();
       this.setStatus("Russian Roulette • Durduruldu");
       this.message = "Oyun durdu.";
@@ -538,7 +474,7 @@
     scheduleBotShot() {
       if (this.botTimer) clearTimeout(this.botTimer);
       this.botTimer = setTimeout(() => {
-        if (!this.running || !this.awaitingShot || this.processing || this.ended || this.intro.active) return;
+        if (!this.running || !this.awaitingShot || this.processing || this.ended) return;
         const actor = this.players[this.turnIndex];
         if (!actor || !actor.isBot || !actor.alive) return;
         this.fireCurrent();
@@ -546,7 +482,7 @@
     }
 
     fireCurrent() {
-      if (!this.running || this.processing || this.ended || this.intro.active) return;
+      if (!this.running || this.processing || this.ended) return;
       const actor = this.players[this.turnIndex];
       if (!actor || !actor.alive) return;
 
@@ -554,9 +490,9 @@
       this.awaitingShot = false;
 
       const exploded = this.currentChamber === this.bulletIndex;
-      this.muzzle = exploded ? 1 : 0.25;
-      this.shake = exploded ? 10 : 3;
-      this.flash = exploded ? 1 : 0.18;
+      this.muzzle = exploded ? 1 : 0.12;
+      this.shake = exploded ? 10 : 2;
+      this.flash = exploded ? 1 : 0.10;
 
       if (exploded) {
         actor.lives = Math.max(0, actor.lives - 1);
@@ -600,16 +536,19 @@
 
       if (justEnteredFinal) {
         this.stage = "final";
-        this.message = "Final raund başladı. Tambur yeniden çevrildi.";
+        this.message = "Final raund başladı. Silah yeniden dolduruldu.";
       }
 
       this.turnIndex = this.nextAliveIndex(this.turnIndex);
       this.processing = false;
-      this.awaitingShot = false;
+      this.awaitingShot = true;
       this.setStatus(`Russian Roulette • Raund ${this.roundNumber}`);
       this.updateHudBars();
-      this.startIntroSequence();
       this.updateTrigger();
+
+      if (this.players[this.turnIndex]?.isBot) {
+        this.scheduleBotShot();
+      }
     }
 
     endMatch() {
@@ -673,17 +612,22 @@
       if (this.ended) {
         this.triggerBtn.textContent = "TEKRAR OYNA";
         this.triggerBtn.disabled = false;
+        this.triggerBtn.onclick = () => {
+          this.reset(true);
+          this.start();
+        };
         return;
       }
+
+      this.triggerBtn.onclick = () => {
+        if (!this.running || !this.awaitingShot || this.processing || this.ended) return;
+        const actor = this.players[this.turnIndex];
+        if (!actor || actor.isBot || !actor.alive) return;
+        this.fireCurrent();
+      };
 
       if (!this.running) {
         this.triggerBtn.textContent = "TETİĞİ ÇEK";
-        this.triggerBtn.disabled = true;
-        return;
-      }
-
-      if (this.intro.active) {
-        this.triggerBtn.textContent = "HAZIRLANIYOR";
         this.triggerBtn.disabled = true;
         return;
       }
@@ -742,25 +686,8 @@
         this.flash = Math.max(0, this.flash - dt * 2.4);
         this.shake = Math.max(0, this.shake - dt * 24);
         this.muzzle = Math.max(0, this.muzzle - dt * 3.8);
-        this.spin += dt * 0.8;
+        this.spin += dt * 1.6;
         this.pulse += dt * 3.0;
-
-        if (this.intro.active) {
-          const elapsed = (ts - this.intro.startedAt) / 1000;
-          const p = clamp(elapsed / this.intro.duration, 0, 1);
-          this.intro.phase = Math.min(5, Math.floor(p * 6));
-
-          if (p < 0.18) this.message = "Tambur açılıyor...";
-          else if (p < 0.34) this.message = "Tek mermi yerleştiriliyor...";
-          else if (p < 0.58) this.message = "Tambur çevriliyor...";
-          else if (p < 0.76) this.message = "Tabanca kapanıyor...";
-          else if (p < 0.92) this.message = "Tetik hazır...";
-          else this.message = "Karar anı...";
-
-          if (p >= 1) {
-            this.finishIntroSequence();
-          }
-        }
 
         this.render();
         this._raf = requestAnimationFrame(tick);
@@ -787,7 +714,7 @@
       this.drawBackground(ctx, w, h);
       this.drawHeader(ctx, w, h);
       this.drawPlayers(ctx, w, h);
-      this.drawGunOrFrame(ctx, w, h);
+      this.drawGun(ctx, w, h);
       this.drawFooter(ctx, w, h);
 
       if (this.flash > 0) {
@@ -799,11 +726,30 @@
     }
 
     drawBackground(ctx, w, h) {
-      const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, "rgba(10,10,14,1)");
-      g.addColorStop(0.55, "rgba(5,5,8,1)");
-      g.addColorStop(1, "rgba(3,3,5,1)");
-      ctx.fillStyle = g;
+      const bg = this.assets.bg;
+
+      if (this.hasLoaded(bg)) {
+        const iw = bg.naturalWidth || bg.width;
+        const ih = bg.naturalHeight || bg.height;
+        const scale = Math.max(w / iw, h / ih);
+        const dw = iw * scale;
+        const dh = ih * scale;
+        const dx = (w - dw) * 0.5;
+        const dy = (h - dh) * 0.5;
+        ctx.drawImage(bg, dx, dy, dw, dh);
+      } else {
+        const g = ctx.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, "rgba(10,10,14,1)");
+        g.addColorStop(0.55, "rgba(5,5,8,1)");
+        g.addColorStop(1, "rgba(3,3,5,1)");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      const overlay = ctx.createLinearGradient(0, 0, 0, h);
+      overlay.addColorStop(0, "rgba(0,0,0,0.22)");
+      overlay.addColorStop(1, "rgba(0,0,0,0.44)");
+      ctx.fillStyle = overlay;
       ctx.fillRect(0, 0, w, h);
 
       const glow = ctx.createRadialGradient(w * 0.5, h * 0.46, 10, w * 0.5, h * 0.46, w * 0.42);
@@ -812,16 +758,6 @@
       glow.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, w, h);
-
-      for (let i = 0; i < 16; i++) {
-        const x = (i / 15) * w;
-        ctx.strokeStyle = `rgba(255,255,255,${0.02 + 0.01 * Math.sin(this.spin * 2 + i)})`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, h * 0.16);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-      }
     }
 
     drawHeader(ctx, w, h) {
@@ -907,175 +843,64 @@
       );
     }
 
-    drawGunOrFrame(ctx, w, h) {
-      const frameIndex = this.intro.active ? clamp(this.intro.phase, 0, 5) : -1;
-      if (frameIndex >= 0 && this.assetsReady && this.assets[frameIndex]) {
-        this.drawAssetFrame(ctx, w, h, this.assets[frameIndex], frameIndex);
-      } else {
-        this.drawGun(ctx, w, h, frameIndex);
+    drawGun(ctx, w, h) {
+      const cx = w * 0.5;
+      const cy = h * 0.49;
+      const drawW = Math.min(w * 0.70, 480);
+      const drawH = drawW * 0.56;
+
+      const x = cx - drawW * 0.5;
+      const y = cy - drawH * 0.38;
+
+      let sprite = this.assets.revolverIdle;
+      if (this.muzzle > 0.2 && this.hasLoaded(this.assets.revolverFire)) {
+        sprite = this.assets.revolverFire;
+      } else if ((this.running || this.processing) && this.hasLoaded(this.assets.revolverSpin)) {
+        sprite = this.assets.revolverSpin;
       }
-    }
 
-    drawAssetFrame(ctx, w, h, img, frameIndex) {
-      const maxW = w * 0.86;
-      const maxH = h * 0.46;
-      const scale = Math.min(maxW / img.width, maxH / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      const dx = (w - dw) * 0.5;
-      const dy = h * 0.28;
+      if (this.hasLoaded(sprite)) {
+        ctx.drawImage(sprite, x, y, drawW, drawH);
+      } else {
+        this.drawFallbackGun(ctx, w, h);
+      }
 
-      ctx.save();
-      const pulse = 1 + 0.012 * Math.sin(this.pulse * 3.2);
-      ctx.translate(w * 0.5, dy + dh * 0.5);
-      ctx.scale(pulse, pulse);
-      ctx.drawImage(img, -dw * 0.5, -dh * 0.5, dw, dh);
-      ctx.restore();
+      if (this.hasLoaded(this.assets.bullet)) {
+        const by = h * 0.80;
+        const bx1 = w * 0.18;
+        const bx2 = w * 0.78;
+        const sizeW = Math.min(36, w * 0.06);
+        const sizeH = sizeW * 0.40;
 
-      if (frameIndex === 2) {
         ctx.save();
-        ctx.translate(w * 0.5, dy + dh * 0.5);
-        const ring = 86 + 14 * Math.sin(this.pulse * 8);
-        ctx.strokeStyle = "rgba(255,170,70,0.22)";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(0, 0, ring, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.translate(bx1, by);
+        ctx.rotate(-0.28);
+        ctx.drawImage(this.assets.bullet, -sizeW * 0.5, -sizeH * 0.5, sizeW, sizeH);
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(bx2, by + 4);
+        ctx.rotate(0.42);
+        ctx.drawImage(this.assets.bullet, -sizeW * 0.5, -sizeH * 0.5, sizeW, sizeH);
         ctx.restore();
       }
-    }
 
-    drawGun(ctx, w, h, frameIndex) {
-      const cx = w * 0.5;
-      const cy = h * 0.50;
-      const scale = Math.min(w, h) * 0.22;
-      const active = this.players[this.turnIndex];
-      const introP = this.intro.active ? clamp((performance.now() - this.intro.startedAt) / (this.intro.duration * 1000), 0, 1) : 1;
-      const chamberOpen = this.intro.active ? introP < 0.58 : false;
-      const openAmt = chamberOpen ? easeInOutCubic(clamp(introP / 0.34, 0, 1)) : 0;
-      const spinAngle = this.intro.active && introP >= 0.34 && introP < 0.58 ? (introP - 0.34) / 0.24 * Math.PI * 5 : this.spin * 0.22;
-
-      ctx.save();
-      ctx.translate(cx - scale * 0.15, cy);
-
-      const cylinderX = lerp(0, -scale * 0.55, openAmt);
-      const cylinderY = lerp(0, -scale * 0.05, openAmt);
-
-      ctx.save();
-      ctx.translate(cylinderX, cylinderY);
-      ctx.rotate(spinAngle);
-
-      ctx.shadowBlur = 26;
-      ctx.shadowColor = "rgba(255,90,90,0.16)";
-      ctx.fillStyle = "#3a3d49";
-      ctx.beginPath();
-      ctx.arc(0, 0, scale * 0.78, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      ctx.fillStyle = "#1a1d25";
-      ctx.beginPath();
-      ctx.arc(0, 0, scale * 0.48, 0, Math.PI * 2);
-      ctx.fill();
-
-      for (let i = 0; i < this.opts.chamberSize; i++) {
-        const a = (Math.PI * 2 * i) / this.opts.chamberSize - Math.PI / 2;
-        const rx = Math.cos(a) * scale * 0.34;
-        const ry = Math.sin(a) * scale * 0.34;
-        const isCurrent = i === this.currentChamber && this.running && !this.ended && !this.intro.active;
-        const showBullet = i === this.bulletIndex && (this.intro.active ? introP > 0.16 : false);
-
-        ctx.fillStyle = isCurrent ? "rgba(255,80,80,0.98)" : "#050608";
-        ctx.beginPath();
-        ctx.arc(rx, ry, scale * 0.12, 0, Math.PI * 2);
-        ctx.fill();
-
-        if (showBullet) {
-          ctx.fillStyle = "rgba(220,170,80,0.98)";
-          ctx.beginPath();
-          ctx.arc(rx, ry, scale * 0.09, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "rgba(245,220,160,0.96)";
-          ctx.beginPath();
-          ctx.arc(rx, ry, scale * 0.03, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        if (isCurrent) {
-          ctx.strokeStyle = "rgba(255,220,180,0.95)";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(rx, ry, scale * 0.16, 0, Math.PI * 2);
-          ctx.stroke();
-        }
+      if (this.hasLoaded(this.assets.smoke) && this.muzzle > 0.05) {
+        const sw = Math.min(110, w * 0.18) * (0.7 + this.muzzle * 0.5);
+        const sh = sw;
+        ctx.globalAlpha = 0.45 * this.muzzle;
+        ctx.drawImage(this.assets.smoke, x + drawW * 0.82, y + drawH * 0.04, sw, sh);
+        ctx.globalAlpha = 1;
       }
 
-      ctx.fillStyle = "#8b8e9e";
-      ctx.beginPath();
-      ctx.arc(0, 0, scale * 0.13, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      if (this.muzzle > 0) {
+        const mx = x + drawW * 0.88;
+        const my = y + drawH * 0.36;
+        const radius = Math.min(68, w * 0.09) * (0.55 + this.muzzle * 0.8);
 
-      fillRoundRect(
-        ctx,
-        scale * 0.05,
-        -scale * 0.11,
-        scale * 1.10,
-        scale * 0.22,
-        scale * 0.09,
-        "#8e90a0"
-      );
-
-      fillRoundRect(
-        ctx,
-        scale * 0.95,
-        -scale * 0.07,
-        scale * 0.72,
-        scale * 0.14,
-        scale * 0.05,
-        "#a6a8b7"
-      );
-
-      fillRoundRect(
-        ctx,
-        scale * 1.58,
-        -scale * 0.045,
-        scale * 0.16,
-        scale * 0.09,
-        scale * 0.04,
-        "#c0c2cf"
-      );
-
-      ctx.strokeStyle = "#7c7f8f";
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(scale * 0.44, scale * 0.10, scale * 0.16, 0.2, Math.PI + 0.2);
-      ctx.stroke();
-
-      ctx.save();
-      ctx.translate(scale * 0.28, scale * 0.20);
-      ctx.rotate(0.82);
-      fillRoundRect(ctx, 0, 0, scale * 0.56, scale * 0.18, scale * 0.06, "#6b4027");
-      strokeRoundRect(ctx, 0, 0, scale * 0.56, scale * 0.18, scale * 0.06, "rgba(255,255,255,0.08)", 1);
-      ctx.restore();
-
-      fillRoundRect(
-        ctx,
-        -scale * 0.10,
-        -scale * 0.20,
-        scale * 0.18,
-        scale * 0.08,
-        scale * 0.03,
-        "#9093a2"
-      );
-
-      if (this.muzzle > 0 || frameIndex === 5) {
-        const mx = scale * 1.72;
-        const my = 0;
-        const radius = scale * (0.26 + Math.max(this.muzzle, 0.25) * 0.48);
         const burst = ctx.createRadialGradient(mx, my, 0, mx, my, radius);
-        burst.addColorStop(0, `rgba(255,248,228,${0.98 * Math.max(this.muzzle, 0.25)})`);
-        burst.addColorStop(0.4, `rgba(255,170,60,${0.62 * Math.max(this.muzzle, 0.25)})`);
+        burst.addColorStop(0, `rgba(255,248,228,${0.98 * this.muzzle})`);
+        burst.addColorStop(0.35, `rgba(255,180,70,${0.66 * this.muzzle})`);
         burst.addColorStop(1, "rgba(255,120,20,0)");
         ctx.fillStyle = burst;
         ctx.beginPath();
@@ -1083,13 +908,51 @@
         ctx.fill();
       }
 
-      ctx.restore();
-
+      const active = this.players[this.turnIndex];
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "700 13px system-ui, Arial";
       ctx.fillStyle = "rgba(255,226,194,0.92)";
       ctx.fillText(active ? `${active.name} sırada` : "", w * 0.5, h * 0.67);
+    }
+
+    drawFallbackGun(ctx, w, h) {
+      const cx = w * 0.5;
+      const cy = h * 0.50;
+      const scale = Math.min(w, h) * 0.18;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      fillRoundRect(ctx, -scale * 0.05, -scale * 0.16, scale * 1.10, scale * 0.20, scale * 0.06, "#8f93a3");
+      fillRoundRect(ctx, scale * 0.12, -scale * 0.01, scale * 0.42, scale * 0.20, scale * 0.06, "#848898");
+      fillRoundRect(ctx, scale * 0.88, -scale * 0.11, scale * 0.74, scale * 0.12, scale * 0.04, "#a6a9b8");
+      fillRoundRect(ctx, scale * 0.90, 0, scale * 0.56, scale * 0.08, scale * 0.03, "#8c8f9e");
+      fillRoundRect(ctx, scale * 1.56, -scale * 0.095, scale * 0.12, scale * 0.09, scale * 0.03, "#c6c8d2");
+
+      ctx.fillStyle = "#44495a";
+      ctx.beginPath();
+      ctx.arc(scale * 0.30, -scale * 0.02, scale * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#262b36";
+      ctx.beginPath();
+      ctx.arc(scale * 0.30, -scale * 0.02, scale * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.translate(scale * 0.08, scale * 0.13);
+      ctx.rotate(0.88);
+      fillRoundRect(ctx, 0, 0, scale * 0.48, scale * 0.16, scale * 0.05, "#6a4028");
+      ctx.restore();
+
+      ctx.strokeStyle = "#727787";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(scale * 0.33, scale * 0.12, scale * 0.12, 0.15, Math.PI + 0.15);
+      ctx.stroke();
+
+      ctx.restore();
     }
 
     drawFooter(ctx, w, h) {
@@ -1114,8 +977,6 @@
         rewardLine = `Ödül: ${this.opts.finalRefundCoin} coin iade`;
       } else if (this.ended && this.finishPlace === 3) {
         rewardLine = "Ödül yok";
-      } else if (this.intro.active) {
-        rewardLine = "Animasyon: açık > mermi > spin > kapat > tetik";
       }
 
       ctx.font = "600 12px system-ui, Arial";
@@ -1139,7 +1000,7 @@
     _engine: engine,
 
     init(opts) {
-      return engine.init(opts);
+      engine.init(opts);
     },
 
     setOpponent(opp) {
