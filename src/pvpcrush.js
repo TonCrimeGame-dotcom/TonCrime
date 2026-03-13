@@ -403,22 +403,31 @@
         box-sizing: border-box;
         background: transparent;
       }
-      #arena .tc-crush-close {
-        position: absolute;
-        top: 6px;
-        right: 6px;
-        z-index: 9;
-        width: 34px;
-        height: 34px;
-        border: 1px solid rgba(255,255,255,0.14);
-        border-radius: 12px;
-        background: rgba(0,0,0,0.10);
-        color: rgba(255,255,255,0.96);
-        font: 900 16px system-ui, Arial;
-        cursor: pointer;
-        backdrop-filter: blur(6px);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
-      }
+#arena .tc-crush-close {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  z-index: 9;
+
+  width: 36px;
+  height: 36px;
+
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 12px;
+
+  background: rgba(0,0,0,0.25);
+
+  color: #ff3b3b;
+  font: 900 18px system-ui, Arial;
+
+  cursor: pointer;
+
+  backdrop-filter: blur(6px);
+
+  box-shadow:
+    0 0 8px rgba(255,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
       #arena .tc-crush-close:active {
         transform: scale(0.96);
       }
