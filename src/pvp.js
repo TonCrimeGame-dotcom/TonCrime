@@ -138,6 +138,253 @@
     });
   }
 
+  function ensurePvpShellStyle() {
+    if (document.getElementById("tc-pvp-shell-style")) return;
+
+    const style = document.createElement("style");
+    style.id = "tc-pvp-shell-style";
+    style.textContent = `
+      #pvpWrap.tc-inline-shell {
+        position: fixed !important;
+        left: 12px !important;
+        right: 12px !important;
+        top: 96px !important;
+        bottom: 64px !important;
+        z-index: 7000 !important;
+        display: none;
+        flex-direction: column;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(8,10,16,0.88);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+        pointer-events: auto;
+      }
+
+      #pvpWrap.tc-inline-shell.open {
+        display: flex !important;
+      }
+
+      #pvpHeader {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 10px 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.10);
+        flex: 0 0 auto;
+      }
+
+      #pvpLeftHead {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      #pvpStatus {
+        font-weight: 900;
+        font-size: 13px;
+        color: rgba(255,255,255,0.92);
+      }
+
+      #pvpOpponentRow {
+        font-size: 12px;
+        color: rgba(255,255,255,0.80);
+      }
+
+      #pvpOpponentRow b {
+        color: rgba(255,255,255,0.95);
+      }
+
+      #pvpSpinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.25);
+        border-top-color: rgba(255,255,255,0.85);
+        vertical-align: -2px;
+        margin-right: 8px;
+        animation: tcPvpSpin 0.8s linear infinite;
+      }
+
+      #pvpSpinner.hidden {
+        display: none !important;
+      }
+
+      @keyframes tcPvpSpin {
+        to { transform: rotate(360deg); }
+      }
+
+      .pvpBtns {
+        display: flex;
+        gap: 8px;
+      }
+
+      .pvpBtn {
+        appearance: none;
+        border: 1px solid rgba(255,255,255,0.16);
+        background: rgba(0,0,0,0.35);
+        color: rgba(255,255,255,0.92);
+        border-radius: 10px;
+        height: 30px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 900;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      #pvpBars {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 10px;
+        flex: 0 0 auto;
+      }
+
+      .pvpBar {
+        height: 14px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        overflow: hidden;
+      }
+
+      .pvpFill {
+        height: 100%;
+        width: 100%;
+        transform-origin: left center;
+        transform: scaleX(1);
+        background: rgba(255,255,255,0.65);
+      }
+
+      .pvpBarLabel {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: rgba(255,255,255,0.95);
+        margin-top: 6px;
+      }
+
+      #arena {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 280px;
+        width: calc(100% - 20px);
+        margin: 0 10px 10px;
+        border-radius: 14px;
+        background: rgba(0,0,0,0.92);
+        overflow: hidden;
+        box-sizing: border-box;
+      }
+
+      @media (max-width: 640px) {
+        #pvpWrap.tc-inline-shell {
+          left: 10px !important;
+          right: 10px !important;
+          top: 84px !important;
+          bottom: 58px !important;
+        }
+
+        #pvpHeader {
+          padding: 8px 8px 6px;
+        }
+
+        .pvpBtns {
+          gap: 6px;
+        }
+
+        .pvpBtn {
+          font-size: 11px;
+          height: 28px;
+          padding: 0 8px;
+        }
+
+        #pvpBars {
+          gap: 8px;
+          padding: 8px;
+        }
+
+        #arena {
+          width: calc(100% - 16px);
+          margin: 0 8px 8px;
+          min-height: 240px;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensurePvpDom() {
+    ensurePvpShellStyle();
+
+    let wrap = document.getElementById("pvpWrap");
+    let layer = document.getElementById("pvpLayer");
+
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "pvpLayer";
+      document.body.appendChild(layer);
+    }
+
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.id = "pvpWrap";
+      layer.appendChild(wrap);
+    }
+
+    wrap.classList.add("tc-inline-shell", "open");
+    wrap.style.display = "flex";
+    wrap.style.pointerEvents = "auto";
+
+    wrap.innerHTML = `
+      <div id="pvpHeader">
+        <div id="pvpLeftHead">
+          <div id="pvpStatus">PvP • Hazır</div>
+          <div id="pvpOpponentRow">
+            <span id="pvpSpinner" class="hidden"></span>
+            Rakip: <b id="pvpOpponent">—</b>
+          </div>
+        </div>
+
+        <div class="pvpBtns">
+          <button class="pvpBtn" id="pvpStart" type="button">Başlat</button>
+          <button class="pvpBtn" id="pvpStop" type="button">Durdur</button>
+          <button class="pvpBtn" id="pvpReset" type="button">Sıfırla</button>
+        </div>
+      </div>
+
+      <div id="pvpBars">
+        <div>
+          <div class="pvpBar"><div class="pvpFill" id="enemyFill"></div></div>
+          <div class="pvpBarLabel"><span>Düşman</span><span id="enemyHpText">100</span></div>
+        </div>
+        <div>
+          <div class="pvpBar"><div class="pvpFill" id="meFill"></div></div>
+          <div class="pvpBarLabel"><span>Sen</span><span id="meHpText">100</span></div>
+        </div>
+      </div>
+
+      <div id="arena"></div>
+    `;
+
+    return {
+      wrap,
+      arena: document.getElementById("arena"),
+      status: document.getElementById("pvpStatus"),
+      opponent: document.getElementById("pvpOpponent"),
+      spinner: document.getElementById("pvpSpinner"),
+      startBtn: document.getElementById("pvpStart"),
+      stopBtn: document.getElementById("pvpStop"),
+      resetBtn: document.getElementById("pvpReset"),
+      enemyFill: document.getElementById("enemyFill"),
+      meFill: document.getElementById("meFill"),
+      enemyHpText: document.getElementById("enemyHpText"),
+      meHpText: document.getElementById("meHpText"),
+    };
+  }
+
   class PvpScene {
     constructor({ store, input, scenes, assets }) {
       this.store = store;
@@ -311,73 +558,14 @@
 
       pvp.selectedMode = id;
       pvp.source = this.source || "general";
-
       this.store?.set?.({ pvp });
 
-      const wrap = document.getElementById("pvpWrap");
-      const arena = document.getElementById("arena");
-      const status = document.getElementById("pvpStatus");
-      const opponent = document.getElementById("pvpOpponent");
-      const spinner = document.getElementById("pvpSpinner");
-      const startBtn = document.getElementById("pvpStart");
-      const stopBtn = document.getElementById("pvpStop");
-      const resetBtn = document.getElementById("pvpReset");
-
       try {
-        if (wrap) {
-          wrap.classList.add("open");
-          wrap.style.display = "flex";
-          wrap.style.pointerEvents = "auto";
-        }
+        const dom = ensurePvpDom();
 
-        if (arena) {
-          arena.style.display = "block";
-          arena.style.visibility = "visible";
-          arena.style.opacity = "1";
-        }
-
-        if (status) status.textContent = "PvP • Yükleniyor...";
-        if (opponent) opponent.textContent = "ShadowWolf";
-        if (spinner) spinner.classList.remove("hidden");
-
-        if (startBtn) {
-          startBtn.onclick = async () => {
-            try {
-              if (window.TonCrimePVP_CRUSH) {
-                window.TonCrimePVP = window.TonCrimePVP_CRUSH;
-                window.TonCrimePVP.setOpponent?.({
-                  username: "ShadowWolf",
-                  isBot: true,
-                });
-                window.TonCrimePVP.reset?.();
-                await new Promise((r) => setTimeout(r, 120));
-                window.TonCrimePVP.start?.();
-              }
-            } catch (err) {
-              console.error("[TonCrime] Start button error:", err);
-            }
-          };
-        }
-
-        if (stopBtn) {
-          stopBtn.onclick = () => {
-            try {
-              window.TonCrimePVP?.stop?.();
-            } catch (err) {
-              console.error("[TonCrime] Stop button error:", err);
-            }
-          };
-        }
-
-        if (resetBtn) {
-          resetBtn.onclick = () => {
-            try {
-              window.TonCrimePVP?.reset?.();
-            } catch (err) {
-              console.error("[TonCrime] Reset button error:", err);
-            }
-          };
-        }
+        if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
+        if (dom.opponent) dom.opponent.textContent = "ShadowWolf";
+        if (dom.spinner) dom.spinner.classList.remove("hidden");
 
         if (id === "grid") {
           await loadPvpGameScript([
@@ -405,28 +593,66 @@
             isBot: true,
           });
 
+          if (dom.startBtn) {
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.setOpponent?.({
+                  username: "ShadowWolf",
+                  isBot: true,
+                });
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Start button error:", err);
+              }
+            };
+          }
+
+          if (dom.stopBtn) {
+            dom.stopBtn.onclick = () => {
+              try {
+                window.TonCrimePVP.stop?.();
+              } catch (err) {
+                console.error("[TonCrime] Stop button error:", err);
+              }
+            };
+          }
+
+          if (dom.resetBtn) {
+            dom.resetBtn.onclick = () => {
+              try {
+                window.TonCrimePVP.reset?.();
+              } catch (err) {
+                console.error("[TonCrime] Reset button error:", err);
+              }
+            };
+          }
+
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.reset?.();
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (status) status.textContent = "PvP • Grid Heist başladı";
-          if (spinner) spinner.classList.add("hidden");
+          if (dom.status) dom.status.textContent = "PvP • Grid Heist başladı";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           return;
         }
 
         if (id === "arena") {
-          if (status) status.textContent = "PvP • Arena yakında";
-          if (spinner) spinner.classList.add("hidden");
+          if (dom.status) dom.status.textContent = "PvP • Arena yakında";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           return;
         }
 
-        if (status) status.textContent = "PvP • Mod bulunamadı";
-        if (spinner) spinner.classList.add("hidden");
+        if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
+        if (dom.spinner) dom.spinner.classList.add("hidden");
       } catch (err) {
         console.error("[TonCrime] startGame fatal:", err);
+        const status = document.getElementById("pvpStatus");
+        const spinner = document.getElementById("pvpSpinner");
         if (status) status.textContent = "PvP • Oyun yüklenemedi";
         if (spinner) spinner.classList.add("hidden");
       }
