@@ -2,44 +2,44 @@
   const GRID = 7;
   const START_HP = 100;
   const START_MOVES = 12;
+  const ACTIONS_PER_TURN = 2;
   const DRAG_THRESHOLD = 16;
-  const TURN_MS = 30000;
 
   const TILE = {
     PUNCH: "punch",
-    GUN: "gun",
-    KNIFE: "knife",
-    MED: "med",
-    CASH: "cash",
-    SHIELD: "shield",
-    BOMB: "bomb",
+    KICK: "kick",
+    SLAP: "slap",
+    HEAD: "head",
+    WEED: "weed",
   };
 
-  const NORMAL_TYPES = [
-    TILE.PUNCH,
-    TILE.GUN,
-    TILE.KNIFE,
-    TILE.MED,
-    TILE.CASH,
-    TILE.SHIELD,
-  ];
+  const NORMAL_TYPES = [TILE.PUNCH, TILE.KICK, TILE.SLAP, TILE.HEAD, TILE.WEED];
+
+  const SLOT_DAMAGE = {
+    punch: 12,
+    kick: 14,
+    slap: 8,
+    head: 16,
+  };
 
   const TILE_META = {
     [TILE.PUNCH]: { emoji: "👊", color: "#ffb24a", label: "Yumruk" },
-    [TILE.GUN]: { emoji: "🔫", color: "#ff7b59", label: "Silah" },
-    [TILE.KNIFE]: { emoji: "🔪", color: "#d77dff", label: "Bıçak" },
-    [TILE.MED]: { emoji: "💊", color: "#58d68d", label: "İlaç" },
-    [TILE.CASH]: { emoji: "💰", color: "#ffd166", label: "Coin" },
-    [TILE.SHIELD]: { emoji: "🛡️", color: "#69b7ff", label: "Kalkan" },
-    [TILE.BOMB]: { emoji: "💣", color: "#ffffff", label: "Bomba" },
+    [TILE.KICK]: { emoji: "🦵", color: "#63e36c", label: "Tekme" },
+    [TILE.SLAP]: { emoji: "🖐️", color: "#7cb6ff", label: "Tokat" },
+    [TILE.HEAD]: { emoji: "🧠", color: "#ff6464", label: "Kafa" },
+    [TILE.WEED]: { emoji: "🌿", color: "#30d37b", label: "Ot" },
   };
 
-  const DAMAGE = {
-    [TILE.PUNCH]: 8,
-    [TILE.GUN]: 12,
-    [TILE.KNIFE]: 10,
-    [TILE.BOMB]: 18,
-  };
+  const BOT_NAMES = [
+    "ShadowWolf",
+    "RicoVane",
+    "MertKhan",
+    "SlyRaven",
+    "ViperAce",
+    "NoirJack",
+    "GhostMafia",
+    "VoltKral",
+  ];
 
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
@@ -79,20 +79,6 @@
     ctx.lineWidth = lw;
     ctx.strokeStyle = stroke;
     ctx.stroke();
-  }
-
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  function easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3);
-  }
-
-  function easeOutBack(t) {
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   }
 
   function makeId() {
@@ -143,15 +129,13 @@
       let c = 0;
       while (c < GRID) {
         const cell = board[r][c];
-        if (!cell || cell.type === TILE.BOMB) {
+        if (!cell) {
           c += 1;
           continue;
         }
-
         const t = cell.type;
         let end = c + 1;
         while (end < GRID && board[r][end] && board[r][end].type === t) end += 1;
-
         const len = end - c;
         if (len >= 3) {
           const cells = [];
@@ -166,15 +150,13 @@
       let r = 0;
       while (r < GRID) {
         const cell = board[r][c];
-        if (!cell || cell.type === TILE.BOMB) {
+        if (!cell) {
           r += 1;
           continue;
         }
-
         const t = cell.type;
         let end = r + 1;
         while (end < GRID && board[end][c] && board[end][c].type === t) end += 1;
-
         const len = end - r;
         if (len >= 3) {
           const cells = [];
@@ -195,18 +177,12 @@
           { r: 0, c: 1 },
           { r: 1, c: 0 },
         ];
-
         for (const d of dirs) {
           const rr = r + d.r;
           const cc = c + d.c;
           if (!inBounds(rr, cc)) continue;
-
           const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
           if (findMatches(swapped).length > 0) return true;
-
-          const a = swapped[r][c];
-          const b = swapped[rr][cc];
-          if ((a && a.type === TILE.BOMB) || (b && b.type === TILE.BOMB)) return true;
         }
       }
     }
@@ -216,34 +192,28 @@
   function buildFreshBoard(lastSignature) {
     for (let tries = 0; tries < 80; tries++) {
       const seedBias = Date.now() + tries * 31 + randInt(1, 99999);
-      const board = Array.from({ length: GRID }, () =>
-        Array.from({ length: GRID }, () => null)
-      );
+      const board = Array.from({ length: GRID }, () => Array.from({ length: GRID }, () => null));
 
       for (let r = 0; r < GRID; r++) {
         for (let c = 0; c < GRID; c++) {
           let type = getWeightedType(seedBias + r * 13 + c * 17);
           let guard = 0;
-
           while (
             guard < 20 &&
-            (
-              (c >= 2 &&
-                board[r][c - 1] &&
-                board[r][c - 2] &&
-                board[r][c - 1].type === type &&
-                board[r][c - 2].type === type) ||
+            ((c >= 2 &&
+              board[r][c - 1] &&
+              board[r][c - 2] &&
+              board[r][c - 1].type === type &&
+              board[r][c - 2].type === type) ||
               (r >= 2 &&
                 board[r - 1][c] &&
                 board[r - 2][c] &&
                 board[r - 1][c].type === type &&
-                board[r - 2][c].type === type)
-            )
+                board[r - 2][c].type === type))
           ) {
             type = getWeightedType(seedBias + guard * 7 + c * 19);
             guard += 1;
           }
-
           board[r][c] = createTile(type);
         }
       }
@@ -259,142 +229,68 @@
     );
   }
 
-  function floodBombCells(r, c) {
-    const out = [];
-    for (let rr = r - 1; rr <= r + 1; rr++) {
-      for (let cc = c - 1; cc <= c + 1; cc++) {
-        if (inBounds(rr, cc)) out.push({ r: rr, c: cc });
-      }
-    }
-    return out;
-  }
-
-  function chooseBombSpawnCell(match, preferred) {
-    if (preferred) {
-      for (const cell of match.cells) {
-        if (cell.r === preferred.r && cell.c === preferred.c) return cell;
-      }
-    }
-    return match.cells[Math.floor(match.cells.length / 2)];
-  }
-
   function collapseBoard(board) {
     const next = Array.from({ length: GRID }, () => Array.from({ length: GRID }, () => null));
-
     for (let c = 0; c < GRID; c++) {
       const stack = [];
       for (let r = GRID - 1; r >= 0; r--) {
         if (board[r][c]) stack.push(board[r][c]);
       }
-
       let wr = GRID - 1;
       for (const item of stack) {
         next[wr][c] = item;
         wr -= 1;
       }
-
       while (wr >= 0) {
         next[wr][c] = createTile(choice(NORMAL_TYPES));
         wr -= 1;
       }
     }
-
     return next;
   }
 
-  function evaluateBoard(board, preferredSpawnCell, swapA, swapB) {
+  function evaluateBoard(board) {
     const matches = findMatches(board);
     const remove = new Set();
-    const bombsToSpawn = [];
-    const bombTriggers = [];
     let damage = 0;
     let heal = 0;
-    let coins = 0;
-    let shield = 0;
     let extraMoves = 0;
 
-    const bombSwap =
-      (swapA && board[swapA.r]?.[swapA.c]?.type === TILE.BOMB) ||
-      (swapB && board[swapB.r]?.[swapB.c]?.type === TILE.BOMB);
-
-    function markRemove(r, c) {
-      remove.add(r + ":" + c);
-    }
-
     for (const m of matches) {
+      const bonus = Math.max(0, m.len - 3);
       if (m.len >= 4) extraMoves += 1;
 
-      if (m.type === TILE.PUNCH) damage += DAMAGE[TILE.PUNCH] + Math.max(0, m.len - 3) * 2;
-      if (m.type === TILE.GUN) damage += DAMAGE[TILE.GUN] + Math.max(0, m.len - 3) * 3;
-      if (m.type === TILE.KNIFE) damage += DAMAGE[TILE.KNIFE] + Math.max(0, m.len - 3) * 2;
-      if (m.type === TILE.MED) heal += 8 + Math.max(0, m.len - 3) * 3;
-      if (m.type === TILE.CASH) coins += 5 + Math.max(0, m.len - 3) * 3;
-      if (m.type === TILE.SHIELD) shield += 6 + Math.max(0, m.len - 3) * 2;
-
-      const bombCell = m.len >= 5 ? chooseBombSpawnCell(m, preferredSpawnCell) : null;
-      if (bombCell) extraMoves += 1;
+      if (m.type === TILE.PUNCH) damage += SLOT_DAMAGE.punch + bonus * 2;
+      if (m.type === TILE.KICK) damage += SLOT_DAMAGE.kick + bonus * 3;
+      if (m.type === TILE.SLAP) damage += SLOT_DAMAGE.slap + bonus * 2;
+      if (m.type === TILE.HEAD) damage += SLOT_DAMAGE.head + bonus * 3;
+      if (m.type === TILE.WEED) heal += 10 + bonus * 3;
 
       for (const cell of m.cells) {
-        if (bombCell && cell.r === bombCell.r && cell.c === bombCell.c) continue;
-        markRemove(cell.r, cell.c);
+        remove.add(cell.r + ":" + cell.c);
       }
-
-      if (bombCell) bombsToSpawn.push(bombCell);
-    }
-
-    const bombsOnBoard = [];
-    for (let r = 0; r < GRID; r++) {
-      for (let c = 0; c < GRID; c++) {
-        if (board[r][c] && board[r][c].type === TILE.BOMB) {
-          bombsOnBoard.push({ r, c });
-        }
-      }
-    }
-
-    if (bombSwap) {
-      for (const b of bombsOnBoard) bombTriggers.push(b);
-    } else {
-      for (const b of bombsOnBoard) {
-        if (remove.has(b.r + ":" + b.c)) bombTriggers.push(b);
-      }
-    }
-
-    for (const b of bombTriggers) {
-      const blast = floodBombCells(b.r, b.c);
-      for (const cell of blast) markRemove(cell.r, cell.c);
-      damage += DAMAGE[TILE.BOMB];
     }
 
     return {
-      hasAction: matches.length > 0 || bombTriggers.length > 0,
+      hasAction: matches.length > 0,
+      matches,
       remove,
-      bombsToSpawn,
-      bombTriggers,
       damage,
       heal,
-      coins,
-      shield,
       extraMoves,
-      matches,
     };
   }
 
   function applyResolution(board, resolution) {
     const next = cloneBoard(board);
-
     for (const key of resolution.remove) {
       const [r, c] = key.split(":").map(Number);
       next[r][c] = null;
     }
-
-    for (const b of resolution.bombsToSpawn) {
-      next[b.r][b.c] = createTile(TILE.BOMB);
-    }
-
     return collapseBoard(next);
   }
 
-  function calcBotMove(board) {
+  function calcBotMove(board, hpBias) {
     let best = null;
 
     for (let r = 0; r < GRID; r++) {
@@ -403,41 +299,33 @@
           { r: 0, c: 1 },
           { r: 1, c: 0 },
         ];
-
         for (const d of dirs) {
           const rr = r + d.r;
           const cc = c + d.c;
           if (!inBounds(rr, cc)) continue;
 
           const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
-          const res = evaluateBoard(swapped, { r: rr, c: cc }, { r, c }, { r: rr, c: cc });
+          const res = evaluateBoard(swapped);
           if (!res.hasAction) continue;
 
           let score = 0;
-          score += res.damage * 3;
-          score += res.heal * 1.1;
-          score += res.coins * 0.7;
-          score += res.shield * 0.8;
-          score += res.extraMoves * 18;
+          score += res.damage * 3.1;
+          score += res.heal * (hpBias < 40 ? 2.5 : 1.1);
+          score += res.extraMoves * 24;
 
           for (const m of res.matches) {
-            score += m.len * 4;
-            if (m.type === TILE.GUN) score += 9;
+            score += m.len * 5;
+            if (m.type === TILE.HEAD) score += 10;
+            if (m.type === TILE.KICK) score += 8;
             if (m.type === TILE.PUNCH) score += 6;
-            if (m.type === TILE.KNIFE) score += 7;
-            if (m.type === TILE.MED) score += 4;
-            if (m.type === TILE.SHIELD) score += 4;
-            if (m.type === TILE.CASH) score += 2;
+            if (m.type === TILE.SLAP) score += 4;
+            if (m.type === TILE.WEED) score += hpBias < 55 ? 8 : 2;
           }
 
-          score += Math.random() * 3;
+          score += Math.random() * 6;
 
           if (!best || score > best.score) {
-            best = {
-              a: { r, c },
-              b: { r: rr, c: cc },
-              score,
-            };
+            best = { a: { r, c }, b: { r: rr, c: cc }, score };
           }
         }
       }
@@ -452,25 +340,13 @@
         <div class="tc-crush-head">
           <div class="tc-crush-chip" id="tcCrushMeMoves">Hamle: 12</div>
           <div class="tc-crush-title" id="tcCrushTurn">
-            SEN
-            <small id="tcCrushSub">7x7 Grid Heist</small>
+            <span class="tc-crush-neon">IQ ARENA</span>
+            <small>Rakip aranıyor...</small>
           </div>
           <div class="tc-crush-chip" id="tcCrushEnemyMoves">Rakip: 12</div>
         </div>
-
-        <div class="tc-crush-timer-row">
-          <div class="tc-crush-timer-track"><div class="tc-crush-timer-fill" id="tcCrushTimerFill"></div></div>
-          <div class="tc-crush-timer-text" id="tcCrushTimerText">30s</div>
-        </div>
-
-        <div class="tc-crush-combo-row">
-          <div class="tc-crush-combo-track"><div class="tc-crush-combo-fill" id="tcCrushComboFill"></div></div>
-          <div class="tc-crush-combo-text" id="tcCrushComboText">Combo x0</div>
-        </div>
-
         <canvas class="tc-crush-canvas"></canvas>
         <div class="tc-crush-toast" id="tcCrushToast"></div>
-        <div class="tc-crush-overlay" id="tcCrushOverlay"></div>
       </div>
     `;
   }
@@ -482,185 +358,139 @@
     const style = document.createElement("style");
     style.id = id;
     style.textContent = `
+      #pvpStart, #pvpStop, #pvpReset {
+        display: none !important;
+      }
       #arena {
         position: relative;
         overflow: hidden;
         touch-action: none;
+        background: transparent !important;
       }
-
       #arena .tc-crush-root {
         position: absolute;
         inset: 0;
         z-index: 5;
         display: flex;
         flex-direction: column;
-        padding: 10px;
+        padding: 8px 4px 2px;
         box-sizing: border-box;
+        background: transparent;
       }
-
       #arena .tc-crush-head {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         gap: 8px;
         align-items: center;
-        margin-bottom: 6px;
+        margin-bottom: 10px;
         flex: 0 0 auto;
       }
-
       #arena .tc-crush-chip {
-        min-height: 34px;
+        min-height: 32px;
         border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.14);
-        background: rgba(0,0,0,0.34);
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.18);
         color: #fff;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 0 10px;
         font: 800 12px system-ui, Arial;
-        backdrop-filter: blur(6px);
+        backdrop-filter: blur(4px);
         text-align: center;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
       }
-
       #arena .tc-crush-title {
         text-align: center;
-        color: rgba(255,255,255,0.96);
+        color: rgba(255,255,255,0.98);
         font: 900 12px system-ui, Arial;
       }
-
       #arena .tc-crush-title small {
         display: block;
-        color: rgba(255,255,255,0.70);
-        font: 600 10px system-ui, Arial;
-        margin-top: 2px;
+        color: rgba(255,255,255,0.76);
+        font: 700 10px system-ui, Arial;
+        margin-top: 4px;
+        letter-spacing: 0.2px;
       }
-
-      #arena .tc-crush-timer-row,
-      #arena .tc-crush-combo-row {
-        position: relative;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
-        align-items: center;
-        margin-bottom: 8px;
-        flex: 0 0 auto;
+      #arena .tc-crush-neon {
+        display: inline-block;
+        color: #ff4e4e;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        text-shadow:
+          0 0 4px rgba(255,70,70,0.95),
+          0 0 10px rgba(255,70,70,0.95),
+          0 0 20px rgba(255,34,34,0.9),
+          0 0 34px rgba(255,20,20,0.72);
+        animation: tcCrushNeon 1.15s ease-in-out infinite alternate;
       }
-
-      #arena .tc-crush-timer-track,
-      #arena .tc-crush-combo-track {
-        position: relative;
-        height: 10px;
-        border-radius: 999px;
-        overflow: hidden;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(255,255,255,0.07);
+      @keyframes tcCrushNeon {
+        0% {
+          opacity: 0.74;
+          filter: brightness(0.86);
+          text-shadow:
+            0 0 2px rgba(255,70,70,0.85),
+            0 0 6px rgba(255,70,70,0.82),
+            0 0 14px rgba(255,34,34,0.78);
+        }
+        100% {
+          opacity: 1;
+          filter: brightness(1.12);
+          text-shadow:
+            0 0 5px rgba(255,90,90,1),
+            0 0 12px rgba(255,74,74,1),
+            0 0 24px rgba(255,36,36,0.95),
+            0 0 40px rgba(255,0,0,0.88);
+        }
       }
-
-      #arena .tc-crush-timer-fill {
-        height: 100%;
-        width: 100%;
-        transform-origin: left center;
-        background: linear-gradient(90deg, rgba(255,188,93,0.95), rgba(255,103,86,0.95));
-        transition: transform 0.1s linear;
-      }
-
-      #arena .tc-crush-combo-fill {
-        height: 100%;
-        width: 0%;
-        transform-origin: left center;
-        background: linear-gradient(90deg, rgba(134,100,255,0.95), rgba(255,118,219,0.95));
-        transition: transform 0.18s ease;
-      }
-
-      #arena .tc-crush-timer-text,
-      #arena .tc-crush-combo-text {
-        min-width: 72px;
-        color: rgba(255,255,255,0.95);
-        font: 900 12px system-ui, Arial;
-        text-align: right;
-      }
-
       #arena .tc-crush-canvas {
         display: block;
         width: 100%;
         height: 100%;
         flex: 1 1 auto;
-        border-radius: 16px;
+        border-radius: 18px;
         touch-action: none;
+        background: transparent;
       }
-
       #arena .tc-crush-toast {
         position: absolute;
         left: 50%;
-        top: 16%;
-        transform: translateX(-50%);
+        top: 50%;
+        transform: translate(-50%, -50%);
         z-index: 8;
         padding: 10px 14px;
         min-width: 180px;
         border-radius: 14px;
-        background: rgba(0,0,0,0.62);
-        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.48);
+        border: 1px solid rgba(255,255,255,0.12);
         color: #fff;
         font: 900 13px system-ui, Arial;
         opacity: 0;
         pointer-events: none;
         transition: opacity .16s ease;
-        backdrop-filter: blur(10px);
+        backdrop-filter: blur(8px);
         text-align: center;
       }
-
       #arena .tc-crush-toast.on {
         opacity: 1;
       }
-
-      #arena .tc-crush-overlay {
-        position: absolute;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        pointer-events: none;
-        font: 1000 34px system-ui, Arial;
-        color: rgba(255,255,255,0.96);
-        text-shadow: 0 10px 30px rgba(0,0,0,0.6);
-        opacity: 0;
-        transform: scale(0.9);
-        transition: opacity .24s ease, transform .24s ease;
-      }
-
-      #arena .tc-crush-overlay.on {
-        opacity: 1;
-        transform: scale(1);
-      }
-
-      #arena .tc-crush-overlay.win {
-        background: radial-gradient(circle, rgba(75,255,157,0.14), rgba(0,0,0,0));
-      }
-
-      #arena .tc-crush-overlay.lose {
-        background: radial-gradient(circle, rgba(255,95,95,0.14), rgba(0,0,0,0));
-      }
-
       @media (max-width: 520px) {
         #arena .tc-crush-root {
-          padding: 8px;
+          padding: 6px 2px 0;
         }
-
         #arena .tc-crush-head {
           gap: 6px;
-          margin-bottom: 6px;
+          margin-bottom: 8px;
         }
-
         #arena .tc-crush-chip {
           min-height: 30px;
           padding: 0 8px;
           font-size: 11px;
           border-radius: 10px;
         }
-
         #arena .tc-crush-title {
           font-size: 11px;
         }
-
         #arena .tc-crush-title small {
           font-size: 9px;
         }
@@ -680,22 +510,13 @@
     _lastSignature: "",
     _opponent: { username: "Rakip", isBot: true },
     _turnTimer: null,
-    _countdownInterval: null,
+    _queueTimer: null,
     _pointerDown: null,
     _dragStart: null,
     _dragFromTile: null,
     _dragConsumed: false,
-    _dragVector: { dx: 0, dy: 0 },
     _releaseGuard: false,
     _unbind: null,
-    _swapAnim: null,
-    _floatTexts: [],
-    _particles: [],
-    _screenFlash: null,
-    _overlayTimer: null,
-    _shake: null,
-    _comboLevel: 0,
-    _comboDecayTimer: null,
 
     init(opts = {}) {
       injectStyle();
@@ -712,10 +533,16 @@
         return;
       }
 
+      ["pvpStart", "pvpStop", "pvpReset"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = "none";
+      });
+
       this._destroyCanvasEvents();
+      clearTimeout(this._queueTimer);
+      clearTimeout(this._turnTimer);
 
       arena.innerHTML = makeArenaMarkup();
-
       const canvas = arena.querySelector(".tc-crush-canvas");
       const ctx = canvas.getContext("2d");
 
@@ -731,13 +558,7 @@
         meMoves: arena.querySelector("#tcCrushMeMoves"),
         enemyMoves: arena.querySelector("#tcCrushEnemyMoves"),
         turn: arena.querySelector("#tcCrushTurn"),
-        sub: arena.querySelector("#tcCrushSub"),
         toast: arena.querySelector("#tcCrushToast"),
-        overlay: arena.querySelector("#tcCrushOverlay"),
-        timerFill: arena.querySelector("#tcCrushTimerFill"),
-        timerText: arena.querySelector("#tcCrushTimerText"),
-        comboFill: arena.querySelector("#tcCrushComboFill"),
-        comboText: arena.querySelector("#tcCrushComboText"),
       };
 
       this._bindCanvas();
@@ -745,15 +566,13 @@
       this.reset();
 
       this._inited = true;
-      this._setStatus("Grid Heist hazır");
+      this._setStatus("IQ ARENA hazır");
     },
 
     setOpponent(opp) {
-      this._opponent =
-        opp && typeof opp.username === "string"
-          ? { ...opp }
-          : { username: "Rakip", isBot: true };
-
+      if (opp && typeof opp.username === "string") {
+        this._opponent = { ...opp };
+      }
       if (this._state) this._updateHud();
     },
 
@@ -761,19 +580,22 @@
       if (!this._inited) return;
       await this._waitUntilVisible();
 
-      this._safeResizeSequence();
+      this.reset();
       this._running = true;
-      this._locked = false;
-      this._selected = null;
-      this._setStatus("Grid Heist başladı");
-      this._toast("Sıra sende");
-      this._setTurn("me", "SEN • Düşünme süresi başladı");
+      this._locked = true;
+      this._state.matchmaking = true;
+      this._state.turn = "me";
+      this._state.info = "Rakip aranıyor...";
+      this._setStatus("IQ ARENA • rakip aranıyor");
+      this._toast("Rakip aranıyor...");
+      this._updateHud();
       this._render();
 
-      requestAnimationFrame(() => {
-        this._safeResizeSequence();
-        this._render();
-      });
+      clearTimeout(this._queueTimer);
+      this._queueTimer = setTimeout(() => {
+        if (!this._running) return;
+        this._spawnBotAfterQueue();
+      }, 5000);
     },
 
     stop() {
@@ -783,25 +605,23 @@
       this._pointerDown = null;
       this._dragStart = null;
       this._dragFromTile = null;
-      this._dragVector = { dx: 0, dy: 0 };
       clearTimeout(this._turnTimer);
+      clearTimeout(this._queueTimer);
       this._turnTimer = null;
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-      clearTimeout(this._comboDecayTimer);
-      this._comboDecayTimer = null;
-      this._setStatus("Durduruldu");
+      this._queueTimer = null;
+      if (this._state) {
+        this._state.matchmaking = false;
+        this._state.info = "Maç durduruldu";
+      }
+      this._setStatus("IQ ARENA durdu");
       this._render();
     },
 
     reset() {
       clearTimeout(this._turnTimer);
+      clearTimeout(this._queueTimer);
       this._turnTimer = null;
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-      clearTimeout(this._comboDecayTimer);
-      this._comboDecayTimer = null;
-
+      this._queueTimer = null;
       this._running = false;
       this._locked = false;
       this._selected = null;
@@ -809,14 +629,6 @@
       this._dragStart = null;
       this._dragFromTile = null;
       this._dragConsumed = false;
-      this._dragVector = { dx: 0, dy: 0 };
-      this._swapAnim = null;
-      this._floatTexts = [];
-      this._particles = [];
-      this._screenFlash = null;
-      this._shake = null;
-      this._comboLevel = 0;
-      this._hideOverlay();
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -828,12 +640,11 @@
         enemyHp: START_HP,
         meMoves: START_MOVES,
         enemyMoves: START_MOVES,
-        meArmor: 0,
-        enemyArmor: 0,
-        meCoins: 0,
-        enemyCoins: 0,
-        turnDeadline: Date.now() + TURN_MS,
-        info: "Yeni maç",
+        meActionLeft: ACTIONS_PER_TURN,
+        enemyActionLeft: ACTIONS_PER_TURN,
+        info: "Maç hazır",
+        matchmaking: false,
+        finished: false,
       };
 
       this._safeResizeSequence();
@@ -841,85 +652,80 @@
       this._render();
     },
 
+    _spawnBotAfterQueue() {
+      const name = choice(BOT_NAMES);
+      this._opponent = { username: name, isBot: true };
+      this._state.matchmaking = false;
+      this._state.info = `${name} bulundu • Bot`;
+      this._setStatus(`IQ ARENA • ${name} bulundu`);
+      this._toast(`${name} maça girdi`);
+      this._locked = false;
+      this._updateHud();
+      this._render();
+    },
+
     _bindCanvas() {
       const canvas = this._els.canvas;
-
       const getPos = (ev) => {
         const rect = canvas.getBoundingClientRect();
         const touch = ev.touches?.[0] || ev.changedTouches?.[0];
         const clientX = touch ? touch.clientX : ev.clientX;
         const clientY = touch ? touch.clientY : ev.clientY;
-        return {
-          x: clientX - rect.left,
-          y: clientY - rect.top,
-        };
+        return { x: clientX - rect.left, y: clientY - rect.top };
       };
 
       const directionTarget = (from, dx, dy) => {
         if (!from) return null;
         if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return null;
-
         if (Math.abs(dx) >= Math.abs(dy)) {
           const nc = from.c + (dx > 0 ? 1 : -1);
           if (!inBounds(from.r, nc)) return null;
           return { r: from.r, c: nc };
         }
-
         const nr = from.r + (dy > 0 ? 1 : -1);
         if (!inBounds(nr, from.c)) return null;
         return { r: nr, c: from.c };
       };
 
       const onDown = (ev) => {
-        if (!this._running || this._locked || this._state?.turn !== "me") return;
+        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking) return;
         const p = getPos(ev);
         const hit = this._hitTile(p.x, p.y);
         if (!hit) return;
-
         this._pointerDown = hit;
         this._selected = hit;
         this._dragStart = p;
         this._dragFromTile = hit;
         this._dragConsumed = false;
-        this._dragVector = { dx: 0, dy: 0 };
         this._releaseGuard = false;
         this._render();
         ev.preventDefault?.();
       };
 
       const onMove = (ev) => {
-        if (!this._running || this._locked || this._state?.turn !== "me") return;
+        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking) return;
         if (!this._dragStart || !this._dragFromTile || this._dragConsumed) return;
-
         const p = getPos(ev);
         const dx = p.x - this._dragStart.x;
         const dy = p.y - this._dragStart.y;
-
-        this._dragVector = { dx, dy };
-        this._render();
-
         const target = directionTarget(this._dragFromTile, dx, dy);
         if (!target) return;
-
         this._dragConsumed = true;
         this._selected = null;
         this._pointerDown = null;
         this._dragStart = null;
-        this._dragVector = { dx: 0, dy: 0 };
-
         this._playerMove(this._dragFromTile, target);
         ev.preventDefault?.();
       };
 
       const onUp = (ev) => {
-        if (!this._running || this._locked || this._state?.turn !== "me") return;
+        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking) return;
         if (this._releaseGuard) return;
         this._releaseGuard = true;
 
         const from = this._selected || this._pointerDown;
         const startedDrag = !!this._dragFromTile;
         const dragConsumed = !!this._dragConsumed;
-
         const p = getPos(ev);
         const hit = this._hitTile(p.x, p.y);
 
@@ -927,40 +733,32 @@
         this._dragStart = null;
         this._dragFromTile = null;
         this._dragConsumed = false;
-        this._dragVector = { dx: 0, dy: 0 };
 
-        if (!startedDrag) return;
-        if (dragConsumed) return;
-
+        if (!startedDrag || dragConsumed) return;
         if (!from && !hit) {
           this._selected = null;
           this._render();
           return;
         }
-
         if (!hit) {
           this._selected = from || null;
           this._render();
           return;
         }
-
         if (this._selected && this._selected.r === hit.r && this._selected.c === hit.c) {
           this._render();
           return;
         }
-
         if (!from) {
           this._selected = hit;
           this._render();
           return;
         }
-
         if (!isAdjacent(from, hit)) {
           this._selected = hit;
           this._render();
           return;
         }
-
         this._selected = null;
         this._playerMove(from, hit);
         ev.preventDefault?.();
@@ -972,7 +770,6 @@
         this._dragFromTile = null;
         this._dragConsumed = false;
         this._releaseGuard = false;
-        this._dragVector = { dx: 0, dy: 0 };
       };
 
       const onResize = () => {
@@ -984,12 +781,10 @@
       canvas.addEventListener("mousemove", onMove);
       canvas.addEventListener("mouseup", onUp);
       canvas.addEventListener("mouseleave", onCancel);
-
       canvas.addEventListener("touchstart", onDown, { passive: false });
       canvas.addEventListener("touchmove", onMove, { passive: false });
       canvas.addEventListener("touchend", onUp, { passive: false });
       canvas.addEventListener("touchcancel", onCancel, { passive: false });
-
       window.addEventListener("resize", onResize);
 
       this._unbind = () => {
@@ -997,12 +792,10 @@
         canvas.removeEventListener("mousemove", onMove);
         canvas.removeEventListener("mouseup", onUp);
         canvas.removeEventListener("mouseleave", onCancel);
-
         canvas.removeEventListener("touchstart", onDown);
         canvas.removeEventListener("touchmove", onMove);
         canvas.removeEventListener("touchend", onUp);
         canvas.removeEventListener("touchcancel", onCancel);
-
         window.removeEventListener("resize", onResize);
       };
     },
@@ -1016,20 +809,16 @@
 
     _resizeCanvas() {
       if (!this._els?.canvas || !this._els?.ctx) return false;
-
       const canvas = this._els.canvas;
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const width = Math.max(10, Math.floor(rect.width * dpr));
       const height = Math.max(10, Math.floor(rect.height * dpr));
-
       if (!rect.width || !rect.height) return false;
-
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
       }
-
       this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       return true;
     },
@@ -1052,7 +841,6 @@
 
     async _waitUntilVisible() {
       if (!this._els?.arena) return;
-
       for (let i = 0; i < 20; i++) {
         const rect = this._els.arena.getBoundingClientRect();
         if (rect.width > 40 && rect.height > 40) {
@@ -1061,7 +849,6 @@
         }
         await this._sleep(30);
       }
-
       this._resizeCanvas();
     },
 
@@ -1073,7 +860,8 @@
     },
 
     _setStatus(text) {
-      if (this._els?.status) this._els.status.textContent = "PvP • " + text;
+      if (!this._els?.status) return;
+      this._els.status.innerHTML = `<span style="color:#fff;opacity:.96">PvP • </span><span class="tc-crush-neon">IQ ARENA</span><span style="color:#fff;opacity:.88"> ${text ? "• " + text : ""}</span>`;
     },
 
     _toast(text) {
@@ -1085,261 +873,30 @@
       el._offTimer = setTimeout(() => el.classList.remove("on"), 1100);
     },
 
-    _showOverlay(text, mode) {
-      const el = this._els?.overlay;
-      if (!el) return;
-      clearTimeout(this._overlayTimer);
-      el.textContent = text;
-      el.className = `tc-crush-overlay on ${mode || ""}`.trim();
-      this._overlayTimer = setTimeout(() => {
-        this._hideOverlay();
-      }, 1800);
-    },
-
-    _hideOverlay() {
-      const el = this._els?.overlay;
-      if (!el) return;
-      el.className = "tc-crush-overlay";
-      el.textContent = "";
-    },
-
-    _setTurn(turn, infoText) {
-      if (!this._state) return;
-      this._state.turn = turn;
-      this._state.turnDeadline = Date.now() + TURN_MS;
-      if (infoText) this._state.info = infoText;
-      this._startCountdownLoop();
-      this._updateHud();
-      this._render();
-    },
-
-    _startCountdownLoop() {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = setInterval(() => {
-        if (!this._running || !this._state) return;
-
-        const msLeft = Math.max(0, this._state.turnDeadline - Date.now());
-        this._updateHud();
-
-        if (msLeft <= 0) {
-          clearInterval(this._countdownInterval);
-          this._countdownInterval = null;
-          this._handleTurnTimeout();
-        }
-      }, 100);
-    },
-
-    _handleTurnTimeout() {
-      if (!this._running || !this._state) return;
-
-      if (this._state.turn === "me") {
-        this._toast("Süre doldu • sıra rakibe geçti");
-        this._spawnFloatingText("SÜRE BİTTİ", 0.5, 0.18, "#ff8b8b", 22);
-        this._spawnShake(7, 260);
-        this._locked = false;
-        this._selected = null;
-        this._setTurn("enemy", `${this._opponent.username} • Süre avantajı`);
-        this._turnTimer = setTimeout(() => this._enemyPlay(), 450);
-      } else {
-        this._toast("Rakibin süresi doldu");
-        this._spawnFloatingText("EXTRA ŞANS", 0.5, 0.18, "#9affbc", 22);
-        this._spawnShake(4, 180);
-        this._locked = false;
-        this._setTurn("me", "SEN • Rakibin süresi bitti");
-      }
-    },
-
-    _setCombo(level) {
-      this._comboLevel = clamp(level, 0, 8);
-      if (this._els?.comboFill) {
-        this._els.comboFill.style.transform = `scaleX(${this._comboLevel / 8})`;
-      }
-      if (this._els?.comboText) {
-        this._els.comboText.textContent = `Combo x${this._comboLevel}`;
-      }
-
-      clearTimeout(this._comboDecayTimer);
-      if (this._comboLevel > 0) {
-        this._comboDecayTimer = setTimeout(() => {
-          this._comboLevel = 0;
-          if (this._els?.comboFill) this._els.comboFill.style.transform = "scaleX(0)";
-          if (this._els?.comboText) this._els.comboText.textContent = "Combo x0";
-        }, 1800);
-      }
-    },
-
     _updateHud() {
       if (!this._els || !this._state) return;
-
       const s = this._state;
       this._els.meFill.style.transform = `scaleX(${clamp(s.meHp, 0, 100) / 100})`;
       this._els.enemyFill.style.transform = `scaleX(${clamp(s.enemyHp, 0, 100) / 100})`;
       this._els.meHpText.textContent = Math.round(s.meHp);
       this._els.enemyHpText.textContent = Math.round(s.enemyHp);
-
       if (this._els.meMoves) this._els.meMoves.textContent = `Hamle: ${s.meMoves}`;
       if (this._els.enemyMoves) this._els.enemyMoves.textContent = `${this._opponent.username}: ${s.enemyMoves}`;
-
-      const who = s.turn === "me" ? "SEN" : this._opponent.username.toUpperCase();
-      if (this._els.turn) this._els.turn.childNodes[0].nodeValue = who;
-      if (this._els.sub) this._els.sub.textContent = s.info || "7x7 Grid Heist";
-
-      const msLeft = Math.max(0, Number(s.turnDeadline || 0) - Date.now());
-      const ratio = clamp(msLeft / TURN_MS, 0, 1);
-      if (this._els.timerFill) this._els.timerFill.style.transform = `scaleX(${ratio})`;
-      if (this._els.timerText) this._els.timerText.textContent = `${Math.ceil(msLeft / 1000)}s`;
-
-      if (this._els.comboFill) this._els.comboFill.style.transform = `scaleX(${this._comboLevel / 8})`;
-      if (this._els.comboText) this._els.comboText.textContent = `Combo x${this._comboLevel}`;
-    },
-
-    _spawnFloatingText(text, rx, ry, color, size = 18) {
-      this._floatTexts.push({
-        text,
-        rx,
-        ry,
-        color,
-        size,
-        life: 1,
-        vy: -0.45,
-      });
-    },
-
-    _spawnBurst(rx, ry, color, count = 16, spread = 1) {
-      for (let i = 0; i < count; i++) {
-        const ang = (Math.PI * 2 * i) / count + Math.random() * 0.5;
-        const spd = (1.1 + Math.random() * 2.2) * spread;
-        this._particles.push({
-          rx,
-          ry,
-          vx: Math.cos(ang) * spd,
-          vy: Math.sin(ang) * spd,
-          life: 1,
-          color,
-          radius: 2 + Math.random() * 4,
-        });
+      if (this._els.turn) {
+        const who = s.matchmaking ? "IQ ARENA" : s.turn === "me" ? "SEN" : this._opponent.username.toUpperCase();
+        const sub = s.matchmaking
+          ? "5sn içinde rakip bulunmazsa bot gelir"
+          : `${s.info || "Grid Heist"} • Raund hamlesi ${s.turn === "me" ? s.meActionLeft : s.enemyActionLeft}/2`;
+        this._els.turn.innerHTML = `<span class="tc-crush-neon">${who === "IQ ARENA" ? "IQ ARENA" : who}</span><small>${sub}</small>`;
       }
-    },
-
-    _spawnShake(power, duration) {
-      this._shake = {
-        power,
-        duration,
-        started: performance.now(),
-      };
-      requestAnimationFrame(() => this._animateFxFrame());
-    },
-
-    _spawnBombFx(cell) {
-      const rx = (cell.c + 0.5) / GRID;
-      const ry = (cell.r + 0.5) / GRID;
-      this._spawnBurst(rx, ry, "rgba(255,160,100,0.95)", 24, 1.25);
-      this._spawnFloatingText("💣 BOOM", rx, ry, "#ffd3a1", 20);
-      this._screenFlash = { color: "rgba(255,160,80,0.16)", life: 1 };
-      this._spawnShake(10, 240);
-    },
-
-    _spawnExtraMoveFx(extra) {
-      this._spawnFloatingText(`+${extra} HAMLE`, 0.5, 0.22, "#ffcf78", 24);
-      this._spawnBurst(0.5, 0.24, "rgba(255,210,120,0.92)", 18, 0.8);
-    },
-
-    _spawnWinFx() {
-      this._showOverlay("KAZANDIN", "win");
-      this._spawnBurst(0.5, 0.45, "rgba(94,255,162,0.95)", 34, 1.6);
-      this._spawnFloatingText("VICTORY", 0.5, 0.40, "#9affbc", 28);
-      this._screenFlash = { color: "rgba(94,255,162,0.16)", life: 1 };
-      this._spawnShake(8, 360);
-    },
-
-    _spawnLoseFx() {
-      this._showOverlay("KAYBETTİN", "lose");
-      this._spawnBurst(0.5, 0.45, "rgba(255,104,104,0.95)", 28, 1.35);
-      this._spawnFloatingText("DEFEAT", 0.5, 0.40, "#ff9e9e", 28);
-      this._screenFlash = { color: "rgba(255,104,104,0.14)", life: 1 };
-      this._spawnShake(6, 300);
-    },
-
-    async _animateSwap(a, b) {
-      this._swapAnim = {
-        a: { ...a },
-        b: { ...b },
-        tileA: this._state.board[a.r][a.c],
-        tileB: this._state.board[b.r][b.c],
-        startedAt: performance.now(),
-        duration: 145,
-      };
-
-      return new Promise((resolve) => {
-        const tick = () => {
-          if (!this._swapAnim) return resolve();
-          const t = clamp((performance.now() - this._swapAnim.startedAt) / this._swapAnim.duration, 0, 1);
-          this._swapAnim.progress = easeOutCubic(t);
-          this._render();
-          if (t >= 1) {
-            this._swapAnim = null;
-            this._render();
-            return resolve();
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      });
-    },
-
-    _animateFxFrame() {
-      let needs = false;
-
-      if (this._floatTexts.length) {
-        needs = true;
-        for (let i = this._floatTexts.length - 1; i >= 0; i--) {
-          const fx = this._floatTexts[i];
-          fx.life -= 0.03;
-          fx.ry += fx.vy * 0.01;
-          if (fx.life <= 0) this._floatTexts.splice(i, 1);
-        }
-      }
-
-      if (this._particles.length) {
-        needs = true;
-        for (let i = this._particles.length - 1; i >= 0; i--) {
-          const p = this._particles[i];
-          p.life -= 0.03;
-          p.rx += p.vx * 0.0028;
-          p.ry += p.vy * 0.0028;
-          p.vx *= 0.97;
-          p.vy *= 0.97;
-          p.radius *= 0.99;
-          if (p.life <= 0 || p.radius < 0.5) this._particles.splice(i, 1);
-        }
-      }
-
-      if (this._screenFlash) {
-        needs = true;
-        this._screenFlash.life -= 0.05;
-        if (this._screenFlash.life <= 0) this._screenFlash = null;
-      }
-
-      if (this._shake) {
-        needs = true;
-        const t = clamp((performance.now() - this._shake.started) / this._shake.duration, 0, 1);
-        this._shake.progress = t;
-        if (t >= 1) this._shake = null;
-      }
-
-      if (needs) requestAnimationFrame(() => this._animateFxFrame());
-      this._render();
     },
 
     async _playerMove(a, b) {
-      if (!this._running || this._locked) return;
+      if (!this._running || this._locked || this._state?.matchmaking) return;
       this._locked = true;
 
-      await this._animateSwap(a, b);
-
       const swapped = swapCells(this._state.board, a, b);
-      const evalNow = evaluateBoard(swapped, b, a, b);
-
+      const evalNow = evaluateBoard(swapped);
       if (!evalNow.hasAction) {
         this._toast("Geçersiz hamle");
         this._locked = false;
@@ -1350,97 +907,81 @@
 
       this._state.board = swapped;
       this._render();
-      await this._sleep(90);
-
-      await this._resolveTurn("me", a, b);
+      await this._sleep(110);
+      await this._resolveTurn("me");
 
       if (!this._running) return;
       if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimer = setTimeout(() => this._enemyPlay(), 520);
+        const delay = randInt(700, 1250);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), delay);
       } else {
         this._locked = false;
       }
     },
 
     async _enemyPlay() {
-      if (!this._running || !this._state || this._state.turn !== "enemy") return;
+      if (!this._running || !this._state || this._state.turn !== "enemy" || this._state.matchmaking) return;
       this._locked = true;
 
-      const move = calcBotMove(this._state.board);
+      const thinking = randInt(850, 1900);
+      this._state.info = "Düşünme süresi başladı";
+      this._updateHud();
+      this._render();
+      await this._sleep(thinking);
+
+      const move = calcBotMove(this._state.board, this._state.enemyHp);
       if (!move) {
-        this._setTurn("me", "SEN • Rakip hamle bulamadı");
+        this._state.turn = "me";
+        this._state.meActionLeft = ACTIONS_PER_TURN;
+        this._state.info = "Rakip hamle bulamadı";
+        this._updateHud();
+        this._render();
         this._toast("Rakip hamle bulamadı");
         this._locked = false;
         return;
       }
 
-      await this._animateSwap(move.a, move.b);
-
       this._state.board = swapCells(this._state.board, move.a, move.b);
       this._state.info = "Rakip oynuyor";
       this._updateHud();
       this._render();
-
-      await this._sleep(160);
-      await this._resolveTurn("enemy", move.a, move.b);
+      await this._sleep(randInt(160, 320));
+      await this._resolveTurn("enemy");
 
       if (!this._running) return;
       if (this._checkFinish()) return;
 
       if (this._state.turn === "enemy") {
-        this._turnTimer = setTimeout(() => this._enemyPlay(), 480);
+        this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(650, 1150));
       } else {
         this._locked = false;
       }
     },
 
-    async _resolveTurn(actor, swapA, swapB) {
+    async _resolveTurn(actor) {
       let board = this._state.board;
       let chain = 0;
-
       let totalDamage = 0;
       let totalHeal = 0;
-      let totalCoins = 0;
-      let totalShield = 0;
       let totalExtra = 0;
 
       while (true) {
-        const res = evaluateBoard(board, swapB || null, swapA, swapB);
+        const res = evaluateBoard(board);
         if (!res.hasAction) break;
 
         chain += 1;
         totalDamage += res.damage;
         totalHeal += res.heal;
-        totalCoins += res.coins;
-        totalShield += res.shield;
         totalExtra += res.extraMoves;
-        this._setCombo(chain);
-
-        if (res.extraMoves > 0) this._spawnExtraMoveFx(res.extraMoves);
-        if (res.bombTriggers?.length) {
-          for (const bomb of res.bombTriggers) this._spawnBombFx(bomb);
-        }
-
-        for (const m of res.matches) {
-          if (m.len >= 5) {
-            const c = m.cells[Math.floor(m.cells.length / 2)];
-            this._spawnFloatingText("BOMBA!", (c.c + 0.5) / GRID, (c.r + 0.5) / GRID, "#ffe2a8", 18);
-          } else if (m.len >= 4) {
-            const c = m.cells[Math.floor(m.cells.length / 2)];
-            this._spawnFloatingText("EXTRA", (c.c + 0.5) / GRID, (c.r + 0.5) / GRID, "#ffd777", 16);
-          }
-        }
-
-        this._animateFxFrame();
 
         board = applyResolution(board, res);
         this._state.board = board;
         this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • Combo x${chain}`;
         this._updateHud();
         this._render();
-        await this._sleep(170);
+        await this._sleep(165);
       }
 
       if (!hasAnyPossibleMove(board)) {
@@ -1452,157 +993,123 @@
 
       if (actor === "me") {
         this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
-
-        const enemyBlock = Math.min(this._state.enemyArmor, totalDamage);
-        const dealt = Math.max(0, totalDamage - enemyBlock);
-
-        this._state.enemyArmor = Math.max(0, this._state.enemyArmor - totalDamage);
-        this._state.enemyHp = clamp(this._state.enemyHp - dealt, 0, 100);
         this._state.meHp = clamp(this._state.meHp + totalHeal, 0, 100);
-        this._state.meArmor = clamp(this._state.meArmor + totalShield, 0, 40);
-        this._state.meCoins += totalCoins;
+        this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, 100);
+        this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1);
 
-        if (dealt > 0) this._spawnFloatingText(`-${dealt}`, 0.78, 0.12, "#ff9b86", 22);
-        if (totalHeal > 0) this._spawnFloatingText(`+${totalHeal} HP`, 0.22, 0.12, "#8df7b7", 18);
-        this._animateFxFrame();
+        this._toast(totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`);
 
-        this._toast(totalExtra > 0 ? `Vuruş ${dealt} • +${totalExtra} hamle` : `Vuruş ${dealt}`);
-        this._setTurn(
-          totalExtra > 0 && this._state.meMoves > 0 ? "me" : "enemy",
-          `${actor === "me" ? "SEN" : this._opponent.username} • ${Math.max(1, chain)} chain`
-        );
+        if (this._state.meMoves <= 0 || this._state.meActionLeft <= 0) {
+          this._state.turn = "enemy";
+          this._state.enemyActionLeft = ACTIONS_PER_TURN;
+        } else {
+          this._state.turn = "me";
+        }
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
-
-        const meBlock = Math.min(this._state.meArmor, totalDamage);
-        const dealt = Math.max(0, totalDamage - meBlock);
-
-        this._state.meArmor = Math.max(0, this._state.meArmor - totalDamage);
-        this._state.meHp = clamp(this._state.meHp - dealt, 0, 100);
         this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, 100);
-        this._state.enemyArmor = clamp(this._state.enemyArmor + totalShield, 0, 40);
-        this._state.enemyCoins += totalCoins;
+        this._state.meHp = clamp(this._state.meHp - totalDamage, 0, 100);
+        this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1);
 
-        if (dealt > 0) this._spawnFloatingText(`-${dealt}`, 0.22, 0.12, "#ff9b86", 22);
-        if (totalHeal > 0) this._spawnFloatingText(`+${totalHeal} HP`, 0.78, 0.12, "#8df7b7", 18);
-        this._animateFxFrame();
+        this._toast(totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`);
 
-        this._toast(totalExtra > 0 ? `Rakip ${dealt} vurdu • +${totalExtra} hamle` : `Rakip ${dealt} vurdu`);
-        this._setTurn(
-          totalExtra > 0 && this._state.enemyMoves > 0 ? "enemy" : "me",
-          `${actor === "me" ? "SEN" : this._opponent.username} • ${Math.max(1, chain)} chain`
-        );
+        if (this._state.enemyMoves <= 0 || this._state.enemyActionLeft <= 0) {
+          this._state.turn = "me";
+          this._state.meActionLeft = ACTIONS_PER_TURN;
+        } else {
+          this._state.turn = "enemy";
+        }
       }
+
+      this._state.info = `${Math.max(1, chain)} chain`;
+      this._updateHud();
+      this._render();
+    },
+
+    _recordResult(win) {
+      const store = window.tcStore;
+      const now = Date.now();
+      const opponent = this._opponent?.username || "Rakip";
+      const resultItem = {
+        id: `pvp_${now}`,
+        opponent,
+        result: win ? "win" : "loss",
+        mode: "iq_arena",
+        meHp: Math.round(this._state?.meHp || 0),
+        enemyHp: Math.round(this._state?.enemyHp || 0),
+        at: now,
+      };
+
+      if (store?.get && store?.set) {
+        const state = store.get() || {};
+        const pvp = { ...(state.pvp || {}) };
+        const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
+        const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
+        const playerName = String(state?.player?.username || "Player");
+
+        pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
+        pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
+        pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 18 : -12), 0, 99999);
+        pvp.currentOpponent = opponent;
+        pvp.recentMatches = [resultItem, ...recentMatches];
+
+        const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
+        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
+        nextBoard.push({
+          id: String(state?.player?.id || "player_main"),
+          name: playerName,
+          wins: Number(pvp.wins || 0),
+          losses: Number(pvp.losses || 0),
+          rating: Number(pvp.rating || 1000),
+          score,
+          updatedAt: now,
+        });
+        nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+        pvp.leaderboard = nextBoard.slice(0, 50);
+
+        store.set({ pvp });
+      }
+
+      const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
+      try {
+        window.dispatchEvent(new CustomEvent(eventName, { detail: resultItem }));
+      } catch (_) {
+        window.dispatchEvent(new Event(eventName));
+      }
+    },
+
+    _finishGame(win, reason) {
+      if (!this._state || this._state.finished) return true;
+      this._state.finished = true;
+      this._running = false;
+      this._locked = true;
+      clearTimeout(this._turnTimer);
+      clearTimeout(this._queueTimer);
+      this._turnTimer = null;
+      this._queueTimer = null;
+      this._setStatus(win ? "Kazandın" : "Kaybettin");
+      this._state.info = reason || (win ? "Kazandın" : "Kaybettin");
+      this._toast(win ? "Kazandın" : "Kaybettin");
+      this._recordResult(win);
+      this._updateHud();
+      this._render();
+      return true;
     },
 
     _checkFinish() {
       if (!this._state) return false;
-
-      if (this._state.enemyHp <= 0) {
-        this._running = false;
-        this._locked = true;
-        clearInterval(this._countdownInterval);
-        this._countdownInterval = null;
-        this._setStatus("Kazandın");
-        this._toast("Kazandın");
-        this._spawnWinFx();
-        window.dispatchEvent(new CustomEvent("tc:pvp:win"));
-        this._render();
-        return true;
-      }
-
-      if (this._state.meHp <= 0) {
-        this._running = false;
-        this._locked = true;
-        clearInterval(this._countdownInterval);
-        this._countdownInterval = null;
-        this._setStatus("Kaybettin");
-        this._toast("Kaybettin");
-        this._spawnLoseFx();
-        window.dispatchEvent(new CustomEvent("tc:pvp:lose"));
-        this._render();
-        return true;
-      }
+      if (this._state.enemyHp <= 0) return this._finishGame(true, "Rakip düştü");
+      if (this._state.meHp <= 0) return this._finishGame(false, "Sen düştün");
 
       if (this._state.meMoves <= 0 && this._state.enemyMoves <= 0) {
-        this._running = false;
-        this._locked = true;
-        clearInterval(this._countdownInterval);
-        this._countdownInterval = null;
-
-        if (this._state.meHp >= this._state.enemyHp) {
-          this._setStatus("Kazandın");
-          this._toast("Kazandın");
-          this._spawnWinFx();
-          window.dispatchEvent(new CustomEvent("tc:pvp:win"));
-        } else {
-          this._setStatus("Kaybettin");
-          this._toast("Kaybettin");
-          this._spawnLoseFx();
-          window.dispatchEvent(new CustomEvent("tc:pvp:lose"));
-        }
-
-        this._render();
-        return true;
+        if (this._state.meHp >= this._state.enemyHp) return this._finishGame(true, "HP üstünlüğü");
+        return this._finishGame(false, "HP üstünlüğü rakipte");
       }
-
       return false;
     },
 
     _sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
-    },
-
-    _drawTile(ctx, tile, x, y, cell, selected) {
-      const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
-
-      fillRoundRect(
-        ctx,
-        x + 2,
-        y + 2,
-        cell - 4,
-        cell - 4,
-        Math.max(10, Math.floor(cell * 0.18)),
-        selected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)"
-      );
-
-      strokeRoundRect(
-        ctx,
-        x + 2,
-        y + 2,
-        cell - 4,
-        cell - 4,
-        Math.max(10, Math.floor(cell * 0.18)),
-        selected ? "rgba(255,181,74,0.92)" : "rgba(255,255,255,0.08)",
-        selected ? 2 : 1
-      );
-
-      const glow = ctx.createRadialGradient(
-        x + cell / 2,
-        y + cell / 2,
-        4,
-        x + cell / 2,
-        y + cell / 2,
-        cell * 0.48
-      );
-      glow.addColorStop(0, meta.color + "55");
-      glow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.font = `900 ${Math.floor(cell * 0.46)}px system-ui, Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "#fff";
-      ctx.fillText(meta.emoji, x + cell / 2, y + cell / 2 + 1);
-
-      if (tile.type === TILE.BOMB) {
-        ctx.font = `800 ${Math.max(8, Math.floor(cell * 0.16))}px system-ui, Arial`;
-        ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText("3x3", x + cell / 2, y + cell - Math.max(9, cell * 0.16));
-      }
     },
 
     _render() {
@@ -1613,29 +1120,11 @@
       const rect = canvas.getBoundingClientRect();
       const w = Math.round(rect.width || 300);
       const h = Math.round(rect.height || 300);
-
       if (w < 20 || h < 20) return;
 
-      let shakeX = 0;
-      let shakeY = 0;
-      if (this._shake) {
-        const t = clamp((performance.now() - this._shake.started) / this._shake.duration, 0, 1);
-        const fade = 1 - t;
-        const amp = this._shake.power * fade;
-        shakeX = (Math.random() * 2 - 1) * amp;
-        shakeY = (Math.random() * 2 - 1) * amp;
-      }
-
       ctx.clearRect(0, 0, w, h);
-      ctx.save();
-      ctx.translate(shakeX, shakeY);
 
-      const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "rgba(18,20,28,0.92)");
-      bg.addColorStop(1, "rgba(8,9,14,0.98)");
-      fillRoundRect(ctx, 0, 0, w, h, 16, bg);
-
-      const boardPad = clamp(Math.round(w * 0.022), 8, 12);
+      const boardPad = clamp(Math.round(w * 0.018), 6, 10);
       const usableW = w - boardPad * 2;
       const usableH = h - boardPad * 2;
       const boardSize = Math.min(usableW, usableH);
@@ -1646,14 +1135,16 @@
 
       this._tileRects = [];
 
-      fillRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, "rgba(255,255,255,0.03)");
-      strokeRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, "rgba(255,255,255,0.08)", 1);
+      const shell = ctx.createLinearGradient(0, oy - 12, 0, oy + actual + 24);
+      shell.addColorStop(0, "rgba(8,14,28,0.56)");
+      shell.addColorStop(1, "rgba(2,6,16,0.76)");
+      fillRoundRect(ctx, ox - 14, oy - 14, actual + 28, actual + 28, 22, shell);
+      strokeRoundRect(ctx, ox - 14, oy - 14, actual + 28, actual + 28, 22, "rgba(255,255,255,0.08)", 1.2);
 
-      const hiddenBySwap = new Set();
-      if (this._swapAnim?.a && this._swapAnim?.b) {
-        hiddenBySwap.add(`${this._swapAnim.a.r}:${this._swapAnim.a.c}`);
-        hiddenBySwap.add(`${this._swapAnim.b.r}:${this._swapAnim.b.c}`);
-      }
+      const inner = ctx.createLinearGradient(0, oy, 0, oy + actual);
+      inner.addColorStop(0, "rgba(16,22,38,0.86)");
+      inner.addColorStop(1, "rgba(10,14,28,0.92)");
+      fillRoundRect(ctx, ox - 4, oy - 4, actual + 8, actual + 8, 18, inner);
 
       for (let r = 0; r < GRID; r++) {
         for (let c = 0; c < GRID; c++) {
@@ -1661,69 +1152,55 @@
           const y = oy + r * cell;
           const tile = this._state.board[r][c];
           const selected = this._selected && this._selected.r === r && this._selected.c === c;
+          const radius = Math.max(10, Math.floor(cell * 0.18));
 
-          if (tile && !hiddenBySwap.has(`${r}:${c}`)) {
-            let dx = 0;
-            let dy = 0;
-            if (selected && this._dragStart && !this._dragConsumed) {
-              dx = clamp(this._dragVector.dx, -cell * 0.32, cell * 0.32);
-              dy = clamp(this._dragVector.dy, -cell * 0.32, cell * 0.32);
-            }
-            this._drawTile(ctx, tile, x + dx, y + dy, cell, selected);
+          fillRoundRect(
+            ctx,
+            x + 2,
+            y + 2,
+            cell - 4,
+            cell - 4,
+            radius,
+            selected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.07)"
+          );
+          strokeRoundRect(
+            ctx,
+            x + 2,
+            y + 2,
+            cell - 4,
+            cell - 4,
+            radius,
+            selected ? "rgba(255,181,74,0.96)" : "rgba(255,255,255,0.08)",
+            selected ? 2 : 1
+          );
+
+          if (tile) {
+            const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
+            const glow = ctx.createRadialGradient(
+              x + cell / 2,
+              y + cell / 2,
+              4,
+              x + cell / 2,
+              y + cell / 2,
+              cell * 0.48
+            );
+            glow.addColorStop(0, meta.color + "66");
+            glow.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.font = `900 ${Math.floor(cell * 0.47)}px system-ui, Arial`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#fff";
+            ctx.fillText(meta.emoji, x + cell / 2, y + cell / 2 + 1);
           }
 
           this._tileRects.push({ r, c, x, y, w: cell, h: cell });
         }
       }
-
-      if (this._swapAnim) {
-        const { a, b, tileA, tileB, progress = 0 } = this._swapAnim;
-        const t = easeOutBack(progress);
-
-        const ax = ox + a.c * cell;
-        const ay = oy + a.r * cell;
-        const bx = ox + b.c * cell;
-        const by = oy + b.r * cell;
-
-        const curAx = lerp(ax, bx, t);
-        const curAy = lerp(ay, by, t);
-        const curBx = lerp(bx, ax, t);
-        const curBy = lerp(by, ay, t);
-
-        if (tileA) this._drawTile(ctx, tileA, curAx, curAy, cell, false);
-        if (tileB) this._drawTile(ctx, tileB, curBx, curBy, cell, false);
-      }
-
-      for (const p of this._particles) {
-        ctx.save();
-        ctx.globalAlpha = clamp(p.life, 0, 1);
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(ox + p.rx * actual, oy + p.ry * actual, p.radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-
-      for (const fx of this._floatTexts) {
-        ctx.save();
-        ctx.globalAlpha = clamp(fx.life, 0, 1);
-        ctx.fillStyle = fx.color;
-        ctx.font = `900 ${fx.size}px system-ui, Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(fx.text, ox + fx.rx * actual, oy + fx.ry * actual);
-        ctx.restore();
-      }
-
-      if (this._screenFlash) {
-        ctx.save();
-        ctx.globalAlpha = clamp(this._screenFlash.life, 0, 1);
-        ctx.fillStyle = this._screenFlash.color;
-        ctx.fillRect(0, 0, w, h);
-        ctx.restore();
-      }
-
-      ctx.restore();
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
