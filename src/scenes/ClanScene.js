@@ -114,6 +114,28 @@ function wheelDelta(input) {
   );
 }
 
+function getImgSafe(assets, key) {
+  if (!assets || !key) return null;
+  if (typeof assets.getImage === "function") return assets.getImage(key) || null;
+  if (typeof assets.get === "function") return assets.get(key) || null;
+  return assets.images?.[key] || null;
+}
+
+function drawCoverImage(ctx, img, x, y, w, h, alpha = 1) {
+  if (!img) return;
+  const iw = Math.max(1, Number(img.width || 1));
+  const ih = Math.max(1, Number(img.height || 1));
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+}
+
 export class ClanScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -145,6 +167,7 @@ export class ClanScene {
     this.reels = this.createReels();
     this.spinState = null;
     this.lastRaidId = null;
+    this._bgImg = null;
   }
 
   createReels() {
@@ -165,6 +188,24 @@ export class ClanScene {
     this.scrollY = 0;
     this.maxScroll = 0;
     this.dragging = false;
+
+    if (!this._bgImg) {
+      this._bgImg =
+        getImgSafe(this.assets, "clan_bg") ||
+        getImgSafe(this.assets, "clanbg") ||
+        getImgSafe(this.assets, "Clan-bg") ||
+        getImgSafe(this.assets, "clan") ||
+        null;
+
+      if (!this._bgImg) {
+        try {
+          const img = new Image();
+          img.src = "./src/assets/Clan-bg.png";
+          this._bgImg = img;
+        } catch (_) {}
+      }
+    }
+
     this.syncBossState(true);
   }
 
@@ -435,7 +476,30 @@ export class ClanScene {
     this.buttons = [];
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#060606";
+
+    if (this._bgImg?.complete) {
+      drawCoverImage(ctx, this._bgImg, 0, 0, w, h, 1);
+    } else {
+      const bg = ctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, "#0a0d12");
+      bg.addColorStop(0.55, "#05070a");
+      bg.addColorStop(1, "#030405");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    const wash = ctx.createLinearGradient(0, 0, 0, h);
+    wash.addColorStop(0, "rgba(4,7,12,0.28)");
+    wash.addColorStop(0.45, "rgba(0,0,0,0.36)");
+    wash.addColorStop(1, "rgba(0,0,0,0.62)");
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, 0, w, h);
+
+    const vignette = ctx.createRadialGradient(w * 0.5, h * 0.42, 20, w * 0.5, h * 0.42, Math.max(w, h) * 0.8);
+    vignette.addColorStop(0, "rgba(255,180,80,0.05)");
+    vignette.addColorStop(0.45, "rgba(0,0,0,0.08)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.44)");
+    ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, w, h);
 
     if (Date.now() < this.shakeUntil) {
@@ -461,8 +525,8 @@ export class ClanScene {
       const tx = (w - tw) / 2;
       const ty = h - 140;
 
-      fillRR(ctx, tx, ty, tw, th, 12, "rgba(0,0,0,0.86)");
-      strokeRR(ctx, tx, ty, tw, th, 12, "rgba(255,190,50,0.35)");
+      fillRR(ctx, tx, ty, tw, th, 12, "rgba(0,0,0,0.64)");
+      strokeRR(ctx, tx, ty, tw, th, 12, "rgba(255,190,50,0.28)");
 
       ctx.fillStyle = "#fff";
       ctx.textAlign = "center";
@@ -474,34 +538,41 @@ export class ClanScene {
   renderInner(ctx, w, h) {
     const safe = this.store?.get?.()?.ui?.safe || { x: 0, y: 0, w, h };
     const hudReservedTop = Number(this.store?.get?.()?.ui?.hudReservedTop || 86);
+    const bottomReserved = Number(this.store?.get?.()?.ui?.chatReservedBottom || 22);
 
     const panelX = safe.x + 14;
     const panelY = Math.max(68, safe.y + hudReservedTop);
     const panelW = safe.w - 28;
-    const panelH = safe.h - hudReservedTop - 22;
+    const panelH = safe.h - hudReservedTop - Math.max(18, bottomReserved * 0.28);
 
-    fillRR(ctx, panelX, panelY, panelW, panelH, 22, "rgba(8,8,10,0.68)");
-    strokeRR(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,255,255,0.11)");
+    fillRR(ctx, panelX, panelY, panelW, panelH, 24, "rgba(6,8,12,0.12)");
+    strokeRR(ctx, panelX, panelY, panelW, panelH, 24, "rgba(255,255,255,0.09)");
+
+    const panelGlow = ctx.createLinearGradient(0, panelY, 0, panelY + panelH);
+    panelGlow.addColorStop(0, "rgba(255,255,255,0.06)");
+    panelGlow.addColorStop(0.25, "rgba(255,255,255,0.015)");
+    panelGlow.addColorStop(1, "rgba(255,255,255,0)");
+    fillRR(ctx, panelX + 1, panelY + 1, panelW - 2, Math.max(90, panelH * 0.18), 24, panelGlow);
 
     const clan = this.getClan();
     const boss = this.getBoss();
     const spinInfo = this.getSpinInfo();
 
-    ctx.fillStyle = "#fff";
+    ctx.fillStyle = "#ffffff";
     ctx.font = "900 22px Arial";
     ctx.fillText("CLAN", panelX + 16, panelY + 28);
 
-    ctx.fillStyle = "rgba(255,255,255,0.76)";
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.font = "14px Arial";
     ctx.fillText(safeClanName(clan), panelX + 16, panelY + 50);
 
-    const backBtn = { x: panelX + panelW - 88, y: panelY + 10, w: 72, h: 32 };
-    fillRR(ctx, backBtn.x, backBtn.y, backBtn.w, backBtn.h, 10, "rgba(255,255,255,0.08)");
-    strokeRR(ctx, backBtn.x, backBtn.y, backBtn.w, backBtn.h, 10, "rgba(255,255,255,0.10)");
+    const backBtn = { x: panelX + panelW - 52, y: panelY + 8, w: 36, h: 36 };
+    fillRR(ctx, backBtn.x, backBtn.y, backBtn.w, backBtn.h, 11, "rgba(255,255,255,0.06)");
+    strokeRR(ctx, backBtn.x, backBtn.y, backBtn.w, backBtn.h, 11, "rgba(255,255,255,0.12)");
     ctx.fillStyle = "#fff";
-    ctx.font = "800 13px Arial";
+    ctx.font = "900 18px Arial";
     ctx.textAlign = "center";
-    ctx.fillText("Geri", backBtn.x + backBtn.w / 2, backBtn.y + 21);
+    ctx.fillText("X", backBtn.x + backBtn.w / 2, backBtn.y + 24);
     ctx.textAlign = "left";
     this.addButton(backBtn, () => this.goScene("home"));
 
@@ -559,7 +630,7 @@ export class ClanScene {
     ctx.save();
     ctx.clip();
 
-    fillRR(ctx, innerX, innerY, innerW, innerH, 18, "rgba(255,255,255,0.03)");
+    fillRR(ctx, innerX, innerY, innerW, innerH, 18, "rgba(255,255,255,0.015)");
 
     let y = innerY + 14 - this.scrollY;
 
@@ -596,8 +667,8 @@ export class ClanScene {
   }
 
   drawCard(ctx, x, y, w, h, title, subtitle = "") {
-    fillRR(ctx, x, y, w, h, 18, "rgba(7,7,7,0.44)");
-    strokeRR(ctx, x, y, w, h, 18, "rgba(255,255,255,0.08)");
+    fillRR(ctx, x, y, w, h, 18, "rgba(7,7,7,0.22)");
+    strokeRR(ctx, x, y, w, h, 18, "rgba(255,255,255,0.07)");
     ctx.fillStyle = "#fff";
     ctx.font = "900 16px Arial";
     ctx.fillText(title, x + 16, y + 26);
@@ -648,10 +719,10 @@ export class ClanScene {
     const machineW = w - 36;
     const machineInnerH = 190;
 
-    fillRR(ctx, machineX, machineY, machineW, machineInnerH, 24, "rgba(18,18,22,0.95)");
+    fillRR(ctx, machineX, machineY, machineW, machineInnerH, 24, "rgba(14,16,20,0.58)");
     strokeRR(ctx, machineX, machineY, machineW, machineInnerH, 24, "rgba(255,190,50,0.18)", 2);
 
-    fillRR(ctx, machineX + 12, machineY + 12, machineW - 24, 30, 12, "rgba(255,190,50,0.14)");
+    fillRR(ctx, machineX + 12, machineY + 12, machineW - 24, 30, 12, "rgba(255,190,50,0.10)");
     ctx.fillStyle = "#ffd166";
     ctx.font = "900 14px Arial";
     ctx.textAlign = "center";
@@ -671,7 +742,7 @@ export class ClanScene {
       this.drawSingleReel(ctx, this.reels[i], rx, reelY, reelW, reelH);
     }
 
-    fillRR(ctx, machineX + 10, centerLineY - 22, machineW - 20, 44, 14, "rgba(255,215,90,0.07)");
+    fillRR(ctx, machineX + 10, centerLineY - 22, machineW - 20, 44, 14, "rgba(255,215,90,0.045)");
     strokeRR(ctx, machineX + 10, centerLineY - 22, machineW - 20, 44, 14, "rgba(255,215,90,0.55)", 2);
 
     const spinBtn = {
@@ -761,7 +832,7 @@ export class ClanScene {
       ctx.fillText("Henüz kayıt yok.", x + 18, by + 6);
     } else {
       board.forEach((p, i) => {
-        fillRR(ctx, x + 12, by - 16, w - 24, 28, 10, "rgba(255,255,255,0.05)");
+        fillRR(ctx, x + 12, by - 16, w - 24, 28, 10, "rgba(255,255,255,0.03)");
         ctx.fillStyle = "#fff";
         ctx.font = "700 13px Arial";
         ctx.fillText(`#${i + 1} ${p.name || "Player"}`, x + 22, by + 2);
@@ -848,7 +919,7 @@ export class ClanScene {
       ctx.fillText("Üye yok.", x + 18, my + 6);
     } else {
       for (const m of members) {
-        fillRR(ctx, x + 12, my - 16, w - 24, 30, 10, "rgba(255,255,255,0.05)");
+        fillRR(ctx, x + 12, my - 16, w - 24, 30, 10, "rgba(255,255,255,0.03)");
         ctx.fillStyle = "#fff";
         ctx.font = "700 13px Arial";
         ctx.fillText(m.name || "Player", x + 22, my + 3);
@@ -888,7 +959,7 @@ export class ClanScene {
 
     let uy = y + 60;
     for (const row of rows) {
-      fillRR(ctx, x + 12, uy - 16, w - 24, 30, 10, "rgba(255,255,255,0.05)");
+      fillRR(ctx, x + 12, uy - 16, w - 24, 30, 10, "rgba(255,255,255,0.03)");
       ctx.fillStyle = "#fff";
       ctx.font = "700 13px Arial";
       ctx.fillText(`${row.label} • Lv.${row.level}`, x + 22, uy + 3);
@@ -910,7 +981,7 @@ export class ClanScene {
       ctx.fillText("Log boş.", x + 18, ly + 6);
     } else {
       for (const log of logs) {
-        fillRR(ctx, x + 12, ly - 16, w - 24, 30, 10, "rgba(255,255,255,0.05)");
+        fillRR(ctx, x + 12, ly - 16, w - 24, 30, 10, "rgba(255,255,255,0.03)");
         ctx.fillStyle = "#fff";
         ctx.font = "13px Arial";
         ctx.fillText(log?.text || "-", x + 22, ly + 3);
