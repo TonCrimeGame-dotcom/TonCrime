@@ -136,12 +136,12 @@ export class HomeScene {
       if (c.clickCandidate && pointInRect(px, py, this._cardRect)) {
         const item = items[c.index];
 
-        if (item.sceneKey === "pvp" || item.id === "pvp") {
-          try {
-            window.dispatchEvent(new Event("tc:openPvp"));
-          } catch (_) {}
-          return;
-        }
+      if (item.sceneKey === "pvp" || item.id === "pvp") {
+  try {
+    this.scenes.go("pvp");
+  } catch (_) {}
+  return;
+}
 
         try {
           this.scenes.go(item.sceneKey);
