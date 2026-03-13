@@ -455,17 +455,15 @@ export class NightclubScene {
     });
   }
 
-  _openPvp() {
-    try {
-      this._pvpStartedFromNightclub = true;
-      window.dispatchEvent(new Event("tc:openPvp"));
-      this._showToast("PvP açıldı");
-      this._pushSystemChat(`⚔️ ${this._playerName()} Nightclub içinden PvP başlattı.`);
-    } catch (_) {
-      this._pvpStartedFromNightclub = false;
-      this._showToast("PvP açılamadı");
-    }
+_openPvp() {
+  try {
+    this.scenes.go("pvp");
+    this._showToast("PvP açıldı");
+    this._pushSystemChat(`⚔️ ${this._playerName()} Nightclub içinden PvP başlattı.`);
+  } catch (_) {
+    this._showToast("PvP açılamadı");
   }
+}
 
   _applyPoliceRaid(item) {
     const s = this.store.get() || {};
@@ -822,3 +820,4 @@ export class NightclubScene {
     }
   }
 }
+
