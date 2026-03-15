@@ -11,15 +11,15 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
   const MIN_CLUSTER = 6;
   const PLAYER_DECISION_MS = 3000;
 
-  const ICONS = {
-    weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
-    brain: { id: "brain", emoji: "🧠", label: "BEYİN",   color: "#ff5b64", base: 18, weight: 12 },
-    drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 15 },
-    kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
-    slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
-    punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 2 },
-  };
+ const ICONS = {
+  weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16, asset: "weed" },
+  brain: { id: "brain", emoji: "🧠", label: "BEYİN",   color: "#ff5b64", base: 18, weight: 12, asset: "brain" },
+  drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 15, asset: "drink" },
+  kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15, asset: "kick" },
+  slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17, asset: "slap" },
+  punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15, asset: "punch" },
+  bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8,  asset: "bonus" },
+};
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
   const ALL_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch", "bonus"];
@@ -61,7 +61,47 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
     ctx.strokeStyle = stroke;
     ctx.stroke();
   }
+  const SLOT_ICON_IMAGES = {};
 
+  function loadSlotIcon(name, src) {
+    const img = new Image();
+    img.src = src;
+    SLOT_ICON_IMAGES[name] = img;
+    return img;
+  }
+
+  loadSlotIcon("brain", "./src/assets/brain.png");
+  loadSlotIcon("drink", "./src/assets/drink.png");
+  loadSlotIcon("kick", "./src/assets/kick.png");
+  loadSlotIcon("slap", "./src/assets/slap.png");
+  loadSlotIcon("punch", "./src/assets/punch.png");
+  loadSlotIcon("bonus", "./src/assets/bonus.png");
+
+  function getSlotIconImage(meta) {
+    if (!meta?.asset) return null;
+    const img = SLOT_ICON_IMAGES[meta.asset];
+    if (!img || !img.complete || !img.naturalWidth) return null;
+    return img;
+  }
+
+  function drawSlotSymbol(ctx, meta, px, py, cellW, cellH) {
+    const img = getSlotIconImage(meta);
+
+    if (img) {
+      const iconSize = Math.min(cellW, cellH) * 0.54;
+      const ix = px + (cellW - iconSize) * 0.5;
+      const iy = py + cellH * 0.17;
+
+      ctx.drawImage(img, ix, iy, iconSize, iconSize);
+      return;
+    }
+
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 ${Math.floor(Math.min(cellW, cellH) * 0.42)}px system-ui, Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(meta.emoji, px + cellW / 2, py + cellH * 0.45);
+  }
   function weightedSymbol(includeBonus = true) {
     const list = includeBonus ? ALL_SYMBOLS : PAY_SYMBOLS;
     let total = 0;
@@ -936,7 +976,7 @@ function evaluateBoard(board, inBonus) {
       for (const h of hits) {
         const meta = ICONS[h.type];
         this._state.fxHits.push({
-          text: `${meta.emoji} ${Math.round(h.damage)}`,
+          text: `${meta.label} ${Math.round(h.damage)}`,
           color: meta.color,
           bornAt: now,
           side: fromMe ? "right" : "left",
@@ -1135,15 +1175,13 @@ function evaluateBoard(board, inBonus) {
             fillRoundRect(ctx, px + 3, py + 3, cellW - 6, cellH - 6, 15, ctx.fillStyle);
           }
 
-          ctx.fillStyle = "#fff";
-          ctx.font = `900 ${Math.floor(Math.min(cellW, cellH) * 0.42)}px system-ui, Arial`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(meta.emoji, px + cellW / 2, py + cellH * 0.45);
+drawSlotSymbol(ctx, meta, px, py, cellW, cellH);
 
-          ctx.font = `900 ${Math.max(10, Math.floor(Math.min(cellW, cellH) * 0.13))}px system-ui, Arial`;
-          ctx.fillStyle = "rgba(255,255,255,0.85)";
-          ctx.fillText(meta.label, px + cellW / 2, py + cellH * 0.78);
+ctx.font = `900 ${Math.max(10, Math.floor(Math.min(cellW, cellH) * 0.13))}px system-ui, Arial`;
+ctx.fillStyle = "rgba(255,255,255,0.85)";
+ctx.textAlign = "center";
+ctx.textBaseline = "middle";
+ctx.fillText(meta.label, px + cellW / 2, py + cellH * 0.78);
         }
       }
 
