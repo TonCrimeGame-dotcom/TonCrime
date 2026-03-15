@@ -1017,7 +1017,9 @@
       this._updateHud();
       this._render();
 
-      const wantWin = Math.random() < WIN_CHANCE;
+      const spinIndex = actor === "me" ? s.meSpins : s.enemySpins;
+      const currentWinChance = spinIndex < 5 ? 0.005 : WIN_CHANCE;
+      const wantWin = Math.random() < currentWinChance;
       const allowBonusOnSpin = !(s.inBonus && s.bonusOwner === actor);
       s.board = makeBoard(wantWin, allowBonusOnSpin);
       await this._spinAnimation();
