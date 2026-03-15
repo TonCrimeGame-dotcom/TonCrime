@@ -1,0 +1,1003 @@
+(function () {
+  const GAME_MS = 45000;
+  const ICON_LIFE_MS = 500;
+  const START_HP = 100;
+
+  const DAMAGE = {
+    punch: 12,
+    kick: 14,
+    slap: 8,
+    brain: 16,
+    skull: 15,
+  };
+
+  const ICONS = [
+    { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false },
+    { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false },
+    { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false },
+    { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false },
+    { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true },
+  ];
+
+  const GOOD_ICONS = ICONS.filter((x) => !x.bad);
+  const BOT_NAMES = [
+    "ShadowWolf",
+    "NightTiger",
+    "GhostMafia",
+    "RicoVane",
+    "IronFist",
+    "VoltKral",
+    "SlyRaven",
+  ];
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function randInt(min, max) {
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function choice(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.max(0, Math.min(r, w * 0.5, h * 0.5));
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function fillRoundRect(ctx, x, y, w, h, r, fill) {
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+
+  function strokeRoundRect(ctx, x, y, w, h, r, stroke, lw) {
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+  }
+
+  function pointInRect(px, py, r) {
+    return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  function ensureStyle() {
+    const id = "tc-pvp-cage-style";
+    if (document.getElementById(id)) return;
+
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      #pvpStart, #pvpStop, #pvpReset {
+        display: none !important;
+      }
+
+      #pvpHeader {
+        display: none !important;
+      }
+
+      #pvpBars {
+        display: none !important;
+      }
+
+      #arena {
+        position: relative;
+        overflow: hidden;
+        touch-action: none;
+        background:
+          radial-gradient(circle at 50% 20%, rgba(255,100,100,0.12), transparent 34%),
+          radial-gradient(circle at 50% 80%, rgba(255,180,70,0.10), transparent 34%),
+          linear-gradient(180deg, rgba(16,18,28,0.96), rgba(6,8,14,0.98)) !important;
+      }
+
+      #arena .tc-cage-root {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 10px;
+        box-sizing: border-box;
+        color: #fff;
+        user-select: none;
+      }
+
+      #arena .tc-cage-top {
+        position: relative;
+        flex: 0 0 auto;
+        padding-top: 4px;
+        margin-bottom: 10px;
+      }
+
+      #arena .tc-cage-x {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 36px;
+        height: 36px;
+        border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 12px;
+        background: rgba(0,0,0,0.34);
+        color: rgba(255,255,255,0.92);
+        font: 900 16px system-ui, Arial;
+        backdrop-filter: blur(8px);
+        cursor: pointer;
+      }
+
+      #arena .tc-cage-title-wrap {
+        text-align: center;
+        padding: 2px 42px 0;
+      }
+
+      #arena .tc-cage-neon {
+        display: inline-block;
+        font: 900 22px system-ui, Arial;
+        letter-spacing: 1.8px;
+        text-transform: uppercase;
+        color: #ff5858;
+        text-shadow:
+          0 0 4px rgba(255,88,88,0.95),
+          0 0 10px rgba(255,88,88,0.95),
+          0 0 18px rgba(255,40,40,0.92),
+          0 0 34px rgba(255,0,0,0.78);
+        animation: tcCageNeon 1.15s ease-in-out infinite alternate;
+      }
+
+      @keyframes tcCageNeon {
+        0% {
+          opacity: .76;
+          transform: scale(0.995);
+          text-shadow:
+            0 0 3px rgba(255,88,88,0.84),
+            0 0 8px rgba(255,88,88,0.84),
+            0 0 16px rgba(255,20,20,0.74);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1.01);
+          text-shadow:
+            0 0 5px rgba(255,110,110,1),
+            0 0 12px rgba(255,90,90,1),
+            0 0 24px rgba(255,40,40,0.98),
+            0 0 42px rgba(255,0,0,0.90);
+        }
+      }
+
+      #arena .tc-cage-sub {
+        margin-top: 6px;
+        font: 800 11px system-ui, Arial;
+        color: rgba(255,255,255,0.74);
+        letter-spacing: .4px;
+      }
+
+      #arena .tc-cage-bar-shell {
+        margin-top: 10px;
+        height: 14px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.11);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      }
+
+      #arena .tc-cage-time-fill {
+        width: 100%;
+        height: 100%;
+        transform-origin: left center;
+        background: linear-gradient(90deg, #ff5959, #ffb347);
+        box-shadow: 0 0 14px rgba(255,120,70,0.30);
+      }
+
+      #arena .tc-cage-row {
+        display: grid;
+        grid-template-columns: 1fr 76px 1fr;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      #arena .tc-cage-vs {
+        text-align: center;
+        font: 900 16px system-ui, Arial;
+        color: rgba(255,255,255,0.9);
+      }
+
+      #arena .tc-cage-card {
+        min-height: 72px;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.05);
+        backdrop-filter: blur(8px);
+        padding: 10px 12px;
+        box-sizing: border-box;
+      }
+
+      #arena .tc-cage-name {
+        font: 900 13px system-ui, Arial;
+        color: rgba(255,255,255,0.96);
+        margin-bottom: 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #arena .tc-cage-hpbar {
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.10);
+      }
+
+      #arena .tc-cage-hpfill {
+        height: 100%;
+        width: 100%;
+        transform-origin: left center;
+        background: linear-gradient(90deg, #2fe870, #88ffb0);
+      }
+
+      #arena .tc-cage-hptext {
+        margin-top: 6px;
+        font: 800 11px system-ui, Arial;
+        color: rgba(255,255,255,0.76);
+        text-align: right;
+      }
+
+      #arena .tc-cage-stage {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 280px;
+        border-radius: 20px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 52%, rgba(255,255,255,0.04), transparent 30%),
+          linear-gradient(180deg, rgba(18,22,34,0.88), rgba(6,10,18,0.95));
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      #arena .tc-cage-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+
+      #arena .tc-cage-toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        min-width: 170px;
+        max-width: calc(100% - 28px);
+        padding: 11px 14px;
+        border-radius: 14px;
+        background: rgba(0,0,0,0.56);
+        border: 1px solid rgba(255,255,255,0.12);
+        backdrop-filter: blur(8px);
+        text-align: center;
+        font: 900 12px system-ui, Arial;
+        color: #fff;
+        opacity: 0;
+        transition: opacity .16s ease;
+        pointer-events: none;
+      }
+
+      #arena .tc-cage-toast.on {
+        opacity: 1;
+      }
+
+      #arena .tc-cage-rule {
+        margin-top: 8px;
+        text-align: center;
+        font: 800 11px system-ui, Arial;
+        color: rgba(255,255,255,0.65);
+      }
+
+      @media (max-width: 520px) {
+        #arena .tc-cage-neon {
+          font-size: 18px;
+        }
+
+        #arena .tc-cage-row {
+          grid-template-columns: 1fr 54px 1fr;
+          gap: 8px;
+        }
+
+        #arena .tc-cage-card {
+          min-height: 68px;
+          padding: 9px 10px;
+        }
+
+        #arena .tc-cage-vs {
+          font-size: 13px;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function makeMarkup() {
+    return `
+      <div class="tc-cage-root">
+        <div class="tc-cage-top">
+          <button class="tc-cage-x" id="tcCageClose" type="button" aria-label="Geri">✕</button>
+
+          <div class="tc-cage-title-wrap">
+            <div class="tc-cage-neon">KAFES DÖVÜŞÜ</div>
+            <div class="tc-cage-sub" id="tcCageSub">45 saniye • hızlı PvP</div>
+          </div>
+
+          <div class="tc-cage-bar-shell">
+            <div class="tc-cage-time-fill" id="tcCageTimeFill"></div>
+          </div>
+        </div>
+
+        <div class="tc-cage-row">
+          <div class="tc-cage-card">
+            <div class="tc-cage-name" id="tcCageEnemyName">Rakip</div>
+            <div class="tc-cage-hpbar"><div class="tc-cage-hpfill" id="tcCageEnemyFill"></div></div>
+            <div class="tc-cage-hptext" id="tcCageEnemyText">100 / 100</div>
+          </div>
+
+          <div class="tc-cage-vs" id="tcCageTimerText">45</div>
+
+          <div class="tc-cage-card">
+            <div class="tc-cage-name" id="tcCageMeName">Sen</div>
+            <div class="tc-cage-hpbar"><div class="tc-cage-hpfill" id="tcCageMeFill"></div></div>
+            <div class="tc-cage-hptext" id="tcCageMeText">100 / 100</div>
+          </div>
+        </div>
+
+        <div class="tc-cage-stage" id="tcCageStage">
+          <canvas class="tc-cage-canvas" id="tcCageCanvas"></canvas>
+          <div class="tc-cage-toast" id="tcCageToast"></div>
+        </div>
+
+        <div class="tc-cage-rule">💀 kuru kafaya basarsan kendi canından 15 gider</div>
+      </div>
+    `;
+  }
+
+  const api = {
+    _els: null,
+    _state: null,
+    _running: false,
+    _raf: 0,
+    _unbind: null,
+    _resizeObserver: null,
+    _opponent: { username: "ShadowWolf", isBot: true },
+
+    init(opts = {}) {
+      ensureStyle();
+
+      const arena = document.getElementById(opts.arenaId || "arena");
+      const status = document.getElementById(opts.statusId || "pvpStatus");
+      const enemyFill = document.getElementById(opts.enemyFillId || "enemyFill");
+      const meFill = document.getElementById(opts.meFillId || "meFill");
+      const enemyHpText = document.getElementById(opts.enemyHpTextId || "enemyHpText");
+      const meHpText = document.getElementById(opts.meHpTextId || "meHpText");
+
+      if (!arena) {
+        console.warn("[TonCrimePVP_CAGE] arena bulunamadı");
+        return;
+      }
+
+      this.stop();
+      this._destroyEvents();
+
+      arena.innerHTML = makeMarkup();
+
+      const canvas = arena.querySelector("#tcCageCanvas");
+      const ctx = canvas.getContext("2d");
+
+      this._els = {
+        arena,
+        status,
+        enemyFill,
+        meFill,
+        enemyHpText,
+        meHpText,
+        rootEnemyFill: arena.querySelector("#tcCageEnemyFill"),
+        rootMeFill: arena.querySelector("#tcCageMeFill"),
+        rootEnemyText: arena.querySelector("#tcCageEnemyText"),
+        rootMeText: arena.querySelector("#tcCageMeText"),
+        timeFill: arena.querySelector("#tcCageTimeFill"),
+        timerText: arena.querySelector("#tcCageTimerText"),
+        sub: arena.querySelector("#tcCageSub"),
+        toast: arena.querySelector("#tcCageToast"),
+        enemyName: arena.querySelector("#tcCageEnemyName"),
+        meName: arena.querySelector("#tcCageMeName"),
+        close: arena.querySelector("#tcCageClose"),
+        stage: arena.querySelector("#tcCageStage"),
+        canvas,
+        ctx,
+      };
+
+      this.reset();
+      this._bindEvents();
+      this._resizeCanvas();
+      this._render();
+      this._updateHud();
+    },
+
+    setOpponent(opp) {
+      this._opponent =
+        opp && typeof opp.username === "string" && opp.username.trim()
+          ? { ...opp }
+          : { username: choice(BOT_NAMES), isBot: true };
+
+      if (this._els?.enemyName) {
+        this._els.enemyName.textContent = this._opponent.username;
+      }
+    },
+
+    reset() {
+      const playerName =
+        String(window.tcStore?.get?.()?.player?.username || "Sen").trim() || "Sen";
+
+      this._state = {
+        startedAt: 0,
+        elapsed: 0,
+        remaining: GAME_MS,
+        meHp: START_HP,
+        enemyHp: START_HP,
+        finished: false,
+        winner: null,
+        lastTs: 0,
+        playerName,
+        nextSpawnAt: 0,
+        currentIcon: null,
+        particles: [],
+        hitFlashUntil: 0,
+        botNextActionAt: 0,
+      };
+
+      if (this._els?.meName) this._els.meName.textContent = playerName;
+      if (this._els?.enemyName) {
+        this._els.enemyName.textContent = this._opponent?.username || choice(BOT_NAMES);
+      }
+
+      this._toast("Hazır");
+      this._setStatus("PvP • Kafes dövüşü hazır");
+      this._updateHud();
+      this._render();
+    },
+
+    start() {
+      if (!this._els || !this._state) return;
+      this.reset();
+
+      const now = performance.now();
+      this._running = true;
+
+      this._state.startedAt = now;
+      this._state.lastTs = now;
+      this._state.nextSpawnAt = now + 180;
+      this._state.botNextActionAt = now + randInt(340, 680);
+
+      this._setStatus("PvP • Kafes dövüşü başladı");
+      this._toast("Başladı");
+      this._loop();
+    },
+
+    stop() {
+      this._running = false;
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this._raf = 0;
+    },
+
+    backToMenu() {
+      this.stop();
+
+      const wrap = document.getElementById("pvpWrap");
+      const arena = document.getElementById("arena");
+      const status = document.getElementById("pvpStatus");
+      const opponent = document.getElementById("pvpOpponent");
+      const spinner = document.getElementById("pvpSpinner");
+
+      if (arena) {
+        arena.innerHTML = "";
+      }
+
+      if (wrap) {
+        wrap.classList.remove("open");
+        wrap.style.display = "none";
+      }
+
+      if (status) status.textContent = "PvP • Hazır";
+      if (opponent) opponent.textContent = "—";
+      if (spinner) spinner.classList.add("hidden");
+    },
+
+    _setStatus(text) {
+      if (this._els?.status) this._els.status.textContent = text;
+    },
+
+    _toast(text, ms = 850) {
+      if (!this._els?.toast) return;
+      this._els.toast.textContent = String(text || "");
+      this._els.toast.classList.add("on");
+      clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => {
+        if (this._els?.toast) this._els.toast.classList.remove("on");
+      }, ms);
+    },
+
+    _loop() {
+      if (!this._running || !this._state || !this._els?.ctx) return;
+
+      this._raf = requestAnimationFrame(() => this._loop());
+
+      const now = performance.now();
+      const dt = clamp((now - this._state.lastTs) / 16.6667, 0.25, 2.2);
+      this._state.lastTs = now;
+
+      this._state.elapsed = now - this._state.startedAt;
+      this._state.remaining = clamp(GAME_MS - this._state.elapsed, 0, GAME_MS);
+
+      this._updateIcon(now);
+      this._updateBot(now);
+      this._updateParticles(dt);
+      this._checkFinish(now);
+      this._updateHud();
+      this._render();
+    },
+
+    _updateIcon(now) {
+      if (!this._state || this._state.finished) return;
+
+      const cur = this._state.currentIcon;
+
+      if (cur && now >= cur.expiresAt) {
+        this._state.currentIcon = null;
+      }
+
+      if (!this._state.currentIcon && now >= this._state.nextSpawnAt) {
+        this._spawnIcon(now);
+      }
+    },
+
+    _spawnIcon(now) {
+      const canvas = this._els?.canvas;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(220, Math.round(rect.width || 0));
+      const h = Math.max(180, Math.round(rect.height || 0));
+
+      const icon = Math.random() < 0.22 ? ICONS.find((x) => x.id === "skull") : choice(GOOD_ICONS);
+      const size = clamp(Math.round(Math.min(w, h) * rand(0.16, 0.22)), 52, 92);
+
+      const marginX = 12;
+      const marginY = 12;
+      const x = rand(marginX, Math.max(marginX, w - size - marginX));
+      const y = rand(marginY, Math.max(marginY, h - size - marginY));
+
+      this._state.currentIcon = {
+        ...icon,
+        x,
+        y,
+        w: size,
+        h: size,
+        bornAt: now,
+        expiresAt: now + ICON_LIFE_MS,
+        scale: 0.86,
+        hit: false,
+      };
+
+      this._state.nextSpawnAt = now + randInt(70, 180);
+    },
+
+    _updateBot(now) {
+      if (!this._state || this._state.finished || now < this._state.botNextActionAt) return;
+
+      const missChance = 0.18;
+      const skullFailChance = 0.10;
+
+      if (Math.random() < skullFailChance) {
+        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı");
+      } else if (Math.random() > missChance) {
+        const attack = choice(GOOD_ICONS);
+        this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`);
+      }
+
+      this._state.botNextActionAt = now + randInt(320, 760);
+    },
+
+    _applyDamage(target, dmg, toastText) {
+      if (!this._state || this._state.finished) return;
+
+      if (target === "enemy") {
+        this._state.enemyHp = clamp(this._state.enemyHp - dmg, 0, START_HP);
+      } else {
+        this._state.meHp = clamp(this._state.meHp - dmg, 0, START_HP);
+      }
+
+      this._state.hitFlashUntil = performance.now() + 90;
+      this._toast(toastText, 620);
+      this._spawnBurst(target === "enemy" ? 0.28 : 0.72);
+    },
+
+    _spawnBurst(anchorXRatio) {
+      const canvas = this._els?.canvas;
+      if (!canvas || !this._state) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const cx = (rect.width || 300) * anchorXRatio;
+      const cy = (rect.height || 300) * 0.24;
+
+      for (let i = 0; i < 12; i++) {
+        this._state.particles.push({
+          x: cx,
+          y: cy,
+          vx: rand(-2.8, 2.8),
+          vy: rand(-2.8, 1.2),
+          life: rand(0.4, 0.95),
+          size: rand(2.5, 6),
+          alpha: rand(0.25, 0.65),
+        });
+      }
+    },
+
+    _updateParticles(dt) {
+      if (!this._state?.particles?.length) return;
+
+      for (let i = this._state.particles.length - 1; i >= 0; i--) {
+        const p = this._state.particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 0.10 * dt;
+        p.life -= 0.025 * dt;
+        if (p.life <= 0) this._state.particles.splice(i, 1);
+      }
+    },
+
+    _bindEvents() {
+      const canvas = this._els?.canvas;
+      const close = this._els?.close;
+      if (!canvas) return;
+
+      const getPos = (ev) => {
+        const src = ev.touches?.[0] || ev.changedTouches?.[0] || ev;
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: src.clientX - rect.left,
+          y: src.clientY - rect.top,
+        };
+      };
+
+      const onDown = (ev) => {
+        if (!this._running || !this._state || this._state.finished) return;
+        const p = getPos(ev);
+        this._handleTap(p.x, p.y);
+        ev.preventDefault?.();
+      };
+
+      const onResize = () => {
+        this._resizeCanvas();
+        this._render();
+      };
+
+      canvas.addEventListener("mousedown", onDown);
+      canvas.addEventListener("touchstart", onDown, { passive: false });
+      window.addEventListener("resize", onResize);
+
+      if (close) {
+        close.onclick = () => this.backToMenu();
+      }
+
+      if (window.ResizeObserver && this._els?.stage) {
+        this._resizeObserver = new ResizeObserver(() => {
+          this._resizeCanvas();
+          this._render();
+        });
+        this._resizeObserver.observe(this._els.stage);
+      }
+
+      this._unbind = () => {
+        canvas.removeEventListener("mousedown", onDown);
+        canvas.removeEventListener("touchstart", onDown);
+        window.removeEventListener("resize", onResize);
+        if (close) close.onclick = null;
+      };
+    },
+
+    _destroyEvents() {
+      if (this._unbind) {
+        this._unbind();
+        this._unbind = null;
+      }
+      if (this._resizeObserver) {
+        this._resizeObserver.disconnect();
+        this._resizeObserver = null;
+      }
+    },
+
+    _resizeCanvas() {
+      if (!this._els?.canvas || !this._els?.ctx) return false;
+
+      const canvas = this._els.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      const width = Math.max(10, Math.floor((rect.width || 300) * dpr));
+      const height = Math.max(10, Math.floor((rect.height || 300) * dpr));
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return true;
+    },
+
+    _handleTap(x, y) {
+      const cur = this._state?.currentIcon;
+      if (!cur || cur.hit) return;
+      if (!pointInRect(x, y, cur)) return;
+
+      cur.hit = true;
+      this._state.currentIcon = null;
+
+      if (cur.bad) {
+        this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`);
+      } else {
+        this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`);
+      }
+    },
+
+    _checkFinish(now) {
+      if (!this._state || this._state.finished) return;
+
+      if (this._state.enemyHp <= 0) {
+        return this._finish(true, "Rakip düştü");
+      }
+
+      if (this._state.meHp <= 0) {
+        return this._finish(false, "Sen düştün");
+      }
+
+      if (this._state.remaining <= 0) {
+        if (this._state.meHp > this._state.enemyHp) return this._finish(true, "Süre bitti • HP üstünlüğü");
+        if (this._state.meHp < this._state.enemyHp) return this._finish(false, "Süre bitti • Rakip önde");
+        return this._finish(true, "Süre bitti • Beraberlikte sen öndesin");
+      }
+    },
+
+    _finish(win, reason) {
+      if (!this._state || this._state.finished) return;
+      this._state.finished = true;
+      this._running = false;
+
+      this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
+      this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
+      this._recordResult(win, reason);
+      this._updateHud();
+      this._render();
+
+      const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
+      try {
+        window.dispatchEvent(new CustomEvent(eventName, {
+          detail: {
+            mode: "arena",
+            game: "cage",
+            win,
+            reason,
+            myHp: this._state.meHp,
+            enemyHp: this._state.enemyHp,
+            opponent: this._opponent?.username || "Rakip",
+          },
+        }));
+      } catch (_) {
+        window.dispatchEvent(new Event(eventName));
+      }
+    },
+
+    _recordResult(win, reason) {
+      const store = window.tcStore;
+      if (!store?.get || !store?.set) return;
+
+      const state = store.get() || {};
+      const pvp = { ...(state.pvp || {}) };
+
+      pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
+      pvp.losses = Number(pvp.losses || 0) + (!win ? 1 : 0);
+      pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 16 : -12), 0, 999999);
+      pvp.lastMode = "arena";
+      pvp.lastGame = "cage";
+      pvp.lastResult = {
+        win,
+        reason,
+        myHp: Number(this._state?.meHp || 0),
+        enemyHp: Number(this._state?.enemyHp || 0),
+        at: Date.now(),
+      };
+
+      store.set({ pvp });
+    },
+
+    _updateHud() {
+      if (!this._els || !this._state) return;
+
+      const mePct = clamp(this._state.meHp / START_HP, 0, 1) * 100;
+      const enemyPct = clamp(this._state.enemyHp / START_HP, 0, 1) * 100;
+      const timePct = clamp(this._state.remaining / GAME_MS, 0, 1) * 100;
+      const sec = Math.ceil(this._state.remaining / 1000);
+
+      if (this._els.meFill) this._els.meFill.style.transform = `scaleX(${mePct / 100})`;
+      if (this._els.enemyFill) this._els.enemyFill.style.transform = `scaleX(${enemyPct / 100})`;
+      if (this._els.meHpText) this._els.meHpText.textContent = String(Math.round(this._state.meHp));
+      if (this._els.enemyHpText) this._els.enemyHpText.textContent = String(Math.round(this._state.enemyHp));
+
+      if (this._els.rootMeFill) this._els.rootMeFill.style.transform = `scaleX(${mePct / 100})`;
+      if (this._els.rootEnemyFill) this._els.rootEnemyFill.style.transform = `scaleX(${enemyPct / 100})`;
+      if (this._els.rootMeText) this._els.rootMeText.textContent = `${Math.round(this._state.meHp)} / ${START_HP}`;
+      if (this._els.rootEnemyText) this._els.rootEnemyText.textContent = `${Math.round(this._state.enemyHp)} / ${START_HP}`;
+
+      if (this._els.timeFill) this._els.timeFill.style.transform = `scaleX(${timePct / 100})`;
+      if (this._els.timerText) this._els.timerText.textContent = String(sec);
+      if (this._els.sub) {
+        this._els.sub.textContent = this._state.finished
+          ? (this._state.winner ? "Bitti" : "Bitti")
+          : `${sec} saniye • hızlı PvP`;
+      }
+    },
+
+    _render() {
+      if (!this._els?.ctx || !this._els?.canvas || !this._state) return;
+
+      this._resizeCanvas();
+
+      const ctx = this._els.ctx;
+      const canvas = this._els.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(10, Math.round(rect.width || 300));
+      const h = Math.max(10, Math.round(rect.height || 300));
+
+      ctx.clearRect(0, 0, w, h);
+
+      const cageGrad = ctx.createLinearGradient(0, 0, 0, h);
+      cageGrad.addColorStop(0, "rgba(24,28,40,0.98)");
+      cageGrad.addColorStop(1, "rgba(7,10,18,0.98)");
+      fillRoundRect(ctx, 0, 0, w, h, 18, cageGrad);
+
+      for (let i = 1; i <= 7; i++) {
+        const yy = Math.floor((h / 8) * i);
+        ctx.strokeStyle = "rgba(255,255,255,0.04)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, yy);
+        ctx.lineTo(w, yy);
+        ctx.stroke();
+      }
+
+      const ring = ctx.createRadialGradient(w * 0.5, h * 0.5, 10, w * 0.5, h * 0.5, Math.max(w, h) * 0.5);
+      ring.addColorStop(0, "rgba(255,140,60,0.08)");
+      ring.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = ring;
+      ctx.fillRect(0, 0, w, h);
+
+      this._drawLaneLights(ctx, w, h);
+      this._drawParticles(ctx);
+      this._drawCurrentIcon(ctx);
+
+      if (performance.now() < this._state.hitFlashUntil) {
+        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      if (this._state.finished) {
+        ctx.fillStyle = "rgba(0,0,0,0.46)";
+        fillRoundRect(ctx, w * 0.18, h * 0.36, w * 0.64, 72, 18, "rgba(0,0,0,0.58)");
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "900 18px system-ui, Arial";
+        ctx.fillText(this._state.meHp >= this._state.enemyHp ? "KAZANDIN" : "KAYBETTİN", w * 0.5, h * 0.36 + 28);
+        ctx.font = "800 12px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.78)";
+        ctx.fillText(
+          `${Math.round(this._state.meHp)} HP • ${Math.round(this._state.enemyHp)} HP`,
+          w * 0.5,
+          h * 0.36 + 50
+        );
+      }
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    },
+
+    _drawLaneLights(ctx, w, h) {
+      const leftGlow = ctx.createLinearGradient(0, 0, w * 0.14, 0);
+      leftGlow.addColorStop(0, "rgba(255,120,70,0.22)");
+      leftGlow.addColorStop(1, "rgba(255,120,70,0)");
+      ctx.fillStyle = leftGlow;
+      ctx.fillRect(0, 0, w * 0.18, h);
+
+      const rightGlow = ctx.createLinearGradient(w, 0, w * 0.86, 0);
+      rightGlow.addColorStop(0, "rgba(255,120,70,0.22)");
+      rightGlow.addColorStop(1, "rgba(255,120,70,0)");
+      ctx.fillStyle = rightGlow;
+      ctx.fillRect(w * 0.82, 0, w * 0.18, h);
+
+      for (let i = 0; i < 9; i++) {
+        const y = 16 + i * ((h - 32) / 8);
+        fillRoundRect(ctx, 8, y, 5, 16, 3, "rgba(255,170,90,0.40)");
+        fillRoundRect(ctx, w - 13, y, 5, 16, 3, "rgba(255,170,90,0.40)");
+      }
+    },
+
+    _drawCurrentIcon(ctx) {
+      const cur = this._state?.currentIcon;
+      if (!cur) return;
+
+      const now = performance.now();
+      const lifeT = clamp((now - cur.bornAt) / ICON_LIFE_MS, 0, 1);
+      const alpha = lifeT < 0.18 ? lifeT / 0.18 : 1 - Math.max(0, (lifeT - 0.76) / 0.24);
+      const scale = lerp(0.84, 1, Math.min(1, lifeT * 2.4));
+
+      ctx.save();
+      ctx.globalAlpha = clamp(alpha, 0, 1);
+      ctx.translate(cur.x + cur.w / 2, cur.y + cur.h / 2);
+      ctx.scale(scale, scale);
+
+      const x = -cur.w / 2;
+      const y = -cur.h / 2;
+
+      const glow = ctx.createRadialGradient(0, 0, 6, 0, 0, cur.w * 0.66);
+      glow.addColorStop(0, cur.color + "88");
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, cur.w * 0.58, 0, Math.PI * 2);
+      ctx.fill();
+
+      fillRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.06)");
+      strokeRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.12)", 1.4);
+
+      ctx.font = `900 ${Math.floor(cur.w * 0.48)}px system-ui, Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(cur.emoji, 0, -6);
+
+      ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.12))}px system-ui, Arial`;
+      ctx.fillStyle = "rgba(255,255,255,0.84)";
+      ctx.fillText(cur.label, 0, cur.h * 0.27);
+
+      ctx.restore();
+    },
+
+    _drawParticles(ctx) {
+      if (!this._state?.particles?.length) return;
+
+      for (const p of this._state.particles) {
+        ctx.globalAlpha = clamp(p.life * p.alpha, 0, 1);
+        ctx.fillStyle = "rgba(255,150,90,1)";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    },
+  };
+
+  window.TonCrimePVP_CAGE = api;
+})();
