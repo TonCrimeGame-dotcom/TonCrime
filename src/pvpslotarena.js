@@ -1017,8 +1017,7 @@
       this._updateHud();
       this._render();
 
-      const spinIndex = actor === "me" ? s.meSpins : s.enemySpins;
-      const currentWinChance = spinIndex < 5 ? 0.005 : WIN_CHANCE;
+  
     const playedSpins = actor === "me"
   ? (BASE_SPINS - s.meSpins)
   : (BASE_SPINS - s.enemySpins);
