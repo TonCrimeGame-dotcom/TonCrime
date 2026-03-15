@@ -650,12 +650,6 @@
           return;
         }
 
-        if (id === "arena") {
-          if (dom.status) dom.status.textContent = "PvP • Arena yakında";
-          if (dom.spinner) dom.spinner.classList.add("hidden");
-          this._launchingGame = false;
-          return;
-        }
 
         if (id === "roulette") {
           await loadPvpGameScript([
