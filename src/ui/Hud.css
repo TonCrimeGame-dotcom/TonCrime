@@ -226,21 +226,6 @@
   left: -42px;
 }
 
-#hudLogo {
-  display: block;
-  width: auto !important;
-  height: 100% !important;
-  max-width: 100%;
-  max-height: 56px;
-  object-fit: contain;
-  image-rendering: auto;
-  filter:
-    drop-shadow(0 4px 14px rgba(0,0,0,0.42))
-    drop-shadow(0 1px 0 rgba(255,210,120,0.12));
-  transform: translate(-18px, 0); /* sola kaydırma */
-  opacity: 0.98;
-}
-
 /* ===== RIGHT ===== */
 #hudRight {
   width: 150px;
