@@ -3,23 +3,51 @@
   const ICON_LIFE_MS = 500;
   const START_HP = 1000;
 
-const DAMAGE = {
-  punch: 12,
-  kick: 14,
-  slap: 8,
-  brain: 16,
-  skull: 15,
-  weedHeal: 25,
-};
+  const DAMAGE = {
+    punch: 12,
+    kick: 14,
+    slap: 8,
+    brain: 16,
+    drink: 13,
+    skull: 15,
+    weedHeal: 25,
+  };
 
- const ICONS = [
-  { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
-  { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
-  { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
-  { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
-  { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
-  { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
-];
+  const ICON_PATHS = {
+    skull: "./src/assets/skull.png",
+    drink: "./src/assets/drink.png",
+    kick: "./src/assets/kick.png",
+    weed: "./src/assets/weed.png",
+    slap: "./src/assets/slap.png",
+    punch: "./src/assets/punch.png",
+    brain: "./src/assets/brain.png",
+  };
+
+  const ICON_IMAGES = {};
+  let ICONS_PRELOADED = false;
+
+  function preloadIcons() {
+    if (ICONS_PRELOADED) return;
+    ICONS_PRELOADED = true;
+
+    Object.entries(ICON_PATHS).forEach(([key, src]) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.loading = "eager";
+      img.src = src;
+      ICON_IMAGES[key] = img;
+    });
+  }
+
+  const ICONS = [
+    { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
+    { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
+    { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
+    { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
+    { id: "drink", emoji: "🍾", label: "İÇKİ", color: "#ffd166", damage: DAMAGE.drink, bad: false, heal: false },
+    { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
+    { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
+  ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
   const BOT_NAMES = ["ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven"];
@@ -70,6 +98,21 @@ const DAMAGE = {
 
   function pointInRect(px, py, r) {
     return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  function drawImageFit(ctx, img, x, y, w, h) {
+    if (!img || !img.complete || !(img.naturalWidth || img.width)) return false;
+
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const scale = Math.min(w / iw, h / ih);
+    const dw = Math.max(4, iw * scale);
+    const dh = Math.max(4, ih * scale);
+    const dx = x + (w - dw) * 0.5;
+    const dy = y + (h - dh) * 0.5;
+
+    ctx.drawImage(img, dx, dy, dw, dh);
+    return true;
   }
 
   function ensureStyle() {
@@ -349,6 +392,7 @@ const DAMAGE = {
 
     init(opts = {}) {
       ensureStyle();
+      preloadIcons();
 
       const arena = document.getElementById(opts.arenaId || "arena");
       const status = document.getElementById(opts.statusId || "pvpStatus");
@@ -563,7 +607,14 @@ const DAMAGE = {
         this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı");
       } else if (Math.random() > missChance) {
         const attack = choice(GOOD_ICONS);
-        this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`);
+        if (attack.heal) {
+          this._state.enemyHp = clamp(this._state.enemyHp + attack.damage, 0, START_HP);
+          this._state.hitFlashUntil = performance.now() + 90;
+          this._toast(`${this._opponent.username} OT kullandı • +${attack.damage} HP`, 620);
+          this._spawnBurst(0.28);
+        } else {
+          this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`);
+        }
       }
 
       this._state.botNextActionAt = now + randInt(320, 760);
@@ -582,14 +633,16 @@ const DAMAGE = {
       this._toast(toastText, 620);
       this._spawnBurst(target === "enemy" ? 0.28 : 0.72);
     },
-    _healMe(amount, toastText) {
-  if (!this._state || this._state.finished) return;
 
-  this._state.meHp = clamp(this._state.meHp + amount, 0, START_HP);
-  this._state.hitFlashUntil = performance.now() + 90;
-  this._toast(toastText, 620);
-  this._spawnBurst(0.72);
-},
+    _healMe(amount, toastText) {
+      if (!this._state || this._state.finished) return;
+
+      this._state.meHp = clamp(this._state.meHp + amount, 0, START_HP);
+      this._state.hitFlashUntil = performance.now() + 90;
+      this._toast(toastText, 620);
+      this._spawnBurst(0.72);
+    },
+
     _spawnBurst(anchorXRatio) {
       const canvas = this._els?.canvas;
       if (!canvas || !this._state) return;
@@ -704,26 +757,26 @@ const DAMAGE = {
       return true;
     },
 
-_handleTap(x, y) {
-  const cur = this._state?.currentIcon;
-  if (!cur || cur.hit) return;
-  if (!pointInRect(x, y, cur)) return;
+    _handleTap(x, y) {
+      const cur = this._state?.currentIcon;
+      if (!cur || cur.hit) return;
+      if (!pointInRect(x, y, cur)) return;
 
-  cur.hit = true;
-  this._state.currentIcon = null;
+      cur.hit = true;
+      this._state.currentIcon = null;
 
-  if (cur.bad) {
-    this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`);
-    return;
-  }
+      if (cur.bad) {
+        this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`);
+        return;
+      }
 
-  if (cur.heal) {
-    this._healMe(cur.damage, `🌿 OT • +${cur.damage} HP`);
-    return;
-  }
+      if (cur.heal) {
+        this._healMe(cur.damage, `🌿 OT • +${cur.damage} HP`);
+        return;
+      }
 
-  this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`);
-},
+      this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`);
+    },
 
     _checkFinish() {
       if (!this._state || this._state.finished) return;
@@ -854,15 +907,27 @@ _handleTap(x, y) {
       fillRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.06)");
       strokeRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.12)", 1.4);
 
-      ctx.font = `900 ${Math.floor(cur.w * 0.48)}px system-ui, Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "#fff";
-      ctx.fillText(cur.emoji, 0, -6);
+      const img = ICON_IMAGES[cur.id];
+      const artBoxX = x + cur.w * 0.14;
+      const artBoxY = y + cur.h * 0.10;
+      const artBoxW = cur.w * 0.72;
+      const artBoxH = cur.h * 0.56;
+
+      const drew = drawImageFit(ctx, img, artBoxX, artBoxY, artBoxW, artBoxH);
+
+      if (!drew) {
+        ctx.font = `900 ${Math.floor(cur.w * 0.48)}px system-ui, Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#fff";
+        ctx.fillText(cur.emoji, 0, -6);
+      }
 
       ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.12))}px system-ui, Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.fillStyle = "rgba(255,255,255,0.84)";
-      ctx.fillText(cur.label, 0, cur.h * 0.27);
+      ctx.fillText(cur.label, 0, cur.h * 0.28);
 
       ctx.restore();
     },
