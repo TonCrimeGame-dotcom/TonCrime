@@ -40,13 +40,13 @@
   }
 
   const ICONS = [
-    { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
-    { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
-    { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
-    { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
-    { id: "drink", emoji: "🍾", label: "İÇKİ", color: "#ffd166", damage: DAMAGE.drink, bad: false, heal: false },
-    { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
-    { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
+    { id: "punch", emoji: "👊", label: "", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
+    { id: "kick", emoji: "🦵", label: "", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
+    { id: "slap", emoji: "🖐️", label: "", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
+    { id: "brain", emoji: "🧠", label: "", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
+    { id: "drink", emoji: "🍾", label: "", color: "#ffd166", damage: DAMAGE.drink, bad: false, heal: false },
+    { id: "weed", emoji: "🌿", label: "", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
+    { id: "skull", emoji: "💀", label: "", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
   ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
