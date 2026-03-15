@@ -7,8 +7,8 @@
   const BONUS_TRIGGER = 4;
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
-  const WIN_CHANCE = 0.02;
-  const BONUS_WIN_SHARE = 0.05;
+  const WIN_CHANCE = 0.01;
+  const BONUS_WIN_SHARE = 0.01;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
@@ -165,7 +165,7 @@
     }
 
     const target = choice(PAY_SYMBOLS);
-  const desired = randInt(MIN_CLUSTER, MIN_CLUSTER + 1);
+    const desired = MIN_CLUSTER;
     const extra = Math.max(0, desired - counts[target]);
     let budget = extra;
     const pay = shuffle(PAY_SYMBOLS.filter((x) => x !== target));
@@ -272,7 +272,7 @@
     return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
 
-  function tumble(board, removeSet, allowBonus = true) {
+  function tumble(board, removeSet, allowBonus = true, safeMode = false) {
     const next = cloneBoard(board);
     const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
 
@@ -303,6 +303,20 @@
         newCount += 1;
         dropMap[wr][c] = newCount + wr + 1;
         wr -= 1;
+      }
+    }
+
+    if (safeMode) {
+      let guard = 0;
+      while (guard < 32) {
+        const res = evaluateBoard(next, false);
+        if (!res.hasAction) break;
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            if (dropMap[r][c] > 0) next[r][c] = createCell(weightedSymbol(false));
+          }
+        }
+        guard += 1;
       }
     }
 
@@ -758,7 +772,7 @@
 
     _setupState() {
       this._state = {
-        board: makeBoard(false, false),
+        board: makeBoard(false, true),
         meHp: START_HP,
         enemyHp: START_HP,
         meSpins: BASE_SPINS,
@@ -947,7 +961,7 @@
         ? "RAKİP DÜŞÜNÜYOR"
         : "SONUÇ";
       const chipTumble = s.inBonus
-        ? `ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
+        ? `ÇARPAN x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
         : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
 
       if (this._els.chipBase) this._els.chipBase.textContent = chipBase;
@@ -1017,20 +1031,20 @@
       this._updateHud();
       this._render();
 
-  
-    const playedSpins = actor === "me"
-  ? (BASE_SPINS - s.meSpins)
-  : (BASE_SPINS - s.enemySpins);
+      const playedSpins = actor === "me"
+        ? (BASE_SPINS - s.meSpins)
+        : (BASE_SPINS - s.enemySpins);
 
-const currentWinChance =
-  playedSpins === 0 ? 0 :
-  playedSpins < 4 ? 0.002 :
-  WIN_CHANCE;
+      const currentWinChance =
+        playedSpins < 6 ? 0 :
+        playedSpins < 12 ? 0.003 :
+        WIN_CHANCE;
 
-const wantWin = Math.random() < currentWinChance;
+      const wantWin = Math.random() < currentWinChance;
 
-const allowBonusOnSpin =
-  !(s.inBonus && s.bonusOwner === actor) && playedSpins >= 4;
+      const allowBonusOnSpin =
+        !(s.inBonus && s.bonusOwner === actor) && playedSpins >= 8;
+
       s.board = makeBoard(wantWin, allowBonusOnSpin);
       await this._spinAnimation();
 
@@ -1144,9 +1158,9 @@ const allowBonusOnSpin =
             s.multipliers = drops;
             const addMulti = drops.reduce((sum, d) => sum + d.value, 0);
             s.bonusMultiplierBank += addMulti;
-            s.displayedMultiplier = s.bonusMultiplierBank;
-            hitDamage *= Math.max(1, s.bonusMultiplierBank);
-            s.info = `${chain}. tumble • x${s.bonusMultiplierBank} çarpan`;
+            s.displayedMultiplier = 1 + s.bonusMultiplierBank;
+            hitDamage *= 1 + (s.bonusMultiplierBank * 0.12);
+            s.info = `${chain}. tumble • x${(1 + s.bonusMultiplierBank).toFixed(0)} çarpan`;
           } else {
             s.info = `${chain}. tumble`;
           }
@@ -1159,17 +1173,17 @@ const allowBonusOnSpin =
         if (res.bonusTriggered) {
           s.inBonus = true;
           s.bonusOwner = actor;
-          s.bonusSpinsLeft += BONUS_SPINS;
+          s.bonusSpinsLeft = BONUS_SPINS;
           s.bonusMultiplierBank = 0;
-          s.displayedMultiplier = 0;
+          s.displayedMultiplier = 1;
           s.multipliers = [];
           bonusJustStarted = true;
-          this._toast(`⭐ BONUS AÇILDI! +${BONUS_SPINS} spin`, 1400);
-          s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus aldı`;
+          this._toast(`⭐ BONUS AÇILDI! +${BONUS_SPINS} free spin`, 1400);
+          s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus kazandı`;
         }
 
         await new Promise((r) => setTimeout(r, 220));
-        const tum = tumble(s.board, res.remove, !(s.inBonus && s.bonusOwner === actor));
+        const tum = tumble(s.board, res.remove, !(s.inBonus && s.bonusOwner === actor), !(s.inBonus && s.bonusOwner === actor));
         s.markedRemove = new Set();
         s.board = tum.board;
         await this._animateDrop(tum.dropMap);
@@ -1448,7 +1462,7 @@ const allowBonusOnSpin =
         ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
         : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
       const chip2 = s.inBonus
-        ? `TOPLAM ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
+        ? `TOPLAM ÇARPAN x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
         : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
       const chip3 = s.turn === "me" && !s.spinning && !s.finished ? `SPIN SÜRESİ ${countdown}` : (s.turn === "enemy" ? "RAKİP DÜŞÜNÜYOR" : "SONUÇ");
 
