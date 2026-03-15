@@ -284,16 +284,51 @@
     return next;
   }
 
+  function getExtraMoveCount(len) {
+    if (len >= 6) return 3;
+    if (len === 5) return 2;
+    if (len === 4) return 1;
+    return 0;
+  }
+
+  function getMatchFxLabel(len) {
+    if (len >= 6) return "ULTRA MOVE +3";
+    if (len === 5) return "MEGA MOVE +2";
+    if (len === 4) return "EXTRA MOVE +1";
+    return "";
+  }
+
   function evaluateBoard(board) {
     const matches = findMatches(board);
     const remove = new Set();
     let damage = 0;
     let heal = 0;
     let extraMoves = 0;
+    const fxBursts = [];
 
     for (const m of matches) {
       const bonus = Math.max(0, m.len - 3);
-      if (m.len >= 4) extraMoves += 1;
+      const center = m.cells[Math.floor(m.cells.length / 2)] || m.cells[0];
+      const moveGain = getExtraMoveCount(m.len);
+
+      if (moveGain > 0) {
+        extraMoves += moveGain;
+        fxBursts.push({
+          kind: "extra",
+          label: getMatchFxLabel(m.len),
+          color: "#ffd166",
+          len: m.len,
+          cell: center,
+        });
+      } else {
+        fxBursts.push({
+          kind: "match",
+          label: `${m.len}LÜ`,
+          color: (TILE_META[m.type] || TILE_META[TILE.PUNCH]).color,
+          len: m.len,
+          cell: center,
+        });
+      }
 
       if (m.type === TILE.PUNCH) damage += SLOT_DAMAGE.punch + bonus * 2;
       if (m.type === TILE.KICK) damage += SLOT_DAMAGE.kick + bonus * 3;
@@ -313,6 +348,7 @@
       damage,
       heal,
       extraMoves,
+      fxBursts,
     };
   }
 
@@ -355,6 +391,7 @@
             if (m.type === TILE.PUNCH) score += 6;
             if (m.type === TILE.SLAP) score += 4;
             if (m.type === TILE.WEED) score += hpBias < 55 ? 8 : 2;
+            if (m.len >= 4) score += getExtraMoveCount(m.len) * 22;
           }
 
           score += Math.random() * 6;
@@ -422,7 +459,7 @@
           <div class="tc-cage-toast tc-crush-toast" id="tcCrushToast"></div>
         </div>
 
-        <div class="tc-cage-rule tc-crush-rule">Sürükleyerek veya dokunarak taş değiştir • Her raund 2 hamle</div>
+        <div class="tc-cage-rule tc-crush-rule">Sürükleyerek veya dokunarak taş değiştir • 4'lü / 5'li / 6'lı eşleşme extra move verir</div>
       </div>
     `;
   }
@@ -680,6 +717,10 @@
     _dragConsumed: false,
     _releaseGuard: false,
     _unbind: null,
+    _effects: [],
+    _flashAlpha: 0,
+    _flashColor: "#ffd166",
+    _animFrame: null,
 
     async init(opts = {}) {
       injectStyle();
@@ -740,6 +781,7 @@
 
       this._inited = true;
       this._setStatus("IQ ARENA hazır");
+      this._startFxLoop();
     },
 
     setOpponent(opp) {
@@ -803,6 +845,9 @@
       this._dragStart = null;
       this._dragFromTile = null;
       this._dragConsumed = false;
+      this._effects = [];
+      this._flashAlpha = 0;
+      this._flashColor = "#ffd166";
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -1093,6 +1138,110 @@
       el._offTimer = setTimeout(() => el.classList.remove("on"), 1100);
     },
 
+    _spawnMatchEffects(bursts) {
+      if (!Array.isArray(bursts) || !bursts.length) return;
+
+      for (const burst of bursts) {
+        const rect = this._tileRects.find((t) => t.r === burst.cell?.r && t.c === burst.cell?.c);
+        if (!rect) continue;
+
+        const meta = TILE_META[this._state?.board?.[burst.cell.r]?.[burst.cell.c]?.type] || null;
+        const color = burst.color || meta?.color || "#ffd166";
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        const count = burst.kind === "extra" ? 18 + burst.len * 2 : 10 + burst.len * 2;
+
+        this._flashAlpha = 0.24 + Math.min(0.22, burst.len * 0.03);
+        this._flashColor = color;
+
+        this._effects.push({
+          type: "label",
+          x: cx,
+          y: cy,
+          life: 0,
+          duration: burst.kind === "extra" ? 860 : 620,
+          text: burst.label,
+          color,
+          big: burst.kind === "extra",
+        });
+
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.PI * 2 * i) / count + Math.random() * 0.35;
+          const speed = burst.kind === "extra" ? 1.8 + Math.random() * 2.1 : 1.3 + Math.random() * 1.7;
+          this._effects.push({
+            type: "particle",
+            x: cx,
+            y: cy,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 0.3,
+            radius: burst.kind === "extra" ? 2.2 + Math.random() * 2.5 : 1.5 + Math.random() * 1.8,
+            life: 0,
+            duration: 520 + Math.random() * 260,
+            color,
+          });
+        }
+
+        if (burst.kind === "extra") {
+          for (let i = 0; i < 2 + getExtraMoveCount(burst.len); i++) {
+            this._effects.push({
+              type: "ring",
+              x: cx,
+              y: cy,
+              r: rect.w * (0.16 + i * 0.03),
+              maxR: rect.w * (0.65 + i * 0.16),
+              life: 0,
+              duration: 520 + i * 110,
+              color,
+            });
+          }
+        }
+      }
+    },
+
+    _startFxLoop() {
+      if (this._animFrame) cancelAnimationFrame(this._animFrame);
+
+      const loop = () => {
+        let dirty = false;
+        const now = performance.now();
+
+        if (this._effects.length) {
+          dirty = true;
+          this._effects = this._effects.filter((fx) => {
+            if (!fx._last) fx._last = now;
+            const dt = Math.max(8, now - fx._last);
+            fx._last = now;
+            fx.life += dt;
+
+            if (fx.type === "particle") {
+              fx.x += fx.vx * (dt / 16.6667);
+              fx.y += fx.vy * (dt / 16.6667);
+              fx.vy += 0.04 * (dt / 16.6667);
+            } else if (fx.type === "label") {
+              fx.y -= 0.34 * (dt / 16.6667);
+            } else if (fx.type === "ring") {
+              const t = clamp(fx.life / fx.duration, 0, 1);
+              fx.r = fx.r + (fx.maxR - fx.r) * Math.min(1, 0.15 + t * 0.2);
+            }
+
+            return fx.life < fx.duration;
+          });
+        }
+
+        if (this._flashAlpha > 0.001) {
+          dirty = true;
+          this._flashAlpha *= 0.86;
+        } else {
+          this._flashAlpha = 0;
+        }
+
+        if (dirty) this._render();
+        this._animFrame = requestAnimationFrame(loop);
+      };
+
+      this._animFrame = requestAnimationFrame(loop);
+    },
+
     _updateHud() {
       if (!this._els || !this._state) return;
       const s = this._state;
@@ -1214,12 +1363,15 @@
         totalHeal += res.heal;
         totalExtra += res.extraMoves;
 
+        this._render();
+        this._spawnMatchEffects(res.fxBursts);
+
         board = applyResolution(board, res);
         this._state.board = board;
         this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • Combo x${chain}`;
         this._updateHud();
         this._render();
-        await this._sleep(165);
+        await this._sleep(185);
       }
 
       if (!hasAnyPossibleMove(board)) {
@@ -1233,9 +1385,17 @@
         this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
         this._state.meHp = clamp(this._state.meHp + totalHeal, 0, START_HP);
         this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, START_HP);
-        this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1);
+        this._state.meActionLeft = clamp(this._state.meActionLeft - 1 + totalExtra, 0, 99);
 
-        this._toast(totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`);
+        if (totalExtra > 0) {
+          this._toast(
+            totalHeal > 0
+              ? `Vuruş ${totalDamage} • Can +${totalHeal} • Extra Move +${totalExtra}`
+              : `Vuruş ${totalDamage} • Extra Move +${totalExtra}`
+          );
+        } else {
+          this._toast(totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`);
+        }
 
         if (this._state.meMoves <= 0 || this._state.meActionLeft <= 0) {
           this._state.turn = "enemy";
@@ -1247,9 +1407,17 @@
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
         this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, START_HP);
         this._state.meHp = clamp(this._state.meHp - totalDamage, 0, START_HP);
-        this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1);
+        this._state.enemyActionLeft = clamp(this._state.enemyActionLeft - 1 + totalExtra, 0, 99);
 
-        this._toast(totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`);
+        if (totalExtra > 0) {
+          this._toast(
+            totalHeal > 0
+              ? `Rakip ${totalDamage} vurdu • Can +${totalHeal} • Extra Move +${totalExtra}`
+              : `Rakip ${totalDamage} vurdu • Extra Move +${totalExtra}`
+          );
+        } else {
+          this._toast(totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`);
+        }
 
         if (this._state.enemyMoves <= 0 || this._state.enemyActionLeft <= 0) {
           this._state.turn = "me";
@@ -1259,7 +1427,7 @@
         }
       }
 
-      this._state.info = `${Math.max(1, chain)} chain`;
+      this._state.info = totalExtra > 0 ? `${Math.max(1, chain)} chain • Extra +${totalExtra}` : `${Math.max(1, chain)} chain`;
       this._updateHud();
       this._render();
     },
@@ -1350,6 +1518,39 @@
       return new Promise((resolve) => setTimeout(resolve, ms));
     },
 
+    _renderEffects(ctx) {
+      for (const fx of this._effects) {
+        const t = clamp(fx.life / fx.duration, 0, 1);
+        const alpha = 1 - t;
+
+        if (fx.type === "particle") {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = fx.color;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, fx.radius * (0.8 + (1 - t) * 0.35), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "label") {
+          ctx.globalAlpha = alpha;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.font = fx.big ? "900 18px system-ui, Arial" : "900 14px system-ui, Arial";
+          ctx.lineWidth = fx.big ? 5 : 4;
+          ctx.strokeStyle = "rgba(0,0,0,0.55)";
+          ctx.strokeText(fx.text, fx.x, fx.y);
+          ctx.fillStyle = fx.color;
+          ctx.fillText(fx.text, fx.x, fx.y);
+        } else if (fx.type === "ring") {
+          ctx.globalAlpha = alpha * 0.7;
+          ctx.strokeStyle = fx.color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, fx.r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+    },
+
     _render() {
       if (!this._els?.ctx || !this._state || !this._els?.canvas) return;
 
@@ -1435,6 +1636,15 @@
           this._tileRects.push({ r, c, x, y, w: cell, h: cell });
         }
       }
+
+      if (this._flashAlpha > 0) {
+        ctx.globalAlpha = this._flashAlpha;
+        ctx.fillStyle = this._flashColor;
+        fillRoundRect(ctx, ox - 8, oy - 8, actual + 16, actual + 16, 18, this._flashColor);
+        ctx.globalAlpha = 1;
+      }
+
+      this._renderEffects(ctx);
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
