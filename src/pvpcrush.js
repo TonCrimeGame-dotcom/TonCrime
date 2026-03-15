@@ -1,4 +1,5 @@
 (function () {
+  const ROUND_MS = 30000; // 30 saniye
   const GRID = 7;
   const START_HP = 1000;
   const START_MOVES = 12;
