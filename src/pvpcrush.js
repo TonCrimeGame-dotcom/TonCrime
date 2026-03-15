@@ -719,56 +719,61 @@
       }, 5000);
     },
 
-    stop() {
-      this._running = false;
-      this._locked = false;
-      this._selected = null;
-      this._pointerDown = null;
-      this._dragStart = null;
-      this._dragFromTile = null;
-      clearTimeout(this._turnTimer);
-      clearTimeout(this._queueTimer);
-      this._turnTimer = null;
-      this._queueTimer = null;
-      if (this._state) {
-        this._state.matchmaking = false;
-        this._state.info = "Maç durduruldu";
-      }
-      this._setStatus("IQ ARENA durdu");
-      this._render();
-    },
+  stop() {
+  this._running = false;
+  this._locked = true;
 
-    reset() {
-      clearTimeout(this._turnTimer);
-      clearTimeout(this._queueTimer);
-      this._turnTimer = null;
-      this._queueTimer = null;
-      this._running = false;
-      this._locked = false;
-      this._selected = null;
-      this._pointerDown = null;
-      this._dragStart = null;
-      this._dragFromTile = null;
-      this._dragConsumed = false;
+  clearTimeout(this._turnTimer);
+  clearTimeout(this._queueTimer);
+  clearTimeout(this._roundExpireTimer);
+  clearTimeout(this._roundHudTimer);
 
-      const board = buildFreshBoard(this._lastSignature);
-      this._lastSignature = boardSignature(board);
+  this._turnTimer = null;
+  this._queueTimer = null;
+  this._roundExpireTimer = null;
+  this._roundHudTimer = null;
+},
 
-      this._state = {
-        board,
-        turn: "me",
-        meHp: START_HP,
-        enemyHp: START_HP,
-        meMoves: START_MOVES,
-        enemyMoves: START_MOVES,
-        meActionLeft: ACTIONS_PER_TURN,
-        enemyActionLeft: ACTIONS_PER_TURN,
-        info: "Maç hazır",
-        matchmaking: false,
-        finished: false,
-        roundEndsAt: 0,
-        roundTimeLeft: ROUND_MS,
-      };
+   reset() {
+  clearTimeout(this._turnTimer);
+  clearTimeout(this._queueTimer);
+  clearTimeout(this._roundExpireTimer);
+  clearTimeout(this._roundHudTimer);
+
+  this._turnTimer = null;
+  this._queueTimer = null;
+  this._roundExpireTimer = null;
+  this._roundHudTimer = null;
+
+  this._locked = false;
+  this._running = false;
+
+  const board = buildFreshBoard(this._lastBoardSignature);
+  this._lastBoardSignature = boardSignature(board);
+
+  this._state = {
+    board,
+    turn: "me",
+    meHp: START_HP,
+    enemyHp: START_HP,
+    meMoves: START_MOVES,
+    enemyMoves: START_MOVES,
+    meActionLeft: ACTIONS_PER_TURN,
+    enemyActionLeft: ACTIONS_PER_TURN,
+    info: "Maç hazır",
+    matchmaking: false,
+    finished: false,
+    roundEndsAt: 0,
+    roundTimeLeft: ROUND_MS,
+  };
+
+  this._selected = null;
+  this._tileRects = [];
+  this._toast("");
+  this._setStatus("Hazır");
+  this._updateHud();
+  this._render();
+},
 
       if (this._els?.meName) {
         const playerName = String(window.tcStore?.get?.()?.player?.username || "Sen").trim() || "Sen";
@@ -791,6 +796,7 @@
       this._setStatus(`IQ ARENA • ${name} bulundu`);
       this._toast(`${name} maça girdi`);
       this._locked = false;
+      this._startRoundTimer("me");
       if (this._els?.enemyName) this._els.enemyName.textContent = name;
       this._updateHud();
       this._render();
@@ -1041,7 +1047,66 @@
       clearTimeout(el._offTimer);
       el._offTimer = setTimeout(() => el.classList.remove("on"), 1100);
     },
+    _startRoundTimer(turn) {
+  if (!this._state || this._state.finished) return;
+  clearTimeout(this._roundExpireTimer);
 
+  this._state.turn = turn;
+  this._state.roundEndsAt = Date.now() + ROUND_MS;
+  this._state.roundTimeLeft = ROUND_MS;
+
+  this._roundExpireTimer = setTimeout(() => {
+    this._onRoundTimeout();
+  }, ROUND_MS);
+
+  this._tickRoundHud();
+},
+
+_tickRoundHud() {
+  clearTimeout(this._roundHudTimer);
+  if (!this._state || this._state.finished) return;
+
+  const loop = () => {
+    if (!this._state || this._state.finished) return;
+
+    this._state.roundTimeLeft = Math.max(0, this._state.roundEndsAt - Date.now());
+    this._updateHud();
+
+    if (this._state.roundTimeLeft > 0) {
+      this._roundHudTimer = setTimeout(loop, 100);
+    }
+  };
+
+  loop();
+},
+
+_onRoundTimeout() {
+  if (!this._state || this._state.finished) return;
+
+  this._toast("Süre doldu");
+
+  if (this._state.turn === "me") {
+    this._state.turn = "enemy";
+    this._state.enemyActionLeft = ACTIONS_PER_TURN;
+    this._state.info = "Senin süren doldu";
+    this._startRoundTimer("enemy");
+    this._updateHud();
+    this._render();
+
+    if (this._running) {
+      this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(500, 900));
+    }
+    return;
+  }
+
+  this._state.turn = "me";
+  this._state.meActionLeft = ACTIONS_PER_TURN;
+  this._state.info = "Rakibin süresi doldu";
+  this._locked = false;
+  this._startRoundTimer("me");
+  this._updateHud();
+  this._render();
+},
     _updateHud() {
       if (!this._els || !this._state) return;
       const s = this._state;
@@ -1263,23 +1328,31 @@ this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1 + tota
       }
     },
 
-    _finishGame(win, reason) {
-      if (!this._state || this._state.finished) return true;
-      this._state.finished = true;
-      this._running = false;
-      this._locked = true;
-      clearTimeout(this._turnTimer);
-      clearTimeout(this._queueTimer);
-      this._turnTimer = null;
-      this._queueTimer = null;
-      this._setStatus(win ? "Kazandın" : "Kaybettin");
-      this._state.info = reason || (win ? "Kazandın" : "Kaybettin");
-      this._toast(win ? "Kazandın" : "Kaybettin");
-      this._recordResult(win);
-      this._updateHud();
-      this._render();
-      return true;
-    },
+_finishGame(win, reason) {
+  if (!this._state || this._state.finished) return true;
+
+  this._state.finished = true;
+  this._running = false;
+  this._locked = true;
+
+  clearTimeout(this._turnTimer);
+  clearTimeout(this._queueTimer);
+  clearTimeout(this._roundExpireTimer);
+  clearTimeout(this._roundHudTimer);
+
+  this._turnTimer = null;
+  this._queueTimer = null;
+  this._roundExpireTimer = null;
+  this._roundHudTimer = null;
+
+  this._setStatus(win ? "Kazandın" : "Kaybettin");
+  this._state.info = reason || (win ? "Kazandın" : "Kaybettin");
+  this._toast(win ? "Kazandın" : "Kaybettin");
+  this._recordResult(win);
+  this._updateHud();
+  this._render();
+  return true;
+},
 
     _checkFinish() {
       if (!this._state) return false;
