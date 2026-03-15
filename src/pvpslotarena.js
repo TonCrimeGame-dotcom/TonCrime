@@ -100,12 +100,67 @@
 
   function countsToBoard(counts) {
     const pool = [];
-    for (const [type, count] of Object.entries(counts || {})) {
-      for (let i = 0; i < Number(count || 0); i++) {
-        pool.push(type);
+ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
+  const next = cloneBoard(board);
+  const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+
+  for (const key of removeSet) {
+    const [r, c] = key.split(":").map(Number);
+    if (next[r] && next[r][c]) next[r][c] = null;
+  }
+
+  const currentCounts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = next[r][c];
+      if (cell) currentCounts[cell.type] = (currentCounts[cell.type] || 0) + 1;
+    }
+  }
+
+  function safeRefillSymbol() {
+    const pool = shuffle(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
+
+    for (const id of pool) {
+      const cap = id === "bonus" ? BONUS_TRIGGER - 1 : MIN_CLUSTER - 1;
+      if ((currentCounts[id] || 0) < cap) {
+        currentCounts[id] = (currentCounts[id] || 0) + 1;
+        return id;
       }
     }
 
+    const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
+    currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
+    return fallback;
+  }
+
+  for (let c = 0; c < COLS; c++) {
+    const stack = [];
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (next[r][c]) stack.push(next[r][c]);
+    }
+
+    let wr = ROWS - 1;
+    for (let i = 0; i < stack.length; i++) {
+      const item = stack[i];
+      next[wr][c] = item;
+      const oldBottomIndex = i;
+      const oldRow = ROWS - 1 - oldBottomIndex;
+      dropMap[wr][c] = Math.max(0, oldRow - wr);
+      wr -= 1;
+    }
+
+    let newCount = 0;
+    while (wr >= 0) {
+      const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
+      next[wr][c] = createCell(newType);
+      newCount += 1;
+      dropMap[wr][c] = newCount + wr + 1;
+      wr -= 1;
+    }
+  }
+
+  return { board: next, dropMap };
+}
     while (pool.length < ROWS * COLS) {
       pool.push(choice(PAY_SYMBOLS));
     }
@@ -272,39 +327,67 @@
     return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
 
-  function tumble(board, removeSet, allowBonus = true, safeMode = false) {
-    const next = cloneBoard(board);
-    const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
+  const next = cloneBoard(board);
+  const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
 
-    for (const key of removeSet) {
-      const [r, c] = key.split(":").map(Number);
-      if (next[r] && next[r][c]) next[r][c] = null;
-    }
+  for (const key of removeSet) {
+    const [r, c] = key.split(":").map(Number);
+    if (next[r] && next[r][c]) next[r][c] = null;
+  }
 
+  const currentCounts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
+  for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const stack = [];
-      for (let r = ROWS - 1; r >= 0; r--) {
-        if (next[r][c]) stack.push(next[r][c]);
-      }
+      const cell = next[r][c];
+      if (cell) currentCounts[cell.type] = (currentCounts[cell.type] || 0) + 1;
+    }
+  }
 
-      let wr = ROWS - 1;
-      for (let i = 0; i < stack.length; i++) {
-        const item = stack[i];
-        next[wr][c] = item;
-        const oldBottomIndex = i;
-        const oldRow = ROWS - 1 - oldBottomIndex;
-        dropMap[wr][c] = Math.max(0, oldRow - wr);
-        wr -= 1;
-      }
+  function safeRefillSymbol() {
+    const pool = shuffle(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
 
-      let newCount = 0;
-      while (wr >= 0) {
-        next[wr][c] = createCell(weightedSymbol(allowBonus));
-        newCount += 1;
-        dropMap[wr][c] = newCount + wr + 1;
-        wr -= 1;
+    for (const id of pool) {
+      const cap = id === "bonus" ? BONUS_TRIGGER - 1 : MIN_CLUSTER - 1;
+      if ((currentCounts[id] || 0) < cap) {
+        currentCounts[id] = (currentCounts[id] || 0) + 1;
+        return id;
       }
     }
+
+    const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
+    currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
+    return fallback;
+  }
+
+  for (let c = 0; c < COLS; c++) {
+    const stack = [];
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (next[r][c]) stack.push(next[r][c]);
+    }
+
+    let wr = ROWS - 1;
+    for (let i = 0; i < stack.length; i++) {
+      const item = stack[i];
+      next[wr][c] = item;
+      const oldBottomIndex = i;
+      const oldRow = ROWS - 1 - oldBottomIndex;
+      dropMap[wr][c] = Math.max(0, oldRow - wr);
+      wr -= 1;
+    }
+
+    let newCount = 0;
+    while (wr >= 0) {
+      const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
+      next[wr][c] = createCell(newType);
+      newCount += 1;
+      dropMap[wr][c] = newCount + wr + 1;
+      wr -= 1;
+    }
+  }
+
+  return { board: next, dropMap };
+}
 
     if (safeMode) {
       let guard = 0;
