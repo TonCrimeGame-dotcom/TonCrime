@@ -1,23 +1,25 @@
 (function () {
   const GAME_MS = 45000;
   const ICON_LIFE_MS = 500;
-  const START_HP = 100;
+  const START_HP = 1000;
 
-  const DAMAGE = {
-    punch: 12,
-    kick: 14,
-    slap: 8,
-    brain: 16,
-    skull: 15,
-  };
+const DAMAGE = {
+  punch: 12,
+  kick: 14,
+  slap: 8,
+  brain: 16,
+  skull: 15,
+  weedHeal: 25,
+};
 
-  const ICONS = [
-    { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false },
-    { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false },
-    { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false },
-    { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false },
-    { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true },
-  ];
+ const ICONS = [
+  { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
+  { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
+  { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
+  { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
+  { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
+  { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
+];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
   const BOT_NAMES = ["ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven"];
@@ -580,7 +582,14 @@
       this._toast(toastText, 620);
       this._spawnBurst(target === "enemy" ? 0.28 : 0.72);
     },
+    _healMe(amount, toastText) {
+  if (!this._state || this._state.finished) return;
 
+  this._state.meHp = clamp(this._state.meHp + amount, 0, START_HP);
+  this._state.hitFlashUntil = performance.now() + 90;
+  this._toast(toastText, 620);
+  this._spawnBurst(0.72);
+},
     _spawnBurst(anchorXRatio) {
       const canvas = this._els?.canvas;
       if (!canvas || !this._state) return;
@@ -695,20 +704,26 @@
       return true;
     },
 
-    _handleTap(x, y) {
-      const cur = this._state?.currentIcon;
-      if (!cur || cur.hit) return;
-      if (!pointInRect(x, y, cur)) return;
+_handleTap(x, y) {
+  const cur = this._state?.currentIcon;
+  if (!cur || cur.hit) return;
+  if (!pointInRect(x, y, cur)) return;
 
-      cur.hit = true;
-      this._state.currentIcon = null;
+  cur.hit = true;
+  this._state.currentIcon = null;
 
-      if (cur.bad) {
-        this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`);
-      } else {
-        this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`);
-      }
-    },
+  if (cur.bad) {
+    this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`);
+    return;
+  }
+
+  if (cur.heal) {
+    this._healMe(cur.damage, `🌿 OT • +${cur.damage} HP`);
+    return;
+  }
+
+  this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`);
+},
 
     _checkFinish() {
       if (!this._state || this._state.finished) return;
