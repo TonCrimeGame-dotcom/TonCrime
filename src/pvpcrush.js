@@ -1190,10 +1190,9 @@ this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1 + totalExtra
         }
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
-        this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, 100);
-        this._state.meHp = clamp(this._state.meHp - totalDamage, 0, 100);
-        this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1);
-
+this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, 100);
+this._state.meHp = clamp(this._state.meHp - totalDamage, 0, 100);
+this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1 + totalExtra);
         this._toast(totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`);
 
         if (this._state.enemyMoves <= 0 || this._state.enemyActionLeft <= 0) {
