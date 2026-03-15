@@ -766,6 +766,8 @@
         info: "Maç hazır",
         matchmaking: false,
         finished: false,
+        roundEndsAt: 0,
+        roundTimeLeft: ROUND_MS,
       };
 
       if (this._els?.meName) {
