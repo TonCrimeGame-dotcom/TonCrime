@@ -1,3 +1,6 @@
+const WIN_CHANCE_BASE = 0.05;   // normal spin için %5
+const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
+
 (function () {
   const COLS = 6;
   const ROWS = 6;
@@ -15,7 +18,7 @@
     kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
     slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
     punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8 },
+    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 2 },
   };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
@@ -125,50 +128,67 @@
     return out;
   }
 
-  function evaluateBoard(board, inBonus) {
-    const { counts, bonusCount } = countTypes(board);
-    const remove = new Set();
-    const hits = [];
-    let damage = 0;
+function evaluateBoard(board, inBonus) {
+  const { counts, bonusCount } = countTypes(board);
+  const remove = new Set();
+  const hits = [];
+  let damage = 0;
 
-    for (const [type, count] of counts.entries()) {
-      if (count < MIN_CLUSTER) continue;
-      const meta = ICONS[type];
-      const extra = count - MIN_CLUSTER;
-      const hitDamage = meta.base * count + extra * meta.base * 0.7;
-      damage += hitDamage;
-      hits.push({ type, count, damage: hitDamage });
+  const spinCanWin = Math.random() < (inBonus ? WIN_CHANCE_BONUS : WIN_CHANCE_BASE);
 
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = board[r][c];
-          if (cell && cell.type === type) remove.add(`${r}:${c}`);
-        }
+  for (const [type, count] of counts.entries()) {
+    if (count < MIN_CLUSTER) continue;
+
+    // normalde cluster oluşsa bile her zaman ödeme verme
+    if (!spinCanWin) continue;
+
+    const meta = ICONS[type];
+    const extra = count - MIN_CLUSTER;
+    const hitDamage = meta.base * count + extra * meta.base * 0.7;
+    damage += hitDamage;
+    hits.push({ type, count, damage: hitDamage });
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = board[r][c];
+        if (cell && cell.type === type) remove.add(`${r}:${c}`);
       }
     }
-
-    let bonusTriggered = false;
-    if (!inBonus && bonusCount >= BONUS_TRIGGER) {
-      bonusTriggered = true;
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = board[r][c];
-          if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
-        }
-      }
-    }
-
-    if (inBonus && bonusCount > 0) {
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = board[r][c];
-          if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
-        }
-      }
-    }
-
-    return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
+
+  let bonusTriggered = false;
+
+  // bonusu da sürekli açtırma
+  const bonusCanTrigger = Math.random() < 0.04; // %4
+
+  if (!inBonus && bonusCount >= BONUS_TRIGGER && bonusCanTrigger) {
+    bonusTriggered = true;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = board[r][c];
+        if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+      }
+    }
+  }
+
+  if (inBonus && bonusCount > 0) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = board[r][c];
+        if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+      }
+    }
+  }
+
+  return {
+    hits,
+    damage,
+    remove,
+    bonusCount,
+    bonusTriggered,
+    hasAction: remove.size > 0
+  };
+}
 
   function tumble(board, removeSet, allowBonus = true) {
     const next = cloneBoard(board);
