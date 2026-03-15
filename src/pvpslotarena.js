@@ -7,8 +7,8 @@
   const BONUS_TRIGGER = 4;
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
-  const WIN_CHANCE = 0.05;
-  const BONUS_WIN_SHARE = 0.22;
+  const WIN_CHANCE = 0.02;
+  const BONUS_WIN_SHARE = 0.05;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
