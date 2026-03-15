@@ -40,13 +40,13 @@
   }
 
   const ICONS = [
-    { id: "punch", emoji: "👊", label: "", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
-    { id: "kick", emoji: "🦵", label: "", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
-    { id: "slap", emoji: "🖐️", label: "", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
-    { id: "brain", emoji: "🧠", label: "", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
-    { id: "drink", emoji: "🍾", label: "", color: "#ffd166", damage: DAMAGE.drink, bad: false, heal: false },
-    { id: "weed", emoji: "🌿", label: "", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
-    { id: "skull", emoji: "💀", label: "", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
+    { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
+    { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
+    { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
+    { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
+    { id: "drink", emoji: "🍾", label: "İÇKİ", color: "#ffd166", damage: DAMAGE.drink, bad: false, heal: false },
+    { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
+    { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
   ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
@@ -112,6 +112,28 @@
     const dy = y + (h - dh) * 0.5;
 
     ctx.drawImage(img, dx, dy, dw, dh);
+    return true;
+  }
+
+  function drawImageCover(ctx, img, x, y, w, h, radius = 0) {
+    if (!img || !img.complete || !(img.naturalWidth || img.width)) return false;
+
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const scale = Math.max(w / iw, h / ih);
+
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = x + (w - dw) * 0.5;
+    const dy = y + (h - dh) * 0.5;
+
+    ctx.save();
+    if (radius > 0) {
+      roundRectPath(ctx, x, y, w, h, radius);
+      ctx.clip();
+    }
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.restore();
     return true;
   }
 
@@ -908,26 +930,29 @@
       strokeRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.12)", 1.4);
 
       const img = ICON_IMAGES[cur.id];
-      const artBoxX = x + cur.w * 0.14;
-      const artBoxY = y + cur.h * 0.10;
-      const artBoxW = cur.w * 0.72;
-      const artBoxH = cur.h * 0.56;
+      const pad = cur.w * 0.06;
+      const artBoxX = x + pad;
+      const artBoxY = y + pad;
+      const artBoxW = cur.w - pad * 2;
+      const artBoxH = cur.h - pad * 2;
 
-      const drew = drawImageFit(ctx, img, artBoxX, artBoxY, artBoxW, artBoxH);
+      const drew = drawImageCover(ctx, img, artBoxX, artBoxY, artBoxW, artBoxH, 14);
 
       if (!drew) {
-        ctx.font = `900 ${Math.floor(cur.w * 0.48)}px system-ui, Arial`;
+        ctx.font = `900 ${Math.floor(cur.w * 0.58)}px system-ui, Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillStyle = "#fff";
-        ctx.fillText(cur.emoji, 0, -6);
+        ctx.fillText(cur.emoji, 0, -2);
       }
 
-      ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.12))}px system-ui, Arial`;
+      ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.11))}px system-ui, Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "rgba(255,255,255,0.84)";
-      ctx.fillText(cur.label, 0, cur.h * 0.28);
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.shadowColor = "rgba(0,0,0,0.45)";
+      ctx.shadowBlur = 8;
+      ctx.fillText(cur.label, 0, cur.h * 0.33);
 
       ctx.restore();
     },
