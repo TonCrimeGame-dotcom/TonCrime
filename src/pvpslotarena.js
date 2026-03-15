@@ -1019,8 +1019,19 @@
 
       const spinIndex = actor === "me" ? s.meSpins : s.enemySpins;
       const currentWinChance = spinIndex < 5 ? 0.005 : WIN_CHANCE;
-      const wantWin = Math.random() < currentWinChance;
-      const allowBonusOnSpin = !(s.inBonus && s.bonusOwner === actor);
+    const playedSpins = actor === "me"
+  ? (BASE_SPINS - s.meSpins)
+  : (BASE_SPINS - s.enemySpins);
+
+const currentWinChance =
+  playedSpins === 0 ? 0 :
+  playedSpins < 4 ? 0.002 :
+  WIN_CHANCE;
+
+const wantWin = Math.random() < currentWinChance;
+
+const allowBonusOnSpin =
+  !(s.inBonus && s.bonusOwner === actor) && playedSpins >= 4;
       s.board = makeBoard(wantWin, allowBonusOnSpin);
       await this._spinAnimation();
 
