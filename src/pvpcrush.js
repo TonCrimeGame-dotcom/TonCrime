@@ -23,12 +23,47 @@
   };
 
   const TILE_META = {
-    [TILE.PUNCH]: { emoji: "👊", color: "#ffb24a", label: "Yumruk" },
-    [TILE.KICK]: { emoji: "🦵", color: "#63e36c", label: "Tekme" },
-    [TILE.SLAP]: { emoji: "🖐️", color: "#7cb6ff", label: "Tokat" },
-    [TILE.HEAD]: { emoji: "🧠", color: "#ff6464", label: "Kafa" },
-    [TILE.WEED]: { emoji: "🌿", color: "#30d37b", label: "Ot" },
+    [TILE.PUNCH]: { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: SLOT_DAMAGE.punch, bad: false, heal: false, assetKey: "punch" },
+    [TILE.KICK]: { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: SLOT_DAMAGE.kick, bad: false, heal: false, assetKey: "kick" },
+    [TILE.SLAP]: { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: SLOT_DAMAGE.slap, bad: false, heal: false, assetKey: "slap" },
+    [TILE.HEAD]: { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: SLOT_DAMAGE.head, bad: false, heal: false, assetKey: "brain" },
+    [TILE.WEED]: { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: 0, bad: false, heal: true, assetKey: "weed" },
   };
+
+  const ICON_PATHS = {
+    punch: "./src/assets/punch.png",
+    kick: "./src/assets/kick.png",
+    slap: "./src/assets/slap.png",
+    brain: "./src/assets/brain.png",
+    weed: "./src/assets/weed.png",
+    drink: "./src/assets/drink.png",
+  };
+
+  const ICON_IMAGES = {};
+  let ICONS_LOADING = null;
+
+  function loadIcons() {
+    if (ICONS_LOADING) return ICONS_LOADING;
+
+    const jobs = Object.entries(ICON_PATHS).map(([key, src]) => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.decoding = "async";
+        img.onload = () => {
+          ICON_IMAGES[key] = img;
+          resolve();
+        };
+        img.onerror = () => {
+          ICON_IMAGES[key] = null;
+          resolve();
+        };
+        img.src = src;
+      });
+    });
+
+    ICONS_LOADING = Promise.all(jobs);
+    return ICONS_LOADING;
+  }
 
   const BOT_NAMES = [
     "ShadowWolf",
@@ -334,6 +369,24 @@
     return best;
   }
 
+  function drawTileIcon(ctx, tileType, x, y, size) {
+    const meta = TILE_META[tileType] || TILE_META[TILE.PUNCH];
+    const img = ICON_IMAGES[meta.assetKey];
+
+    if (img && img.complete && (img.naturalWidth || img.width)) {
+      const pad = Math.max(2, Math.floor(size * 0.08));
+      const drawSize = Math.max(8, size - pad * 2);
+      ctx.drawImage(img, x + pad, y + pad, drawSize, drawSize);
+      return;
+    }
+
+    ctx.font = `900 ${Math.floor(size * 0.47)}px system-ui, Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.fillText(meta.emoji, x + size / 2, y + size / 2 + 1);
+  }
+
   function makeArenaMarkup() {
     return `
       <div class="tc-cage-root tc-crush-root">
@@ -628,8 +681,9 @@
     _releaseGuard: false,
     _unbind: null,
 
-    init(opts = {}) {
+    async init(opts = {}) {
       injectStyle();
+      loadIcons().then(() => this._render());
 
       const arena = document.getElementById(opts.arenaId || "arena");
       const status = document.getElementById(opts.statusId || "pvpStatus");
@@ -1177,8 +1231,8 @@
 
       if (actor === "me") {
         this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
-        this._state.meHp = clamp(this._state.meHp + totalHeal, 0, 100);
-        this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, 100);
+        this._state.meHp = clamp(this._state.meHp + totalHeal, 0, START_HP);
+        this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, START_HP);
         this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1);
 
         this._toast(totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`);
@@ -1191,8 +1245,8 @@
         }
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
-        this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, 100);
-        this._state.meHp = clamp(this._state.meHp - totalDamage, 0, 100);
+        this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, START_HP);
+        this._state.meHp = clamp(this._state.meHp - totalDamage, 0, START_HP);
         this._state.enemyActionLeft = Math.max(0, this._state.enemyActionLeft - 1);
 
         this._toast(totalHeal > 0 ? `Rakip ${totalDamage} vurdu • Can +${totalHeal}` : `Rakip ${totalDamage} vurdu`);
@@ -1375,11 +1429,7 @@
             ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.font = `900 ${Math.floor(cell * 0.47)}px system-ui, Arial`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillStyle = "#fff";
-            ctx.fillText(meta.emoji, x + cell / 2, y + cell / 2 + 1);
+            drawTileIcon(ctx, tile.type, x + 2, y + 2, cell - 4);
           }
 
           this._tileRects.push({ r, c, x, y, w: cell, h: cell });
