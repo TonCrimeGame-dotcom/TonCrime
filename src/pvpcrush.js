@@ -1,6 +1,6 @@
 (function () {
   const GRID = 7;
-  const START_HP = 100;
+  const START_HP = 1000;
   const START_MOVES = 12;
   const ACTIONS_PER_TURN = 2;
   const DRAG_THRESHOLD = 16;
@@ -1176,11 +1176,10 @@
       this._state.board = board;
 
       if (actor === "me") {
-        this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
-        this._state.meHp = clamp(this._state.meHp + totalHeal, 0, 100);
-        this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, 100);
-        this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1);
-
+       this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
+this._state.meHp = clamp(this._state.meHp + totalHeal, 0, 100);
+this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, 100);
+this._state.meActionLeft = Math.max(0, this._state.meActionLeft - 1 + totalExtra);
         this._toast(totalHeal > 0 ? `Vuruş ${totalDamage} • Can +${totalHeal}` : `Vuruş ${totalDamage}`);
 
         if (this._state.meMoves <= 0 || this._state.meActionLeft <= 0) {
