@@ -165,7 +165,7 @@
     }
 
     const target = choice(PAY_SYMBOLS);
-    const desired = randInt(MIN_CLUSTER, Math.min(12, ROWS * COLS - (allowBonus ? counts.bonus : 0) - 10));
+  const desired = randInt(MIN_CLUSTER, MIN_CLUSTER + 1);
     const extra = Math.max(0, desired - counts[target]);
     let budget = extra;
     const pay = shuffle(PAY_SYMBOLS.filter((x) => x !== target));
@@ -758,7 +758,7 @@
 
     _setupState() {
       this._state = {
-        board: makeBoard(false, true),
+        board: makeBoard(false, false),
         meHp: START_HP,
         enemyHp: START_HP,
         meSpins: BASE_SPINS,
