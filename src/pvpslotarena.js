@@ -7,8 +7,8 @@
   const BONUS_TRIGGER = 4;
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
-  const WIN_CHANCE = 0.01;
-  const BONUS_WIN_SHARE = 0.01;
+  const WIN_CHANCE = 0.006;
+  const BONUS_WIN_SHARE = 0.006;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
@@ -17,7 +17,7 @@
     kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
     slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
     punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 12 },
+    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8 },
   };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
@@ -100,67 +100,12 @@
 
   function countsToBoard(counts) {
     const pool = [];
- function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
-  const next = cloneBoard(board);
-  const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-
-  for (const key of removeSet) {
-    const [r, c] = key.split(":").map(Number);
-    if (next[r] && next[r][c]) next[r][c] = null;
-  }
-
-  const currentCounts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = next[r][c];
-      if (cell) currentCounts[cell.type] = (currentCounts[cell.type] || 0) + 1;
-    }
-  }
-
-  function safeRefillSymbol() {
-    const pool = shuffle(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
-
-    for (const id of pool) {
-      const cap = id === "bonus" ? BONUS_TRIGGER - 1 : MIN_CLUSTER - 1;
-      if ((currentCounts[id] || 0) < cap) {
-        currentCounts[id] = (currentCounts[id] || 0) + 1;
-        return id;
+    for (const [type, count] of Object.entries(counts || {})) {
+      for (let i = 0; i < Number(count || 0); i++) {
+        pool.push(type);
       }
     }
 
-    const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
-    currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
-    return fallback;
-  }
-
-  for (let c = 0; c < COLS; c++) {
-    const stack = [];
-    for (let r = ROWS - 1; r >= 0; r--) {
-      if (next[r][c]) stack.push(next[r][c]);
-    }
-
-    let wr = ROWS - 1;
-    for (let i = 0; i < stack.length; i++) {
-      const item = stack[i];
-      next[wr][c] = item;
-      const oldBottomIndex = i;
-      const oldRow = ROWS - 1 - oldBottomIndex;
-      dropMap[wr][c] = Math.max(0, oldRow - wr);
-      wr -= 1;
-    }
-
-    let newCount = 0;
-    while (wr >= 0) {
-      const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
-      next[wr][c] = createCell(newType);
-      newCount += 1;
-      dropMap[wr][c] = newCount + wr + 1;
-      wr -= 1;
-    }
-  }
-
-  return { board: next, dropMap };
-}
     while (pool.length < ROWS * COLS) {
       pool.push(choice(PAY_SYMBOLS));
     }
@@ -183,7 +128,7 @@
     let remaining = ROWS * COLS;
 
     if (allowBonus) {
-      counts.bonus = randInt(0, Math.min(BONUS_TRIGGER - 1, 3));
+      counts.bonus = randInt(0, Math.min(BONUS_TRIGGER - 1, 2));
       remaining -= counts.bonus;
     }
 
@@ -265,7 +210,7 @@
   }
 
   function getMultiplierDrop() {
-    const count = randInt(1, 3);
+    const count = randInt(1, 2);
     const out = [];
     for (let i = 0; i < count; i++) {
       const value = choice(BONUS_MULTI_VALUES);
@@ -288,18 +233,26 @@
     const hits = [];
     let damage = 0;
 
+    let bestType = null;
+    let bestCount = 0;
     for (const [type, count] of counts.entries()) {
-      if (count < MIN_CLUSTER) continue;
-      const meta = ICONS[type];
-      const extra = count - MIN_CLUSTER;
-      const hitDamage = meta.base * count + extra * meta.base * 0.7;
+      if (count >= MIN_CLUSTER && count > bestCount) {
+        bestType = type;
+        bestCount = count;
+      }
+    }
+
+    if (bestType) {
+      const meta = ICONS[bestType];
+      const extra = bestCount - MIN_CLUSTER;
+      const hitDamage = meta.base * bestCount + extra * meta.base * 0.7;
       damage += hitDamage;
-      hits.push({ type, count, damage: hitDamage });
+      hits.push({ type: bestType, count: bestCount, damage: hitDamage });
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const cell = board[r][c];
-          if (cell && cell.type === type) remove.add(`${r}:${c}`);
+          if (cell && cell.type === bestType) remove.add(`${r}:${c}`);
         }
       }
     }
@@ -327,79 +280,60 @@
     return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
 
-function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
-  const next = cloneBoard(board);
-  const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+  function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
+    const next = cloneBoard(board);
+    const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
 
-  for (const key of removeSet) {
-    const [r, c] = key.split(":").map(Number);
-    if (next[r] && next[r][c]) next[r][c] = null;
-  }
-
-  const currentCounts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = next[r][c];
-      if (cell) currentCounts[cell.type] = (currentCounts[cell.type] || 0) + 1;
+    for (const key of removeSet) {
+      const [r, c] = key.split(":").map(Number);
+      if (next[r] && next[r][c]) next[r][c] = null;
     }
-  }
 
-  function safeRefillSymbol() {
-    const pool = shuffle(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
-
-    for (const id of pool) {
-      const cap = id === "bonus" ? BONUS_TRIGGER - 1 : MIN_CLUSTER - 1;
-      if ((currentCounts[id] || 0) < cap) {
-        currentCounts[id] = (currentCounts[id] || 0) + 1;
-        return id;
+    const currentCounts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = next[r][c];
+        if (cell) currentCounts[cell.type] = (currentCounts[cell.type] || 0) + 1;
       }
     }
 
-    const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
-    currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
-    return fallback;
-  }
-
-  for (let c = 0; c < COLS; c++) {
-    const stack = [];
-    for (let r = ROWS - 1; r >= 0; r--) {
-      if (next[r][c]) stack.push(next[r][c]);
-    }
-
-    let wr = ROWS - 1;
-    for (let i = 0; i < stack.length; i++) {
-      const item = stack[i];
-      next[wr][c] = item;
-      const oldBottomIndex = i;
-      const oldRow = ROWS - 1 - oldBottomIndex;
-      dropMap[wr][c] = Math.max(0, oldRow - wr);
-      wr -= 1;
-    }
-
-    let newCount = 0;
-    while (wr >= 0) {
-      const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
-      next[wr][c] = createCell(newType);
-      newCount += 1;
-      dropMap[wr][c] = newCount + wr + 1;
-      wr -= 1;
-    }
-  }
-
-  return { board: next, dropMap };
-}
-
-    if (safeMode) {
-      let guard = 0;
-      while (guard < 32) {
-        const res = evaluateBoard(next, false);
-        if (!res.hasAction) break;
-        for (let r = 0; r < ROWS; r++) {
-          for (let c = 0; c < COLS; c++) {
-            if (dropMap[r][c] > 0) next[r][c] = createCell(weightedSymbol(false));
-          }
+    function safeRefillSymbol() {
+      const pool = shuffle(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
+      for (const id of pool) {
+        const cap = id === "bonus" ? BONUS_TRIGGER - 1 : MIN_CLUSTER - 1;
+        if ((currentCounts[id] || 0) < cap) {
+          currentCounts[id] = (currentCounts[id] || 0) + 1;
+          return id;
         }
-        guard += 1;
+      }
+      const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
+      currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
+      return fallback;
+    }
+
+    for (let c = 0; c < COLS; c++) {
+      const stack = [];
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (next[r][c]) stack.push(next[r][c]);
+      }
+
+      let wr = ROWS - 1;
+      for (let i = 0; i < stack.length; i++) {
+        const item = stack[i];
+        next[wr][c] = item;
+        const oldBottomIndex = i;
+        const oldRow = ROWS - 1 - oldBottomIndex;
+        dropMap[wr][c] = Math.max(0, oldRow - wr);
+        wr -= 1;
+      }
+
+      let newCount = 0;
+      while (wr >= 0) {
+        const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
+        next[wr][c] = createCell(newType);
+        newCount += 1;
+        dropMap[wr][c] = newCount + wr + 1;
+        wr -= 1;
       }
     }
 
@@ -855,7 +789,7 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
 
     _setupState() {
       this._state = {
-        board: makeBoard(false, true),
+        board: makeBoard(false, false),
         meHp: START_HP,
         enemyHp: START_HP,
         meSpins: BASE_SPINS,
@@ -867,7 +801,7 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
         bonusOwner: null,
         bonusSpinsLeft: 0,
         bonusMultiplierBank: 0,
-        displayedMultiplier: 0,
+        displayedMultiplier: 1,
         multipliers: [],
         tumbleIndex: 0,
         info: "Hazır",
@@ -1009,9 +943,7 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
       const s = this._state;
       const mePct = clamp(s.meHp / START_HP, 0, 1) * 100;
       const enemyPct = clamp(s.enemyHp / START_HP, 0, 1) * 100;
-      const countdown = s.turn === "me" && !s.spinning && !s.finished && !s.inBonus && s.decisionEndsAt > 0
-        ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000))
-        : s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0
+      const countdown = s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0
         ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000))
         : 0;
 
@@ -1031,7 +963,7 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
       this._els.meSpins.textContent = meSpinTxt;
       this._els.enemySpins.textContent = enemySpinTxt;
       this._els.turn.textContent = s.inBonus
-        ? `${s.turn === "me" ? "SEN" : "RAKİP"} BONUS x${Math.max(0, Math.round(s.displayedMultiplier || 0))}`
+        ? `${s.turn === "me" ? "SEN" : "RAKİP"} BONUS x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
         : (s.turn === "me" ? "SEN" : "RAKİP");
       this._els.sub.textContent = s.info;
 
@@ -1118,15 +1050,19 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
         ? (BASE_SPINS - s.meSpins)
         : (BASE_SPINS - s.enemySpins);
 
-      const currentWinChance =
-        playedSpins < 6 ? 0 :
-        playedSpins < 12 ? 0.003 :
-        WIN_CHANCE;
+      const isBonusTurn = s.inBonus && s.bonusOwner === actor;
+      const currentWinChance = isBonusTurn
+        ? 0.05
+        : playedSpins < 8
+        ? 0
+        : playedSpins < 14
+        ? 0.002
+        : WIN_CHANCE;
 
       const wantWin = Math.random() < currentWinChance;
-
-      const allowBonusOnSpin =
-        !(s.inBonus && s.bonusOwner === actor) && playedSpins >= 8;
+      const allowBonusOnSpin = isBonusTurn
+        ? false
+        : playedSpins >= 12 && Math.random() < 0.06;
 
       s.board = makeBoard(wantWin, allowBonusOnSpin);
       await this._spinAnimation();
@@ -1142,11 +1078,11 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
       await this._resolveTumbles(actor);
 
       if (s.inBonus && s.bonusOwner === actor && s.bonusSpinsLeft <= 0) {
-        s.info = `BONUS BİTTİ • x${Math.max(1, s.bonusMultiplierBank)} sıfırlandı`;
+        s.info = `BONUS BİTTİ • x${Math.max(1, Math.round(s.displayedMultiplier || 1))} sıfırlandı`;
         s.inBonus = false;
         s.bonusOwner = null;
         s.bonusMultiplierBank = 0;
-        s.displayedMultiplier = 0;
+        s.displayedMultiplier = 1;
         s.multipliers = [];
         await new Promise((r) => setTimeout(r, 650));
       }
@@ -1166,14 +1102,14 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 1180;
+      const duration = 1320;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
           const ease = 1 - Math.pow(1 - t, 3);
-          s.spinOffset = (1 - ease) * 74;
+          s.spinOffset = (1 - ease) * 92;
           this._render();
           if (t >= 1) {
             s.spinOffset = 0;
@@ -1193,15 +1129,15 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
       s.dropProgress = 0;
 
       const start = performance.now();
-      const duration = 760;
+      const duration = 900;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
-          const easeOut = 1 - Math.pow(1 - t, 3.5);
-          const overshoot = Math.sin(Math.min(1, t) * Math.PI) * 0.08 * (1 - t);
-          s.dropProgress = clamp(easeOut + overshoot, 0, 1.06);
+          const easeOut = 1 - Math.pow(1 - t, 3.3);
+          const overshoot = Math.sin(Math.min(1, t) * Math.PI) * 0.11 * (1 - t);
+          s.dropProgress = clamp(easeOut + overshoot, 0, 1.08);
           this._render();
           if (t >= 1) {
             s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
@@ -1229,10 +1165,10 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
         chain += 1;
         s.tumbleIndex = chain;
         s.markedRemove = new Set(res.remove);
-        s.flashUntil = Date.now() + 300;
+        s.flashUntil = Date.now() + 340;
         s.info = res.damage > 0 ? `${chain}. tumble • 8+ ikon patladı` : `${chain}. tumble • bonus kontrol`;
         this._render();
-        await new Promise((r) => setTimeout(r, 620));
+        await new Promise((r) => setTimeout(r, 700));
 
         if (res.damage > 0) {
           let hitDamage = res.damage;
@@ -1242,8 +1178,8 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
             const addMulti = drops.reduce((sum, d) => sum + d.value, 0);
             s.bonusMultiplierBank += addMulti;
             s.displayedMultiplier = 1 + s.bonusMultiplierBank;
-            hitDamage *= 1 + (s.bonusMultiplierBank * 0.12);
-            s.info = `${chain}. tumble • x${(1 + s.bonusMultiplierBank).toFixed(0)} çarpan`;
+            hitDamage *= 1 + s.bonusMultiplierBank * 0.08;
+            s.info = `${chain}. tumble • x${Math.max(1, Math.round(s.displayedMultiplier))} çarpan`;
           } else {
             s.info = `${chain}. tumble`;
           }
@@ -1266,7 +1202,13 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
         }
 
         await new Promise((r) => setTimeout(r, 220));
-        const tum = tumble(s.board, res.remove, !(s.inBonus && s.bonusOwner === actor), !(s.inBonus && s.bonusOwner === actor));
+        const forceLoseRefill = !(s.inBonus && s.bonusOwner === actor);
+        const tum = tumble(
+          s.board,
+          res.remove,
+          !(s.inBonus && s.bonusOwner === actor),
+          forceLoseRefill
+        );
         s.markedRemove = new Set();
         s.board = tum.board;
         await this._animateDrop(tum.dropMap);
@@ -1532,34 +1474,6 @@ function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
         ctx.fillText(`x${m.value}`, 0, 1);
         ctx.restore();
       }
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-    },
-
-    _drawHudInsideStage(ctx, x, y, w) {
-      const s = this._state;
-      const infoY = y + 18;
-      const countdown = s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0 ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000)) : 0;
-
-      const chip1 = s.inBonus
-        ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
-        : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
-      const chip2 = s.inBonus
-        ? `TOPLAM ÇARPAN x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
-        : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
-      const chip3 = s.turn === "me" && !s.spinning && !s.finished ? `SPIN SÜRESİ ${countdown}` : (s.turn === "enemy" ? "RAKİP DÜŞÜNÜYOR" : "SONUÇ");
-
-      fillRoundRect(ctx, x, infoY, 116, 26, 13, "rgba(0,0,0,0.34)");
-      fillRoundRect(ctx, x + w - 166, infoY, 166, 26, 13, "rgba(0,0,0,0.34)");
-      fillRoundRect(ctx, x + (w - 128) / 2, infoY, 128, 26, 13, "rgba(0,0,0,0.34)");
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.font = "800 12px system-ui, Arial";
-      ctx.textBaseline = "middle";
-      ctx.fillText(chip1, x + 12, infoY + 13);
-      ctx.textAlign = "center";
-      ctx.fillText(chip3, x + w / 2, infoY + 13);
-      ctx.textAlign = "right";
-      ctx.fillText(chip2, x + w - 12, infoY + 13);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
     },
