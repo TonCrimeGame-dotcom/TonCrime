@@ -416,7 +416,13 @@ addImage("clan_bg", "./src/assets/Clan-bg.png");
 addImage("xxx", "./src/assets/xxx.jpg");
 addImage("xxx_bg", "./src/assets/xxx-bg.png");
 addImage("tata", "./src/assets/tata.png");
-
+addImage("skull", "./src/assets/skull.png");
+addImage("drink", "./src/assets/drink.png");
+addImage("slap", "./src/assets/slap.png");
+addImage("kick", "./src/assets/kick.png");
+addImage("punch", "./src/assets/punch.png");
+addImage("bonus", "./src/assets/bonus.png");
+addImage("brain", "./src/assets/brain.png");
 
 
 /* BLACK MARKET */
