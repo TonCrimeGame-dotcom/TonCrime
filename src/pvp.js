@@ -430,7 +430,7 @@
           open: true,
           accent: "#ff9340",
         },
-                {
+        {
           id: "slotarena",
           title: "Slot Arena",
           subtitle: "Sweet Bonanza PvP",
@@ -481,10 +481,12 @@
 
     _availableCards() {
       if (this.source === "nightclub") {
-        return this.cards.filter((c) => c.id === "grid" || c.id === "arena");
+        return this.cards.filter(
+          (c) => c.id === "grid" || c.id === "arena" || c.id === "slotarena"
+        );
       }
       if (this.source === "coffeeshop") {
-        return this.cards.filter((c) => c.id === "grid");
+        return this.cards.filter((c) => c.id === "grid" || c.id === "slotarena");
       }
       return this.cards;
     }
@@ -558,229 +560,34 @@
       }
     }
 
- async startGame(id) {
-  if (this._launchingGame) return;
-  this._launchingGame = true;
+    async startGame(id) {
+      if (this._launchingGame) return;
+      this._launchingGame = true;
 
-  const s = this.store?.get?.() || {};
-  const pvp = { ...(s.pvp || {}) };
+      const s = this.store?.get?.() || {};
+      const pvp = { ...(s.pvp || {}) };
 
-  pvp.selectedMode = id;
-  pvp.source = this.source || "general";
-  this.store?.set?.({ pvp });
+      pvp.selectedMode = id;
+      pvp.source = this.source || "general";
+      this.store?.set?.({ pvp });
 
-  try {
-    const dom = ensurePvpDom();
+      try {
+        const dom = ensurePvpDom();
 
-    if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
-    if (dom.opponent) dom.opponent.textContent = "ShadowWolf";
-    if (dom.spinner) dom.spinner.classList.remove("hidden");
+        if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
+        if (dom.opponent) dom.opponent.textContent = "ShadowWolf";
+        if (dom.spinner) dom.spinner.classList.remove("hidden");
 
-    if (id === "grid") {
-      await loadPvpGameScript([
-        "./src/pvpcrush.js",
-        "./pvpcrush.js",
-      ]);
+        if (id === "grid") {
+          await loadPvpGameScript([
+            "./src/pvpcrush.js",
+            "./pvpcrush.js",
+          ]);
 
-      if (!window.TonCrimePVP_CRUSH) {
-        throw new Error("TonCrimePVP_CRUSH bulunamadı");
-      }
-
-      window.TonCrimePVP = window.TonCrimePVP_CRUSH;
-
-      window.TonCrimePVP.init?.({
-        arenaId: "arena",
-        statusId: "pvpStatus",
-        enemyFillId: "enemyFill",
-        meFillId: "meFill",
-        enemyHpTextId: "enemyHpText",
-        meHpTextId: "meHpText",
-      });
-
-      window.TonCrimePVP.setOpponent?.({
-        username: "ShadowWolf",
-        isBot: true,
-      });
-
-      if (dom.startBtn) {
-        dom.startBtn.style.display = "";
-        dom.startBtn.onclick = async () => {
-          try {
-            window.TonCrimePVP.setOpponent?.({
-              username: "ShadowWolf",
-              isBot: true,
-            });
-            window.TonCrimePVP.reset?.();
-            await new Promise((r) => setTimeout(r, 120));
-            window.TonCrimePVP.start?.();
-          } catch (err) {
-            console.error("[TonCrime] Start button error:", err);
+          if (!window.TonCrimePVP_CRUSH) {
+            throw new Error("TonCrimePVP_CRUSH bulunamadı");
           }
-        };
-      }
 
-      if (dom.stopBtn) {
-        dom.stopBtn.style.display = "";
-        dom.stopBtn.onclick = () => {
-          try {
-            window.TonCrimePVP.stop?.();
-          } catch (err) {
-            console.error("[TonCrime] Stop button error:", err);
-          }
-        };
-      }
-
-      if (dom.resetBtn) {
-        dom.resetBtn.style.display = "";
-        dom.resetBtn.onclick = () => {
-          try {
-            window.TonCrimePVP.reset?.();
-          } catch (err) {
-            console.error("[TonCrime] Reset button error:", err);
-          }
-        };
-      }
-
-      await new Promise((r) => setTimeout(r, 180));
-      window.TonCrimePVP.reset?.();
-      await new Promise((r) => setTimeout(r, 180));
-      window.TonCrimePVP.start?.();
-
-      if (dom.status) dom.status.textContent = "PvP • IQ Arena başladı";
-      if (dom.spinner) dom.spinner.classList.add("hidden");
-      this._launchingGame = false;
-      return;
-    }
-
-    if (id === "slotarena") {
-      await loadPvpGameScript([
-        "./src/pvpslotarena.js",
-        "./pvpslotarena.js",
-      ]);
-
-      if (!window.TonCrimePVP_SLOT) {
-        throw new Error("TonCrimePVP_SLOT bulunamadı");
-      }
-
-      window.TonCrimePVP = window.TonCrimePVP_SLOT;
-
-      window.TonCrimePVP.init?.({
-        arenaId: "arena",
-        statusId: "pvpStatus",
-        enemyFillId: "enemyFill",
-        meFillId: "meFill",
-        enemyHpTextId: "enemyHpText",
-        meHpTextId: "meHpText",
-      });
-
-      window.TonCrimePVP.setOpponent?.({
-        username: "ShadowWolf",
-        isBot: true,
-      });
-
-      if (dom.startBtn) {
-        dom.startBtn.style.display = "";
-        dom.startBtn.onclick = async () => {
-          try {
-            window.TonCrimePVP.setOpponent?.({
-              username: "ShadowWolf",
-              isBot: true,
-            });
-            window.TonCrimePVP.reset?.();
-            await new Promise((r) => setTimeout(r, 120));
-            window.TonCrimePVP.start?.();
-          } catch (err) {
-            console.error("[TonCrime] Start button error:", err);
-          }
-        };
-      }
-
-      if (dom.stopBtn) {
-        dom.stopBtn.style.display = "";
-        dom.stopBtn.onclick = () => {
-          try {
-            window.TonCrimePVP.stop?.();
-          } catch (err) {
-            console.error("[TonCrime] Stop button error:", err);
-          }
-        };
-      }
-
-      if (dom.resetBtn) {
-        dom.resetBtn.style.display = "";
-        dom.resetBtn.onclick = () => {
-          try {
-            window.TonCrimePVP.reset?.();
-          } catch (err) {
-            console.error("[TonCrime] Reset button error:", err);
-          }
-        };
-      }
-
-      await new Promise((r) => setTimeout(r, 180));
-      window.TonCrimePVP.reset?.();
-      await new Promise((r) => setTimeout(r, 180));
-      window.TonCrimePVP.start?.();
-
-      if (dom.status) dom.status.textContent = "PvP • Slot Arena başladı";
-      if (dom.spinner) dom.spinner.classList.add("hidden");
-      this._launchingGame = false;
-      return;
-    }
-
-    if (id === "arena") {
-      await loadPvpGameScript([
-        "./src/pvpcage.js",
-        "./pvpcage.js",
-      ]);
-
-      if (!window.TonCrimePVP_CAGE) {
-        throw new Error("TonCrimePVP_CAGE bulunamadı");
-      }
-
-      window.TonCrimePVP = window.TonCrimePVP_CAGE;
-
-      window.TonCrimePVP.init?.({
-        arenaId: "arena",
-        statusId: "pvpStatus",
-        enemyFillId: "enemyFill",
-        meFillId: "meFill",
-        enemyHpTextId: "enemyHpText",
-        meHpTextId: "meHpText",
-      });
-
-      window.TonCrimePVP.setOpponent?.({
-        username: "ShadowWolf",
-        isBot: true,
-      });
-
-      if (dom.startBtn) dom.startBtn.style.display = "none";
-      if (dom.stopBtn) dom.stopBtn.style.display = "none";
-      if (dom.resetBtn) dom.resetBtn.style.display = "none";
-
-      await new Promise((r) => setTimeout(r, 160));
-      window.TonCrimePVP.start?.();
-
-      if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
-      if (dom.spinner) dom.spinner.classList.add("hidden");
-      this._launchingGame = false;
-      return;
-    }
-
-    if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
-    if (dom.spinner) dom.spinner.classList.add("hidden");
-  } catch (err) {
-    console.error("[TonCrime] startGame fatal:", err);
-    const status = document.getElementById("pvpStatus");
-    const spinner = document.getElementById("pvpSpinner");
-    if (status) status.textContent = "PvP • Oyun yüklenemedi";
-    if (spinner) spinner.classList.add("hidden");
-  }
-
-  this._launchingGame = false;
-}
-          return;
-        }
           window.TonCrimePVP = window.TonCrimePVP_CRUSH;
 
           window.TonCrimePVP.init?.({
@@ -798,6 +605,7 @@
           });
 
           if (dom.startBtn) {
+            dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
                 window.TonCrimePVP.setOpponent?.({
@@ -814,6 +622,7 @@
           }
 
           if (dom.stopBtn) {
+            dom.stopBtn.style.display = "";
             dom.stopBtn.onclick = () => {
               try {
                 window.TonCrimePVP.stop?.();
@@ -824,6 +633,7 @@
           }
 
           if (dom.resetBtn) {
+            dom.resetBtn.style.display = "";
             dom.resetBtn.onclick = () => {
               try {
                 window.TonCrimePVP.reset?.();
@@ -838,50 +648,126 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP • Grid Heist başladı";
+          if (dom.status) dom.status.textContent = "PvP • IQ Arena başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           return;
         }
 
-       if (id === "arena") {
-  await loadPvpGameScript([
-    "./src/pvpcage.js",
-    "./pvpcage.js",
-  ]);
+        if (id === "slotarena") {
+          await loadPvpGameScript([
+            "./src/pvpslotarena.js",
+            "./pvpslotarena.js",
+          ]);
 
-  if (!window.TonCrimePVP_CAGE) {
-    throw new Error("TonCrimePVP_CAGE bulunamadı");
-  }
+          if (!window.TonCrimePVP_SLOT) {
+            throw new Error("TonCrimePVP_SLOT bulunamadı");
+          }
 
-  window.TonCrimePVP = window.TonCrimePVP_CAGE;
+          window.TonCrimePVP = window.TonCrimePVP_SLOT;
 
-  window.TonCrimePVP.init?.({
-    arenaId: "arena",
-    statusId: "pvpStatus",
-    enemyFillId: "enemyFill",
-    meFillId: "meFill",
-    enemyHpTextId: "enemyHpText",
-    meHpTextId: "meHpText",
-  });
+          window.TonCrimePVP.init?.({
+            arenaId: "arena",
+            statusId: "pvpStatus",
+            enemyFillId: "enemyFill",
+            meFillId: "meFill",
+            enemyHpTextId: "enemyHpText",
+            meHpTextId: "meHpText",
+          });
 
-  window.TonCrimePVP.setOpponent?.({
-    username: "ShadowWolf",
-    isBot: true,
-  });
+          window.TonCrimePVP.setOpponent?.({
+            username: "ShadowWolf",
+            isBot: true,
+          });
 
-  if (dom.startBtn) dom.startBtn.style.display = "none";
-  if (dom.stopBtn) dom.stopBtn.style.display = "none";
-  if (dom.resetBtn) dom.resetBtn.style.display = "none";
+          if (dom.startBtn) {
+            dom.startBtn.style.display = "";
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.setOpponent?.({
+                  username: "ShadowWolf",
+                  isBot: true,
+                });
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Start button error:", err);
+              }
+            };
+          }
 
-  await new Promise((r) => setTimeout(r, 160));
-  window.TonCrimePVP.start?.();
+          if (dom.stopBtn) {
+            dom.stopBtn.style.display = "";
+            dom.stopBtn.onclick = () => {
+              try {
+                window.TonCrimePVP.stop?.();
+              } catch (err) {
+                console.error("[TonCrime] Stop button error:", err);
+              }
+            };
+          }
 
-  if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
-  if (dom.spinner) dom.spinner.classList.add("hidden");
-  this._launchingGame = false;
-  return;
-}
+          if (dom.resetBtn) {
+            dom.resetBtn.style.display = "";
+            dom.resetBtn.onclick = () => {
+              try {
+                window.TonCrimePVP.reset?.();
+              } catch (err) {
+                console.error("[TonCrime] Reset button error:", err);
+              }
+            };
+          }
+
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.reset?.();
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.start?.();
+
+          if (dom.status) dom.status.textContent = "PvP • Slot Arena başladı";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          this._launchingGame = false;
+          return;
+        }
+
+        if (id === "arena") {
+          await loadPvpGameScript([
+            "./src/pvpcage.js",
+            "./pvpcage.js",
+          ]);
+
+          if (!window.TonCrimePVP_CAGE) {
+            throw new Error("TonCrimePVP_CAGE bulunamadı");
+          }
+
+          window.TonCrimePVP = window.TonCrimePVP_CAGE;
+
+          window.TonCrimePVP.init?.({
+            arenaId: "arena",
+            statusId: "pvpStatus",
+            enemyFillId: "enemyFill",
+            meFillId: "meFill",
+            enemyHpTextId: "enemyHpText",
+            meHpTextId: "meHpText",
+          });
+
+          window.TonCrimePVP.setOpponent?.({
+            username: "ShadowWolf",
+            isBot: true,
+          });
+
+          if (dom.startBtn) dom.startBtn.style.display = "none";
+          if (dom.stopBtn) dom.stopBtn.style.display = "none";
+          if (dom.resetBtn) dom.resetBtn.style.display = "none";
+
+          await new Promise((r) => setTimeout(r, 160));
+          window.TonCrimePVP.start?.();
+
+          if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          this._launchingGame = false;
+          return;
+        }
 
         if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
         if (dom.spinner) dom.spinner.classList.add("hidden");
