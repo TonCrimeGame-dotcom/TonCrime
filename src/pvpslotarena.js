@@ -12,13 +12,13 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
   const PLAYER_DECISION_MS = 3000;
 
  const ICONS = {
-  weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16, asset: "weed" },
-  brain: { id: "brain", emoji: "🧠", label: "BEYİN",   color: "#ff5b64", base: 18, weight: 12, asset: "brain" },
-  drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 15, asset: "drink" },
-  kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15, asset: "kick" },
-  slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17, asset: "slap" },
-  punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15, asset: "punch" },
-  bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8,  asset: "bonus" },
+  weed:  { id: "weed",  emoji: "🌿", label: "",      color: "#35da7b", base: 12, weight: 16, asset: "weed" },
+  brain: { id: "brain", emoji: "🧠", label: "",   color: "#ff5b64", base: 18, weight: 12, asset: "brain" },
+  drink: { id: "drink", emoji: "🍾", label: "",   color: "#ffd166", base: 14, weight: 15, asset: "drink" },
+  kick:  { id: "kick",  emoji: "🦵", label: "",   color: "#66e26f", base: 16, weight: 15, asset: "kick" },
+  slap:  { id: "slap",  emoji: "🖐️", label: "",   color: "#76b8ff", base: 11, weight: 17, asset: "slap" },
+  punch: { id: "punch", emoji: "👊", label: "",  color: "#ffb24a", base: 15, weight: 15, asset: "punch" },
+  bonus: { id: "bonus", emoji: "⭐", label: "",   color: "#d68bff", base: 0,  weight: 8,  asset: "bonus" },
 };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
@@ -69,7 +69,7 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
     SLOT_ICON_IMAGES[name] = img;
     return img;
   }
-
+  loadSlotIcon("weed", "./src/assets/weed.png");
   loadSlotIcon("brain", "./src/assets/brain.png");
   loadSlotIcon("drink", "./src/assets/drink.png");
   loadSlotIcon("kick", "./src/assets/kick.png");
