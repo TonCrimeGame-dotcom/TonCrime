@@ -1,6 +1,3 @@
-const WIN_CHANCE_BASE = 0.05;   // normal spin için %5
-const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
-
 (function () {
   const COLS = 6;
   const ROWS = 6;
@@ -8,18 +5,18 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
   const BASE_SPINS = 25;
   const BONUS_SPINS = 10;
   const BONUS_TRIGGER = 4;
-  const MIN_CLUSTER = 6;
+  const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
 
- const ICONS = {
-  weed:  { id: "weed",  emoji: "🌿", label: "",      color: "#35da7b", base: 12, weight: 16, asset: "weed" },
-  brain: { id: "brain", emoji: "🧠", label: "",   color: "#ff5b64", base: 18, weight: 12, asset: "brain" },
-  drink: { id: "drink", emoji: "🍾", label: "",   color: "#ffd166", base: 14, weight: 15, asset: "drink" },
-  kick:  { id: "kick",  emoji: "🦵", label: "",   color: "#66e26f", base: 16, weight: 15, asset: "kick" },
-  slap:  { id: "slap",  emoji: "🖐️", label: "",   color: "#76b8ff", base: 11, weight: 17, asset: "slap" },
-  punch: { id: "punch", emoji: "👊", label: "",  color: "#ffb24a", base: 15, weight: 15, asset: "punch" },
-  bonus: { id: "bonus", emoji: "⭐", label: "",   color: "#d68bff", base: 0,  weight: 8,  asset: "bonus" },
-};
+  const ICONS = {
+    weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
+    brain: { id: "brain", emoji: "🧠", label: "BEYİN",   color: "#ff5b64", base: 18, weight: 12 },
+    drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 15 },
+    kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
+    slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
+    punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
+    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 12 },
+  };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
   const ALL_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch", "bonus"];
@@ -61,47 +58,7 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
     ctx.strokeStyle = stroke;
     ctx.stroke();
   }
-  const SLOT_ICON_IMAGES = {};
 
-  function loadSlotIcon(name, src) {
-    const img = new Image();
-    img.src = src;
-    SLOT_ICON_IMAGES[name] = img;
-    return img;
-  }
-  loadSlotIcon("weed", "./src/assets/weed.png");
-  loadSlotIcon("brain", "./src/assets/brain.png");
-  loadSlotIcon("drink", "./src/assets/drink.png");
-  loadSlotIcon("kick", "./src/assets/kick.png");
-  loadSlotIcon("slap", "./src/assets/slap.png");
-  loadSlotIcon("punch", "./src/assets/punch.png");
-  loadSlotIcon("bonus", "./src/assets/bonus.png");
-
-  function getSlotIconImage(meta) {
-    if (!meta?.asset) return null;
-    const img = SLOT_ICON_IMAGES[meta.asset];
-    if (!img || !img.complete || !img.naturalWidth) return null;
-    return img;
-  }
-
-  function drawSlotSymbol(ctx, meta, px, py, cellW, cellH) {
-    const img = getSlotIconImage(meta);
-
-    if (img) {
-      const iconSize = Math.min(cellW, cellH) * 0.54;
-      const ix = px + (cellW - iconSize) * 0.5;
-      const iy = py + cellH * 0.17;
-
-      ctx.drawImage(img, ix, iy, iconSize, iconSize);
-      return;
-    }
-
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${Math.floor(Math.min(cellW, cellH) * 0.42)}px system-ui, Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(meta.emoji, px + cellW / 2, py + cellH * 0.45);
-  }
   function weightedSymbol(includeBonus = true) {
     const list = includeBonus ? ALL_SYMBOLS : PAY_SYMBOLS;
     let total = 0;
@@ -168,67 +125,50 @@ const WIN_CHANCE_BONUS = 0.18;  // bonus içinde biraz daha yüksek
     return out;
   }
 
-function evaluateBoard(board, inBonus) {
-  const { counts, bonusCount } = countTypes(board);
-  const remove = new Set();
-  const hits = [];
-  let damage = 0;
+  function evaluateBoard(board, inBonus) {
+    const { counts, bonusCount } = countTypes(board);
+    const remove = new Set();
+    const hits = [];
+    let damage = 0;
 
-  const spinCanWin = Math.random() < (inBonus ? WIN_CHANCE_BONUS : WIN_CHANCE_BASE);
+    for (const [type, count] of counts.entries()) {
+      if (count < MIN_CLUSTER) continue;
+      const meta = ICONS[type];
+      const extra = count - MIN_CLUSTER;
+      const hitDamage = meta.base * count + extra * meta.base * 0.7;
+      damage += hitDamage;
+      hits.push({ type, count, damage: hitDamage });
 
-  for (const [type, count] of counts.entries()) {
-    if (count < MIN_CLUSTER) continue;
-
-    // normalde cluster oluşsa bile her zaman ödeme verme
-    if (!spinCanWin) continue;
-
-    const meta = ICONS[type];
-    const extra = count - MIN_CLUSTER;
-    const hitDamage = meta.base * count + extra * meta.base * 0.7;
-    damage += hitDamage;
-    hits.push({ type, count, damage: hitDamage });
-
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = board[r][c];
-        if (cell && cell.type === type) remove.add(`${r}:${c}`);
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = board[r][c];
+          if (cell && cell.type === type) remove.add(`${r}:${c}`);
+        }
       }
     }
-  }
 
-  let bonusTriggered = false;
-
-  // bonusu da sürekli açtırma
-  const bonusCanTrigger = Math.random() < 0.04; // %4
-
-  if (!inBonus && bonusCount >= BONUS_TRIGGER && bonusCanTrigger) {
-    bonusTriggered = true;
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = board[r][c];
-        if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+    let bonusTriggered = false;
+    if (!inBonus && bonusCount >= BONUS_TRIGGER) {
+      bonusTriggered = true;
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = board[r][c];
+          if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+        }
       }
     }
-  }
 
-  if (inBonus && bonusCount > 0) {
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = board[r][c];
-        if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+    if (inBonus && bonusCount > 0) {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = board[r][c];
+          if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+        }
       }
     }
-  }
 
-  return {
-    hits,
-    damage,
-    remove,
-    bonusCount,
-    bonusTriggered,
-    hasAction: remove.size > 0
-  };
-}
+    return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
+  }
 
   function tumble(board, removeSet, allowBonus = true) {
     const next = cloneBoard(board);
@@ -477,6 +417,38 @@ function evaluateBoard(board, inBonus) {
 
       #arena .tc-cage-toast.tc-crush-toast.on { opacity: 1; }
 
+      #arena .tc-slot-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      #arena .tc-slot-meta {
+        min-width: 0;
+        flex: 1 1 auto;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      #arena .tc-slot-meta-chip {
+        min-height: 42px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.22);
+        color: rgba(255,255,255,0.92);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 10px;
+        text-align: center;
+        font: 800 12px system-ui, Arial;
+        letter-spacing: .2px;
+        white-space: nowrap;
+      }
+
       #arena .tc-cage-rule.tc-crush-rule {
         margin-top: 8px;
         text-align: center;
@@ -489,7 +461,10 @@ function evaluateBoard(board, inBonus) {
         #arena .tc-cage-row.tc-crush-row { grid-template-columns: 1fr 78px 1fr; gap: 8px; }
         #arena .tc-cage-card.tc-crush-card { min-height: 88px; padding: 9px 10px; }
         #arena .tc-cage-vs.tc-crush-vs { font-size: 13px; }
-        #arena .tc-slot-spinbtn { height: 38px; font-size: 12px; padding: 0 10px; }
+        #arena .tc-slot-spinbtn { height: 38px; font-size: 12px; padding: 0 12px; }
+        #arena .tc-slot-footer { gap: 8px; }
+        #arena .tc-slot-meta { gap: 6px; }
+        #arena .tc-slot-meta-chip { min-height: 38px; font-size: 11px; padding: 0 6px; }
       }
     `;
     document.head.appendChild(style);
@@ -525,18 +500,21 @@ function evaluateBoard(board, inBonus) {
           </div>
         </div>
 
-        <div class="tc-cage-row tc-crush-row" style="margin-top:-2px;margin-bottom:10px;grid-template-columns:1fr auto 1fr;">
-          <div></div>
-          <button class="tc-slot-spinbtn" id="tcSlotSpinBtn" type="button">SPIN BAŞLAT</button>
-          <div></div>
-        </div>
-
         <div class="tc-cage-stage tc-crush-stage" id="tcSlotStage">
           <canvas class="tc-cage-canvas tc-crush-canvas" id="tcSlotCanvas"></canvas>
           <div class="tc-cage-toast tc-crush-toast" id="tcSlotToast"></div>
         </div>
 
-        <div class="tc-cage-rule tc-crush-rule">6+ aynı ikon anywhere = patlar • 4+ BONUS = 10 free spin • Spin tuşu için 3 sn var</div>
+        <div class="tc-slot-footer">
+          <div class="tc-slot-meta" id="tcSlotMetaWrap">
+            <div class="tc-slot-meta-chip" id="tcSlotChipBase">BASE 25</div>
+            <div class="tc-slot-meta-chip" id="tcSlotChipTimer">SPIN SÜRESİ 3</div>
+            <div class="tc-slot-meta-chip" id="tcSlotChipTumble">TUMBLE 0</div>
+          </div>
+          <button class="tc-slot-spinbtn" id="tcSlotSpinBtn" type="button">SPIN BAŞLAT</button>
+        </div>
+
+        <div class="tc-cage-rule tc-crush-rule">8+ aynı ikon anywhere = patlar • 4+ BONUS = 10 free spin • Spin tuşu için 3 sn var</div>
       </div>
     `;
   }
@@ -599,6 +577,9 @@ function evaluateBoard(board, inBonus) {
         toast: arena.querySelector("#tcSlotToast"),
         closeBtn: arena.querySelector("#tcSlotClose"),
         spinBtn: arena.querySelector("#tcSlotSpinBtn"),
+        chipBase: arena.querySelector("#tcSlotChipBase"),
+        chipTimer: arena.querySelector("#tcSlotChipTimer"),
+        chipTumble: arena.querySelector("#tcSlotChipTumble"),
       };
 
       this._setupState();
@@ -780,6 +761,22 @@ function evaluateBoard(board, inBonus) {
         : (s.turn === "me" ? "SEN" : "RAKİP");
       this._els.sub.textContent = s.info;
 
+      const chipBase = s.inBonus
+        ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
+        : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
+      const chipTimer = s.turn === "me" && !s.spinning && !s.finished
+        ? `SPIN SÜRESİ ${countdown}`
+        : s.turn === "enemy" && !s.finished
+        ? "RAKİP DÜŞÜNÜYOR"
+        : "SONUÇ";
+      const chipTumble = s.inBonus
+        ? `ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
+        : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
+
+      if (this._els.chipBase) this._els.chipBase.textContent = chipBase;
+      if (this._els.chipTimer) this._els.chipTimer.textContent = chipTimer;
+      if (this._els.chipTumble) this._els.chipTumble.textContent = chipTumble;
+
       if (this._els.spinBtn) {
         const show = s.turn === "me" && !s.spinning && !s.finished;
         this._els.spinBtn.style.visibility = show ? "visible" : "hidden";
@@ -915,7 +912,7 @@ function evaluateBoard(board, inBonus) {
         s.tumbleIndex = chain;
         s.markedRemove = new Set(res.remove);
         s.flashUntil = Date.now() + 300;
-        s.info = res.damage > 0 ? `${chain}. tumble • ikonlar kilitlendi` : `${chain}. tumble • bonus kontrol`;
+        s.info = res.damage > 0 ? `${chain}. tumble • 8+ ikon patladı` : `${chain}. tumble • bonus kontrol`;
         this._render();
         await new Promise((r) => setTimeout(r, 420));
 
@@ -946,7 +943,7 @@ function evaluateBoard(board, inBonus) {
           s.displayedMultiplier = 0;
           s.multipliers = [];
           bonusJustStarted = true;
-          this._toast(`⭐ BONUS! +${BONUS_SPINS} spin`, 1200);
+          this._toast(`⭐ BONUS AÇILDI! +${BONUS_SPINS} spin`, 1400);
           s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus aldı`;
         }
 
@@ -976,7 +973,7 @@ function evaluateBoard(board, inBonus) {
       for (const h of hits) {
         const meta = ICONS[h.type];
         this._state.fxHits.push({
-          text: `${meta.label} ${Math.round(h.damage)}`,
+          text: `${meta.emoji} ${Math.round(h.damage)}`,
           color: meta.color,
           bornAt: now,
           side: fromMe ? "right" : "left",
@@ -1175,13 +1172,11 @@ function evaluateBoard(board, inBonus) {
             fillRoundRect(ctx, px + 3, py + 3, cellW - 6, cellH - 6, 15, ctx.fillStyle);
           }
 
-drawSlotSymbol(ctx, meta, px, py, cellW, cellH);
-
-ctx.font = `900 ${Math.max(10, Math.floor(Math.min(cellW, cellH) * 0.13))}px system-ui, Arial`;
-ctx.fillStyle = "rgba(255,255,255,0.85)";
-ctx.textAlign = "center";
-ctx.textBaseline = "middle";
-ctx.fillText(meta.label, px + cellW / 2, py + cellH * 0.78);
+          ctx.fillStyle = "#fff";
+          ctx.font = `900 ${Math.floor(Math.min(cellW, cellH) * 0.72)}px system-ui, Arial`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(meta.emoji, px + cellW / 2, py + cellH * 0.52);
         }
       }
 
@@ -1296,13 +1291,11 @@ ctx.fillText(meta.label, px + cellW / 2, py + cellH * 0.78);
       fillRoundRect(ctx, innerX, innerY, innerW, innerH, 22, bg);
       strokeRoundRect(ctx, innerX, innerY, innerW, innerH, 22, "rgba(255,255,255,0.08)", 1.2);
 
-      const stageTop = innerY + 52;
-      const boardAreaX = innerX + 12;
-      const boardAreaY = stageTop + 8;
-      const boardAreaW = innerW - 24;
-      const boardAreaH = innerH - 82;
+      const boardAreaX = innerX + 10;
+      const boardAreaY = innerY + 10;
+      const boardAreaW = innerW - 20;
+      const boardAreaH = innerH - 20;
 
-      this._drawHudInsideStage(ctx, innerX + 10, innerY + 8, innerW - 20);
       this._drawBoard(ctx, boardAreaX, boardAreaY, boardAreaW, boardAreaH);
       this._drawMultipliers(ctx, boardAreaX, boardAreaY, boardAreaW, boardAreaH);
       this._drawHitFx(ctx, w, h);
