@@ -423,7 +423,7 @@ addImage("kick", "./src/assets/kick.png");
 addImage("punch", "./src/assets/punch.png");
 addImage("bonus", "./src/assets/bonus.png");
 addImage("brain", "./src/assets/brain.png");
-
+addImage("weed", "./src/assets/weed.png");
 
 /* BLACK MARKET */
 addImage("blackmarket", "./src/assets/BlackMarket.png");
