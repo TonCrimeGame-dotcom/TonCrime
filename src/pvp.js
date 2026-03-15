@@ -857,7 +857,7 @@
       const chipH = clamp(Math.round(panelH * 0.06), 28, 36);
 
       const chips = [
-        { id: "general", label: "Genel PvP merkezi" },
+        { id: "general", label: "PvP merkezi" },
         {
           id: this.source,
           label:
@@ -865,7 +865,7 @@
               ? "Nightclub içi havuz"
               : this.source === "coffeeshop"
               ? "Coffeeshop içi havuz"
-              : "Şehir sokakları sıcak. En temiz komboyu yapan parayı toplar.",
+              : "En temiz komboyu yapan parayı toplar.",
         },
       ];
 
