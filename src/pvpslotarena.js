@@ -22,6 +22,15 @@
   const ALL_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch", "bonus"];
   const BOT_NAMES = ["ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven"];
   const BONUS_MULTI_VALUES = [2, 3, 5, 8, 10, 12, 15, 20, 25, 50];
+  const ICON_PATHS = {
+    weed: "./src/assets/weed.png",
+    brain: "./src/assets/brain.png",
+    drink: "./src/assets/drink.png",
+    kick: "./src/assets/kick.png",
+    slap: "./src/assets/slap.png",
+    punch: "./src/assets/punch.png",
+    bonus: "./src/assets/bonus.png",
+  };
 
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
@@ -205,6 +214,42 @@
     }
 
     return { board: next, dropMap };
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  function drawSymbolArt(ctx, img, meta, x, y, w, h) {
+    const pad = Math.max(4, Math.floor(Math.min(w, h) * 0.08));
+    const innerX = x + pad;
+    const innerY = y + pad;
+    const innerW = Math.max(6, w - pad * 2);
+    const innerH = Math.max(6, h - pad * 2);
+
+    if (img && img.complete && (img.naturalWidth || img.width)) {
+      const iw = img.naturalWidth || img.width || 1;
+      const ih = img.naturalHeight || img.height || 1;
+      const scale = Math.min(innerW / iw, innerH / ih);
+      const dw = Math.max(4, iw * scale);
+      const dh = Math.max(4, ih * scale);
+      const dx = innerX + (innerW - dw) * 0.5;
+      const dy = innerY + (innerH - dh) * 0.5;
+      ctx.drawImage(img, dx, dy, dw, dh);
+      return;
+    }
+
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 ${Math.floor(Math.min(w, h) * 0.72)}px system-ui, Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(meta.emoji, x + w / 2, y + h * 0.52);
   }
 
   function injectStyle() {
@@ -457,14 +502,31 @@
       }
 
       @media (max-width: 520px) {
+        #arena .tc-cage-root.tc-crush-root { padding: 8px; }
         #arena .tc-cage-neon.tc-crush-neon { font-size: 18px; }
-        #arena .tc-cage-row.tc-crush-row { grid-template-columns: 1fr 78px 1fr; gap: 8px; }
+        #arena .tc-cage-row.tc-crush-row { grid-template-columns: 1fr 78px 1fr; gap: 8px; margin-bottom: 8px; }
         #arena .tc-cage-card.tc-crush-card { min-height: 88px; padding: 9px 10px; }
         #arena .tc-cage-vs.tc-crush-vs { font-size: 13px; }
         #arena .tc-slot-spinbtn { height: 38px; font-size: 12px; padding: 0 12px; }
-        #arena .tc-slot-footer { gap: 8px; }
+        #arena .tc-slot-footer { gap: 8px; margin-top: 8px; }
         #arena .tc-slot-meta { gap: 6px; }
         #arena .tc-slot-meta-chip { min-height: 38px; font-size: 11px; padding: 0 6px; }
+      }
+
+      @media (max-width: 420px) {
+        #arena .tc-cage-root.tc-crush-root { padding: 6px; }
+        #arena .tc-cage-title-wrap.tc-crush-title-wrap { padding: 2px 34px 0; }
+        #arena .tc-cage-neon.tc-crush-neon { font-size: 16px; letter-spacing: 1.1px; }
+        #arena .tc-cage-sub.tc-crush-sub { font-size: 10px; }
+        #arena .tc-cage-row.tc-crush-row { grid-template-columns: 1fr 62px 1fr; gap: 6px; }
+        #arena .tc-cage-card.tc-crush-card { min-height: 80px; padding: 8px; border-radius: 14px; }
+        #arena .tc-cage-name.tc-crush-name { font-size: 12px; margin-bottom: 6px; }
+        #arena .tc-cage-stage.tc-crush-stage { min-height: 250px; border-radius: 16px; }
+        #arena .tc-slot-footer { align-items: stretch; gap: 6px; }
+        #arena .tc-slot-meta { gap: 5px; }
+        #arena .tc-slot-meta-chip { min-height: 34px; font-size: 10px; padding: 0 4px; border-radius: 12px; }
+        #arena .tc-slot-spinbtn { flex: 0 0 108px; height: 36px; font-size: 11px; padding: 0 8px; border-radius: 12px; }
+        #arena .tc-cage-rule.tc-crush-rule { margin-top: 6px; font-size: 10px; }
       }
     `;
     document.head.appendChild(style);
@@ -522,6 +584,7 @@
   const api = {
     _els: null,
     _state: null,
+    _iconImages: {},
     _running: false,
     _locked: false,
     _raf: 0,
@@ -550,6 +613,7 @@
 
       this.stop();
       this._destroyEvents();
+      this._preloadAssets();
       arena.innerHTML = makeMarkup();
 
       const canvas = arena.querySelector("#tcSlotCanvas");
@@ -586,6 +650,16 @@
       this._bindEvents();
       this._resizeCanvas();
       this._updateHud();
+      this._render();
+    },
+
+    async _preloadAssets() {
+      const keys = Object.keys(ICON_PATHS);
+      const out = {};
+      await Promise.all(keys.map(async (key) => {
+        out[key] = await loadImage(ICON_PATHS[key]);
+      }));
+      this._iconImages = out;
       this._render();
     },
 
@@ -860,42 +934,71 @@
         s.bonusMultiplierBank = 0;
         s.displayedMultiplier = 0;
         s.multipliers = [];
+        await new Promise((r) => setTimeout(r, 650));
       }
 
       s.spinning = false;
+      s.markedRemove = new Set();
+      s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+      s.dropProgress = 1;
       this._updateHud();
       this._render();
-      if (this._checkFinish()) return;
-      this._advanceTurn();
+
+      if (!this._checkFinish()) {
+        this._advanceTurn();
+      }
     },
 
     async _spinAnimation() {
       const s = this._state;
-      s.spinOffset = -220;
-      for (let i = 0; i < 28; i++) {
-        const t = (i + 1) / 28;
-        const ease = 1 - Math.pow(1 - t, 3);
-        s.spinOffset = -220 + 220 * ease;
-        this._render();
-        await new Promise((r) => setTimeout(r, 34));
-      }
-      s.spinOffset = 0;
-      this._render();
-      await new Promise((r) => setTimeout(r, 110));
+      const start = performance.now();
+      const duration = 720;
+
+      return new Promise((resolve) => {
+        const frame = (ts) => {
+          if (!this._state || !this._running) return resolve();
+          const t = clamp((ts - start) / duration, 0, 1);
+          const ease = 1 - Math.pow(1 - t, 3);
+          s.spinOffset = (1 - ease) * 38;
+          this._render();
+          if (t >= 1) {
+            s.spinOffset = 0;
+            this._render();
+            resolve();
+            return;
+          }
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
     },
 
     async _animateDrop(dropMap) {
       const s = this._state;
       s.dropMap = dropMap;
       s.dropProgress = 0;
-      for (let i = 0; i < 22; i++) {
-        const t = (i + 1) / 22;
-        s.dropProgress = 1 - Math.pow(1 - t, 3);
-        this._render();
-        await new Promise((r) => setTimeout(r, 28));
-      }
-      s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-      s.dropProgress = 1;
+
+      const start = performance.now();
+      const duration = 360;
+
+      return new Promise((resolve) => {
+        const frame = (ts) => {
+          if (!this._state || !this._running) return resolve();
+          const t = clamp((ts - start) / duration, 0, 1);
+          const ease = 1 - Math.pow(1 - t, 3);
+          s.dropProgress = ease;
+          this._render();
+          if (t >= 1) {
+            s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+            s.dropProgress = 1;
+            this._render();
+            resolve();
+            return;
+          }
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
     },
 
     async _resolveTumbles(actor) {
@@ -973,7 +1076,7 @@
       for (const h of hits) {
         const meta = ICONS[h.type];
         this._state.fxHits.push({
-          text: `${meta.emoji} ${Math.round(h.damage)}`,
+          text: `${meta.label} • ${Math.round(h.damage)}`,
           color: meta.color,
           bornAt: now,
           side: fromMe ? "right" : "left",
@@ -1136,7 +1239,8 @@
     _drawBoard(ctx, x, y, w, h) {
       const s = this._state;
       const board = s.board;
-      const gap = Math.max(5, Math.floor(Math.min(w / COLS, h / ROWS) * 0.08));
+      const small = w <= 420 || h <= 420;
+      const gap = Math.max(small ? 3 : 5, Math.floor(Math.min(w / COLS, h / ROWS) * (small ? 0.05 : 0.08)));
       const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
       const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
       const spinOffset = s.spinOffset || 0;
@@ -1172,11 +1276,9 @@
             fillRoundRect(ctx, px + 3, py + 3, cellW - 6, cellH - 6, 15, ctx.fillStyle);
           }
 
-          ctx.fillStyle = "#fff";
-          ctx.font = `900 ${Math.floor(Math.min(cellW, cellH) * 0.72)}px system-ui, Arial`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText(meta.emoji, px + cellW / 2, py + cellH * 0.52);
+          drawSymbolArt(ctx, this._iconImages?.[cell?.type], meta, px, py, cellW, cellH);
         }
       }
 
@@ -1279,11 +1381,12 @@
       ctx.save();
       ctx.translate(sx, sy);
 
-      const pad = Math.max(12, Math.floor(w * 0.03));
+      const mobile = w <= 420;
+      const pad = mobile ? 8 : Math.max(12, Math.floor(w * 0.03));
       const innerX = pad;
-      const innerY = 14;
+      const innerY = mobile ? 8 : 14;
       const innerW = w - pad * 2;
-      const innerH = h - 28;
+      const innerH = h - (mobile ? 16 : 28);
 
       const bg = ctx.createLinearGradient(0, innerY, 0, innerY + innerH);
       bg.addColorStop(0, "rgba(28,33,48,0.88)");
