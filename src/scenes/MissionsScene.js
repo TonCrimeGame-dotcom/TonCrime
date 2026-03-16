@@ -53,6 +53,25 @@ function fitText(ctx, text, maxW, startSize, weight = 900, family = "system-ui")
   return 9;
 }
 
+function wrapTextLines(ctx, text, maxWidth) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  for (let i = 0; i < words.length; i++) {
+    const test = line ? `${line} ${words[i]}` : words[i];
+    if (!line || ctx.measureText(test).width <= maxWidth) {
+      line = test;
+    } else {
+      lines.push(line);
+      line = words[i];
+    }
+  }
+
+  if (line) lines.push(line);
+  return lines;
+}
+
 export class MissionsScene {
   constructor({ store, input, assets, scenes }) {
     this.store = store;
@@ -97,10 +116,10 @@ export class MissionsScene {
   }
 
   _getBg() {
-    if (typeof this.assets.getImage === "function") {
+    if (typeof this.assets?.getImage === "function") {
       return this.assets.getImage("missions") || this.assets.getImage("background");
     }
-    if (typeof this.assets.get === "function") {
+    if (typeof this.assets?.get === "function") {
       return this.assets.get("missions") || this.assets.get("background");
     }
     return this.assets?.images?.missions || this.assets?.images?.background || null;
@@ -108,12 +127,14 @@ export class MissionsScene {
 
   _getDaily() {
     const s = this.store.get();
-    return s.dailyLogin || {
-      lastClaimDay: null,
-      streak: 0,
-      totalClaims: 0,
-      got30DayWeapon: false,
-    };
+    return (
+      s.dailyLogin || {
+        lastClaimDay: null,
+        streak: 0,
+        totalClaims: 0,
+        got30DayWeapon: false,
+      }
+    );
   }
 
   _getMissionState() {
@@ -122,13 +143,13 @@ export class MissionsScene {
   }
 
   _ensureMissionState() {
-    const s = this.store.get();
     const missions = this._getMissionState();
     const today = this._todayKey();
 
     const patch = {
       adsWatchedToday: Number(missions.adsWatchedToday || 0),
       adsRewardClaimedToday: !!missions.adsRewardClaimedToday,
+
       referrals: Number(missions.referrals || 0),
       referralMilestonesClaimed: { ...(missions.referralMilestonesClaimed || {}) },
       referralNextTarget: Number(missions.referralNextTarget || 10),
@@ -151,6 +172,7 @@ export class MissionsScene {
         pvpPlayTarget: Number(missions.dailyScale?.pvpPlayTarget || 5),
         pvpWinTarget: Number(missions.dailyScale?.pvpWinTarget || 3),
         energyTarget: Number(missions.dailyScale?.energyTarget || 3),
+
         adsReward: Number(missions.dailyScale?.adsReward || 50),
         pvpPlayReward: Number(missions.dailyScale?.pvpPlayReward || 25),
         pvpWinReward: Number(missions.dailyScale?.pvpWinReward || 40),
@@ -214,14 +236,12 @@ export class MissionsScene {
 
   _getReferralTarget() {
     const m = this._getMissionState();
-    const current = Math.max(10, Number(m.referralNextTarget || 10));
-    return current;
+    return Math.max(10, Number(m.referralNextTarget || 10));
   }
 
   _getLevelTarget() {
     const m = this._getMissionState();
-    const current = Math.max(10, Number(m.levelNextTarget || 10));
-    return current;
+    return Math.max(10, Number(m.levelNextTarget || 10));
   }
 
   _taskData() {
@@ -272,7 +292,9 @@ export class MissionsScene {
         progress: Number(m.adsWatchedToday || 0),
         max: Number(ds.adsTarget || 20),
         reward: m.adsRewardClaimedToday ? "Alındı" : `Ödül: +${shortNum(ds.adsReward)} yton`,
-        claimable: Number(m.adsWatchedToday || 0) >= Number(ds.adsTarget || 20) && !m.adsRewardClaimedToday,
+        claimable:
+          Number(m.adsWatchedToday || 0) >= Number(ds.adsTarget || 20) &&
+          !m.adsRewardClaimedToday,
         claimed: !!m.adsRewardClaimedToday,
       },
       {
@@ -529,16 +551,21 @@ export class MissionsScene {
     const safe = this._safeRect();
     const bg = this._getBg();
 
+    const ui = this.store.get()?.ui || {};
+    const hudReservedTop = Number(ui.hudReservedTop || 110);
+    const chatReservedBottom = Number(ui.chatReservedBottom || 82);
+
     const isMobile = safe.w <= 520;
     const isTiny = safe.w <= 390;
 
-    const panelPad = isTiny ? 10 : 12;
+    const outerPadX = isTiny ? 8 : 12;
+    const panelPad = isTiny ? 10 : 14;
     const headerTopPad = isTiny ? 10 : 12;
     const listPad = isTiny ? 8 : 12;
     const gap = isTiny ? 8 : 10;
 
     const titleSize = isTiny ? 18 : 20;
-    const subSize = isTiny ? 11 : 12;
+    const subSize = isTiny ? 10 : 12;
     const blockTitleSize = isTiny ? 13 : 14;
     const cardTitleSize = isTiny ? 12 : 13;
     const cardTextSize = isTiny ? 10 : 12;
@@ -563,26 +590,35 @@ export class MissionsScene {
     ctx.fillStyle = "rgba(0,0,0,0.50)";
     ctx.fillRect(0, 0, W, H);
 
-    const panelX = safe.x + (isTiny ? 8 : 12);
-    const panelY = Math.max(isTiny ? 68 : 74, safe.y + (isTiny ? 68 : 74));
-    const panelW = safe.w - (isTiny ? 16 : 24);
-    const panelH = safe.h - (isTiny ? 132 : 148);
+    const panelX = safe.x + outerPadX;
+    const panelY = safe.y + hudReservedTop + 6;
+    const panelW = safe.w - outerPadX * 2;
+    const panelBottom = safe.y + safe.h - chatReservedBottom - 8;
+    const panelH = Math.max(240, panelBottom - panelY);
 
     ctx.fillStyle = "rgba(0,0,0,0.60)";
     fillRoundRect(ctx, panelX, panelY, panelW, panelH, isTiny ? 16 : 18);
     ctx.strokeStyle = "rgba(255,255,255,0.14)";
     strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, isTiny ? 16 : 18);
 
-    const backRect = { x: panelX + panelPad, y: panelY + headerTopPad, w: isTiny ? 68 : 78, h: isTiny ? 28 : 30 };
+    const backRect = {
+      x: panelX + panelPad,
+      y: panelY + headerTopPad,
+      w: isTiny ? 68 : 78,
+      h: isTiny ? 28 : 30,
+    };
+
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     fillRoundRect(ctx, backRect.x, backRect.y, backRect.w, backRect.h, 10);
     ctx.strokeStyle = "rgba(255,255,255,0.14)";
     strokeRoundRect(ctx, backRect.x + 0.5, backRect.y + 0.5, backRect.w - 1, backRect.h - 1, 10);
+
     ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = `800 ${isTiny ? 11 : 12}px system-ui`;
     ctx.fillText("Geri", backRect.x + backRect.w / 2, backRect.y + backRect.h / 2);
+
     this.hit = [{ type: "back", rect: backRect }];
 
     ctx.textAlign = "left";
@@ -593,12 +629,16 @@ export class MissionsScene {
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = `${subSize}px system-ui`;
-    ctx.fillText("Görevler günlük yenilenir ve hedefler zamanla artar", panelX + panelPad, panelY + (isTiny ? 76 : 84));
+    ctx.fillText(
+      "Görevler günlük yenilenir ve hedefler zamanla artar",
+      panelX + panelPad,
+      panelY + (isTiny ? 76 : 84)
+    );
 
     const listX = panelX + listPad;
-    const listY = panelY + (isTiny ? 90 : 100);
+    const listY = panelY + (isTiny ? 92 : 104);
     const listW = panelW - listPad * 2;
-    const listH = panelH - (isTiny ? 100 : 112);
+    const listH = panelH - (listY - panelY) - 10;
 
     const daily = this._getDaily();
     const streak = Number(daily.streak || 0);
@@ -612,6 +652,8 @@ export class MissionsScene {
     const gridCellH = isTiny ? 80 : 92;
     const gridH = gridRows * gridCellH + (gridRows - 1) * gridGap;
 
+    const taskBlockH = isTiny ? 138 : isMobile ? 130 : 96;
+
     const blocks = [];
     blocks.push({ type: "summary", h: isTiny ? 142 : 134 });
     blocks.push({ type: "title", h: 30, text: "7 Günlük Giriş Takvimi" });
@@ -619,7 +661,7 @@ export class MissionsScene {
     blocks.push({ type: "title", h: 30, text: "30 Gün Büyük Ödül" });
     blocks.push({ type: "reward30", h: isTiny ? 126 : 112 });
     blocks.push({ type: "title", h: 30, text: "Aktif Görevler" });
-    for (const t of tasks) blocks.push({ type: "task", h: isMobile ? 118 : 92, task: t });
+    for (const t of tasks) blocks.push({ type: "task", h: taskBlockH, task: t });
 
     const contentH = blocks.reduce((a, b) => a + b.h, 0) + (blocks.length - 1) * gap + 10;
     this.maxScroll = Math.max(0, contentH - listH);
@@ -671,11 +713,17 @@ export class MissionsScene {
         fillRoundRect(ctx, pillX, pillY, pillW, pillH, 12);
         ctx.strokeStyle = "rgba(255,255,255,0.14)";
         strokeRoundRect(ctx, pillX + 0.5, pillY + 0.5, pillW - 1, pillH - 1, 12);
+
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
-        ctx.fillText(claimedToday ? "Bugün Alındı" : "Bugün Hazır", pillX + pillW / 2, pillY + pillH / 2);
+        ctx.fillText(
+          claimedToday ? "Bugün Alındı" : "Bugün Hazır",
+          pillX + pillW / 2,
+          pillY + pillH / 2
+        );
+
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
       }
@@ -704,6 +752,7 @@ export class MissionsScene {
             ? "rgba(242,211,107,0.12)"
             : "rgba(255,255,255,0.07)";
           fillRoundRect(ctx, cx, cy, gridCellW, gridCellH, 14);
+
           ctx.strokeStyle = is7 ? "rgba(242,211,107,0.42)" : "rgba(255,255,255,0.12)";
           strokeRoundRect(ctx, cx + 0.5, cy + 0.5, gridCellW - 1, gridCellH - 1, 14);
 
@@ -767,7 +816,15 @@ export class MissionsScene {
         ctx.strokeStyle = "rgba(255,255,255,0.10)";
         strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 14);
 
-        const titleMaxW = isMobile ? listW - 28 : listW - 140;
+        const btnW = isMobile ? 84 : 92;
+        const btnH = isMobile ? 32 : 34;
+        const btnX = listX + listW - btnW - 14;
+        const btnY = isMobile ? y + 14 : y + 28;
+
+        const textRightPad = 12;
+        const contentRightLimit = isMobile ? listX + listW - 14 : btnX - 12;
+        const titleMaxW = Math.max(80, contentRightLimit - (listX + 14) - textRightPad);
+
         const dynamicTitleSize = fitText(ctx, t.title, titleMaxW, cardTitleSize);
         ctx.fillStyle = "#fff";
         ctx.font = `900 ${dynamicTitleSize}px system-ui`;
@@ -775,38 +832,36 @@ export class MissionsScene {
 
         ctx.fillStyle = "rgba(255,255,255,0.72)";
         ctx.font = `${cardTextSize}px system-ui`;
-        ctx.fillText(t.desc, listX + 14, y + 40);
+
+        const descMaxW = isMobile ? listW - 28 : btnX - listX - 28;
+        const descLines = wrapTextLines(ctx, t.desc, Math.max(60, descMaxW));
+        const maxDescLines = isMobile ? 2 : 1;
+        let descY = y + 40;
+
+        for (let i = 0; i < Math.min(descLines.length, maxDescLines); i++) {
+          ctx.fillText(descLines[i], listX + 14, descY);
+          descY += isTiny ? 13 : 15;
+        }
 
         const barX = listX + 14;
-        const barY = y + (isMobile ? 56 : 56);
-        const btnW = isMobile ? 84 : 92;
-        const btnH = isMobile ? 32 : 34;
-        const btnX = listX + listW - btnW - 14;
-        const btnY = isMobile ? y + block.h - btnH - 12 : y + 28;
-        const rewardRightLimit = btnX - 10;
-
+        const barY = isMobile ? y + 74 : y + 56;
         const barW = isMobile ? listW - 28 : listW - 160;
         const barH = 10;
 
         ctx.fillStyle = "rgba(255,255,255,0.10)";
         fillRoundRect(ctx, barX, barY, barW, barH, 8);
+
+        const filledW =
+          t.progress <= 0 ? 0 : Math.max(6, barW * pct(t.progress, t.max));
+
         ctx.fillStyle = t.claimed ? "rgba(31,111,42,0.88)" : "rgba(255,255,255,0.78)";
-        fillRoundRect(ctx, barX, barY, Math.max(6, barW * pct(t.progress, t.max)), barH, 8);
+        if (filledW > 0) {
+          fillRoundRect(ctx, barX, barY, filledW, barH, 8);
+        }
 
         ctx.fillStyle = "rgba(255,255,255,0.82)";
         ctx.font = `${isTiny ? 10 : 11}px system-ui`;
         ctx.fillText(t.progressText, barX, barY + 22);
-
-        ctx.textAlign = "left";
-        ctx.fillStyle = "rgba(255,255,255,0.82)";
-        const rewardSize = fitText(ctx, t.reward, rewardRightLimit - barX, isTiny ? 10 : 11, 500);
-        ctx.font = `500 ${rewardSize}px system-ui`;
-        if (isMobile) {
-          ctx.fillText(t.reward, barX, y + block.h - 18);
-        } else {
-          const tw = ctx.measureText(t.reward).width;
-          ctx.fillText(t.reward, rewardRightLimit - tw, barY + 22);
-        }
 
         let btnLabel = "Bekliyor";
         let btnColor = "rgba(255,255,255,0.08)";
@@ -817,20 +872,46 @@ export class MissionsScene {
         } else if (t.claimable) {
           btnLabel = "Al";
           btnColor = "rgba(242,211,107,0.18)";
-          this.hit.push({ type: "claim", key: t.key, rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
+          this.hit.push({
+            type: "claim",
+            key: t.key,
+            rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+          });
         }
 
         ctx.fillStyle = btnColor;
         fillRoundRect(ctx, btnX, btnY, btnW, btnH, 12);
         ctx.strokeStyle = "rgba(255,255,255,0.14)";
         strokeRoundRect(ctx, btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1, 12);
+
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = `900 ${btnTextSize}px system-ui`;
         ctx.fillText(btnLabel, btnX + btnW / 2, btnY + btnH / 2);
+
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
+
+        ctx.fillStyle = "rgba(255,255,255,0.82)";
+        const rewardY = isMobile ? y + block.h - 18 : barY + 22;
+        const rewardMaxW = isMobile ? listW - 28 : btnX - barX - 10;
+        const rewardSize = fitText(
+          ctx,
+          t.reward,
+          Math.max(70, rewardMaxW),
+          isTiny ? 10 : 11,
+          500
+        );
+        ctx.font = `500 ${rewardSize}px system-ui`;
+
+        if (isMobile) {
+          const rewardLines = wrapTextLines(ctx, t.reward, listW - 28);
+          ctx.fillText(rewardLines[0] || t.reward, barX, rewardY);
+        } else {
+          const tw = ctx.measureText(t.reward).width;
+          ctx.fillText(t.reward, Math.max(barX, btnX - 10 - tw), rewardY);
+        }
       }
 
       y += block.h + gap;
