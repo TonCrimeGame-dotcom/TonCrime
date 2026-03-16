@@ -1,6 +1,6 @@
 (function () {
   const GRID = 7;
-  const START_HP = 100;
+  const START_HP = 1000;
   const START_MOVES = 12;
   const ACTIONS_PER_TURN = 2;
   const DRAG_THRESHOLD = 16;
