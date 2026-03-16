@@ -27,31 +27,68 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
   ctx.stroke();
 }
 
-function fitText(ctx, text, maxW, startSize, minSize = 9, weight = 900) {
-  let size = startSize;
-  while (size > minSize) {
-    ctx.font = `${weight} ${size}px system-ui`;
-    if (ctx.measureText(String(text || "")).width <= maxW) return size;
-    size -= 1;
+function getAssetImageSafe(assets, key) {
+  try {
+    if (!assets || !key) return null;
+    if (typeof assets.get === "function") {
+      const img = assets.get(key);
+      if (img) return img;
+    }
+    if (assets.images && assets.images[key]) return assets.images[key];
+    if (assets[key]) return assets[key];
+    return null;
+  } catch (_) {
+    return null;
   }
-  return minSize;
 }
 
-function drawCover(ctx, img, x, y, w, h) {
-  if (!img) {
-    ctx.fillStyle = "#0b0b0f";
-    ctx.fillRect(x, y, w, h);
-    return;
-  }
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString("tr-TR");
+}
 
-  const iw = img.width || 1;
-  const ih = img.height || 1;
-  const scale = Math.max(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2;
-  ctx.drawImage(img, dx, dy, dw, dh);
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function ensureMissionDefaults(store) {
+  const s = store.get() || {};
+  const m = s.missions || {};
+
+  const patch = {
+    dailyLoginClaimed: !!m.dailyLoginClaimed,
+    streak7Claimed: !!m.streak7Claimed,
+    loginStreak: Number(m.loginStreak || 1),
+
+    dailyAdWatched: Number(m.dailyAdWatched || 0),
+    dailyAdClaimed: !!m.dailyAdClaimed,
+
+    iqArenaPlayed: Number(m.iqArenaPlayed || 0),
+    iqArenaClaimed: !!m.iqArenaClaimed,
+
+    cageFightPlayed: Number(m.cageFightPlayed || 0),
+    cageFightClaimed: !!m.cageFightClaimed,
+
+    energyPurchased: Number(m.energyPurchased || 0),
+    energyClaimed: !!m.energyClaimed,
+
+    telegramJoined: !!m.telegramJoined,
+    telegramClaimed: !!m.telegramClaimed,
+
+    referrals: Number(m.referrals || 0),
+    referralClaim1: !!m.referralClaim1,
+    referralClaim5: !!m.referralClaim5,
+    referralClaim10: !!m.referralClaim10,
+
+    levelClaimedAt: Number(m.levelClaimedAt || 0),
+    lastDailyKey: String(m.lastDailyKey || ""),
+  };
+
+  if (JSON.stringify(patch) !== JSON.stringify(m)) {
+    store.set({ missions: { ...m, ...patch } });
+  }
 }
 
 export class MissionsScene {
@@ -63,765 +100,998 @@ export class MissionsScene {
 
     this.scrollY = 0;
     this.maxScroll = 0;
+
     this.dragging = false;
+    this.downX = 0;
     this.downY = 0;
-    this.startScroll = 0;
+    this.startScrollY = 0;
     this.moved = 0;
     this.clickCandidate = false;
 
     this.hit = [];
+    this.hitBack = null;
+
     this.toastText = "";
     this.toastUntil = 0;
 
-    this._bound = false;
-    this._dailyChecked = false;
-
-    this.telegramGroups = [
-      { id: "tg_main", title: "TONCRIME ANA GRUP", subtitle: "+50 yton", url: "https://t.me/toncrime" },
-      { id: "tg_news", title: "TONCRIME HABERLER", subtitle: "+50 yton", url: "https://t.me/toncrime_news" },
-      { id: "tg_chat", title: "TONCRIME SOHBET", subtitle: "+50 yton", url: "https://t.me/toncrime_chat" },
-      { id: "tg_event", title: "TONCRIME ETKİNLİK", subtitle: "+50 yton", url: "https://t.me/toncrime_events" },
-    ];
-
-    this.referralRewards = [
-      { target: 1, reward: "100 YTON HEDİYE", type: "coins", amount: 100 },
-      { target: 5, reward: "500 YTON HEDİYE", type: "coins", amount: 500 },
-      { target: 10, reward: "ORTA KALİTE SİLAH", type: "weapon", weaponName: "Orta Kalite Silah", weaponBonus: "+12%" },
-      { target: 100, reward: "YÜKSEK KALİTE AĞIR SİLAH", type: "weapon", weaponName: "Ağır Silah", weaponBonus: "+28%" },
-      { target: 1000, reward: "PREMIUM ÜYELİK", type: "premium" },
-    ];
+    this.telegramUrl = "https://t.me/TONCRIME";
+    this.inviteUrl = "https://t.me/share/url?url=https://t.me/TONCRIME_BOT";
   }
 
   onEnter() {
+    ensureMissionDefaults(this.store);
+    this._ensureDailyState();
     this.scrollY = 0;
     this.maxScroll = 0;
     this.dragging = false;
+    this.moved = 0;
+    this.clickCandidate = false;
     this.hit = [];
-    this._ensureState();
-    this._bindEvents();
-    this._applyDailyLogin();
+    this.hitBack = null;
   }
 
-  onExit() {
-    this.dragging = false;
+  _safeRect(w, h) {
+    const s = this.store.get() || {};
+    const safe = s?.ui?.safe || { x: 0, y: 0, w, h };
+    const topReserved = Number(s?.ui?.hudReservedTop || 110);
+    const bottomReserved = Number(s?.ui?.chatReservedBottom || 82);
+
+    return {
+      x: safe.x + 10,
+      y: safe.y + topReserved + 4,
+      w: safe.w - 20,
+      h: safe.h - topReserved - bottomReserved - 14,
+    };
   }
 
-  _todayKey() {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  }
-
-  _showToast(text, ms = 1400) {
+  _showToast(text, ms = 1600) {
     this.toastText = String(text || "");
     this.toastUntil = Date.now() + ms;
   }
 
-  _safeRect() {
-    const s = this.store.get();
-    const safe = s?.ui?.safe;
-    if (safe && Number.isFinite(safe.w) && Number.isFinite(safe.h)) return safe;
-    return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
-  }
-
-  _getBg() {
-    if (typeof this.assets?.getImage === "function") {
-      return this.assets.getImage("missions") || this.assets.getImage("background");
-    }
-    if (typeof this.assets?.get === "function") {
-      return this.assets.get("missions") || this.assets.get("background");
-    }
-    return this.assets?.images?.missions || this.assets?.images?.background || null;
-  }
-
-  _ensureState() {
+  _setMissions(patch = {}) {
     const s = this.store.get() || {};
-    const missions = s.missions || {};
-    const dailyLogin = s.dailyLogin || {};
-
+    const m = s.missions || {};
     this.store.set({
       missions: {
-        ...missions,
-        lastDayKey: missions.lastDayKey || null,
-        iqArenaPlayedToday: Number(missions.iqArenaPlayedToday || 0),
-        iqArenaClaimedToday: !!missions.iqArenaClaimedToday,
-        cageFightPlayedToday: Number(missions.cageFightPlayedToday || 0),
-        cageFightClaimedToday: !!missions.cageFightClaimedToday,
-        adsWatchedToday: Number(missions.adsWatchedToday || 0),
-        adsEnergyGivenToday: Number(missions.adsEnergyGivenToday || 0),
-        buildingEnergyToday: Number(missions.buildingEnergyToday || 0),
-        buildingClaimedToday: !!missions.buildingClaimedToday,
-        telegramJoinedMap: { ...(missions.telegramJoinedMap || {}) },
-        telegramClaimedMap: { ...(missions.telegramClaimedMap || {}) },
-        referrals: Number(missions.referrals || 0),
-        referralClaimedMap: { ...(missions.referralClaimedMap || {}) },
-      },
-      dailyLogin: {
-        ...dailyLogin,
-        lastClaimDay: dailyLogin.lastClaimDay || null,
-        streak: Number(dailyLogin.streak || 0),
-        totalClaims: Number(dailyLogin.totalClaims || 0),
-        weeklyClaimDay: dailyLogin.weeklyClaimDay || null,
+        ...m,
+        ...patch,
       },
     });
-
-    this._resetDailyIfNeeded();
   }
 
-  _resetDailyIfNeeded() {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    const today = this._todayKey();
-    if (missions.lastDayKey === today) return;
-
-    missions.lastDayKey = today;
-    missions.iqArenaPlayedToday = 0;
-    missions.iqArenaClaimedToday = false;
-    missions.cageFightPlayedToday = 0;
-    missions.cageFightClaimedToday = false;
-    missions.adsWatchedToday = 0;
-    missions.adsEnergyGivenToday = 0;
-    missions.buildingEnergyToday = 0;
-    missions.buildingClaimedToday = false;
-
-    this.store.set({ missions });
-  }
-
-  _applyDailyLogin() {
-    if (this._dailyChecked) return;
-    this._dailyChecked = true;
-
-    const s = this.store.get();
-    const daily = { ...(s.dailyLogin || {}) };
-    const today = this._todayKey();
-    if (daily.lastClaimDay === today) return;
-
-    const lastDate = daily.lastClaimDay ? new Date(`${daily.lastClaimDay}T00:00:00`) : null;
-    const currentDate = new Date(`${today}T00:00:00`);
-    const diffDays = lastDate ? Math.round((currentDate - lastDate) / 86400000) : null;
-
-    if (diffDays === 1) daily.streak = Number(daily.streak || 0) + 1;
-    else daily.streak = 1;
-
-    daily.lastClaimDay = today;
-    daily.totalClaims = Number(daily.totalClaims || 0) + 1;
-
-    let coinsAdd = 30;
-    if (daily.streak % 7 === 0 && daily.weeklyClaimDay !== today) {
-      coinsAdd += 70;
-      daily.weeklyClaimDay = today;
-    }
-
+  _grantCoins(n) {
+    const s = this.store.get() || {};
     this.store.set({
-      coins: Number(s.coins || 0) + coinsAdd,
-      dailyLogin: daily,
+      coins: Number(s.coins || 0) + Number(n || 0),
     });
-
-    this._showToast(daily.streak % 7 === 0 ? "+30 yton +70 yton" : "+30 yton");
-  }
-
-  _bindEvents() {
-    if (this._bound) return;
-    this._bound = true;
-
-    this._onIqArenaPlayed = () => this._incMission("iqArenaPlayedToday", 1, 20);
-    this._onCageFightPlayed = () => this._incMission("cageFightPlayedToday", 1, 20);
-    this._onReferral = (ev) => this._incMission("referrals", Number(ev?.detail?.count || 1));
-    this._onBuildingPurchase = (ev) => this._incMission("buildingEnergyToday", Number(ev?.detail?.energy || 0), 100);
-    this._onTelegramJoin = (ev) => {
-      const id = String(ev?.detail?.id || "").trim();
-      if (!id) return;
-      const s = this.store.get();
-      const missions = { ...(s.missions || {}) };
-      missions.telegramJoinedMap = { ...(missions.telegramJoinedMap || {}), [id]: true };
-      this.store.set({ missions });
-    };
-
-    window.addEventListener("tc:missions:iqArenaPlayed", this._onIqArenaPlayed);
-    window.addEventListener("tc:missions:cageFightPlayed", this._onCageFightPlayed);
-    window.addEventListener("tc:missions:referral", this._onReferral);
-    window.addEventListener("tc:missions:buildingPurchase", this._onBuildingPurchase);
-    window.addEventListener("tc:missions:telegramJoin", this._onTelegramJoin);
-
-    window.addEventListener("tc:pvp:win", this._onIqArenaPlayed);
-    window.addEventListener("tc:pvp:lose", this._onIqArenaPlayed);
-  }
-
-  _incMission(key, add = 1, cap = null) {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    const next = Number(missions[key] || 0) + Number(add || 0);
-    missions[key] = cap == null ? next : Math.min(cap, next);
-    this.store.set({ missions });
   }
 
   _grantEnergy(n) {
-    const s = this.store.get();
-    const p = { ...(s.player || {}) };
-    const max = Math.max(1, Number(p.energyMax || 100));
-    p.energy = clamp(Number(p.energy || 0) + Number(n || 0), 0, max);
-    this.store.set({ player: p });
+    const s = this.store.get() || {};
+    const p = s.player || {};
+    const maxE = Math.max(1, Number(p.energyMax || 100));
+    const next = clamp(Number(p.energy || 0) + Number(n || 0), 0, maxE);
+    this.store.set({
+      player: {
+        ...p,
+        energy: next,
+      },
+    });
   }
 
-  _taskList() {
-    const s = this.store.get();
+  _grantXP(n) {
+    const s = this.store.get() || {};
+    const p = s.player || {};
+
+    let xp = Number(p.xp || 0) + Number(n || 0);
+    let level = Number(p.level || 1);
+    let xpToNext = Math.max(1, Number(p.xpToNext || 100));
+
+    while (xp >= xpToNext) {
+      xp -= xpToNext;
+      level += 1;
+      xpToNext = 100;
+    }
+
+    this.store.set({
+      player: {
+        ...p,
+        xp,
+        level,
+        xpToNext,
+      },
+    });
+  }
+
+  _ensureDailyState() {
+    const s = this.store.get() || {};
     const m = s.missions || {};
-    const daily = s.dailyLogin || {};
+    const today = todayKey();
+
+    if (String(m.lastDailyKey || "") === today) return;
+
+    const nextStreak =
+      String(m.lastDailyKey || "") && !m.dailyLoginClaimed
+        ? 1
+        : clamp(Number(m.loginStreak || 0) + 1, 1, 7);
+
+    this.store.set({
+      missions: {
+        ...m,
+        dailyLoginClaimed: false,
+        streak7Claimed: Number(nextStreak) >= 7 ? !!m.streak7Claimed : false,
+        loginStreak: nextStreak,
+        dailyAdWatched: 0,
+        dailyAdClaimed: false,
+        iqArenaPlayed: 0,
+        iqArenaClaimed: false,
+        cageFightPlayed: 0,
+        cageFightClaimed: false,
+        energyPurchased: 0,
+        energyClaimed: false,
+        lastDailyKey: today,
+      },
+    });
+  }
+
+  _isRewardedAdAvailable() {
+    return (
+      !!window?.showRewardedAd ||
+      !!window?.tcAds?.showRewarded ||
+      !!window?.Telegram?.WebApp?.showPopup
+    );
+  }
+
+  async _watchAdMission() {
+    const s = this.store.get() || {};
+    const m = s.missions || {};
+
+    if (Number(m.dailyAdWatched || 0) >= 20) {
+      this._showToast("Günlük reklam limiti doldu");
+      return;
+    }
+
+    let rewarded = false;
+
+    try {
+      if (typeof window?.showRewardedAd === "function") {
+        const res = await window.showRewardedAd();
+        rewarded = !!res || res === undefined;
+      } else if (typeof window?.tcAds?.showRewarded === "function") {
+        const res = await window.tcAds.showRewarded();
+        rewarded = !!res || res === undefined;
+      } else {
+        rewarded = true;
+      }
+    } catch (_) {
+      rewarded = false;
+    }
+
+    if (!rewarded) {
+      this._showToast("Reklam tamamlanmadı");
+      return;
+    }
+
+    const s2 = this.store.get() || {};
+    const m2 = s2.missions || {};
+    this.store.set({
+      missions: {
+        ...m2,
+        dailyAdWatched: clamp(Number(m2.dailyAdWatched || 0) + 1, 0, 20),
+      },
+    });
+    this._grantEnergy(1);
+    this._showToast("+1 enerji kazanıldı");
+  }
+
+  _openTelegramTask() {
+    const s = this.store.get() || {};
+    const m = s.missions || {};
+
+    if (m.telegramClaimed) {
+      this._showToast("Telegram ödülü alındı");
+      return;
+    }
+
+    if (!m.telegramJoined) {
+      try {
+        window.open(this.telegramUrl, "_blank");
+      } catch (_) {}
+
+      this._setMissions({ telegramJoined: true });
+      this._showToast("Katılım açıldı, şimdi ödülü al");
+      return;
+    }
+
+    this._grantCoins(50);
+    this._setMissions({
+      telegramJoined: true,
+      telegramClaimed: true,
+    });
+    this._showToast("+50 YTON alındı");
+  }
+
+  _openInviteTask() {
+    try {
+      if (navigator.share) {
+        navigator
+          .share({
+            title: "TonCrime",
+            text: "TonCrime'e katıl",
+            url: this.inviteUrl.replace("https://t.me/share/url?url=", ""),
+          })
+          .catch(() => {});
+      } else {
+        window.open(this.inviteUrl, "_blank");
+      }
+    } catch (_) {}
+
+    this._showToast("Davet bağlantısı açıldı");
+  }
+
+  _openPvp(mode) {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("tc:openPvp", {
+          detail: {
+            mode,
+          },
+        })
+      );
+    } catch (_) {}
+
+    if (mode === "iq") {
+      this._showToast("IQ Arena açılıyor");
+    } else {
+      this._showToast("Kafes Dövüşü açılıyor");
+    }
+  }
+
+  _claim(type) {
+    const s = this.store.get() || {};
+    const m = s.missions || {};
+    const p = s.player || {};
+
+    if (type === "dailyLogin" && !m.dailyLoginClaimed) {
+      this._grantCoins(30);
+      this._setMissions({ dailyLoginClaimed: true });
+      this._showToast("+30 YTON");
+      return;
+    }
+
+    if (type === "streak7" && Number(m.loginStreak || 0) >= 7 && !m.streak7Claimed) {
+      this._grantCoins(70);
+      this._setMissions({ streak7Claimed: true });
+      this._showToast("7 gün ödülü alındı");
+      return;
+    }
+
+    if (type === "dailyAd" && Number(m.dailyAdWatched || 0) >= 20 && !m.dailyAdClaimed) {
+      this._grantCoins(20);
+      this._grantXP(15);
+      this._setMissions({ dailyAdClaimed: true });
+      this._showToast("Reklam görevi ödülü alındı");
+      return;
+    }
+
+    if (type === "iqArena" && Number(m.iqArenaPlayed || 0) >= 20 && !m.iqArenaClaimed) {
+      this._grantCoins(60);
+      this._grantXP(20);
+      this._setMissions({ iqArenaClaimed: true });
+      this._showToast("IQ Arena ödülü alındı");
+      return;
+    }
+
+    if (type === "cageFight" && Number(m.cageFightPlayed || 0) >= 20 && !m.cageFightClaimed) {
+      this._grantCoins(60);
+      this._grantXP(20);
+      this._setMissions({ cageFightClaimed: true });
+      this._showToast("Kafes Dövüşü ödülü alındı");
+      return;
+    }
+
+    if (type === "energy" && Number(m.energyPurchased || 0) >= 100 && !m.energyClaimed) {
+      this._grantCoins(50);
+      this._setMissions({ energyClaimed: true });
+      this._showToast("Enerji satın alma ödülü alındı");
+      return;
+    }
+
+    if (type === "level" && Number(p.level || 1) >= 55 && Number(m.levelClaimedAt || 0) !== 55) {
+      this._grantCoins(50);
+      this._grantXP(25);
+      this._setMissions({ levelClaimedAt: 55 });
+      this._showToast("Level ödülü alındı");
+      return;
+    }
+
+    if (type === "ref1" && Number(m.referrals || 0) >= 1 && !m.referralClaim1) {
+      this._grantCoins(100);
+      this._setMissions({ referralClaim1: true });
+      this._showToast("1 davet ödülü alındı");
+      return;
+    }
+
+    if (type === "ref5" && Number(m.referrals || 0) >= 5 && !m.referralClaim5) {
+      this._grantCoins(500);
+      this._setMissions({ referralClaim5: true });
+      this._showToast("5 davet ödülü alındı");
+      return;
+    }
+
+    if (type === "ref10" && Number(m.referrals || 0) >= 10 && !m.referralClaim10) {
+      const s2 = this.store.get() || {};
+      const p2 = s2.player || {};
+      this.store.set({
+        player: {
+          ...p2,
+          weaponName: "Orta Kalite Silah",
+          weaponBonus: "+8%",
+        },
+      });
+      this._setMissions({ referralClaim10: true });
+      this._showToast("Orta Kalite Silah alındı");
+      return;
+    }
+  }
+
+  _missionData() {
+    const s = this.store.get() || {};
+    const p = s.player || {};
+    const m = s.missions || {};
+
+    const levelNow = Number(p.level || 1);
+    const levelTarget = 55;
+    const levelPct = clamp(levelNow / levelTarget, 0, 1);
 
     return [
       {
-        key: "daily_login",
-        title: "GÜNLÜK GİRİŞ",
-        desc: "Her gün +30 yton. 7 gün seri girişte +70 yton bonus.",
-        progress: daily.lastClaimDay === this._todayKey() ? 1 : 0,
-        max: 1,
-        reward: "+30 yton / 7 gün +70 yton",
-        claimed: daily.lastClaimDay === this._todayKey(),
-        claimable: false,
-        kind: "info",
+        section: "Günlük Görevler",
+        cards: [
+          {
+            key: "dailyLogin",
+            title: "Günlük Giriş",
+            desc: "Her gün oyuna giriş yap ve ödülünü al.",
+            tags: ["Günlük", "+30 YTON"],
+            progress: m.dailyLoginClaimed ? 1 : 0,
+            max: 1,
+            rewardText: m.dailyLoginClaimed ? "Alındı" : "Ödül: +30 YTON",
+            buttonLabel: m.dailyLoginClaimed ? "Alındı" : "Al",
+            buttonType: "claim",
+            claimKey: "dailyLogin",
+            disabled: !!m.dailyLoginClaimed,
+            claimed: !!m.dailyLoginClaimed,
+          },
+          {
+            key: "streak7",
+            title: "7 Gün Sürekli Giriş",
+            desc: "7 gün seri giriş yap ve ekstra ödülü aç.",
+            tags: ["Seri", "+70 YTON"],
+            progress: clamp(Number(m.loginStreak || 0), 0, 7),
+            max: 7,
+            rewardText: m.streak7Claimed ? "Alındı" : "Ödül: +70 YTON",
+            buttonLabel: m.streak7Claimed ? "Alındı" : "Al",
+            buttonType: "claim",
+            claimKey: "streak7",
+            disabled: !!m.streak7Claimed || Number(m.loginStreak || 0) < 7,
+            claimed: !!m.streak7Claimed,
+          },
+          {
+            key: "watchAds",
+            title: "Reklam İzle",
+            desc: "Günlük 20 reklam. Her reklam +1 enerji verir.",
+            tags: ["20 Reklam", "+1 Enerji"],
+            progress: clamp(Number(m.dailyAdWatched || 0), 0, 20),
+            max: 20,
+            rewardText: m.dailyAdClaimed ? "Görev ödülü alındı" : "20/20 olunca +20 YTON +15 XP",
+            buttonLabel:
+              m.dailyAdClaimed
+                ? "Alındı"
+                : Number(m.dailyAdWatched || 0) >= 20
+                ? "Al"
+                : "İzle",
+            buttonType:
+              m.dailyAdClaimed
+                ? "done"
+                : Number(m.dailyAdWatched || 0) >= 20
+                ? "claim"
+                : "action",
+            action: Number(m.dailyAdWatched || 0) >= 20 ? null : "watchAd",
+            claimKey: Number(m.dailyAdWatched || 0) >= 20 ? "dailyAd" : null,
+            disabled: !!m.dailyAdClaimed,
+            claimed: !!m.dailyAdClaimed,
+          },
+        ],
       },
       {
-        key: "ads",
-        title: "REKLAM İZLEME",
-        desc: "Günlük 20 reklam. Her reklam 1 enerji verir.",
-        progress: Number(m.adsWatchedToday || 0),
-        max: 20,
-        reward: "+1 enerji / reklam",
-        claimed: false,
-        claimable: Number(m.adsWatchedToday || 0) < 20,
-        actionLabel: "İZLE",
+        section: "PvP Görevleri",
+        cards: [
+          {
+            key: "iqArena",
+            title: "IQ Arena",
+            desc: "Günlük 20 oyun oyna ve yüklü ödül al.",
+            tags: ["20 Oyun", "+60 YTON"],
+            progress: clamp(Number(m.iqArenaPlayed || 0), 0, 20),
+            max: 20,
+            rewardText: m.iqArenaClaimed ? "Alındı" : "Ödül: +60 YTON",
+            buttonLabel:
+              m.iqArenaClaimed
+                ? "Alındı"
+                : Number(m.iqArenaPlayed || 0) >= 20
+                ? "Al"
+                : "Açık",
+            buttonType:
+              m.iqArenaClaimed
+                ? "done"
+                : Number(m.iqArenaPlayed || 0) >= 20
+                ? "claim"
+                : "action",
+            action: Number(m.iqArenaPlayed || 0) >= 20 ? null : "openIqArena",
+            claimKey: Number(m.iqArenaPlayed || 0) >= 20 ? "iqArena" : null,
+            disabled: !!m.iqArenaClaimed,
+            claimed: !!m.iqArenaClaimed,
+          },
+          {
+            key: "cageFight",
+            title: "Kafes Dövüşü",
+            desc: "Günlük 20 oyun oyna ve ödülünü al.",
+            tags: ["20 Oyun", "+60 YTON"],
+            progress: clamp(Number(m.cageFightPlayed || 0), 0, 20),
+            max: 20,
+            rewardText: m.cageFightClaimed ? "Alındı" : "Ödül: +60 YTON",
+            buttonLabel:
+              m.cageFightClaimed
+                ? "Alındı"
+                : Number(m.cageFightPlayed || 0) >= 20
+                ? "Al"
+                : "Açık",
+            buttonType:
+              m.cageFightClaimed
+                ? "done"
+                : Number(m.cageFightPlayed || 0) >= 20
+                ? "claim"
+                : "action",
+            action: Number(m.cageFightPlayed || 0) >= 20 ? null : "openCageFight",
+            claimKey: Number(m.cageFightPlayed || 0) >= 20 ? "cageFight" : null,
+            disabled: !!m.cageFightClaimed,
+            claimed: !!m.cageFightClaimed,
+          },
+        ],
       },
       {
-        key: "iq_arena",
-        title: "GÜNLÜK IQ ARENA",
-        desc: "20 oyun oyna ve ödülü al.",
-        progress: Number(m.iqArenaPlayedToday || 0),
-        max: 20,
-        reward: "+60 yton",
-        claimed: !!m.iqArenaClaimedToday,
-        claimable: Number(m.iqArenaPlayedToday || 0) >= 20 && !m.iqArenaClaimedToday,
-        actionLabel: m.iqArenaClaimedToday ? "ALINDI" : Number(m.iqArenaPlayedToday || 0) >= 20 ? "AL" : "OYNA",
+        section: "Ekstra Görevler",
+        cards: [
+          {
+            key: "energyBuy",
+            title: "Enerji Satın Al",
+            desc: "Binalardan toplam 100 enerji satın al.",
+            tags: ["100 Enerji", "+50 YTON"],
+            progress: clamp(Number(m.energyPurchased || 0), 0, 100),
+            max: 100,
+            rewardText: m.energyClaimed ? "Alındı" : "Ödül: +50 YTON",
+            buttonLabel: m.energyClaimed ? "Alındı" : Number(m.energyPurchased || 0) >= 100 ? "Al" : "Takipte",
+            buttonType: m.energyClaimed ? "done" : Number(m.energyPurchased || 0) >= 100 ? "claim" : "info",
+            claimKey: Number(m.energyPurchased || 0) >= 100 ? "energy" : null,
+            disabled: !!m.energyClaimed || Number(m.energyPurchased || 0) < 100,
+            claimed: !!m.energyClaimed,
+          },
+          {
+            key: "telegram_join",
+            title: "Telegram Grupları",
+            desc: "Telegram topluluğuna katıl ve tek butonla ödülünü al.",
+            tags: ["Sosyal", "+50 YTON"],
+            progress: m.telegramClaimed ? 1 : m.telegramJoined ? 1 : 0,
+            max: 1,
+            rewardText: m.telegramClaimed ? "Alındı" : m.telegramJoined ? "Katılım doğrulandı" : "Telegram görevine katıl",
+            buttonLabel: m.telegramClaimed ? "Alındı" : m.telegramJoined ? "Al" : "Katıl",
+            buttonType: "telegram",
+            disabled: !!m.telegramClaimed,
+            claimed: !!m.telegramClaimed,
+            joined: !!m.telegramJoined,
+          },
+          {
+            key: "level55",
+            title: "Level Ödülü",
+            desc: `Seviye ${levelTarget} ol ve seviye bağlantılı ödülü aç.`,
+            tags: [`LVL ${levelNow}/${levelTarget}`, "+50 YTON"],
+            progress: levelPct,
+            max: 1,
+            usePercent: true,
+            rewardText: Number(m.levelClaimedAt || 0) === 55 ? "Alındı" : "Ödül: +50 YTON +25 XP",
+            buttonLabel:
+              Number(m.levelClaimedAt || 0) === 55
+                ? "Alındı"
+                : levelNow >= levelTarget
+                ? "Al"
+                : "Takipte",
+            buttonType:
+              Number(m.levelClaimedAt || 0) === 55
+                ? "done"
+                : levelNow >= levelTarget
+                ? "claim"
+                : "info",
+            claimKey: levelNow >= levelTarget ? "level" : null,
+            disabled: Number(m.levelClaimedAt || 0) === 55 || levelNow < levelTarget,
+            claimed: Number(m.levelClaimedAt || 0) === 55,
+          },
+        ],
       },
       {
-        key: "cage_fight",
-        title: "GÜNLÜK KAFES DÖVÜŞÜ",
-        desc: "20 oyun oyna ve ödülü al.",
-        progress: Number(m.cageFightPlayedToday || 0),
-        max: 20,
-        reward: "+60 yton",
-        claimed: !!m.cageFightClaimedToday,
-        claimable: Number(m.cageFightPlayedToday || 0) >= 20 && !m.cageFightClaimedToday,
-        actionLabel: m.cageFightClaimedToday ? "ALINDI" : Number(m.cageFightPlayedToday || 0) >= 20 ? "AL" : "OYNA",
-      },
-      {
-        key: "building_buy",
-        title: "BİNALARDAN SATIN ALIM",
-        desc: "Binalardan toplam 100 enerji al.",
-        progress: Number(m.buildingEnergyToday || 0),
-        max: 100,
-        reward: "+50 yton",
-        claimed: !!m.buildingClaimedToday,
-        claimable: Number(m.buildingEnergyToday || 0) >= 100 && !m.buildingClaimedToday,
-        actionLabel: m.buildingClaimedToday ? "ALINDI" : Number(m.buildingEnergyToday || 0) >= 100 ? "AL" : "TAKİP",
+        section: "Davet Ödülleri",
+        cards: [
+          {
+            key: "invite_info",
+            title: "Arkadaş Davet Et",
+            desc: "Davet bağlantını paylaş. İlerleme otomatik davet sayısına bağlanır.",
+            tags: [`${fmtNum(m.referrals)} Davet`, "Paylaş"],
+            progress: 1,
+            max: 1,
+            rewardText: "Davet bağlantısını paylaş",
+            buttonLabel: "Davet",
+            buttonType: "action",
+            action: "invite",
+            disabled: false,
+            claimed: false,
+          },
+          {
+            key: "ref1",
+            title: "1 Kişi Davet",
+            desc: "İlk davet ödülünü aç.",
+            tags: ["1 Davet", "+100 YTON"],
+            progress: clamp(Number(m.referrals || 0), 0, 1),
+            max: 1,
+            rewardText: m.referralClaim1 ? "Alındı" : "Ödül: +100 YTON",
+            buttonLabel: m.referralClaim1 ? "Alındı" : Number(m.referrals || 0) >= 1 ? "Al" : "Takipte",
+            buttonType: m.referralClaim1 ? "done" : Number(m.referrals || 0) >= 1 ? "claim" : "info",
+            claimKey: Number(m.referrals || 0) >= 1 ? "ref1" : null,
+            disabled: !!m.referralClaim1 || Number(m.referrals || 0) < 1,
+            claimed: !!m.referralClaim1,
+          },
+          {
+            key: "ref5",
+            title: "5 Kişi Davet",
+            desc: "5 davete ulaşıp büyük ödülü al.",
+            tags: ["5 Davet", "+500 YTON"],
+            progress: clamp(Number(m.referrals || 0), 0, 5),
+            max: 5,
+            rewardText: m.referralClaim5 ? "Alındı" : "Ödül: +500 YTON",
+            buttonLabel: m.referralClaim5 ? "Alındı" : Number(m.referrals || 0) >= 5 ? "Al" : "Takipte",
+            buttonType: m.referralClaim5 ? "done" : Number(m.referrals || 0) >= 5 ? "claim" : "info",
+            claimKey: Number(m.referrals || 0) >= 5 ? "ref5" : null,
+            disabled: !!m.referralClaim5 || Number(m.referrals || 0) < 5,
+            claimed: !!m.referralClaim5,
+          },
+          {
+            key: "ref10",
+            title: "10 Kişi Davet",
+            desc: "10 davet sonrası orta kalite silah kazan.",
+            tags: ["10 Davet", "Silah"],
+            progress: clamp(Number(m.referrals || 0), 0, 10),
+            max: 10,
+            rewardText: m.referralClaim10 ? "Silah alındı" : "Ödül: Orta Kalite Silah",
+            buttonLabel: m.referralClaim10 ? "Alındı" : Number(m.referrals || 0) >= 10 ? "Al" : "Takipte",
+            buttonType: m.referralClaim10 ? "done" : Number(m.referrals || 0) >= 10 ? "claim" : "info",
+            claimKey: Number(m.referrals || 0) >= 10 ? "ref10" : null,
+            disabled: !!m.referralClaim10 || Number(m.referrals || 0) < 10,
+            claimed: !!m.referralClaim10,
+          },
+        ],
       },
     ];
   }
 
-  _claimTask(key) {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    let coins = Number(s.coins || 0);
-    let player = { ...(s.player || {}) };
-    let premium = !!s.premium;
-
-    if (key === "iq_arena" && Number(missions.iqArenaPlayedToday || 0) >= 20 && !missions.iqArenaClaimedToday) {
-      missions.iqArenaClaimedToday = true;
-      coins += 60;
-    } else if (key === "cage_fight" && Number(missions.cageFightPlayedToday || 0) >= 20 && !missions.cageFightClaimedToday) {
-      missions.cageFightClaimedToday = true;
-      coins += 60;
-    } else if (key === "building_buy" && Number(missions.buildingEnergyToday || 0) >= 100 && !missions.buildingClaimedToday) {
-      missions.buildingClaimedToday = true;
-      coins += 50;
-    } else {
-      return;
-    }
-
-    this.store.set({ coins, missions, player, premium });
-    this._showToast("Ödül alındı");
-  }
-
-  _watchAd() {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    if (Number(missions.adsWatchedToday || 0) >= 20) {
-      this._showToast("Bugün reklam limiti dolu");
-      return;
-    }
-
-    missions.adsWatchedToday = Number(missions.adsWatchedToday || 0) + 1;
-    missions.adsEnergyGivenToday = Number(missions.adsEnergyGivenToday || 0) + 1;
-    this.store.set({ missions });
-    this._grantEnergy(1);
-    this._showToast("+1 enerji");
-  }
-
-  _joinTelegram(id, url) {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    missions.telegramJoinedMap = { ...(missions.telegramJoinedMap || {}), [id]: true };
-    this.store.set({ missions });
-
-    try {
-      if (url) window.open(url, "_blank");
-    } catch (_) {}
-
-    this._showToast("Telegram görevi işaretlendi");
-  }
-
-  _claimTelegram(id) {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    const joined = !!missions.telegramJoinedMap?.[id];
-    const claimed = !!missions.telegramClaimedMap?.[id];
-    if (!joined || claimed) return;
-
-    missions.telegramClaimedMap = { ...(missions.telegramClaimedMap || {}), [id]: true };
-    this.store.set({
-      missions,
-      coins: Number(s.coins || 0) + 50,
-    });
-    this._showToast("+50 yton");
-  }
-
-  _claimReferral(target) {
-    const s = this.store.get();
-    const missions = { ...(s.missions || {}) };
-    const claimedMap = { ...(missions.referralClaimedMap || {}) };
-    const current = Number(missions.referrals || 0);
-    if (current < target || claimedMap[target]) return;
-
-    let patch = {
-      missions: {
-        ...missions,
-        referralClaimedMap: { ...claimedMap, [target]: true },
-      },
-    };
-
-    if (target === 1) patch.coins = Number(s.coins || 0) + 100;
-    if (target === 5) patch.coins = Number(s.coins || 0) + 500;
-    if (target === 10) {
-      patch.player = {
-        ...(s.player || {}),
-        weaponName: "Orta Kalite Silah",
-        weaponBonus: "+12%",
-      };
-    }
-    if (target === 100) {
-      patch.player = {
-        ...(s.player || {}),
-        weaponName: "Yüksek Kalite Ağır Silah",
-        weaponBonus: "+28%",
-      };
-    }
-    if (target === 1000) patch.premium = true;
-
-    this.store.set(patch);
-    this._showToast("Davet ödülü alındı");
-  }
-
-  _simulateOpenPvp(mode) {
-    try {
-      if (mode === "iq") window.dispatchEvent(new CustomEvent("tc:missions:openMode", { detail: { mode: "iq" } }));
-      if (mode === "cage") window.dispatchEvent(new CustomEvent("tc:missions:openMode", { detail: { mode: "cage" } }));
-      window.dispatchEvent(new Event("tc:openPvp"));
-    } catch (_) {}
-  }
-
-  _goBack() {
-    try {
-      this.scenes.go("home");
-      return;
-    } catch (_) {}
-
-    try {
-      window.location.href = "./index.html";
-    } catch (_) {}
-  }
-
   update() {
-    this._resetDailyIfNeeded();
+    this._ensureDailyState();
 
-    const px = this.input.pointer?.x || 0;
-    const py = this.input.pointer?.y || 0;
+    const p = this.input?.pointer || { x: 0, y: 0 };
+    const px = Number(p.x || 0);
+    const py = Number(p.y || 0);
 
-    if (this.input.justPressed()) {
+    if (this.input.justPressed?.()) {
       this.dragging = true;
+      this.downX = px;
       this.downY = py;
-      this.startScroll = this.scrollY;
+      this.startScrollY = this.scrollY;
       this.moved = 0;
       this.clickCandidate = true;
     }
 
-    if (this.dragging && this.input.isDown()) {
+    if (this.dragging) {
       const dy = py - this.downY;
-      this.scrollY = clamp(this.startScroll - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
+
+      if (this.moved > 6) {
+        this.clickCandidate = false;
+        this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
+      }
     }
 
-    if (this.dragging && this.input.justReleased()) {
+    if (this.input.justReleased?.()) {
+      const wasClick = this.clickCandidate && this.moved < 10;
       this.dragging = false;
-      if (!this.clickCandidate) return;
 
-      for (const h of this.hit) {
-        if (!pointInRect(px, py, h.rect)) continue;
+      if (wasClick) {
+        if (this.hitBack && pointInRect(px, py, this.hitBack)) {
+          this.scenes.go("home");
+          return;
+        }
 
-        if (h.type === "close") return this._goBack();
-        if (h.type === "watchAd") return this._watchAd();
-        if (h.type === "claimTask") return this._claimTask(h.key);
-        if (h.type === "openPvp") return this._simulateOpenPvp(h.mode);
-        if (h.type === "joinTelegram") return this._joinTelegram(h.id, h.url);
-        if (h.type === "claimTelegram") return this._claimTelegram(h.id);
-        if (h.type === "claimReferral") return this._claimReferral(h.target);
+        for (const h of this.hit) {
+          if (!pointInRect(px, py, h.rect)) continue;
+
+          if (h.type === "claim") {
+            this._claim(h.key);
+            return;
+          }
+
+          if (h.type === "watchAd") {
+            this._watchAdMission();
+            return;
+          }
+
+          if (h.type === "telegram") {
+            this._openTelegramTask();
+            return;
+          }
+
+          if (h.type === "openIqArena") {
+            this._openPvp("iq");
+            return;
+          }
+
+          if (h.type === "openCageFight") {
+            this._openPvp("cage");
+            return;
+          }
+
+          if (h.type === "invite") {
+            this._openInviteTask();
+            return;
+          }
+        }
       }
     }
   }
 
-  render(ctx) {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const W = Math.floor(ctx.canvas.width / dpr);
-    const H = Math.floor(ctx.canvas.height / dpr);
-    const safe = this._safeRect();
-    const bg = this._getBg();
+  render(ctx, w, h) {
+    const s = this.store.get() || {};
+    const safe = this._safeRect(w, h);
 
-    const isSmall = safe.w <= 430;
-    const panelX = safe.x + (isSmall ? 8 : 12);
-    const panelY = Math.max(safe.y + 76, 76);
-    const panelW = safe.w - (isSmall ? 16 : 24);
-    const panelH = safe.h - (isSmall ? 146 : 154);
-    const pad = isSmall ? 10 : 14;
-    const gap = isSmall ? 8 : 10;
-    const listX = panelX + pad;
-    const listY = panelY + 64;
-    const listW = panelW - pad * 2;
-    const listH = panelH - 78;
+    const bg =
+      getAssetImageSafe(this.assets, "missions") ||
+      getAssetImageSafe(this.assets, "pvp") ||
+      getAssetImageSafe(this.assets, "background");
+
+    if (bg) {
+      const scale = Math.max(w / (bg.width || 1), h / (bg.height || 1));
+      const dw = (bg.width || 1) * scale;
+      const dh = (bg.height || 1) * scale;
+      const dx = (w - dw) * 0.5;
+      const dy = (h - dh) * 0.5;
+      ctx.drawImage(bg, dx, dy, dw, dh);
+    } else {
+      ctx.fillStyle = "#0e0a07";
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    ctx.fillStyle = "rgba(6,3,2,0.62)";
+    ctx.fillRect(0, 0, w, h);
 
     this.hit = [];
+    this.hitBack = null;
 
-    ctx.clearRect(0, 0, W, H);
-    drawCover(ctx, bg, 0, 0, W, H);
+    const panelX = safe.x;
+    const panelY = safe.y;
+    const panelW = safe.w;
+    const panelH = safe.h;
 
-    ctx.fillStyle = "rgba(0,0,0,0.54)";
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(12,8,10,0.46)";
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
+    ctx.strokeStyle = "rgba(255,170,40,0.68)";
+    ctx.lineWidth = 1.25;
+    strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
 
-    ctx.fillStyle = "rgba(7,10,16,0.76)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 18);
+    const headH = Math.min(110, Math.max(94, panelH * 0.16));
+    const innerX = panelX + 14;
+    const innerW = panelW - 28;
+
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    fillRoundRect(ctx, innerX, panelY + 12, innerW, headH, 18);
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 18);
+    strokeRoundRect(ctx, innerX, panelY + 12, innerW, headH, 18);
 
-    const titleSize = fitText(ctx, "GÖREVLER", panelW - 120, isSmall ? 20 : 22, 16);
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${titleSize}px system-ui`;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("GÖREVLER", panelX + pad, panelY + 28);
 
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = `${isSmall ? 10 : 11}px system-ui`;
-    ctx.fillText("PvP sayfa yapısına uyumlu • mobil optimize", panelX + pad, panelY + 46);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 18px system-ui";
+    ctx.fillText("Görevler", innerX + 16, panelY + 42);
 
-    const closeRect = { x: panelX + panelW - 42, y: panelY + 12, w: 30, h: 30 };
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, closeRect.x, closeRect.y, closeRect.w, closeRect.h, 10);
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, closeRect.x + 0.5, closeRect.y + 0.5, closeRect.w - 1, closeRect.h - 1, 10);
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 14px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
+    ctx.font = "13px system-ui";
+    ctx.fillText("Günlük görevler, sosyal görevler ve davet ödülleri", innerX + 16, panelY + 66);
+
+    const backW = 92;
+    const backH = 42;
+    const backX = innerX + innerW - backW - 12;
+    const backY = panelY + 26;
+    this.hitBack = { x: backX, y: backY, w: backW, h: backH };
+
+    ctx.fillStyle = "rgba(34,32,43,0.88)";
+    fillRoundRect(ctx, backX, backY, backW, backH, 14);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    strokeRoundRect(ctx, backX, backY, backW, backH, 14);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 14px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("X", closeRect.x + closeRect.w / 2, closeRect.y + closeRect.h / 2 + 0.5);
-    this.hit.push({ type: "close", rect: closeRect });
+    ctx.fillText("Kapat", backX + backW / 2, backY + backH / 2);
 
-    const tasks = this._taskList();
-    const s = this.store.get();
-    const missions = s.missions || {};
-    const daily = s.dailyLogin || {};
-    const streak = Number(daily.streak || 0);
+    const s0 = this.store.get() || {};
+    const p0 = s0.player || {};
+    const m0 = s0.missions || {};
+    const levelText = `LVL ${Number(p0.level || 1)}`;
+    const xpText = `${fmtNum(p0.xp || 0)}/${fmtNum(p0.xpToNext || 100)} XP`;
+    const energyText = `${fmtNum(p0.energy || 0)}/${fmtNum(p0.energyMax || 100)} ENERJİ`;
+    const inviteText = `${fmtNum(m0.referrals || 0)} DAVET`;
 
-    const blocks = [];
-    blocks.push({ type: "loginSummary", h: isSmall ? 88 : 96 });
-    blocks.push({ type: "tasks", task: tasks[1], h: isSmall ? 106 : 98 });
-    blocks.push({ type: "tasks", task: tasks[2], h: isSmall ? 106 : 98 });
-    blocks.push({ type: "tasks", task: tasks[3], h: isSmall ? 106 : 98 });
-    blocks.push({ type: "tasks", task: tasks[4], h: isSmall ? 106 : 98 });
-    blocks.push({ type: "telegramBox", h: isSmall ? 214 : 202 });
-    blocks.push({ type: "referralBox", h: isSmall ? 242 : 228 });
+    const statY = panelY + 82;
+    const statGap = 8;
+    let statX = innerX + 16;
 
-    const contentH = blocks.reduce((sum, b) => sum + b.h, 0) + (blocks.length - 1) * gap + 6;
-    this.maxScroll = Math.max(0, contentH - listH);
-    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+    const drawChip = (text) => {
+      ctx.font = "600 12px system-ui";
+      const tw = ctx.measureText(text).width;
+      const cw = tw + 24;
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      fillRoundRect(ctx, statX, statY, cw, 26, 13);
+      ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      strokeRoundRect(ctx, statX, statY, cw, 26, 13);
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, statX + cw / 2, statY + 13);
+      statX += cw + statGap;
+    };
+
+    drawChip(levelText);
+    drawChip(xpText);
+    drawChip(energyText);
+    drawChip(inviteText);
+
+    const contentX = panelX + 10;
+    const contentY = panelY + headH + 22;
+    const contentW = panelW - 20;
+    const contentH = panelH - headH - 32;
 
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(listX, listY, listW, listH);
+    roundRectPath(ctx, contentX, contentY, contentW, contentH, 20);
     ctx.clip();
 
-    let y = listY - this.scrollY;
-    for (const block of blocks) {
-      if (block.type === "loginSummary") {
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 16);
-        ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 16);
+    const groups = this._missionData();
 
-        ctx.fillStyle = "#fff";
-        ctx.font = `900 ${isSmall ? 14 : 15}px system-ui`;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText("GÜNLÜK GİRİŞ", listX + 12, y + 22);
+    let y = contentY + 4 - this.scrollY;
+    const sectionGap = 12;
+    const cardGap = 12;
+    const cardH = 136;
+    const cardPad = 14;
 
-        ctx.fillStyle = "rgba(255,255,255,0.74)";
-        ctx.font = `${isSmall ? 11 : 12}px system-ui`;
-        ctx.fillText("Bugün: +30 yton", listX + 12, y + 42);
-        ctx.fillText(`7 Gün Seri: +70 yton`, listX + 12, y + 60);
-        ctx.fillText(`Aktif Seri: ${streak} gün`, listX + 12, y + 78);
+    for (const group of groups) {
+      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.font = "700 14px system-ui";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(group.section, contentX + 8, y + 14);
+      y += 28;
 
-        const pillW = isSmall ? 132 : 150;
-        const pillH = 34;
-        const pillX = listX + listW - pillW - 12;
-        const pillY = y + 24;
-        const claimedToday = daily.lastClaimDay === this._todayKey();
+      for (const card of group.cards) {
+        const x = contentX + 4;
+        const w2 = contentW - 8;
 
-        ctx.fillStyle = claimedToday ? "rgba(32,120,58,0.82)" : "rgba(242,211,107,0.20)";
-        fillRoundRect(ctx, pillX, pillY, pillW, pillH, 12);
-        ctx.strokeStyle = "rgba(255,255,255,0.12)";
-        strokeRoundRect(ctx, pillX + 0.5, pillY + 0.5, pillW - 1, pillH - 1, 12);
-        ctx.fillStyle = "#fff";
-        ctx.font = `900 ${isSmall ? 11 : 12}px system-ui`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(claimedToday ? "BUGÜN ALINDI" : "HAZIR", pillX + pillW / 2, pillY + pillH / 2 + 0.5);
-      }
+        if (y + cardH >= contentY - 10 && y <= contentY + contentH + 10) {
+          ctx.fillStyle = "rgba(15,11,16,0.58)";
+          fillRoundRect(ctx, x, y, w2, cardH, 18);
+          ctx.strokeStyle = "rgba(255,170,40,0.52)";
+          ctx.lineWidth = 1;
+          strokeRoundRect(ctx, x, y, w2, cardH, 18);
 
-      if (block.type === "tasks") {
-        const t = block.task;
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 16);
-        ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 16);
-
-        const rightW = isSmall ? 82 : 88;
-        const textMaxW = listW - rightW - 28;
-        const tSize = fitText(ctx, t.title, textMaxW, isSmall ? 13 : 14, 11);
-        ctx.fillStyle = "#fff";
-        ctx.font = `900 ${tSize}px system-ui`;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText(t.title, listX + 12, y + 22);
-
-        ctx.fillStyle = "rgba(255,255,255,0.70)";
-        ctx.font = `${isSmall ? 10 : 11}px system-ui`;
-        const desc = String(t.desc || "");
-        ctx.fillText(desc, listX + 12, y + 42);
-        ctx.fillText(`${t.progress}/${t.max}`, listX + 12, y + 60);
-        ctx.fillText(t.reward, listX + 12, y + 78);
-
-        const barX = listX + 12;
-        const barY = y + block.h - 22;
-        const barW = listW - rightW - 26;
-        const barH = 10;
-        const ratio = clamp(Number(t.progress || 0) / Math.max(1, Number(t.max || 1)), 0, 1);
-
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        fillRoundRect(ctx, barX, barY, barW, barH, 6);
-        ctx.fillStyle = ratio >= 1 ? "rgba(86,208,122,0.92)" : "rgba(255,185,74,0.92)";
-        fillRoundRect(ctx, barX, barY, Math.max(8, barW * ratio), barH, 6);
-
-        const btnRect = { x: listX + listW - rightW, y: y + block.h / 2 - 18, w: rightW - 12, h: 36 };
-        const label = t.actionLabel || (t.claimed ? "ALINDI" : t.claimable ? "AL" : "BEKLİYOR");
-        let fill = "rgba(255,255,255,0.08)";
-        if (label === "İZLE" || label === "OYNA") fill = "rgba(255,185,74,0.18)";
-        if (label === "AL") fill = "rgba(86,208,122,0.22)";
-        if (label === "ALINDI") fill = "rgba(32,120,58,0.82)";
-
-        ctx.fillStyle = fill;
-        fillRoundRect(ctx, btnRect.x, btnRect.y, btnRect.w, btnRect.h, 12);
-        ctx.strokeStyle = "rgba(255,255,255,0.12)";
-        strokeRoundRect(ctx, btnRect.x + 0.5, btnRect.y + 0.5, btnRect.w - 1, btnRect.h - 1, 12);
-        ctx.fillStyle = "#fff";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.font = `900 ${isSmall ? 11 : 12}px system-ui`;
-        ctx.fillText(label, btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2 + 0.5);
-
-        if (t.key === "ads" && !t.claimed) this.hit.push({ type: "watchAd", rect: btnRect });
-        if (t.key === "iq_arena") {
-          if (t.claimable) this.hit.push({ type: "claimTask", key: t.key, rect: btnRect });
-          else if (!t.claimed) this.hit.push({ type: "openPvp", mode: "iq", rect: btnRect });
-        }
-        if (t.key === "cage_fight") {
-          if (t.claimable) this.hit.push({ type: "claimTask", key: t.key, rect: btnRect });
-          else if (!t.claimed) this.hit.push({ type: "openPvp", mode: "cage", rect: btnRect });
-        }
-        if (t.key === "building_buy" && t.claimable) this.hit.push({ type: "claimTask", key: t.key, rect: btnRect });
-      }
-
-      if (block.type === "telegramBox") {
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 16);
-        ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 16);
-
-        ctx.fillStyle = "#fff";
-        ctx.font = `900 ${isSmall ? 14 : 15}px system-ui`;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText("TELEGRAM GRUPLARINA KATIL", listX + 12, y + 22);
-
-        const innerX = listX + 10;
-        const innerY = y + 34;
-        const innerW = listW - 20;
-        const rowH = 38;
-        const rowGap = 8;
-
-        for (let i = 0; i < this.telegramGroups.length; i++) {
-          const item = this.telegramGroups[i];
-          const ry = innerY + i * (rowH + rowGap);
-          const joined = !!missions.telegramJoinedMap?.[item.id];
-          const claimed = !!missions.telegramClaimedMap?.[item.id];
-
-          ctx.fillStyle = "rgba(255,255,255,0.06)";
-          fillRoundRect(ctx, innerX, ry, innerW, rowH, 12);
-          ctx.strokeStyle = "rgba(255,255,255,0.10)";
-          strokeRoundRect(ctx, innerX + 0.5, ry + 0.5, innerW - 1, rowH - 1, 12);
-
-          ctx.fillStyle = "#fff";
-          ctx.font = `800 ${isSmall ? 10 : 11}px system-ui`;
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "700 16px system-ui";
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
-          ctx.fillText(item.title, innerX + 10, ry + 16);
-          ctx.fillStyle = "rgba(255,255,255,0.70)";
-          ctx.font = `${isSmall ? 9 : 10}px system-ui`;
-          ctx.fillText(item.subtitle, innerX + 10, ry + 30);
+          ctx.fillText(card.title, x + cardPad, y + 26);
 
-          const btnW = 72;
-          const joinRect = { x: innerX + innerW - btnW * 2 - 12, y: ry + 5, w: btnW, h: 28 };
-          const claimRect = { x: innerX + innerW - btnW, y: ry + 5, w: btnW, h: 28 };
+          ctx.fillStyle = "rgba(255,255,255,0.75)";
+          ctx.font = "13px system-ui";
+          this._drawLine(ctx, card.desc, x + cardPad, y + 47, w2 - 150, 18, 2);
 
-          ctx.fillStyle = joined ? "rgba(32,120,58,0.82)" : "rgba(255,185,74,0.18)";
-          fillRoundRect(ctx, joinRect.x, joinRect.y, joinRect.w, joinRect.h, 10);
-          ctx.strokeStyle = "rgba(255,255,255,0.12)";
-          strokeRoundRect(ctx, joinRect.x + 0.5, joinRect.y + 0.5, joinRect.w - 1, joinRect.h - 1, 10);
-          ctx.fillStyle = "#fff";
-          ctx.font = `900 ${isSmall ? 10 : 11}px system-ui`;
+          let tagX = x + cardPad;
+          const tagY = y + 74;
+          for (const tag of card.tags || []) {
+            ctx.font = "600 12px system-ui";
+            const tw = ctx.measureText(String(tag)).width;
+            const twrap = tw + 20;
+            ctx.fillStyle = "rgba(255,255,255,0.06)";
+            fillRoundRect(ctx, tagX, tagY, twrap, 24, 12);
+            ctx.strokeStyle = "rgba(255,255,255,0.08)";
+            strokeRoundRect(ctx, tagX, tagY, twrap, 24, 12);
+            ctx.fillStyle = "rgba(255,255,255,0.88)";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(String(tag), tagX + twrap / 2, tagY + 12);
+            tagX += twrap + 8;
+          }
+
+          const progressX = x + cardPad;
+          const progressY = y + 108;
+          const progressW = w2 - 160;
+          const progressH = 10;
+
+          ctx.fillStyle = "rgba(255,255,255,0.08)";
+          fillRoundRect(ctx, progressX, progressY, progressW, progressH, 5);
+
+          const ratio = card.usePercent
+            ? clamp(Number(card.progress || 0), 0, 1)
+            : clamp(Number(card.progress || 0) / Math.max(1, Number(card.max || 1)), 0, 1);
+
+          ctx.fillStyle =
+            ratio >= 1
+              ? "rgba(76,205,119,0.98)"
+              : "rgba(255,172,45,0.98)";
+          fillRoundRect(ctx, progressX, progressY, progressW * ratio, progressH, 5);
+
+          ctx.fillStyle = "rgba(255,255,255,0.7)";
+          ctx.font = "12px system-ui";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+          const progLabel = card.usePercent
+            ? `${Math.round(ratio * 100)}%`
+            : `${fmtNum(card.progress || 0)}/${fmtNum(card.max || 1)}`;
+          ctx.fillText(`${progLabel} • ${card.rewardText}`, progressX, progressY - 6);
+
+          const btnW = 100;
+          const btnH = 44;
+          const btnX = x + w2 - btnW - 14;
+          const btnY = y + 24;
+
+          let btnBg = "rgba(255,255,255,0.08)";
+          let btnStroke = "rgba(255,255,255,0.1)";
+          let btnText = "rgba(255,255,255,0.88)";
+
+          if (card.claimed || card.buttonType === "done") {
+            btnBg = "rgba(35,111,52,0.9)";
+            btnStroke = "rgba(92,204,120,0.42)";
+            btnText = "#ffffff";
+          } else if (card.buttonType === "claim") {
+            btnBg = "rgba(255,186,59,0.18)";
+            btnStroke = "rgba(255,186,59,0.48)";
+            btnText = "#ffffff";
+          } else if (card.buttonType === "telegram") {
+            btnBg = card.joined ? "rgba(255,186,59,0.18)" : "rgba(88,160,255,0.18)";
+            btnStroke = card.joined ? "rgba(255,186,59,0.48)" : "rgba(88,160,255,0.42)";
+            btnText = "#ffffff";
+          } else if (card.buttonType === "action") {
+            btnBg = "rgba(255,255,255,0.1)";
+            btnStroke = "rgba(255,255,255,0.14)";
+            btnText = "#ffffff";
+          } else if (card.buttonType === "info") {
+            btnBg = "rgba(255,255,255,0.06)";
+            btnStroke = "rgba(255,255,255,0.08)";
+            btnText = "rgba(255,255,255,0.52)";
+          }
+
+          ctx.fillStyle = btnBg;
+          fillRoundRect(ctx, btnX, btnY, btnW, btnH, 16);
+          ctx.strokeStyle = btnStroke;
+          strokeRoundRect(ctx, btnX, btnY, btnW, btnH, 16);
+
+          ctx.fillStyle = btnText;
+          ctx.font = "700 15px system-ui";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText(joined ? "KATILDI" : "KATIL", joinRect.x + joinRect.w / 2, joinRect.y + joinRect.h / 2 + 0.5);
+          ctx.fillText(card.buttonLabel, btnX + btnW / 2, btnY + btnH / 2);
 
-          ctx.fillStyle = claimed ? "rgba(32,120,58,0.82)" : joined ? "rgba(86,208,122,0.22)" : "rgba(255,255,255,0.08)";
-          fillRoundRect(ctx, claimRect.x, claimRect.y, claimRect.w, claimRect.h, 10);
-          ctx.strokeStyle = "rgba(255,255,255,0.12)";
-          strokeRoundRect(ctx, claimRect.x + 0.5, claimRect.y + 0.5, claimRect.w - 1, claimRect.h - 1, 10);
-          ctx.fillStyle = "#fff";
-          ctx.fillText(claimed ? "ALINDI" : joined ? "AL" : "BEKLİYOR", claimRect.x + claimRect.w / 2, claimRect.y + claimRect.h / 2 + 0.5);
-
-          if (!joined) this.hit.push({ type: "joinTelegram", id: item.id, url: item.url, rect: joinRect });
-          if (joined && !claimed) this.hit.push({ type: "claimTelegram", id: item.id, rect: claimRect });
+          if (!card.disabled) {
+            if (card.buttonType === "claim" && card.claimKey) {
+              this.hit.push({
+                type: "claim",
+                key: card.claimKey,
+                rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              });
+            } else if (card.buttonType === "telegram") {
+              this.hit.push({
+                type: "telegram",
+                rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              });
+            } else if (card.action === "watchAd") {
+              this.hit.push({
+                type: "watchAd",
+                rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              });
+            } else if (card.action === "openIqArena") {
+              this.hit.push({
+                type: "openIqArena",
+                rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              });
+            } else if (card.action === "openCageFight") {
+              this.hit.push({
+                type: "openCageFight",
+                rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              });
+            } else if (card.action === "invite") {
+              this.hit.push({
+                type: "invite",
+                rect: { x: btnX, y: btnY, w: btnW, h: btnH },
+              });
+            }
+          }
         }
+
+        y += cardH + cardGap;
       }
 
-      if (block.type === "referralBox") {
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 16);
-        ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 16);
+      y += sectionGap;
+    }
 
-        ctx.fillStyle = "#fff";
-        ctx.font = `900 ${isSmall ? 14 : 15}px system-ui`;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText("DAVET ÖDÜLLERİ", listX + 12, y + 22);
+    const contentTotal = y - (contentY + 4);
+    this.maxScroll = Math.max(0, contentTotal - contentH + 8);
+    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
-        ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.font = `${isSmall ? 10 : 11}px system-ui`;
-        ctx.fillText(`Toplam davet: ${Number(missions.referrals || 0)}`, listX + 12, y + 40);
+    if (this.maxScroll > 2) {
+      const barW = 4;
+      const barX = contentX + contentW - 8;
+      const trackY = contentY + 10;
+      const trackH = contentH - 20;
+      const thumbH = Math.max(44, trackH * (contentH / Math.max(contentH, contentTotal)));
+      const thumbY = trackY + (trackH - thumbH) * (this.scrollY / Math.max(1, this.maxScroll));
 
-        const innerX = listX + 10;
-        const innerY = y + 52;
-        const innerW = listW - 20;
-        const rowH = 30;
-        const rowGap = 8;
-
-        for (let i = 0; i < this.referralRewards.length; i++) {
-          const item = this.referralRewards[i];
-          const claimed = !!missions.referralClaimedMap?.[item.target];
-          const ready = Number(missions.referrals || 0) >= item.target;
-          const ry = innerY + i * (rowH + rowGap);
-
-          ctx.fillStyle = "rgba(255,255,255,0.06)";
-          fillRoundRect(ctx, innerX, ry, innerW, rowH, 10);
-          ctx.strokeStyle = "rgba(255,255,255,0.10)";
-          strokeRoundRect(ctx, innerX + 0.5, ry + 0.5, innerW - 1, rowH - 1, 10);
-
-          ctx.fillStyle = "#fff";
-          ctx.font = `800 ${isSmall ? 10 : 11}px system-ui`;
-          ctx.textAlign = "left";
-          ctx.textBaseline = "middle";
-          ctx.fillText(`${item.target} KİŞİ DAVET`, innerX + 10, ry + rowH / 2 + 0.5);
-
-          ctx.fillStyle = "rgba(255,255,255,0.72)";
-          ctx.font = `${isSmall ? 9 : 10}px system-ui`;
-          ctx.textAlign = "left";
-          ctx.fillText(item.reward, innerX + Math.max(90, innerW * 0.36), ry + rowH / 2 + 0.5);
-
-          const btnRect = { x: innerX + innerW - 76, y: ry + 3, w: 68, h: rowH - 6 };
-          ctx.fillStyle = claimed ? "rgba(32,120,58,0.82)" : ready ? "rgba(86,208,122,0.22)" : "rgba(255,255,255,0.08)";
-          fillRoundRect(ctx, btnRect.x, btnRect.y, btnRect.w, btnRect.h, 9);
-          ctx.strokeStyle = "rgba(255,255,255,0.12)";
-          strokeRoundRect(ctx, btnRect.x + 0.5, btnRect.y + 0.5, btnRect.w - 1, btnRect.h - 1, 9);
-          ctx.fillStyle = "#fff";
-          ctx.font = `900 ${isSmall ? 10 : 11}px system-ui`;
-          ctx.textAlign = "center";
-          ctx.fillText(claimed ? "ALINDI" : ready ? "AL" : "KİLİTLİ", btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2 + 0.5);
-
-          if (ready && !claimed) this.hit.push({ type: "claimReferral", target: item.target, rect: btnRect });
-        }
-      }
-
-      y += block.h + gap;
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      fillRoundRect(ctx, barX, trackY, barW, trackH, 2);
+      ctx.fillStyle = "rgba(255,186,59,0.8)";
+      fillRoundRect(ctx, barX, thumbY, barW, thumbH, 2);
     }
 
     ctx.restore();
 
-    if (this.maxScroll > 0) {
-      const trackX = panelX + panelW - 6;
-      const trackY = listY;
-      const trackH = listH;
-      const thumbH = Math.max(38, (listH / contentH) * trackH);
-      const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
-      ctx.fillStyle = "rgba(255,255,255,0.10)";
-      ctx.fillRect(trackX, trackY, 3, trackH);
-      ctx.fillStyle = "rgba(255,185,74,0.88)";
-      ctx.fillRect(trackX, thumbY, 3, thumbH);
-    }
-
     if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(panelW - 24, Math.max(170, ctx.measureText(this.toastText).width + 32));
+      const tw = Math.min(panelW - 36, 300);
       const th = 38;
       const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - th - 12;
-      ctx.fillStyle = "rgba(0,0,0,0.72)";
-      fillRoundRect(ctx, tx, ty, tw, th, 12);
+      const ty = panelY + panelH - th - 10;
+
+      ctx.fillStyle = "rgba(12,12,16,0.9)";
+      fillRoundRect(ctx, tx, ty, tw, th, 14);
       ctx.strokeStyle = "rgba(255,255,255,0.12)";
-      strokeRoundRect(ctx, tx + 0.5, ty + 0.5, tw - 1, th - 1, 12);
-      ctx.fillStyle = "#fff";
-      ctx.font = `800 ${isSmall ? 11 : 12}px system-ui`;
+      strokeRoundRect(ctx, tx, ty, tw, th, 14);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 13px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2 + 0.5);
+      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2);
+    }
+  }
+
+  _drawLine(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
+
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width <= maxWidth) {
+        line = test;
+      } else {
+        if (line) lines.push(line);
+        line = word;
+        if (lines.length >= maxLines - 1) break;
+      }
+    }
+    if (line && lines.length < maxLines) lines.push(line);
+
+    for (let i = 0; i < lines.length; i += 1) {
+      ctx.fillText(lines[i], x, y + i * lineHeight);
     }
   }
 }
