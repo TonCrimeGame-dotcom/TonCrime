@@ -478,7 +478,7 @@ export class MissionsScene {
         key: "pvp",
         title: `PvP Oyna (${fmtNum(m.pvpPlayed)}/3)`,
         desc: "3 maç tamamla. PvP butonu görev sayfasından direkt açılır.",
-        reward: m.pvpClaimed ? "Ödül alındı" : "Ödül: +15 coin • +20 XP",
+        reward: m.pvpClaimed ? "Ödül alındı" : "              Ödül: +15 coin • +20 XP",
         tags: ["PvP", "Maç"],
         buttonLabel: m.pvpClaimed
           ? "Alındı"
