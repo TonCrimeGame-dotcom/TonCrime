@@ -1,7 +1,7 @@
 (function () {
   const COLS = 6;
   const ROWS = 6;
-  const START_HP = 1000;
+  const START_HP = 10000;
   const BASE_SPINS = 25;
   const BONUS_SPINS = 10;
   const BONUS_TRIGGER = 4;
