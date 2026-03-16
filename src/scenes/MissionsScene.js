@@ -53,23 +53,21 @@ function fitText(ctx, text, maxW, startSize, weight = 900, family = "system-ui")
   return 9;
 }
 
-function wrapTextLines(ctx, text, maxWidth) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  const lines = [];
-  let line = "";
-
-  for (let i = 0; i < words.length; i++) {
-    const test = line ? `${line} ${words[i]}` : words[i];
-    if (!line || ctx.measureText(test).width <= maxWidth) {
-      line = test;
-    } else {
-      lines.push(line);
-      line = words[i];
-    }
+function drawCover(ctx, img, x, y, w, h) {
+  if (!img) {
+    ctx.fillStyle = "#0b0b0f";
+    ctx.fillRect(x, y, w, h);
+    return;
   }
 
-  if (line) lines.push(line);
-  return lines;
+  const iw = img.width || img.naturalWidth || 1;
+  const ih = img.height || img.naturalHeight || 1;
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 export class MissionsScene {
@@ -127,14 +125,12 @@ export class MissionsScene {
 
   _getDaily() {
     const s = this.store.get();
-    return (
-      s.dailyLogin || {
-        lastClaimDay: null,
-        streak: 0,
-        totalClaims: 0,
-        got30DayWeapon: false,
-      }
-    );
+    return s.dailyLogin || {
+      lastClaimDay: null,
+      streak: 0,
+      totalClaims: 0,
+      got30DayWeapon: false,
+    };
   }
 
   _getMissionState() {
@@ -149,7 +145,6 @@ export class MissionsScene {
     const patch = {
       adsWatchedToday: Number(missions.adsWatchedToday || 0),
       adsRewardClaimedToday: !!missions.adsRewardClaimedToday,
-
       referrals: Number(missions.referrals || 0),
       referralMilestonesClaimed: { ...(missions.referralMilestonesClaimed || {}) },
       referralNextTarget: Number(missions.referralNextTarget || 10),
@@ -172,7 +167,6 @@ export class MissionsScene {
         pvpPlayTarget: Number(missions.dailyScale?.pvpPlayTarget || 5),
         pvpWinTarget: Number(missions.dailyScale?.pvpWinTarget || 3),
         energyTarget: Number(missions.dailyScale?.energyTarget || 3),
-
         adsReward: Number(missions.dailyScale?.adsReward || 50),
         pvpPlayReward: Number(missions.dailyScale?.pvpPlayReward || 25),
         pvpWinReward: Number(missions.dailyScale?.pvpWinReward || 40),
@@ -219,7 +213,6 @@ export class MissionsScene {
       pvpPlayTarget: clamp(5 + Math.floor(difficulty / 2), 5, 15),
       pvpWinTarget: clamp(3 + Math.floor(difficulty / 3), 3, 10),
       energyTarget: clamp(3 + Math.floor(difficulty / 3), 3, 10),
-
       adsReward: 50 + difficulty * 10,
       pvpPlayReward: 25 + difficulty * 8,
       pvpWinReward: 40 + difficulty * 10,
@@ -274,100 +267,94 @@ export class MissionsScene {
 
     return [
       {
-        key: "daily_login",
-        title: "Günlük Giriş",
-        desc: claimedToday ? "Bugünkü giriş ödülü alındı." : "Bugün giriş yap ve ödülünü al.",
-        progressText: claimedToday ? "Tamamlandı" : "Hazır",
-        progress: claimedToday ? 1 : 0,
-        max: 1,
-        reward: "10 yton / 7. gün +40 / 30. gün MP5",
-        claimable: false,
-        claimed: claimedToday,
-      },
-      {
         key: "ads",
-        title: "Reklam İzle",
-        desc: "Hedef her gün artar ve gece yenilenir.",
+        title: "Günlük Reklam İzle",
+        desc: "Hedef gece yenilenir ve seviye arttıkça yükselir.",
         progressText: fmtProgress(m.adsWatchedToday, ds.adsTarget),
         progress: Number(m.adsWatchedToday || 0),
         max: Number(ds.adsTarget || 20),
-        reward: m.adsRewardClaimedToday ? "Alındı" : `Ödül: +${shortNum(ds.adsReward)} yton`,
-        claimable:
-          Number(m.adsWatchedToday || 0) >= Number(ds.adsTarget || 20) &&
-          !m.adsRewardClaimedToday,
+        reward: m.adsRewardClaimedToday ? "Alındı" : `+${shortNum(ds.adsReward)} yton`,
+        claimable: Number(m.adsWatchedToday || 0) >= Number(ds.adsTarget || 20) && !m.adsRewardClaimedToday,
         claimed: !!m.adsRewardClaimedToday,
+        cta: "İlerle",
       },
       {
         key: "referral_next",
         title: `Arkadaş Davet • ${shortNum(referralTarget)}`,
-        desc: "Ödül alındıkça bir sonraki hedef otomatik yükselir.",
+        desc: "Ödül alınca sonraki hedef otomatik açılır.",
         progressText: fmtProgress(referrals, referralTarget),
         progress: referrals,
         max: referralTarget,
         reward: referralClaimed[referralTarget] ? "Alındı" : referralRewardText,
         claimable: referrals >= referralTarget && !referralClaimed[referralTarget],
         claimed: !!referralClaimed[referralTarget],
+        cta: "Davet",
       },
       {
         key: "pvp_play",
         title: "PvP Oyna",
-        desc: "Günlük hedef dinamik şekilde büyür.",
+        desc: "Günlük maç görevi. Hedef dinamik büyür.",
         progressText: fmtProgress(m.pvpPlayedToday, ds.pvpPlayTarget),
         progress: Number(m.pvpPlayedToday || 0),
         max: Number(ds.pvpPlayTarget || 5),
-        reward: m.pvpPlayRewardClaimedToday ? "Alındı" : `Ödül: +${shortNum(ds.pvpPlayReward)} yton`,
+        reward: m.pvpPlayRewardClaimedToday ? "Alındı" : `+${shortNum(ds.pvpPlayReward)} yton`,
         claimable:
           Number(m.pvpPlayedToday || 0) >= Number(ds.pvpPlayTarget || 5) &&
           !m.pvpPlayRewardClaimedToday,
         claimed: !!m.pvpPlayRewardClaimedToday,
+        cta: "Maça Git",
       },
       {
         key: "pvp_win",
         title: "PvP Kazan",
-        desc: "Günlük kazanma görevi ölçekli artar.",
+        desc: "Kazanma görevi de günlük olarak yenilenir.",
         progressText: fmtProgress(m.pvpWinsToday, ds.pvpWinTarget),
         progress: Number(m.pvpWinsToday || 0),
         max: Number(ds.pvpWinTarget || 3),
-        reward: m.pvpWinRewardClaimedToday ? "Alındı" : `Ödül: +${shortNum(ds.pvpWinReward)} yton`,
+        reward: m.pvpWinRewardClaimedToday ? "Alındı" : `+${shortNum(ds.pvpWinReward)} yton`,
         claimable:
           Number(m.pvpWinsToday || 0) >= Number(ds.pvpWinTarget || 3) &&
           !m.pvpWinRewardClaimedToday,
         claimed: !!m.pvpWinRewardClaimedToday,
+        cta: "Savaş",
       },
       {
         key: "energy_refill",
         title: "Enerji Doldur",
-        desc: "Her yeni gün görev seviyesi artabilir.",
+        desc: "Enerji doldurma hedefi her yeni gün sıfırlanır.",
         progressText: fmtProgress(m.energyRefillsToday, ds.energyTarget),
         progress: Number(m.energyRefillsToday || 0),
         max: Number(ds.energyTarget || 3),
-        reward: m.energyRewardClaimedToday ? "Alındı" : `Ödül: +${shortNum(ds.energyReward)} yton`,
+        reward: m.energyRewardClaimedToday ? "Alındı" : `+${shortNum(ds.energyReward)} yton`,
         claimable:
           Number(m.energyRefillsToday || 0) >= Number(ds.energyTarget || 3) &&
           !m.energyRewardClaimedToday,
         claimed: !!m.energyRewardClaimedToday,
+        cta: "Doldur",
       },
       {
         key: "level_next",
         title: `Level ${levelTarget} Ol`,
-        desc: "Ödül alındıkça sonraki level görevi açılır.",
+        desc: "Level ödülü alındığında yeni eşik açılır.",
         progressText: fmtProgress(level, levelTarget),
         progress: level,
         max: levelTarget,
-        reward: levelClaimed[levelTarget] ? "Alındı" : `Ödül: +${shortNum(levelRewardCoins)} yton`,
+        reward: levelClaimed[levelTarget] ? "Alındı" : `+${shortNum(levelRewardCoins)} yton`,
         claimable: level >= levelTarget && !levelClaimed[levelTarget],
         claimed: !!levelClaimed[levelTarget],
+        cta: "Seviye",
       },
       {
         key: "telegram_join",
-        title: "Telegram Gruplarına Katıl",
-        desc: "Topluluk grubuna katılma ödülü.",
+        title: "Telegram Grubuna Katıl",
+        desc: claimedToday ? "Topluluk ödülü tek seferliktir." : "Katılım simülasyonu ile ödülü al.",
         progressText: m.telegramJoinRewardClaimed ? "Tamamlandı" : "Hazır",
         progress: m.telegramJoinRewardClaimed ? 1 : 0,
         max: 1,
-        reward: m.telegramJoinRewardClaimed ? "Alındı" : "Ödül: +15 yton",
+        reward: m.telegramJoinRewardClaimed ? "Alındı" : "+15 yton",
         claimable: !m.telegramJoinRewardClaimed,
         claimed: !!m.telegramJoinRewardClaimed,
+        cta: "Katıl",
       },
     ];
   }
@@ -495,12 +482,14 @@ export class MissionsScene {
     });
 
     try {
-      window.dispatchEvent(
-        new CustomEvent("tc:toast", {
-          detail: { text: "Görev ödülü alındı!" },
-        })
-      );
+      window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text: "Görev ödülü alındı!" } }));
     } catch (_) {}
+  }
+
+  _missionCta(task) {
+    if (task.claimed) return "Alındı";
+    if (task.claimable) return "Ödülü Al";
+    return task.cta || "Detay";
   }
 
   update() {
@@ -526,19 +515,20 @@ export class MissionsScene {
 
     if (this.dragging && this.input.justReleased()) {
       this.dragging = false;
-
       if (!this.clickCandidate) return;
 
-      for (const h of this.hit) {
-        if (pointInRect(px, py, h.rect)) {
-          if (h.type === "back") {
-            this.scenes.go("home");
-            return;
-          }
-          if (h.type === "claim") {
-            this._claimMission(h.key);
-            return;
-          }
+      for (let i = this.hit.length - 1; i >= 0; i--) {
+        const h = this.hit[i];
+        if (!pointInRect(px, py, h.rect)) continue;
+
+        if (h.type === "back") {
+          this.scenes.go("home");
+          return;
+        }
+
+        if (h.type === "claim") {
+          this._claimMission(h.key);
+          return;
         }
       }
     }
@@ -548,122 +538,79 @@ export class MissionsScene {
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const W = Math.floor(ctx.canvas.width / dpr);
     const H = Math.floor(ctx.canvas.height / dpr);
+    const state = this.store.get() || {};
     const safe = this._safeRect();
     const bg = this._getBg();
 
-    const ui = this.store.get()?.ui || {};
-    const hudReservedTop = Number(ui.hudReservedTop || 110);
-    const chatReservedBottom = Number(ui.chatReservedBottom || 82);
+    const topReserved = Number(state?.ui?.hudReservedTop || 110);
+    const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
+    const isNarrow = safe.w <= 420;
+    const isTiny = safe.w <= 380;
 
-    const isMobile = safe.w <= 520;
-    const isTiny = safe.w <= 390;
+    const sidePad = isTiny ? 10 : 12;
+    const shellX = safe.x + sidePad;
+    const shellY = safe.y + topReserved + 8;
+    const shellW = safe.w - sidePad * 2;
+    const shellH = Math.max(180, safe.h - topReserved - bottomReserved - 16);
 
-    const outerPadX = isTiny ? 8 : 12;
-    const panelPad = isTiny ? 10 : 14;
-    const headerTopPad = isTiny ? 10 : 12;
-    const listPad = isTiny ? 8 : 12;
-    const gap = isTiny ? 8 : 10;
-
-    const titleSize = isTiny ? 18 : 20;
-    const subSize = isTiny ? 10 : 12;
-    const blockTitleSize = isTiny ? 13 : 14;
-    const cardTitleSize = isTiny ? 12 : 13;
-    const cardTextSize = isTiny ? 10 : 12;
-    const btnTextSize = isTiny ? 11 : 12;
+    const headerH = isTiny ? 72 : 78;
+    const listPad = isTiny ? 8 : 10;
+    const listX = shellX + listPad;
+    const listY = shellY + headerH + 8;
+    const listW = shellW - listPad * 2;
+    const listH = shellH - headerH - 16;
 
     ctx.clearRect(0, 0, W, H);
-
-    if (bg) {
-      const iw = bg.width || 1;
-      const ih = bg.height || 1;
-      const scale = Math.max(W / iw, H / ih);
-      const dw = iw * scale;
-      const dh = ih * scale;
-      const dx = (W - dw) / 2;
-      const dy = (H - dh) / 2;
-      ctx.drawImage(bg, dx, dy, dw, dh);
-    } else {
-      ctx.fillStyle = "#0b0b0f";
-      ctx.fillRect(0, 0, W, H);
-    }
+    drawCover(ctx, bg, 0, 0, W, H);
 
     ctx.fillStyle = "rgba(0,0,0,0.50)";
     ctx.fillRect(0, 0, W, H);
 
-    const panelX = safe.x + outerPadX;
-    const panelY = safe.y + hudReservedTop + 6;
-    const panelW = safe.w - outerPadX * 2;
-    const panelBottom = safe.y + safe.h - chatReservedBottom - 8;
-    const panelH = Math.max(240, panelBottom - panelY);
+    ctx.fillStyle = "rgba(10,12,18,0.72)";
+    fillRoundRect(ctx, shellX, shellY, shellW, shellH, 20);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    strokeRoundRect(ctx, shellX + 0.5, shellY + 0.5, shellW - 1, shellH - 1, 20);
 
-    ctx.fillStyle = "rgba(0,0,0,0.60)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, isTiny ? 16 : 18);
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, isTiny ? 16 : 18);
+    const shine = ctx.createLinearGradient(shellX, shellY, shellX, shellY + shellH * 0.38);
+    shine.addColorStop(0, "rgba(255,255,255,0.08)");
+    shine.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = shine;
+    fillRoundRect(ctx, shellX, shellY, shellW, shellH, 20);
 
-    const backRect = {
-      x: panelX + panelPad,
-      y: panelY + headerTopPad,
-      w: isTiny ? 68 : 78,
-      h: isTiny ? 28 : 30,
-    };
-
+    const backRect = { x: shellX + 10, y: shellY + 12, w: isTiny ? 74 : 84, h: 32 };
     ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, backRect.x, backRect.y, backRect.w, backRect.h, 10);
+    fillRoundRect(ctx, backRect.x, backRect.y, backRect.w, backRect.h, 11);
     ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, backRect.x + 0.5, backRect.y + 0.5, backRect.w - 1, backRect.h - 1, 10);
-
+    strokeRoundRect(ctx, backRect.x + 0.5, backRect.y + 0.5, backRect.w - 1, backRect.h - 1, 11);
     ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `800 ${isTiny ? 11 : 12}px system-ui`;
-    ctx.fillText("Geri", backRect.x + backRect.w / 2, backRect.y + backRect.h / 2);
-
+    ctx.font = `800 ${isTiny ? 12 : 13}px system-ui`;
+    ctx.fillText("← Geri", backRect.x + backRect.w / 2, backRect.y + backRect.h / 2 + 0.5);
     this.hit = [{ type: "back", rect: backRect }];
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = `900 ${titleSize}px system-ui`;
-    ctx.fillText("Görevler", panelX + panelPad, panelY + (isTiny ? 58 : 64));
+    ctx.font = `900 ${isTiny ? 22 : 24}px system-ui`;
+    ctx.fillText("Görevler", shellX + 12, shellY + 58);
 
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = `${subSize}px system-ui`;
-    ctx.fillText(
-      "Görevler günlük yenilenir ve hedefler zamanla artar",
-      panelX + panelPad,
-      panelY + (isTiny ? 76 : 84)
-    );
-
-    const listX = panelX + listPad;
-    const listY = panelY + (isTiny ? 92 : 104);
-    const listW = panelW - listPad * 2;
-    const listH = panelH - (listY - panelY) - 10;
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = `${isTiny ? 11 : 12}px system-ui`;
+    ctx.fillText("PvP sayfası gibi tek kolon mobil düzen", shellX + 12, shellY + headerH - 10);
 
     const daily = this._getDaily();
     const streak = Number(daily.streak || 0);
     const claimedToday = daily.lastClaimDay === this._todayKey();
     const tasks = this._taskData();
 
-    const gridCols = safe.w <= 420 ? 2 : 4;
-    const gridGap = isTiny ? 8 : 10;
-    const gridCellW = Math.floor((listW - gridGap * (gridCols - 1)) / gridCols);
-    const gridRows = Math.ceil(7 / gridCols);
-    const gridCellH = isTiny ? 80 : 92;
-    const gridH = gridRows * gridCellH + (gridRows - 1) * gridGap;
-
-    const taskBlockH = isTiny ? 138 : isMobile ? 130 : 96;
-
     const blocks = [];
-    blocks.push({ type: "summary", h: isTiny ? 142 : 134 });
-    blocks.push({ type: "title", h: 30, text: "7 Günlük Giriş Takvimi" });
-    blocks.push({ type: "grid7", h: gridH });
-    blocks.push({ type: "title", h: 30, text: "30 Gün Büyük Ödül" });
-    blocks.push({ type: "reward30", h: isTiny ? 126 : 112 });
-    blocks.push({ type: "title", h: 30, text: "Aktif Görevler" });
-    for (const t of tasks) blocks.push({ type: "task", h: taskBlockH, task: t });
+    blocks.push({ type: "hero", h: isNarrow ? 126 : 114 });
+    blocks.push({ type: "milestones", h: isNarrow ? 118 : 108 });
+    for (const task of tasks) blocks.push({ type: "task", h: isNarrow ? 138 : 122, task });
 
-    const contentH = blocks.reduce((a, b) => a + b.h, 0) + (blocks.length - 1) * gap + 10;
+    const gap = 10;
+    const contentH = blocks.reduce((sum, b) => sum + b.h, 0) + Math.max(0, blocks.length - 1) * gap;
     this.maxScroll = Math.max(0, contentH - listH);
     this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
@@ -672,245 +619,138 @@ export class MissionsScene {
     ctx.rect(listX, listY, listW, listH);
     ctx.clip();
 
-    let y = listY + 4 - this.scrollY;
+    let y = listY - this.scrollY;
 
     for (const block of blocks) {
-      if (block.type === "summary") {
+      if (block.type === "hero") {
         ctx.fillStyle = "rgba(255,255,255,0.08)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 16);
+        fillRoundRect(ctx, listX, y, listW, block.h, 18);
         ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 16);
+        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 18);
 
-        ctx.fillStyle = "rgba(255,255,255,0.96)";
-        ctx.font = `900 ${blockTitleSize}px system-ui`;
-        ctx.fillText("Günlük Giriş Bonus Durumu", listX + 14, y + 22);
+        ctx.fillStyle = "#fff";
+        ctx.font = `900 ${isTiny ? 14 : 15}px system-ui`;
+        ctx.fillText("Günlük Bonus Durumu", listX + 14, y + 22);
 
-        const textX = listX + 14;
-        const textY = y + 48;
-
-        ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.font = `${cardTextSize}px system-ui`;
-
-        if (isMobile) {
-          ctx.fillText(`Bugün: ${claimedToday ? "Alındı" : "Hazır"}`, textX, textY);
-          ctx.fillText(`Seri: ${streak} gün`, textX, textY + 20);
-          ctx.fillText("İlk 6 gün: +10 yton", textX, textY + 40);
-          ctx.fillText("7. gün: +40 yton", textX, textY + 60);
-          ctx.fillText("30. gün: HK MP5", textX, textY + 80);
-        } else {
-          ctx.fillText(`Bugün ödül: ${claimedToday ? "Alındı" : "Hazır"}`, textX, textY);
-          ctx.fillText(`Aktif seri: ${streak} gün`, textX, textY + 20);
-          ctx.fillText("İlk 6 gün: her gün 10 yton", textX, textY + 40);
-          ctx.fillText("7. gün: +40 yton → ilk 7 gün toplam 100 yton", textX, textY + 60);
-        }
-
-        const pillW = isTiny ? 118 : 132;
-        const pillH = isTiny ? 32 : 34;
-        const pillX = listX + listW - pillW - 14;
-        const pillY = y + (isMobile ? block.h - pillH - 14 : 46);
-
-        ctx.fillStyle = claimedToday ? "rgba(31,111,42,0.85)" : "rgba(242,211,107,0.18)";
-        fillRoundRect(ctx, pillX, pillY, pillW, pillH, 12);
-        ctx.strokeStyle = "rgba(255,255,255,0.14)";
-        strokeRoundRect(ctx, pillX + 0.5, pillY + 0.5, pillW - 1, pillH - 1, 12);
-
+        const chipW = isTiny ? 112 : 126;
+        const chipH = 30;
+        const chipX = listX + listW - chipW - 12;
+        const chipY = y + 12;
+        ctx.fillStyle = claimedToday ? "rgba(31,111,42,0.88)" : "rgba(242,211,107,0.18)";
+        fillRoundRect(ctx, chipX, chipY, chipW, chipH, 999);
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        strokeRoundRect(ctx, chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1, 999);
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
-        ctx.fillText(
-          claimedToday ? "Bugün Alındı" : "Bugün Hazır",
-          pillX + pillW / 2,
-          pillY + pillH / 2
-        );
-
+        ctx.fillText(claimedToday ? "Bugün Alındı" : "Bugün Hazır", chipX + chipW / 2, chipY + chipH / 2);
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
+
+        ctx.fillStyle = "rgba(255,255,255,0.76)";
+        ctx.font = `${isTiny ? 11 : 12}px system-ui`;
+        ctx.fillText(`Seri giriş: ${streak} gün`, listX + 14, y + 50);
+        ctx.fillText("İlk 6 gün: +10 yton", listX + 14, y + 70);
+        ctx.fillText("7. gün: +40 yton", listX + 14, y + 90);
+        ctx.fillText("30. gün büyük ödül: HK MP5", listX + 14, y + 110);
       }
 
-      if (block.type === "title") {
-        ctx.fillStyle = "rgba(255,255,255,0.92)";
-        ctx.font = `900 ${blockTitleSize}px system-ui`;
-        ctx.fillText(block.text, listX + 2, y + 22);
-      }
-
-      if (block.type === "grid7") {
-        for (let i = 0; i < 7; i++) {
-          const day = i + 1;
-          const row = Math.floor(i / gridCols);
-          const col = i % gridCols;
-
-          const cx = listX + col * (gridCellW + gridGap);
-          const cy = y + row * (gridCellH + gridGap);
-
-          const done = streak >= day;
-          const is7 = day === 7;
-
-          ctx.fillStyle = done
-            ? "rgba(31,111,42,0.80)"
-            : is7
-            ? "rgba(242,211,107,0.12)"
-            : "rgba(255,255,255,0.07)";
-          fillRoundRect(ctx, cx, cy, gridCellW, gridCellH, 14);
-
-          ctx.strokeStyle = is7 ? "rgba(242,211,107,0.42)" : "rgba(255,255,255,0.12)";
-          strokeRoundRect(ctx, cx + 0.5, cy + 0.5, gridCellW - 1, gridCellH - 1, 14);
-
-          ctx.fillStyle = "#fff";
-          ctx.font = `900 ${isTiny ? 12 : 13}px system-ui`;
-          ctx.fillText(`Gün ${day}`, cx + 10, cy + 18);
-
-          ctx.fillStyle = "rgba(255,255,255,0.78)";
-          ctx.font = `${isTiny ? 10 : 12}px system-ui`;
-
-          if (day === 7) {
-            ctx.fillText("+40 yton", cx + 10, cy + (isTiny ? 42 : 46));
-            ctx.fillText("Toplam 100", cx + 10, cy + (isTiny ? 60 : 66));
-          } else {
-            ctx.fillText("+10 yton", cx + 10, cy + (isTiny ? 50 : 56));
-          }
-
-          if (done) {
-            ctx.fillStyle = "rgba(255,255,255,0.95)";
-            ctx.font = `900 ${isTiny ? 16 : 18}px system-ui`;
-            ctx.fillText("✓", cx + gridCellW - 22, cy + 22);
-          }
-        }
-      }
-
-      if (block.type === "reward30") {
-        const got30 = !!daily.got30DayWeapon;
-
-        ctx.fillStyle = got30 ? "rgba(31,111,42,0.78)" : "rgba(255,255,255,0.08)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 16);
+      if (block.type === "milestones") {
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        fillRoundRect(ctx, listX, y, listW, block.h, 18);
         ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 16);
+        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 18);
 
         ctx.fillStyle = "#fff";
-        ctx.font = `900 ${blockTitleSize}px system-ui`;
-        ctx.fillText("30 gün kesintisiz giriş", listX + 14, y + 24);
+        ctx.font = `900 ${isTiny ? 14 : 15}px system-ui`;
+        ctx.fillText("Giriş Takvimi Özeti", listX + 14, y + 22);
 
-        ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.font = `${cardTextSize}px system-ui`;
-        ctx.fillText("Ödül: HK MP5 (hafif makineli silah)", listX + 14, y + 48);
-        ctx.fillText(`İlerleme: ${Math.min(streak, 30)}/30`, listX + 14, y + 68);
-        ctx.fillText(got30 ? "Durum: Alındı" : "Durum: Bekliyor", listX + 14, y + 88);
+        const cols = 3;
+        const innerGap = 8;
+        const cellW = Math.floor((listW - 28 - innerGap * (cols - 1)) / cols);
+        const cellY = y + 34;
+        const items = [
+          { t: "1-6 Gün", s: "+10 yton" },
+          { t: "7. Gün", s: "+40 yton" },
+          { t: "30. Gün", s: daily.got30DayWeapon ? "MP5 alındı" : `${Math.min(streak, 30)}/30` },
+        ];
 
-        const barX = listX + 14;
-        const barY = y + (isMobile ? block.h - 28 : 74);
-        const barW = isMobile ? listW - 28 : Math.min(140, listW * 0.32);
-        const barH = 14;
-        const progress = clamp(Math.min(streak, 30) / 30, 0, 1);
-
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        fillRoundRect(ctx, barX, barY, barW, barH, 8);
-        ctx.fillStyle = "rgba(255,255,255,0.78)";
-        fillRoundRect(ctx, barX, barY, Math.max(8, barW * progress), barH, 8);
+        for (let i = 0; i < items.length; i++) {
+          const bx = listX + 14 + i * (cellW + innerGap);
+          ctx.fillStyle = "rgba(0,0,0,0.22)";
+          fillRoundRect(ctx, bx, cellY, cellW, 58, 14);
+          ctx.strokeStyle = i === 1 ? "rgba(242,211,107,0.34)" : "rgba(255,255,255,0.10)";
+          strokeRoundRect(ctx, bx + 0.5, cellY + 0.5, cellW - 1, 58 - 1, 14);
+          ctx.fillStyle = "#fff";
+          ctx.font = `900 ${fitText(ctx, items[i].t, cellW - 18, isTiny ? 11 : 12)}px system-ui`;
+          ctx.fillText(items[i].t, bx + 10, cellY + 20);
+          ctx.fillStyle = "rgba(255,255,255,0.72)";
+          ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+          ctx.fillText(items[i].s, bx + 10, cellY + 40);
+        }
       }
 
       if (block.type === "task") {
         const t = block.task;
+        const titleRightPad = 110;
+        const btnW = isTiny ? 94 : 102;
+        const btnH = 34;
+        const btnX = listX + listW - btnW - 14;
+        const btnY = y + block.h - btnH - 14;
+        const progX = listX + 14;
+        const progW = listW - btnW - 38;
 
         ctx.fillStyle = "rgba(255,255,255,0.07)";
-        fillRoundRect(ctx, listX, y, listW, block.h, 14);
+        fillRoundRect(ctx, listX, y, listW, block.h, 18);
         ctx.strokeStyle = "rgba(255,255,255,0.10)";
-        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 14);
+        strokeRoundRect(ctx, listX + 0.5, y + 0.5, listW - 1, block.h - 1, 18);
 
-        const btnW = isMobile ? 84 : 92;
-        const btnH = isMobile ? 32 : 34;
-        const btnX = listX + listW - btnW - 14;
-        const btnY = isMobile ? y + 14 : y + 28;
-
-        const textRightPad = 12;
-        const contentRightLimit = isMobile ? listX + listW - 14 : btnX - 12;
-        const titleMaxW = Math.max(80, contentRightLimit - (listX + 14) - textRightPad);
-
-        const dynamicTitleSize = fitText(ctx, t.title, titleMaxW, cardTitleSize);
+        const titleSize = fitText(ctx, t.title, listW - titleRightPad, isTiny ? 15 : 17);
         ctx.fillStyle = "#fff";
-        ctx.font = `900 ${dynamicTitleSize}px system-ui`;
-        ctx.fillText(t.title, listX + 14, y + 20);
+        ctx.font = `900 ${titleSize}px system-ui`;
+        ctx.fillText(t.title, listX + 14, y + 24);
 
-        ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.font = `${cardTextSize}px system-ui`;
+        ctx.fillStyle = "rgba(255,255,255,0.70)";
+        ctx.font = `${isTiny ? 11 : 12}px system-ui`;
+        ctx.fillText(t.desc, listX + 14, y + 46);
 
-        const descMaxW = isMobile ? listW - 28 : btnX - listX - 28;
-        const descLines = wrapTextLines(ctx, t.desc, Math.max(60, descMaxW));
-        const maxDescLines = isMobile ? 2 : 1;
-        let descY = y + 40;
+        const progLabel = t.progressText;
+        const rewardText = `Ödül: ${t.reward}`;
 
-        for (let i = 0; i < Math.min(descLines.length, maxDescLines); i++) {
-          ctx.fillText(descLines[i], listX + 14, descY);
-          descY += isTiny ? 13 : 15;
-        }
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        fillRoundRect(ctx, progX, y + 58, progW, 10, 999);
+        const fillW = t.claimed ? progW : Math.max(8, progW * pct(t.progress, t.max));
+        ctx.fillStyle = t.claimed ? "rgba(31,111,42,0.90)" : "rgba(255,255,255,0.78)";
+        fillRoundRect(ctx, progX, y + 58, fillW, 10, 999);
 
-        const barX = listX + 14;
-        const barY = isMobile ? y + 74 : y + 56;
-        const barW = isMobile ? listW - 28 : listW - 160;
-        const barH = 10;
-
-        ctx.fillStyle = "rgba(255,255,255,0.10)";
-        fillRoundRect(ctx, barX, barY, barW, barH, 8);
-
-        const filledW =
-          t.progress <= 0 ? 0 : Math.max(6, barW * pct(t.progress, t.max));
-
-        ctx.fillStyle = t.claimed ? "rgba(31,111,42,0.88)" : "rgba(255,255,255,0.78)";
-        if (filledW > 0) {
-          fillRoundRect(ctx, barX, barY, filledW, barH, 8);
-        }
-
-        ctx.fillStyle = "rgba(255,255,255,0.82)";
+        ctx.fillStyle = "rgba(255,255,255,0.84)";
         ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-        ctx.fillText(t.progressText, barX, barY + 22);
+        ctx.fillText(progLabel, progX, y + 84);
 
-        let btnLabel = "Bekliyor";
+        ctx.fillStyle = "rgba(255,255,255,0.74)";
+        const rewardSize = fitText(ctx, rewardText, listW - 28, isTiny ? 10 : 11, 600);
+        ctx.font = `600 ${rewardSize}px system-ui`;
+        ctx.fillText(rewardText, progX, y + 104);
+
         let btnColor = "rgba(255,255,255,0.08)";
-
-        if (t.claimed) {
-          btnLabel = "Alındı";
-          btnColor = "rgba(31,111,42,0.85)";
-        } else if (t.claimable) {
-          btnLabel = "Al";
-          btnColor = "rgba(242,211,107,0.18)";
-          this.hit.push({
-            type: "claim",
-            key: t.key,
-            rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-          });
-        }
+        if (t.claimed) btnColor = "rgba(31,111,42,0.88)";
+        else if (t.claimable) btnColor = "rgba(242,211,107,0.18)";
 
         ctx.fillStyle = btnColor;
         fillRoundRect(ctx, btnX, btnY, btnW, btnH, 12);
         ctx.strokeStyle = "rgba(255,255,255,0.14)";
         strokeRoundRect(ctx, btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1, 12);
-
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `900 ${btnTextSize}px system-ui`;
-        ctx.fillText(btnLabel, btnX + btnW / 2, btnY + btnH / 2);
-
+        ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
+        ctx.fillText(this._missionCta(t), btnX + btnW / 2, btnY + btnH / 2 + 0.5);
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
 
-        ctx.fillStyle = "rgba(255,255,255,0.82)";
-        const rewardY = isMobile ? y + block.h - 18 : barY + 22;
-        const rewardMaxW = isMobile ? listW - 28 : btnX - barX - 10;
-        const rewardSize = fitText(
-          ctx,
-          t.reward,
-          Math.max(70, rewardMaxW),
-          isTiny ? 10 : 11,
-          500
-        );
-        ctx.font = `500 ${rewardSize}px system-ui`;
-
-        if (isMobile) {
-          const rewardLines = wrapTextLines(ctx, t.reward, listW - 28);
-          ctx.fillText(rewardLines[0] || t.reward, barX, rewardY);
-        } else {
-          const tw = ctx.measureText(t.reward).width;
-          ctx.fillText(t.reward, Math.max(barX, btnX - 10 - tw), rewardY);
+        if (t.claimable) {
+          this.hit.push({ type: "claim", key: t.key, rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
         }
       }
 
@@ -920,16 +760,16 @@ export class MissionsScene {
     ctx.restore();
 
     if (this.maxScroll > 0) {
-      const trackX = panelX + panelW - 6;
+      const trackX = shellX + shellW - 5;
       const trackY = listY;
       const trackH = listH;
-      const thumbH = Math.max(36, (listH / contentH) * trackH);
+      const thumbH = Math.max(42, (listH / contentH) * trackH);
       const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
 
-      ctx.fillStyle = "rgba(255,255,255,0.10)";
-      ctx.fillRect(trackX, trackY, 3, trackH);
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      fillRoundRect(ctx, trackX, trackY, 3, trackH, 999);
       ctx.fillStyle = "rgba(255,255,255,0.34)";
-      ctx.fillRect(trackX, thumbY, 3, thumbH);
+      fillRoundRect(ctx, trackX, thumbY, 3, thumbH, 999);
     }
   }
 }
