@@ -1435,6 +1435,7 @@
     _recordResult(win) {
       const store = window.tcStore;
       const now = Date.now();
+      const REWARD_COINS = 36;
       const opponent = this._opponent?.username || "Rakip";
       const resultItem = {
         id: `pvp_${now}`,
@@ -1449,6 +1450,7 @@
       if (store?.get && store?.set) {
         const state = store.get() || {};
         const pvp = { ...(state.pvp || {}) };
+        const nextCoins = Number(state.coins || 0) + (win && !pvp.payoutDone ? REWARD_COINS : 0);
         const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
         const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
         const playerName = String(state?.player?.username || "Player");
@@ -1473,7 +1475,13 @@
         nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
         pvp.leaderboard = nextBoard.slice(0, 50);
 
-        store.set({ pvp });
+        store.set({
+          coins: nextCoins,
+          pvp: {
+            ...pvp,
+            payoutDone: true,
+          },
+        });
       }
 
       const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
