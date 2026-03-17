@@ -114,8 +114,8 @@ export class Store {
         xp: 0,
         xpToNext: 100,
 
-        energy: 70,
-        energyMax: 100,
+        energy: 50,
+        energyMax: 50,
 
         hp: 100,
         hpMax: 100,
