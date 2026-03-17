@@ -511,8 +511,7 @@ export class ProfileScene {
       const telegramId = this._getTelegramId();
       const username = String(s.player?.username || "Player");
 
-      const provider = window.prompt("Cüzdan markası seç:
-Tonkeeper / MyTonWallet / OpenMask", "Tonkeeper");
+      const provider = window.prompt("Cüzdan markası seç:\nTonkeeper / MyTonWallet / OpenMask", "Tonkeeper");
       if (provider === null) return;
 
       const walletAddress = window.prompt("Cüzdan adresini gir:", this.walletConnection?.wallet_address || "");
