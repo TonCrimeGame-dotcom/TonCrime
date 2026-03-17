@@ -1,3 +1,4 @@
+
 export function startHud(store) {
   const root = document.getElementById("hudTop");
   const row = document.getElementById("hudRow");
@@ -23,31 +24,13 @@ export function startHud(store) {
   const elPremiumBadge = document.getElementById("hudPremiumBadge");
 
   if (
-    !root ||
-    !row ||
-    !elUsername ||
-    !elCoins ||
-    !elWeaponName ||
-    !elWeaponBonus ||
-    !elXpFill ||
-    !elXpText ||
-    !elEnergyFill ||
-    !elEnergyText ||
-    !elAvatar ||
-    !elAvatarFallback ||
-    !elOnlineBadge ||
-    !elPremiumBadge
+    !root || !row || !elUsername || !elCoins || !elWeaponName || !elWeaponBonus ||
+    !elXpFill || !elXpText || !elEnergyFill || !elEnergyText ||
+    !elAvatar || !elAvatarFallback || !elOnlineBadge || !elPremiumBadge
   ) {
     console.warn("[HUD] gerekli HUD elementleri bulunamadı");
     return;
   }
-
-  root.style.zIndex = "5000";
-  root.style.opacity = "1";
-  root.style.pointerEvents = "auto";
-  root.style.left = "max(var(--sal), 0px)";
-  root.style.right = "max(var(--sar), 0px)";
-  root.style.top = "max(var(--sat), 0px)";
 
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const clamp01 = (n) => clamp(n, 0, 1);
@@ -79,6 +62,16 @@ export function startHud(store) {
     );
   }
 
+  let walletBtn = document.getElementById("hudWalletBtn");
+  if (!walletBtn) {
+    walletBtn = document.createElement("button");
+    walletBtn.id = "hudWalletBtn";
+    walletBtn.type = "button";
+    walletBtn.setAttribute("aria-label", "Cüzdan");
+    walletBtn.textContent = "💳";
+    root.appendChild(walletBtn);
+  }
+
   function bindAvatarImgEventsOnce() {
     if (!elAvatarImg || elAvatarImg.__hudBound) return;
     elAvatarImg.__hudBound = true;
@@ -94,30 +87,49 @@ export function startHud(store) {
     };
   }
 
-  function bindAvatarClickOnce() {
-    if (!elAvatar || elAvatar.__profileBound) return;
-    elAvatar.__profileBound = true;
-
-    elAvatar.style.cursor = "pointer";
-    elAvatar.title = "Profili Aç";
-
-    elAvatar.addEventListener("click", () => {
-      try {
-        window.dispatchEvent(new Event("tc:openProfile"));
-      } catch (_) {}
-    });
-
-    elAvatar.addEventListener("pointerdown", (e) => {
-      e.stopPropagation();
-    });
+  function openProfile(tab = "profile") {
+    try {
+      const s = store.get() || {};
+      store.set({
+        ui: {
+          ...(s.ui || {}),
+          profileTab: tab,
+        },
+      });
+      window.dispatchEvent(new Event("tc:openProfile"));
+    } catch (_) {}
   }
+
+  function bindClicksOnce() {
+    if (!elAvatar.__profileBound) {
+      elAvatar.__profileBound = true;
+      elAvatar.style.cursor = "pointer";
+      elAvatar.title = "Profili Aç";
+      elAvatar.addEventListener("click", () => openProfile("profile"));
+      elAvatar.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
+
+    if (!walletBtn.__walletBound) {
+      walletBtn.__walletBound = true;
+      walletBtn.title = "Cüzdan";
+      walletBtn.addEventListener("click", () => openProfile("wallet"));
+      walletBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
+  }
+
+  root.style.zIndex = "5000";
+  root.style.opacity = "1";
+  root.style.pointerEvents = "auto";
+  root.style.left = "max(var(--sal), 0px)";
+  root.style.right = "max(var(--sar), 0px)";
+  root.style.top = "max(var(--sat), 0px)";
 
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
 
   function updateHud() {
     bindAvatarImgEventsOnce();
-    bindAvatarClickOnce();
+    bindClicksOnce();
 
     const s = store.get() || {};
     const p = s.player || {};
@@ -128,9 +140,7 @@ export function startHud(store) {
     elUsername.title = username;
 
     const yton = Number(s.coins ?? p.coins ?? 0);
-    elCoins.textContent = `YTON ${
-      Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"
-    }`;
+    elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
     elWeaponName.textContent = weaponName;
@@ -154,8 +164,7 @@ export function startHud(store) {
     const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
     const lastAt = Number(p.lastEnergyAt || Date.now());
     const now = Date.now();
-    const untilNext =
-      energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
+    const untilNext = energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
 
     elEnergyText.textContent =
       energy >= energyMax
@@ -168,7 +177,6 @@ export function startHud(store) {
 
     if (avatarUrl !== lastAvatarUrl) {
       lastAvatarUrl = avatarUrl;
-
       if (avatarUrl) {
         elAvatarImg.style.display = "none";
         elAvatarFallback.style.display = "grid";
@@ -180,14 +188,7 @@ export function startHud(store) {
       }
     }
 
-    const isPremium = !!(
-      p.isPremium ||
-      p.premium ||
-      s.isPremium ||
-      s.premium ||
-      p.membership === "premium"
-    );
-
+    const isPremium = !!(p.isPremium || p.premium || s.isPremium || s.premium || p.membership === "premium");
     elOnlineBadge.style.display = "inline-flex";
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
