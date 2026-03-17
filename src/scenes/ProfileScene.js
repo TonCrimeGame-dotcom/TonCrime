@@ -1,4 +1,6 @@
 
+import { supabase } from "../supabase.js";
+
 function pointInRect(px, py, r) {
   return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
@@ -140,6 +142,7 @@ export class ProfileScene {
     this._avatarImg = null;
     this.toastText = "";
     this.toastUntil = 0;
+    this._busy = false;
   }
 
   onEnter() {
@@ -159,6 +162,7 @@ export class ProfileScene {
         totalConvertedTon: Number(wallet.totalConvertedTon || 0),
         totalWithdrawnTon: Number(wallet.totalWithdrawnTon || 0),
         ledger: Array.isArray(wallet.ledger) ? wallet.ledger : [],
+        lastWithdrawStatus: wallet.lastWithdrawStatus || "",
       },
     });
   }
@@ -206,85 +210,206 @@ export class ProfileScene {
     });
   }
 
-  _connectWallet(brand) {
-    const brands = ["Tonkeeper", "MyTonWallet", "OpenMask", "Tonhub"];
-    const chosen = brand || window.prompt(`Cüzdan markası seç:\n${brands.join(" / ")}`, "Tonkeeper");
-    if (!chosen) return;
-    const cleanBrand = String(chosen).trim();
-    const address = window.prompt(`${cleanBrand} adresini gir:`, this._wallet().address || "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-    if (!address) return;
-
+  _telegramId() {
     const s = this.store.get() || {};
-    const wallet = this._wallet();
-    this.store.set({
-      wallet: {
-        ...wallet,
-        connected: true,
-        brand: cleanBrand,
-        address: String(address).trim(),
-      },
-    });
-    this._pushWalletLedger("connect", 0, 0, `${cleanBrand} bağlandı`);
-    this._showToast(`${cleanBrand} bağlandı`);
+    return String(
+      s?.player?.telegramId ||
+      window.Telegram?.WebApp?.initDataUnsafe?.user?.id ||
+      ""
+    ).trim();
   }
 
-  _convertYtonToTon() {
-    const s = this.store.get() || {};
-    const currentYton = Number(s.coins || 0);
-    const raw = window.prompt("Kaç YTON dönüştürmek istiyorsun?\n1 YTON = 0.05 TON", "100");
-    if (raw === null) return;
-    const amountYton = Math.max(0, Number(raw));
-    if (!amountYton || !Number.isFinite(amountYton)) {
-      this._showToast("Geçersiz miktar");
-      return;
-    }
-    if (amountYton > currentYton) {
-      this._showToast("Yetersiz YTON");
-      return;
-    }
+  async _getProfileId() {
+    const telegramId = this._telegramId();
+    if (!telegramId) throw new Error("telegram_id bulunamadı");
 
-    const tonAmount = amountYton * 0.05;
-    const wallet = this._wallet();
-    this.store.set({
-      coins: currentYton - amountYton,
-      wallet: {
-        ...wallet,
-        tonBalance: Number(wallet.tonBalance || 0) + tonAmount,
-        totalConvertedTon: Number(wallet.totalConvertedTon || 0) + tonAmount,
-      },
-    });
-    this._pushWalletLedger("convert", tonAmount, amountYton, `${moneyFmt(amountYton)} YTON -> ${moneyFmt(tonAmount, 2)} TON`);
-    this._showToast(`${moneyFmt(amountYton)} YTON dönüştürüldü`);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data?.id) throw new Error("Profil bulunamadı");
+
+    return data.id;
   }
 
-  _requestWithdraw() {
-    const wallet = this._wallet();
-    const balance = Number(wallet.tonBalance || 0);
-    const raw = window.prompt(`Kaç TON çekmek istiyorsun?\nMevcut TON: ${moneyFmt(balance, 2)}`, moneyFmt(balance, 2));
-    if (raw === null) return;
-    const tonAmount = Math.max(0, Number(raw));
-    if (!tonAmount || !Number.isFinite(tonAmount)) {
-      this._showToast("Geçersiz miktar");
-      return;
+  async _insertWalletLedger(entryType, tonAmount = 0, ytonAmount = 0, note = "", refId = null) {
+    try {
+      const profileId = await this._getProfileId();
+      const { error } = await supabase.from("wallet_ledger").insert({
+        profile_id: profileId,
+        entry_type: entryType,
+        yton_amount: Number(ytonAmount || 0),
+        ton_amount: Number(tonAmount || 0),
+        note: String(note || ""),
+        ref_id: refId || null,
+      });
+      if (error) throw error;
+    } catch (err) {
+      console.error("[ProfileScene] wallet_ledger insert failed:", err);
     }
-    if (tonAmount > balance) {
-      this._showToast("Yetersiz TON bakiye");
-      return;
-    }
-    const targetAddress = wallet.connected && wallet.address
-      ? wallet.address
-      : window.prompt("Çekim yapılacak TON adresi:", "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-    if (!targetAddress) return;
+  }
 
-    this.store.set({
-      wallet: {
-        ...wallet,
-        tonBalance: balance - tonAmount,
-        totalWithdrawnTon: Number(wallet.totalWithdrawnTon || 0) + tonAmount,
-      },
-    });
-    this._pushWalletLedger("withdraw", tonAmount, 0, `Çekim talebi • ${String(targetAddress).slice(0, 10)}...`);
-    this._showToast(`${moneyFmt(tonAmount, 2)} TON çekim talebi oluşturuldu`);
+  async _connectWallet(brand) {
+    if (this._busy) return;
+    this._busy = true;
+    try {
+      const brands = ["Tonkeeper", "MyTonWallet", "OpenMask", "Tonhub"];
+      const chosen = brand || window.prompt(`Cüzdan markası seç:\n${brands.join(" / ")}`, "Tonkeeper");
+      if (!chosen) return;
+      const cleanBrand = String(chosen).trim();
+      const address = window.prompt(`${cleanBrand} adresini gir:`, this._wallet().address || "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+      if (!address) return;
+
+      const s = this.store.get() || {};
+      const player = s.player || {};
+      const wallet = this._wallet();
+      const profileId = await this._getProfileId();
+
+      const payload = {
+        profile_id: profileId,
+        telegram_id: this._telegramId(),
+        username: String(player.username || "Player"),
+        wallet_provider: cleanBrand,
+        wallet_address: String(address).trim(),
+        is_active: true,
+      };
+
+      const { error } = await supabase
+        .from("wallet_connections")
+        .upsert(payload, { onConflict: "profile_id,wallet_address" });
+
+      if (error) throw error;
+
+      this.store.set({
+        wallet: {
+          ...wallet,
+          connected: true,
+          brand: cleanBrand,
+          address: String(address).trim(),
+        },
+      });
+
+      this._pushWalletLedger("connect", 0, 0, `${cleanBrand} bağlandı`);
+      await this._insertWalletLedger("wallet_connect", 0, 0, `${cleanBrand} bağlandı`);
+      this._showToast(`${cleanBrand} bağlandı`);
+    } catch (err) {
+      console.error("[ProfileScene] connect wallet error:", err);
+      this._showToast(err?.message || "Cüzdan bağlanamadı");
+    } finally {
+      this._busy = false;
+    }
+  }
+
+  async _convertYtonToTon() {
+    if (this._busy) return;
+    this._busy = true;
+    try {
+      const s = this.store.get() || {};
+      const currentYton = Number(s.coins || 0);
+      const raw = window.prompt("Kaç YTON dönüştürmek istiyorsun?\n1 YTON = 0.05 TON", "100");
+      if (raw === null) return;
+
+      const amountYton = Math.max(0, Number(raw));
+      if (!amountYton || !Number.isFinite(amountYton)) {
+        this._showToast("Geçersiz miktar");
+        return;
+      }
+      if (amountYton > currentYton) {
+        this._showToast("Yetersiz YTON");
+        return;
+      }
+
+      const tonAmount = amountYton * 0.05;
+      const wallet = this._wallet();
+
+      this.store.set({
+        coins: currentYton - amountYton,
+        wallet: {
+          ...wallet,
+          tonBalance: Number(wallet.tonBalance || 0) + tonAmount,
+          totalConvertedTon: Number(wallet.totalConvertedTon || 0) + tonAmount,
+        },
+      });
+
+      this._pushWalletLedger("convert", tonAmount, amountYton, `${moneyFmt(amountYton)} YTON -> ${moneyFmt(tonAmount, 2)} TON`);
+      await this._insertWalletLedger("convert", tonAmount, amountYton, `${moneyFmt(amountYton)} YTON -> ${moneyFmt(tonAmount, 2)} TON`);
+      this._showToast(`${moneyFmt(amountYton)} YTON dönüştürüldü`);
+    } catch (err) {
+      console.error("[ProfileScene] convert error:", err);
+      this._showToast(err?.message || "Dönüştürme başarısız");
+    } finally {
+      this._busy = false;
+    }
+  }
+
+  async _requestWithdraw() {
+    if (this._busy) return;
+    this._busy = true;
+    try {
+      const wallet = this._wallet();
+      const balance = Number(wallet.tonBalance || 0);
+      const raw = window.prompt(`Kaç TON çekmek istiyorsun?\nMevcut TON: ${moneyFmt(balance, 2)}`, moneyFmt(balance, 2));
+      if (raw === null) return;
+
+      const tonAmount = Math.max(0, Number(raw));
+      if (!tonAmount || !Number.isFinite(tonAmount)) {
+        this._showToast("Geçersiz miktar");
+        return;
+      }
+      if (tonAmount > balance) {
+        this._showToast("Yetersiz TON bakiye");
+        return;
+      }
+
+      const targetAddress = wallet.connected && wallet.address
+        ? wallet.address
+        : window.prompt("Çekim yapılacak TON adresi:", "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+      if (!targetAddress) return;
+
+      const s = this.store.get() || {};
+      const player = s.player || {};
+      const profileId = await this._getProfileId();
+      const ytonAmount = tonAmount / 0.05;
+
+      const { data, error } = await supabase
+        .from("withdraw_requests")
+        .insert({
+          profile_id: profileId,
+          telegram_id: this._telegramId(),
+          username: String(player.username || "Player"),
+          wallet_address: String(targetAddress).trim(),
+          yton_amount: Number(ytonAmount.toFixed(2)),
+          ton_amount: Number(tonAmount.toFixed(6)),
+          rate: 0.05,
+          status: "pending",
+          note: "ProfileScene çekim talebi",
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      this.store.set({
+        wallet: {
+          ...wallet,
+          tonBalance: Math.max(0, balance - tonAmount),
+          totalWithdrawnTon: Number(wallet.totalWithdrawnTon || 0) + tonAmount,
+          lastWithdrawStatus: "pending",
+        },
+      });
+
+      this._pushWalletLedger("withdraw", tonAmount, ytonAmount, `Çekim talebi • ${String(targetAddress).slice(0, 12)}...`);
+      await this._insertWalletLedger("withdraw", tonAmount, ytonAmount, `Withdraw pending • ${String(targetAddress).slice(0, 12)}...`, data?.id || null);
+      this._showToast(`${moneyFmt(tonAmount, 2)} TON çekim talebi oluşturuldu`);
+    } catch (err) {
+      console.error("[ProfileScene] withdraw error:", err);
+      this._showToast(err?.message || "Çekim talebi başarısız");
+    } finally {
+      this._busy = false;
+    }
   }
 
   update() {
@@ -314,9 +439,9 @@ export class ProfileScene {
     if (this._profileTab() === "wallet") {
       for (const btn of this.hitWalletButtons) {
         if (!pointInRect(px, py, btn.rect)) continue;
-        if (btn.action === "connect") return this._connectWallet(btn.brand);
-        if (btn.action === "convert") return this._convertYtonToTon();
-        if (btn.action === "withdraw") return this._requestWithdraw();
+        if (btn.action === "connect") { this._connectWallet(btn.brand); return; }
+        if (btn.action === "convert") { this._convertYtonToTon(); return; }
+        if (btn.action === "withdraw") { this._requestWithdraw(); return; }
       }
       return;
     }
@@ -636,6 +761,7 @@ export class ProfileScene {
           "Min / Max limit yok",
           `TON Bakiye: ${moneyFmt(wallet.tonBalance, 2)}`,
           wallet.connected ? "Bağlı adres kullanılacak" : "Adres prompt ile alınacak",
+          wallet.lastWithdrawStatus ? `Son durum: ${wallet.lastWithdrawStatus}` : "Son durum: -",
         ],
         x + 16,
         wy + 48,
@@ -722,6 +848,7 @@ export class ProfileScene {
           "Min / Max limit yok",
           `TON Bakiye: ${moneyFmt(wallet.tonBalance, 2)}`,
           wallet.connected ? "Bağlı adres kullanılacak" : "Adres prompt ile alınacak",
+          wallet.lastWithdrawStatus ? `Son durum: ${wallet.lastWithdrawStatus}` : "Son durum: -",
         ],
         rightX + 16,
         boxY + 48,
