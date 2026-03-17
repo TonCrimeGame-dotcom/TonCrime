@@ -120,12 +120,15 @@ export class TradeScene {
     this.hitBack = null;
     this.hitTabs = [];
     this.hitButtons = [];
+    this.hitLootButtons = [];
+    this._finalizeLootIfNeeded();
 
     this.toastText = "";
     this.toastUntil = 0;
 
     this.lootAnim = null;
     this.lootAnimUntil = 0;
+    this.hitLootButtons = [];
   }
 
   onEnter() {
@@ -389,142 +392,162 @@ export class TradeScene {
   }
 
 
-  _doFreeSpin() {
+
+  _buildWheelRewards() {
+    return [
+      { kind: "coins", amount: 40, label: "+40 YTON" },
+      { kind: "coins", amount: 80, label: "+80 YTON" },
+      { kind: "energy", amount: 20, label: "+20 ENERJİ" },
+      { kind: "energy", amount: 35, label: "+35 ENERJİ" },
+      { kind: "item", label: "GOLDEN PASS", item: { id: "gold_pass_" + Date.now(), kind: "rare", icon: "👑", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik ürünü." } },
+      { kind: "item", label: "MYSTERY CRATE", item: { id: "crate_" + Date.now(), kind: "rare", icon: "📦", name: "Mystery Crate", rarity: "rare", qty: 1, usable: false, sellable: true, marketable: true, sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." } },
+      { kind: "coins", amount: 140, label: "+140 YTON" },
+      { kind: "item", label: "LEGENDARY CRATE", item: { id: "legendary_" + Date.now(), kind: "rare", icon: "👑", name: "Legendary Crate", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: true, sellPrice: 90, marketPrice: 140, desc: "Premium sandık ödülü." } },
+    ];
+  }
+
+  _buildCrateRewards() {
+    return [
+      { kind: "coins", amount: 10, label: "+10 YTON", tier: "small" },
+      { kind: "coins", amount: 15, label: "+15 YTON", tier: "small" },
+      { kind: "coins", amount: 20, label: "+20 YTON", tier: "small" },
+      { kind: "energy", amount: 8, label: "+8 ENERJİ", tier: "small" },
+      { kind: "energy", amount: 10, label: "+10 ENERJİ", tier: "small" },
+      { kind: "coins", amount: 30, label: "+30 YTON", tier: "small" },
+      { kind: "item", label: "MYSTERY CRATE", tier: "big", item: { id: "crate_" + Date.now(), kind: "rare", icon: "📦", name: "Mystery Crate", rarity: "rare", qty: 1, usable: false, sellable: true, marketable: true, sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." } },
+      { kind: "item", label: "GOLDEN PASS", tier: "big", item: { id: "gold_pass_" + Date.now(), kind: "rare", icon: "👑", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik ürünü." } },
+    ];
+  }
+
+  _applyLootReward(reward) {
+    const s = this.store.get();
+    if (!reward) return "";
+    if (reward.kind === "coins") {
+      this.store.set({ coins: Number(s.coins || 0) + Number(reward.amount || 0) });
+      return reward.label;
+    }
+    if (reward.kind === "energy") {
+      const p = { ...(s.player || {}) };
+      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
+      this.store.set({ player: p });
+      return reward.label;
+    }
+    if (reward.kind === "item" && reward.item) {
+      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+      const existing = items.find((x) => x.name === reward.item.name);
+      if (existing) existing.qty = Number(existing.qty || 0) + 1;
+      else items.unshift({ ...reward.item });
+      this.store.set({ inventory: { ...(s.inventory || {}), items } });
+      return reward.label;
+    }
+    return reward.label || "Ödül";
+  }
+
+  _openFreeCrate() {
     if (!this._isFreeSpinReady()) {
       this._showToast("Günlük sandık bugün açıldı");
       return;
     }
-
-    const rewards = [
-      { type: "coins", amount: 25, text: "+25 yton" },
-      { type: "coins", amount: 60, text: "+60 yton" },
-      { type: "energy", amount: 15, text: "+15 enerji" },
-      {
-        type: "item",
-        text: "Mystery Crate kazandın",
-        item: {
-          id: "crate_" + Date.now(),
-          kind: "rare",
-          icon: "📦",
-          name: "Mystery Crate",
-          rarity: "rare",
-          qty: 1,
-          usable: false,
-          sellable: true,
-          marketable: true,
-          sellPrice: 45,
-          marketPrice: 60,
-          desc: "Sandık ödülü.",
-        },
-      },
-    ];
-
-    const reward = rewards[Math.floor(Math.random() * rewards.length)];
-    const s = this.store.get();
-
-    if (reward.type === "coins") {
-      this.store.set({
-        coins: Number(s.coins || 0) + Number(reward.amount || 0),
-        trade: {
-          ...(s.trade || {}),
-          lastFreeSpinDay: todayKey(),
-        },
-      });
-    } else if (reward.type === "energy") {
-      const p = { ...(s.player || {}) };
-      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
-      this.store.set({
-        player: p,
-        trade: {
-          ...(s.trade || {}),
-          lastFreeSpinDay: todayKey(),
-        },
-      });
-    } else {
-      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-      const existing = items.find((x) => x.name === reward.item.name);
-      if (existing) existing.qty = Number(existing.qty || 0) + 1;
-      else items.unshift({ ...reward.item });
-
-      this.store.set({
-        inventory: {
-          ...(s.inventory || {}),
-          items,
-        },
-        trade: {
-          ...(s.trade || {}),
-          lastFreeSpinDay: todayKey(),
-        },
-      });
+    const rewards = this._buildCrateRewards();
+    const weights = rewards.map((r) => r.tier === "big" ? 1 : 8);
+    let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let resultIndex = 0;
+    for (let i = 0; i < weights.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) { resultIndex = i; break; }
     }
+    this._setTrade({ ...this._trade(), lastFreeSpinDay: todayKey() });
+    this.lootAnim = {
+      kind: "crate",
+      phase: "spinning",
+      rewards,
+      resultIndex,
+      selectedReward: rewards[resultIndex],
+      startedAt: Date.now(),
+      duration: 1800,
+      resultApplied: false,
+      travel: 1700 + Math.random() * 500,
+    };
+    this.lootAnimUntil = this.lootAnim.startedAt + this.lootAnim.duration;
+  }
 
-    this._startLootAnimation("crate", "Günlük Sandık", reward.text);
-    this._showToast(reward.text, 1600);
+  _openPremiumWheel() {
+    const s = this.store.get();
+    if (Number(s.coins || 0) < 100) {
+      this._showToast("Premium çark için yetersiz yton");
+      return;
+    }
+    this.lootAnim = {
+      kind: "wheel",
+      phase: "idle",
+      rewards: this._buildWheelRewards(),
+      startedAt: Date.now(),
+      duration: 0,
+      resultApplied: false,
+      selectedReward: null,
+      resultIndex: -1,
+      cost: 100,
+    };
+    this.lootAnimUntil = Number.MAX_SAFE_INTEGER;
+  }
+
+  _spinPremiumWheel() {
+    if (!this.lootAnim || this.lootAnim.kind !== "wheel" || this.lootAnim.phase !== "idle") return;
+    const s = this.store.get();
+    const cost = Number(this.lootAnim.cost || 100);
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Premium çark için yetersiz yton");
+      this._closeLootOverlay();
+      return;
+    }
+    this.store.set({ coins: Number(s.coins || 0) - cost });
+    const rewards = this.lootAnim.rewards || this._buildWheelRewards();
+    const weights = rewards.map((r) => (r.kind === "item" ? 1 : (Number(r.amount || 0) >= 100 ? 2 : 5)));
+    let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+    let resultIndex = 0;
+    for (let i = 0; i < weights.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) { resultIndex = i; break; }
+    }
+    const wedge = (Math.PI * 2) / rewards.length;
+    const turns = 5 + Math.floor(Math.random() * 3);
+    const targetAngle = turns * Math.PI * 2 + (Math.PI * 1.5) - (resultIndex * wedge + wedge / 2);
+    this.lootAnim.phase = "spinning";
+    this.lootAnim.startedAt = Date.now();
+    this.lootAnim.duration = 3000;
+    this.lootAnim.resultIndex = resultIndex;
+    this.lootAnim.selectedReward = rewards[resultIndex];
+    this.lootAnim.startAngle = 0;
+    this.lootAnim.targetAngle = targetAngle;
+    this.lootAnim.resultApplied = false;
+    this.lootAnimUntil = this.lootAnim.startedAt + this.lootAnim.duration;
+  }
+
+  _finalizeLootIfNeeded() {
+    if (!this.lootAnim || this.lootAnim.phase !== "spinning") return;
+    if (Date.now() < this.lootAnimUntil) return;
+    if (!this.lootAnim.resultApplied) {
+      const rewardText = this._applyLootReward(this.lootAnim.selectedReward);
+      this.lootAnim.rewardText = rewardText;
+      this.lootAnim.resultApplied = true;
+      this._showToast(`Şu ödülü kazandın: ${rewardText}`, 2400);
+    }
+    this.lootAnim.phase = "result";
+    this.lootAnimUntil = Date.now() + 2400;
+  }
+
+  _closeLootOverlay() {
+    this.lootAnim = null;
+    this.lootAnimUntil = 0;
+  }
+
+  _doFreeSpin() {
+    this._openFreeCrate();
   }
 
 
   _doPremiumSpin() {
-    const s = this.store.get();
-    const cost = 100;
-
-    if (Number(s.coins || 0) < cost) {
-      this._showToast("Premium çark için yetersiz yton");
-      return;
-    }
-
-    const rewards = [
-      { type: "coins", amount: 180, text: "+180 yton" },
-      { type: "energy", amount: 30, text: "+30 enerji" },
-      {
-        type: "item",
-        text: "Golden Pass kazandın",
-        item: {
-          id: "gold_pass_" + Date.now(),
-          kind: "rare",
-          icon: "👑",
-          name: "Golden Pass",
-          rarity: "legendary",
-          qty: 1,
-          usable: false,
-          sellable: true,
-          marketable: false,
-          sellPrice: 250,
-          marketPrice: 0,
-          desc: "Nadir etkinlik ürünü.",
-        },
-      },
-    ];
-
-    const reward = rewards[Math.floor(Math.random() * rewards.length)];
-
-    if (reward.type === "coins") {
-      this.store.set({
-        coins: Number(s.coins || 0) - cost + Number(reward.amount || 0),
-      });
-    } else if (reward.type === "energy") {
-      const p = { ...(s.player || {}) };
-      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
-      this.store.set({
-        coins: Number(s.coins || 0) - cost,
-        player: p,
-      });
-    } else {
-      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-      const existing = items.find((x) => x.name === reward.item.name);
-      if (existing) existing.qty = Number(existing.qty || 0) + 1;
-      else items.unshift({ ...reward.item });
-
-      this.store.set({
-        coins: Number(s.coins || 0) - cost,
-        inventory: {
-          ...(s.inventory || {}),
-          items,
-        },
-      });
-    }
-
-    this._startLootAnimation("wheel", "Premium Çark", reward.text);
-    this._showToast(reward.text, 1600);
+    this._openPremiumWheel();
   }
 
   _buyCrate(kind) {
@@ -1138,6 +1161,21 @@ export class TradeScene {
 
       if (!this.clickCandidate) return;
 
+      if (this.lootAnim) {
+        for (const h of this.hitLootButtons || []) {
+          if (!pointInRect(px, py, h.rect)) continue;
+          if (h.action === "loot_spin") {
+            this._spinPremiumWheel();
+            return;
+          }
+          if (h.action === "loot_close") {
+            this._closeLootOverlay();
+            return;
+          }
+        }
+        return;
+      }
+
       if (this.hitBack && pointInRect(px, py, this.hitBack)) {
         this._goBack();
         return;
@@ -1726,7 +1764,7 @@ for (const p of products) {
       w,
       124,
       "Sandık & Çark",
-      this._isFreeSpinReady() ? "Günlük sandık hazır" : "Premium çark aktif",
+      this._isFreeSpinReady() ? "Kasa akışı • küçük ve büyük ödüller" : "Çarkta ödüller yazılı • döndür ve kazan",
       "PREMIUM LOOT",
       "🎰",
       "#c77dff"
@@ -2123,41 +2161,173 @@ strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
     }
 
 
-    if (this.lootAnim && Date.now() < this.lootAnimUntil) {
+
+    if (this.lootAnim) {
       const anim = this.lootAnim;
       const now = Date.now();
-      const t = clamp((now - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
-      const cx = panelX + panelW / 2;
-      const cy = panelY + panelH / 2 - 10;
-      const overlayAlpha = 0.18 + (1 - Math.abs(t - 0.5) * 2) * 0.16;
+      const ox = panelX + 18;
+      const oy = panelY + 18;
+      const ow = panelW - 36;
+      const oh = panelH - 36;
+      const cx = ox + ow / 2;
+      const cy = oy + oh / 2 - 20;
 
       ctx.save();
-      ctx.fillStyle = `rgba(0,0,0,${overlayAlpha.toFixed(3)})`;
-      fillRoundRect(ctx, panelX + 18, panelY + 18, panelW - 36, panelH - 36, 28);
+      ctx.fillStyle = "rgba(0,0,0,0.70)";
+      fillRoundRect(ctx, ox, oy, ow, oh, 28);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      strokeRoundRect(ctx, ox, oy, ow, oh, 28);
 
-      const pulse = 1 + Math.sin(t * Math.PI * (anim.type === "wheel" ? 5 : 3)) * 0.08;
-      const icon = anim.type === "wheel" ? "🎡" : "📦";
-      const ringR = 44 + t * 34;
+      if (anim.kind === "wheel") {
+        const rewards = anim.rewards || [];
+        const wedge = (Math.PI * 2) / Math.max(1, rewards.length);
+        let angle = 0;
+        if (anim.phase === "spinning") {
+          const t = clamp((now - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
+          const ease = 1 - Math.pow(1 - t, 3);
+          angle = (anim.startAngle || 0) + ((anim.targetAngle || 0) - (anim.startAngle || 0)) * ease;
+        } else if (anim.phase === "result") {
+          angle = anim.targetAngle || 0;
+        }
 
-      ctx.strokeStyle = anim.type === "wheel" ? "rgba(255,196,100,0.80)" : "rgba(98,179,255,0.80)";
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-      ctx.stroke();
+        const radius = Math.min(ow, oh) * 0.28;
+        const colors = ["#ffb347","#ff6b6b","#5ec7ff","#7ee081","#c77dff","#ffd166","#ff925a","#8cc8ff"];
 
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = `900 ${Math.floor((anim.type === "wheel" ? 46 : 42) * pulse)}px system-ui`;
-      ctx.fillText(icon, cx, cy - 2);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        for (let i = 0; i < rewards.length; i++) {
+          const start = i * wedge;
+          const end = start + wedge;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, radius, start, end);
+          ctx.closePath();
+          ctx.fillStyle = colors[i % colors.length];
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.35)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
 
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "900 18px system-ui";
-      ctx.fillText(anim.label, cx, cy + 72);
+          ctx.save();
+          ctx.rotate(start + wedge / 2);
+          ctx.textAlign = "right";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#fff";
+          ctx.font = "900 10px system-ui";
+          const label = String(rewards[i].label || "").slice(0, 12);
+          ctx.fillText(label, radius - 10, 0);
+          ctx.restore();
+        }
+        ctx.restore();
 
-      ctx.fillStyle = "rgba(255,224,160,0.96)";
-      ctx.font = "900 16px system-ui";
-      ctx.fillText(anim.rewardText, cx, cy + 102);
+        ctx.fillStyle = "#111";
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.35)";
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffd36c";
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - radius - 20);
+        ctx.lineTo(cx - 12, cy - radius + 10);
+        ctx.lineTo(cx + 12, cy - radius + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#fff";
+        ctx.font = "900 22px system-ui";
+        ctx.fillText("Premium Çark", cx, oy + 34);
+
+        if (anim.phase === "idle") {
+          const spinRect = { x: cx - 74, y: oy + oh - 64, w: 148, h: 40 };
+          this.hitLootButtons.push({ rect: spinRect, action: "loot_spin" });
+          this._drawButton(ctx, spinRect, "Döndür", "gold");
+        } else if (anim.phase === "result") {
+          ctx.fillStyle = "rgba(255,224,160,0.98)";
+          ctx.font = "900 18px system-ui";
+          ctx.fillText(`Şu ödülü kazandın: ${anim.rewardText || ""}`, cx, oy + oh - 82);
+
+          const closeRect = { x: cx - 74, y: oy + oh - 56, w: 148, h: 36 };
+          this.hitLootButtons.push({ rect: closeRect, action: "loot_close" });
+          this._drawButton(ctx, closeRect, "Kapat", "primary");
+        } else {
+          ctx.fillStyle = "rgba(255,255,255,0.86)";
+          ctx.font = "800 14px system-ui";
+          ctx.fillText("Çark dönüyor...", cx, oy + oh - 42);
+        }
+      } else if (anim.kind === "crate") {
+        const rewards = anim.rewards || [];
+        const slotW = Math.min(ow - 80, 320);
+        const slotH = 78;
+        const slotX = cx - slotW / 2;
+        const slotY = cy - slotH / 2 + 16;
+        const boxW = 112;
+        const gap = 16;
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#fff";
+        ctx.font = "900 22px system-ui";
+        ctx.fillText("Günlük Sandık", cx, oy + 34);
+
+        fillRoundRect(ctx, slotX, slotY, slotW, slotH, 18);
+        ctx.fillStyle = "rgba(255,255,255,0.07)";
+        ctx.fillRect(slotX, slotY, slotW, slotH);
+        ctx.strokeStyle = "rgba(255,255,255,0.16)";
+        strokeRoundRect(ctx, slotX, slotY, slotW, slotH, 18);
+
+        ctx.strokeStyle = "#ffd36c";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx, slotY - 8);
+        ctx.lineTo(cx, slotY + slotH + 8);
+        ctx.stroke();
+
+        let offset = 0;
+        if (anim.phase === "spinning") {
+          const t = clamp((now - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
+          const ease = 1 - Math.pow(1 - t, 3);
+          offset = (anim.travel || 1800) * (1 - ease);
+        }
+        const centerBase = cx - boxW / 2 - (anim.resultIndex || 0) * (boxW + gap);
+
+        for (let i = 0; i < rewards.length; i++) {
+          const rx = centerBase + i * (boxW + gap) + offset;
+          if (rx + boxW < slotX - 120 || rx > slotX + slotW + 120) continue;
+
+          const reward = rewards[i];
+          fillRoundRect(ctx, rx, slotY + 8, boxW, slotH - 16, 16);
+          ctx.fillStyle = reward.tier === "big" ? "rgba(255,196,100,0.18)" : "rgba(255,255,255,0.08)";
+          ctx.fillRect(rx, slotY + 8, boxW, slotH - 16);
+          ctx.strokeStyle = reward.tier === "big" ? "rgba(255,196,100,0.55)" : "rgba(255,255,255,0.16)";
+          strokeRoundRect(ctx, rx, slotY + 8, boxW, slotH - 16, 16);
+
+          ctx.fillStyle = "#fff";
+          ctx.font = "900 14px system-ui";
+          ctx.fillText(reward.kind === "item" ? (reward.item?.icon || "🎁") : (reward.kind === "energy" ? "⚡" : "💰"), rx + boxW / 2, slotY + 28);
+          ctx.font = "900 12px system-ui";
+          ctx.fillText(String(reward.label || "").slice(0, 14), rx + boxW / 2, slotY + 54);
+        }
+
+        if (anim.phase === "result") {
+          ctx.fillStyle = "rgba(255,224,160,0.98)";
+          ctx.font = "900 18px system-ui";
+          ctx.fillText(`Şu ödülü kazandın: ${anim.rewardText || ""}`, cx, oy + oh - 82);
+
+          const closeRect = { x: cx - 74, y: oy + oh - 56, w: 148, h: 36 };
+          this.hitLootButtons.push({ rect: closeRect, action: "loot_close" });
+          this._drawButton(ctx, closeRect, "Kapat", "primary");
+        } else {
+          ctx.fillStyle = "rgba(255,255,255,0.86)";
+          ctx.font = "800 14px system-ui";
+          ctx.fillText("Kasa dönüyor...", cx, oy + oh - 42);
+        }
+      }
+
       ctx.restore();
     }
 
