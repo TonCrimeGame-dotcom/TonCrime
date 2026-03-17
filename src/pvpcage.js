@@ -813,6 +813,64 @@
       }
     },
 
+    _recordResult(win) {
+      const store = window.tcStore;
+      const now = Date.now();
+      const REWARD_COINS = 16;
+      const opponent = this._opponent?.username || "Rakip";
+      const resultItem = {
+        id: `pvp_${now}`,
+        opponent,
+        result: win ? "win" : "loss",
+        mode: "cage_fight",
+        meHp: Math.round(this._state?.meHp || 0),
+        enemyHp: Math.round(this._state?.enemyHp || 0),
+        at: now,
+      };
+
+      if (store?.get && store?.set) {
+        const state = store.get() || {};
+        const pvp = { ...(state.pvp || {}) };
+        const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
+        const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
+        const playerName = String(state?.player?.username || "Player");
+        const nextCoins = Number(state.coins || 0) + (win && !pvp.payoutDone ? REWARD_COINS : 0);
+
+        pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
+        pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
+        pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 16 : -10), 0, 99999);
+        pvp.currentOpponent = opponent;
+        pvp.recentMatches = [resultItem, ...recentMatches];
+        pvp.payoutDone = true;
+
+        const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
+        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
+        nextBoard.push({
+          id: String(state?.player?.id || "player_main"),
+          name: playerName,
+          wins: Number(pvp.wins || 0),
+          losses: Number(pvp.losses || 0),
+          rating: Number(pvp.rating || 1000),
+          score,
+          updatedAt: now,
+        });
+        nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+        pvp.leaderboard = nextBoard.slice(0, 50);
+
+        store.set({
+          coins: nextCoins,
+          pvp,
+        });
+      }
+
+      const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
+      try {
+        window.dispatchEvent(new CustomEvent(eventName, { detail: resultItem }));
+      } catch (_) {
+        window.dispatchEvent(new Event(eventName));
+      }
+    },
+
     _finish(win, reason) {
       if (!this._state || this._state.finished) return;
       this._state.finished = true;
@@ -820,6 +878,7 @@
 
       this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
       this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
+      this._recordResult(win);
       this._updateHud();
       this._render();
     },
