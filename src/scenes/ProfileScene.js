@@ -1,6 +1,7 @@
+import { supabase } from "../supabase.js";
 
 function pointInRect(px, py, r) {
-  return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
 function clamp(n, a, b) {
@@ -55,9 +56,9 @@ function getInitials(name) {
   return raw.slice(0, 2).toUpperCase();
 }
 
-function moneyFmt(n, digits = 0) {
+function moneyFmt(n) {
   const v = Number(n || 0);
-  return Number.isFinite(v) ? v.toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits }) : "0";
+  return Number.isFinite(v) ? v.toLocaleString("tr-TR") : "0";
 }
 
 function makeImage(url) {
@@ -67,48 +68,343 @@ function makeImage(url) {
   return img;
 }
 
-function drawGlassPanel(ctx, x, y, w, h, r = 22) {
-  const g = ctx.createLinearGradient(x, y, x, y + h);
-  g.addColorStop(0, "rgba(28,33,44,0.42)");
-  g.addColorStop(0.25, "rgba(17,21,30,0.26)");
-  g.addColorStop(1, "rgba(6,9,14,0.50)");
-  ctx.fillStyle = g;
-  fillRoundRect(ctx, x, y, w, h, r);
-  ctx.strokeStyle = "rgba(255,255,255,0.10)";
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
-  const shine = ctx.createLinearGradient(x, y, x, y + h * 0.38);
-  shine.addColorStop(0, "rgba(255,255,255,0.11)");
-  shine.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = shine;
-  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.34, Math.max(8, r - 2));
+function textFit(ctx, text, maxWidth, startSize, weight = 900, family = "system-ui") {
+  let size = startSize;
+  while (size > 10) {
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) return size;
+    size -= 1;
+  }
+  return 10;
 }
 
-function drawButtonPlate(ctx, x, y, w, h, accent = "muted") {
+function drawPanelGradient(ctx, x, y, w, h, c1, c2, r) {
   const g = ctx.createLinearGradient(x, y, x, y + h);
-  if (accent === "gold") {
-    g.addColorStop(0, "rgba(130,94,28,0.68)");
-    g.addColorStop(1, "rgba(88,60,15,0.78)");
-  } else if (accent === "blue") {
-    g.addColorStop(0, "rgba(74,116,196,0.56)");
-    g.addColorStop(1, "rgba(23,44,88,0.72)");
-  } else if (accent === "green") {
-    g.addColorStop(0, "rgba(44,150,116,0.58)");
-    g.addColorStop(1, "rgba(19,72,58,0.74)");
-  } else {
-    g.addColorStop(0, "rgba(255,255,255,0.10)");
-    g.addColorStop(1, "rgba(255,255,255,0.04)");
+  g.addColorStop(0, c1);
+  g.addColorStop(1, c2);
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, r);
+}
+
+function drawInnerGlow(ctx, x, y, w, h, color, blur = 16) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, x + 1, y + 1, w - 2, h - 2, 18);
+  ctx.restore();
+}
+
+function drawTopHighlight(ctx, x, y, w, h, r) {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, "rgba(255,255,255,0.10)");
+  g.addColorStop(0.35, "rgba(255,255,255,0.035)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, r);
+}
+
+function drawCornerPlate(ctx, x, y, size, corner) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  if (corner === "tr") {
+    ctx.translate(size, 0);
+    ctx.scale(-1, 1);
+  } else if (corner === "bl") {
+    ctx.translate(0, size);
+    ctx.scale(1, -1);
+  } else if (corner === "br") {
+    ctx.translate(size, size);
+    ctx.scale(-1, -1);
   }
 
+  ctx.beginPath();
+  ctx.moveTo(0, size);
+  ctx.lineTo(0, 12);
+  ctx.lineTo(12, 0);
+  ctx.lineTo(size, 0);
+  ctx.lineTo(size - 16, 16);
+  ctx.lineTo(16, 16);
+  ctx.lineTo(16, size - 16);
+  ctx.closePath();
+
+  const g = ctx.createLinearGradient(0, 0, size, size);
+  g.addColorStop(0, "#6d737f");
+  g.addColorStop(0.25, "#2f3541");
+  g.addColorStop(1, "#141820");
   ctx.fillStyle = g;
-  fillRoundRect(ctx, x, y, w, h, 16);
-  ctx.strokeStyle =
-    accent === "gold" ? "rgba(255,211,128,0.28)" :
-    accent === "blue" ? "rgba(137,178,255,0.30)" :
-    accent === "green" ? "rgba(132,245,208,0.22)" :
-    "rgba(255,255,255,0.12)";
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
   ctx.lineWidth = 1;
-  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 16);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawHeaderPlate(ctx, x, y, w, h) {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, "#363842");
+  g.addColorStop(0.25, "#1b1f27");
+  g.addColorStop(1, "#0f1218");
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, 8);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 8);
+
+  const shine = ctx.createLinearGradient(x, y, x, y + h * 0.6);
+  shine.addColorStop(0, "rgba(255,255,255,0.16)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shine;
+  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.5, 8);
+}
+
+function drawSlicedBarEnd(ctx, x, y, w, h, rightSide = false) {
+  ctx.save();
+  if (rightSide) {
+    ctx.translate(x + w, y);
+    ctx.scale(-1, 1);
+    x = 0;
+    y = 0;
+  }
+  ctx.beginPath();
+  ctx.moveTo(x, y + h);
+  ctx.lineTo(x, y + 18);
+  ctx.lineTo(x + 18, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w - 18, y + h);
+  ctx.closePath();
+
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, "#2a2d34");
+  g.addColorStop(1, "#0f1218");
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMetalTile(ctx, x, y, w, h, radius = 18) {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, "#2a2d36");
+  g.addColorStop(0.18, "#191c24");
+  g.addColorStop(1, "#0b0e14");
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, radius);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, radius);
+
+  const inner = ctx.createLinearGradient(x, y, x, y + h * 0.42);
+  inner.addColorStop(0, "rgba(255,255,255,0.10)");
+  inner.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = inner;
+  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.35, radius);
+
+  ctx.strokeStyle = "rgba(255,170,80,0.08)";
+  strokeRoundRect(ctx, x + 4, y + 4, w - 8, h - 8, Math.max(8, radius - 5));
+}
+
+function drawButtonPlate(ctx, x, y, w, h, accent = "amber") {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, "#3a3e47");
+  g.addColorStop(0.18, "#1b1f27");
+  g.addColorStop(1, "#0d1017");
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x, y, w, h, 14);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 14);
+
+  const inner = ctx.createLinearGradient(x, y, x, y + h * 0.46);
+  inner.addColorStop(0, "rgba(255,255,255,0.15)");
+  inner.addColorStop(1, "rgba(255,255,255,0.02)");
+  ctx.fillStyle = inner;
+  fillRoundRect(ctx, x + 1, y + 1, w - 2, h * 0.42, 13);
+
+  const color =
+    accent === "red"
+      ? "rgba(255,88,88,0.78)"
+      : accent === "blue"
+      ? "rgba(90,170,255,0.72)"
+      : "rgba(255,182,74,0.85)";
+
+  const ag = ctx.createLinearGradient(x, 0, x + w, 0);
+  ag.addColorStop(0, "rgba(255,255,255,0)");
+  ag.addColorStop(0.5, color);
+  ag.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = ag;
+  fillRoundRect(ctx, x + 20, y + h - 4, w - 40, 2, 1);
+}
+
+function drawBadgeChip(ctx, x, y, w, h, fill, text, textColor = "#fff") {
+  ctx.fillStyle = fill;
+  fillRoundRect(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = textColor;
+  ctx.font = "900 12px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + w / 2, y + h / 2 + 1);
+}
+
+function drawBusinessArtwork(ctx, x, y, w, h) {
+  const bg = ctx.createLinearGradient(x, y, x, y + h);
+  bg.addColorStop(0, "#191d28");
+  bg.addColorStop(1, "#10131a");
+  ctx.fillStyle = bg;
+  fillRoundRect(ctx, x, y, w, h, 10);
+
+  const glow = ctx.createRadialGradient(x + w * 0.5, y + h * 0.58, 4, x + w * 0.5, y + h * 0.58, w * 0.7);
+  glow.addColorStop(0, "rgba(255,154,70,0.20)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  fillRoundRect(ctx, x, y, w, h, 10);
+
+  const baseY = y + h * 0.74;
+
+  ctx.fillStyle = "#1f2630";
+  fillRoundRect(ctx, x + w * 0.08, y + h * 0.34, w * 0.42, h * 0.38, 6);
+
+  ctx.fillStyle = "#242c37";
+  fillRoundRect(ctx, x + w * 0.46, y + h * 0.28, w * 0.34, h * 0.44, 6);
+
+  ctx.fillStyle = "#0f1319";
+  fillRoundRect(ctx, x + w * 0.20, y + h * 0.50, w * 0.10, h * 0.22, 4);
+
+  ctx.fillStyle = "#ffb347";
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 3; c++) {
+      fillRoundRect(
+        ctx,
+        x + w * (0.12 + c * 0.10),
+        y + h * (0.40 + r * 0.12),
+        w * 0.06,
+        h * 0.07,
+        2
+      );
+    }
+  }
+
+  ctx.fillStyle = "#84c8ff";
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 2; c++) {
+      fillRoundRect(
+        ctx,
+        x + w * (0.54 + c * 0.10),
+        y + h * (0.38 + r * 0.14),
+        w * 0.07,
+        h * 0.08,
+        2
+      );
+    }
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  strokeRoundRect(ctx, x + w * 0.08, y + h * 0.34, w * 0.42, h * 0.38, 6);
+  strokeRoundRect(ctx, x + w * 0.46, y + h * 0.28, w * 0.34, h * 0.44, 6);
+
+  ctx.strokeStyle = "rgba(255,170,80,0.35)";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.82, y + h * 0.18);
+  ctx.quadraticCurveTo(x + w * 0.96, y + h * 0.24, x + w * 0.92, y + h * 0.54);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.06, baseY);
+  ctx.lineTo(x + w * 0.94, baseY);
+  ctx.stroke();
+}
+
+function drawCrateArtwork(ctx, x, y, w, h) {
+  const bg = ctx.createLinearGradient(x, y, x, y + h);
+  bg.addColorStop(0, "#1a1c24");
+  bg.addColorStop(1, "#0f1218");
+  ctx.fillStyle = bg;
+  fillRoundRect(ctx, x, y, w, h, 10);
+
+  const g = ctx.createLinearGradient(x, y + h * 0.18, x, y + h * 0.82);
+  g.addColorStop(0, "#b88338");
+  g.addColorStop(0.5, "#7f5428");
+  g.addColorStop(1, "#4a311d");
+
+  ctx.fillStyle = g;
+  fillRoundRect(ctx, x + w * 0.20, y + h * 0.32, w * 0.60, h * 0.38, 8);
+
+  ctx.fillStyle = "#d6a65b";
+  fillRoundRect(ctx, x + w * 0.20, y + h * 0.22, w * 0.60, h * 0.12, 7);
+
+  ctx.fillStyle = "rgba(255,235,190,0.30)";
+  fillRoundRect(ctx, x + w * 0.31, y + h * 0.32, w * 0.06, h * 0.38, 3);
+  fillRoundRect(ctx, x + w * 0.63, y + h * 0.32, w * 0.06, h * 0.38, 3);
+
+  ctx.fillStyle = "#efd29a";
+  fillRoundRect(ctx, x + w * 0.47, y + h * 0.42, w * 0.08, h * 0.11, 3);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.strokeRect(x + w * 0.20, y + h * 0.32, w * 0.60, h * 0.38);
+
+  const light = ctx.createRadialGradient(x + w * 0.5, y + h * 0.45, 4, x + w * 0.5, y + h * 0.45, w * 0.5);
+  light.addColorStop(0, "rgba(255,187,95,0.24)");
+  light.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = light;
+  fillRoundRect(ctx, x, y, w, h, 10);
+}
+
+function drawSkullArtwork(ctx, x, y, w, h) {
+  const bg = ctx.createLinearGradient(x, y, x, y + h);
+  bg.addColorStop(0, "#1b1c22");
+  bg.addColorStop(1, "#101218");
+  ctx.fillStyle = bg;
+  fillRoundRect(ctx, x, y, w, h, 10);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.24, y + h * 0.76);
+  ctx.lineTo(x + w * 0.76, y + h * 0.22);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.76, y + h * 0.76);
+  ctx.lineTo(x + w * 0.24, y + h * 0.22);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(245,240,232,0.96)";
+  ctx.beginPath();
+  ctx.arc(x + w * 0.50, y + h * 0.40, w * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  fillRoundRect(ctx, x + w * 0.40, y + h * 0.49, w * 0.20, h * 0.12, 5);
+
+  ctx.fillStyle = "#16171d";
+  ctx.beginPath();
+  ctx.arc(x + w * 0.45, y + h * 0.39, w * 0.028, 0, Math.PI * 2);
+  ctx.arc(x + w * 0.55, y + h * 0.39, w * 0.028, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.50, y + h * 0.44);
+  ctx.lineTo(x + w * 0.47, y + h * 0.49);
+  ctx.lineTo(x + w * 0.53, y + h * 0.49);
+  ctx.closePath();
+  ctx.fill();
+
+  const fire = ctx.createRadialGradient(x + w * 0.50, y + h * 0.52, 4, x + w * 0.50, y + h * 0.52, w * 0.44);
+  fire.addColorStop(0, "rgba(255,120,80,0.10)");
+  fire.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = fire;
+  fillRoundRect(ctx, x, y, w, h, 10);
 }
 
 export class ProfileScene {
@@ -118,531 +414,804 @@ export class ProfileScene {
     this.scenes = scenes;
     this.assets = assets;
 
+    this.hitBack = null;
     this.hitClose = null;
-    this.hitTabs = [];
-    this.hitWalletButtons = [];
     this.hitEditAvatar = null;
     this.hitLeaderboard = null;
+    this.hitWalletConnect = null;
+    this.hitConvert = null;
+    this.hitWithdraw = null;
+    this.hitWalletRefresh = null;
 
     this._avatarUrl = "";
     this._avatarImg = null;
-    this.toastText = "";
-    this.toastUntil = 0;
+    this.walletConnection = null;
+    this.walletLedger = [];
+    this.withdrawRequests = [];
+    this.walletLoading = false;
   }
 
   onEnter() {
+    this._syncWalletPanel();
+  }
+
+
+  _getTelegramId() {
     const s = this.store.get() || {};
-    const ui = s.ui || {};
-    const wallet = s.wallet || {};
-    this.store.set({
-      ui: {
-        ...ui,
-        profileTab: ui.profileTab || "profile",
-      },
-      wallet: {
-        connected: !!wallet.connected,
-        brand: wallet.brand || "",
-        address: wallet.address || "",
-        tonBalance: Number(wallet.tonBalance || 0),
-        totalConvertedTon: Number(wallet.totalConvertedTon || 0),
-        totalWithdrawnTon: Number(wallet.totalWithdrawnTon || 0),
-        ledger: Array.isArray(wallet.ledger) ? wallet.ledger : [],
-      },
-    });
+    return String(
+      s?.player?.telegramId ||
+      window.Telegram?.WebApp?.initDataUnsafe?.user?.id ||
+      ""
+    ).trim();
   }
 
-  _showToast(text, ms = 1600) {
-    this.toastText = String(text || "");
-    this.toastUntil = Date.now() + ms;
+  async _getProfileId() {
+    const telegramId = this._getTelegramId();
+    if (!telegramId) throw new Error("telegram_id bulunamadı");
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data?.id) throw new Error("Profil bulunamadı");
+    return data.id;
   }
 
-  _profileTab() {
-    return String(this.store.get()?.ui?.profileTab || "profile");
-  }
+  async _syncWalletPanel() {
+    this.walletLoading = true;
+    try {
+      const profileId = await this._getProfileId();
 
-  _setProfileTab(tab) {
-    const s = this.store.get() || {};
-    this.store.set({
-      ui: {
-        ...(s.ui || {}),
-        profileTab: tab,
-      },
-    });
-  }
+      const [{ data: walletRows, error: walletErr }, { data: ledgerRows, error: ledgerErr }, { data: withdrawRows, error: withdrawErr }] = await Promise.all([
+        supabase
+          .from("wallet_connections")
+          .select("*")
+          .eq("profile_id", profileId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("wallet_ledger")
+          .select("*")
+          .eq("profile_id", profileId)
+          .order("created_at", { ascending: false })
+          .limit(8),
+        supabase
+          .from("withdraw_requests")
+          .select("*")
+          .eq("profile_id", profileId)
+          .order("created_at", { ascending: false })
+          .limit(6),
+      ]);
 
-  _wallet() {
-    return this.store.get()?.wallet || {};
-  }
+      if (walletErr) throw walletErr;
+      if (ledgerErr) throw ledgerErr;
+      if (withdrawErr) throw withdrawErr;
 
-  _pushWalletLedger(type, amountTon = 0, amountYton = 0, note = "") {
-    const s = this.store.get() || {};
-    const wallet = this._wallet();
-    const ledger = Array.isArray(wallet.ledger) ? wallet.ledger.slice() : [];
-    ledger.unshift({
-      id: `${type}_${Date.now()}`,
-      type,
-      amountTon: Number(amountTon || 0),
-      amountYton: Number(amountYton || 0),
-      note: String(note || ""),
-      at: Date.now(),
-    });
-    this.store.set({
-      wallet: {
-        ...wallet,
-        ledger: ledger.slice(0, 30),
-      },
-    });
-  }
-
-  _connectWallet(brand) {
-    const brands = ["Tonkeeper", "MyTonWallet", "OpenMask", "Tonhub"];
-    const chosen = brand || window.prompt(`Cüzdan markası seç:\n${brands.join(" / ")}`, "Tonkeeper");
-    if (!chosen) return;
-    const cleanBrand = String(chosen).trim();
-    const address = window.prompt(`${cleanBrand} adresini gir:`, this._wallet().address || "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-    if (!address) return;
-
-    const s = this.store.get() || {};
-    const wallet = this._wallet();
-    this.store.set({
-      wallet: {
-        ...wallet,
-        connected: true,
-        brand: cleanBrand,
-        address: String(address).trim(),
-      },
-    });
-    this._pushWalletLedger("connect", 0, 0, `${cleanBrand} bağlandı`);
-    this._showToast(`${cleanBrand} bağlandı`);
-  }
-
-  _convertYtonToTon() {
-    const s = this.store.get() || {};
-    const currentYton = Number(s.coins || 0);
-    const raw = window.prompt("Kaç YTON dönüştürmek istiyorsun?\n1 YTON = 0.05 TON", "100");
-    if (raw === null) return;
-    const amountYton = Math.max(0, Number(raw));
-    if (!amountYton || !Number.isFinite(amountYton)) {
-      this._showToast("Geçersiz miktar");
-      return;
+      this.walletConnection = Array.isArray(walletRows) && walletRows.length ? walletRows[0] : null;
+      this.walletLedger = Array.isArray(ledgerRows) ? ledgerRows : [];
+      this.withdrawRequests = Array.isArray(withdrawRows) ? withdrawRows : [];
+    } catch (err) {
+      console.warn("[ProfileScene] wallet sync:", err?.message || err);
+      this.walletConnection = null;
+      this.walletLedger = [];
+      this.withdrawRequests = [];
+    } finally {
+      this.walletLoading = false;
     }
-    if (amountYton > currentYton) {
-      this._showToast("Yetersiz YTON");
-      return;
-    }
-
-    const tonAmount = amountYton * 0.05;
-    const wallet = this._wallet();
-    this.store.set({
-      coins: currentYton - amountYton,
-      wallet: {
-        ...wallet,
-        tonBalance: Number(wallet.tonBalance || 0) + tonAmount,
-        totalConvertedTon: Number(wallet.totalConvertedTon || 0) + tonAmount,
-      },
-    });
-    this._pushWalletLedger("convert", tonAmount, amountYton, `${moneyFmt(amountYton)} YTON -> ${moneyFmt(tonAmount, 2)} TON`);
-    this._showToast(`${moneyFmt(amountYton)} YTON dönüştürüldü`);
   }
 
-  _requestWithdraw() {
-    const wallet = this._wallet();
-    const balance = Number(wallet.tonBalance || 0);
-    const raw = window.prompt(`Kaç TON çekmek istiyorsun?\nMevcut TON: ${moneyFmt(balance, 2)}`, moneyFmt(balance, 2));
-    if (raw === null) return;
-    const tonAmount = Math.max(0, Number(raw));
-    if (!tonAmount || !Number.isFinite(tonAmount)) {
-      this._showToast("Geçersiz miktar");
-      return;
-    }
-    if (tonAmount > balance) {
-      this._showToast("Yetersiz TON bakiye");
-      return;
-    }
-    const targetAddress = wallet.connected && wallet.address
-      ? wallet.address
-      : window.prompt("Çekim yapılacak TON adresi:", "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-    if (!targetAddress) return;
+  async _connectWalletFlow() {
+    try {
+      const profileId = await this._getProfileId();
+      const s = this.store.get() || {};
+      const telegramId = this._getTelegramId();
+      const username = String(s.player?.username || "Player");
 
-    const s = this.store.get() || {};
-    this.store.set({
-      wallet: {
-        ...wallet,
-        tonBalance: balance - tonAmount,
-        totalWithdrawnTon: Number(wallet.totalWithdrawnTon || 0) + tonAmount,
-      },
-    });
-    this._pushWalletLedger("withdraw", tonAmount, 0, `Çekim talebi • ${String(targetAddress).slice(0, 10)}...`);
-    this._showToast(`${moneyFmt(tonAmount, 2)} TON çekim talebi oluşturuldu`);
+      const provider = window.prompt("Cüzdan markası seç:
+Tonkeeper / MyTonWallet / OpenMask", "Tonkeeper");
+      if (provider === null) return;
+
+      const walletAddress = window.prompt("Cüzdan adresini gir:", this.walletConnection?.wallet_address || "");
+      if (walletAddress === null) return;
+      const addr = String(walletAddress || "").trim();
+      if (!addr) {
+        this._showToast?.("Cüzdan adresi boş olamaz");
+        return;
+      }
+
+      await supabase
+        .from("wallet_connections")
+        .update({ is_active: false })
+        .eq("profile_id", profileId)
+        .eq("is_active", true);
+
+      const { error } = await supabase
+        .from("wallet_connections")
+        .insert([{
+          profile_id: profileId,
+          telegram_id: telegramId || null,
+          username,
+          wallet_provider: String(provider || "Tonkeeper"),
+          wallet_address: addr,
+          is_active: true,
+        }]);
+      if (error) throw error;
+
+      this.walletConnection = {
+        wallet_provider: String(provider || "Tonkeeper"),
+        wallet_address: addr,
+        is_active: true,
+      };
+
+      this._showToast?.("Cüzdan bağlandı");
+      await this._syncWalletPanel();
+    } catch (err) {
+      console.error("[ProfileScene] wallet connect:", err);
+      this._showToast?.(err?.message || "Cüzdan bağlanamadı");
+    }
   }
+
+  async _convertYtonFlow() {
+    try {
+      const s = this.store.get() || {};
+      const p = s.player || {};
+      const coins = Number(s.coins || 0);
+      const rate = 0.05;
+
+      const raw = window.prompt(`Dönüştürülecek YTON miktarı (Bakiye: ${coins})`, "100");
+      if (raw === null) return;
+
+      const ytonAmount = Math.max(0, Number(raw || 0));
+      if (!ytonAmount) {
+        this._showToast?.("Geçersiz miktar");
+        return;
+      }
+      if (ytonAmount > coins) {
+        this._showToast?.("Yetersiz YTON");
+        return;
+      }
+
+      const tonAmount = Number((ytonAmount * rate).toFixed(6));
+      const profileId = await this._getProfileId();
+
+      const { error } = await supabase
+        .from("wallet_ledger")
+        .insert([{
+          profile_id: profileId,
+          telegram_id: this._getTelegramId() || null,
+          username: String(p.username || "Player"),
+          entry_type: "convert",
+          yton_amount: -ytonAmount,
+          ton_amount: tonAmount,
+          note: `YTON → TON dönüşümü (${rate})`,
+        }]);
+      if (error) throw error;
+
+      this.store.set({ coins: coins - ytonAmount });
+      this._showToast?.(`Dönüştürüldü: ${ytonAmount} YTON → ${tonAmount} TON`);
+      await this._syncWalletPanel();
+    } catch (err) {
+      console.error("[ProfileScene] convert:", err);
+      this._showToast?.(err?.message || "Dönüşüm başarısız");
+    }
+  }
+
+  async _createWithdrawFlow() {
+    try {
+      const s = this.store.get() || {};
+      const p = s.player || {};
+      const coins = Number(s.coins || 0);
+      const wallet = this.walletConnection;
+
+      if (!wallet?.wallet_address) {
+        this._showToast?.("Önce cüzdan bağla");
+        return;
+      }
+
+      const raw = window.prompt(`Çekilecek YTON miktarı (Bakiye: ${coins})`, "100");
+      if (raw === null) return;
+
+      const ytonAmount = Math.max(0, Number(raw || 0));
+      if (!ytonAmount) {
+        this._showToast?.("Geçersiz miktar");
+        return;
+      }
+      if (ytonAmount > coins) {
+        this._showToast?.("Yetersiz YTON");
+        return;
+      }
+
+      const rate = 0.05;
+      const tonAmount = Number((ytonAmount * rate).toFixed(6));
+      const profileId = await this._getProfileId();
+
+      const { error } = await supabase
+        .from("withdraw_requests")
+        .insert([{
+          profile_id: profileId,
+          telegram_id: this._getTelegramId() || null,
+          username: String(p.username || "Player"),
+          wallet_address: wallet.wallet_address,
+          yton_amount: ytonAmount,
+          ton_amount: tonAmount,
+          rate,
+          status: "pending",
+          note: "ProfileScene çekim talebi",
+        }]);
+      if (error) throw error;
+
+      this._showToast?.(`Çekim talebi oluşturuldu: ${tonAmount} TON`);
+      await this._syncWalletPanel();
+    } catch (err) {
+      console.error("[ProfileScene] withdraw:", err);
+      this._showToast?.(err?.message || "Çekim talebi oluşturulamadı");
+    }
+  }
+
 
   update() {
-    const px = this.input?.pointer?.x || 0;
-    const py = this.input?.pointer?.y || 0;
-    if (!this.input?.justReleased?.()) return;
+    const px = this.input.pointer.x;
+    const py = this.input.pointer.y;
 
-    if (this.hitClose && pointInRect(px, py, this.hitClose)) {
-      const s = this.store.get() || {};
-      this.store.set({
-        ui: {
-          ...(s.ui || {}),
-          profileTab: "profile",
-        },
-      });
+    if (!this.input.justReleased()) return;
+
+    if (this.hitBack && pointInRect(px, py, this.hitBack)) {
       this.scenes.go("home");
       return;
     }
 
-    for (const t of this.hitTabs) {
-      if (pointInRect(px, py, t.rect)) {
-        this._setProfileTab(t.tab);
-        return;
-      }
-    }
-
-    if (this._profileTab() === "wallet") {
-      for (const btn of this.hitWalletButtons) {
-        if (!pointInRect(px, py, btn.rect)) continue;
-        if (btn.action === "connect") return this._connectWallet(btn.brand);
-        if (btn.action === "convert") return this._convertYtonToTon();
-        if (btn.action === "withdraw") return this._requestWithdraw();
-      }
+    if (this.hitClose && pointInRect(px, py, this.hitClose)) {
+      this.scenes.go("home");
       return;
     }
 
     if (this.hitEditAvatar && pointInRect(px, py, this.hitEditAvatar)) {
-      this._showToast("Avatar düzenleme yakında");
+      console.log("[ProfileScene] edit avatar yakında");
       return;
     }
 
     if (this.hitLeaderboard && pointInRect(px, py, this.hitLeaderboard)) {
-      this._showToast("Leaderboard yakında");
+      console.log("[ProfileScene] leaderboard yakında");
       return;
     }
-  }
 
-  _drawTopBar(ctx, x, y, w) {
-    drawGlassPanel(ctx, x, y, w, 56, 20);
-
-    ctx.fillStyle = "#f3f6fb";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 18px system-ui";
-    ctx.fillText(this._profileTab() === "wallet" ? "Cüzdan" : "Profil", x + 16, y + 33);
-
-    const tabs = [
-      { tab: "profile", label: "Profil" },
-      { tab: "wallet", label: "Cüzdan" },
-    ];
-    this.hitTabs = [];
-    let tx = x + 98;
-    for (const t of tabs) {
-      const rect = { x: tx, y: y + 10, w: 88, h: 32 };
-      this.hitTabs.push({ rect, tab: t.tab });
-      drawButtonPlate(ctx, rect.x, rect.y, rect.w, rect.h, this._profileTab() === t.tab ? "blue" : "muted");
-      ctx.fillStyle = "#fff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = "900 13px system-ui";
-      ctx.fillText(t.label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
-      tx += 96;
+    if (this.hitWalletConnect && pointInRect(px, py, this.hitWalletConnect)) {
+      this._connectWalletFlow();
+      return;
     }
 
-    this.hitClose = { x: x + w - 46, y: y + 10, w: 34, h: 34 };
-    drawButtonPlate(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, "muted");
-    ctx.fillStyle = "#fff";
-    ctx.fillText("X", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + this.hitClose.h / 2 + 1);
-  }
-
-  _drawProfileTab(ctx, x, y, w, h, state) {
-    const p = state.player || {};
-    const businessesOwned = Array.isArray(state?.businesses?.owned) ? state.businesses.owned.length : 0;
-    const inventoryList = Array.isArray(state?.inventory?.items) ? state.inventory.items : [];
-    const inventoryItems = inventoryList.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
-    const totalInventoryValue = inventoryList.reduce((sum, item) => {
-      const price = Number(item.marketPrice || item.sellPrice || item.price || 0);
-      const qty = Number(item.qty || 0);
-      return sum + Math.max(0, price * qty);
-    }, 0);
-    const clanName = String(state?.clan?.name || state?.clan?.tag || "NEW CLAN");
-    const wins = Math.max(0, Number(state?.pvp?.wins || 0));
-    const losses = Math.max(0, Number(state?.pvp?.losses || 0));
-    const totalFight = wins + losses;
-    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
-
-    const heroH = 166;
-    drawGlassPanel(ctx, x, y, w, heroH, 22);
-
-    const avatarFrameX = x + 16;
-    const avatarFrameY = y + 16;
-    const avatarFrameW = 108;
-    const avatarFrameH = 112;
-    drawGlassPanel(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18);
-
-    const username = String(p.username || "Player").trim() || "Player";
-    const isPremium = !!(state.premium || p.premium || p.isPremium || p.membership === "premium");
-    const avatarUrl = getPlayerAvatar(p);
-    if (avatarUrl !== this._avatarUrl) {
-      this._avatarUrl = avatarUrl;
-      this._avatarImg = makeImage(avatarUrl);
+    if (this.hitConvert && pointInRect(px, py, this.hitConvert)) {
+      this._convertYtonFlow();
+      return;
     }
 
-    const avatarX = avatarFrameX + 10;
-    const avatarY = avatarFrameY + 10;
-    const avatarW = avatarFrameW - 20;
-    const avatarH = avatarFrameH - 20;
-
-    ctx.save();
-    roundRectPath(ctx, avatarX, avatarY, avatarW, avatarH, 14);
-    ctx.clip();
-    if (this._avatarImg && this._avatarImg.complete && this._avatarImg.naturalWidth > 0) {
-      ctx.drawImage(this._avatarImg, avatarX, avatarY, avatarW, avatarH);
-    } else {
-      const ag = ctx.createLinearGradient(avatarX, avatarY, avatarX, avatarY + avatarH);
-      ag.addColorStop(0, "#535966");
-      ag.addColorStop(1, "#2a303a");
-      ctx.fillStyle = ag;
-      ctx.fillRect(avatarX, avatarY, avatarW, avatarH);
-      ctx.fillStyle = "#f2f4f8";
-      ctx.font = "900 28px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(getInitials(username), avatarX + avatarW / 2, avatarY + avatarH / 2 + 2);
-    }
-    ctx.restore();
-
-    if (isPremium) {
-      drawButtonPlate(ctx, avatarFrameX + 8, avatarFrameY - 10, 50, 22, "gold");
-      ctx.fillStyle = "#fff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = "900 11px system-ui";
-      ctx.fillText("VIP", avatarFrameX + 33, avatarFrameY + 1);
+    if (this.hitWithdraw && pointInRect(px, py, this.hitWithdraw)) {
+      this._createWithdrawFlow();
+      return;
     }
 
-    const infoX = avatarFrameX + avatarFrameW + 18;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 24px system-ui";
-    ctx.fillText(username, infoX, y + 36);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(`Seviye ${Math.max(1, Number(p.level || 1))} • Clan ${clanName}`, infoX, y + 58);
-    ctx.fillText(`Enerji ${Number(p.energy || 0)}/${Number(p.energyMax || 100)} • YTON ${moneyFmt(state.coins || 0)}`, infoX, y + 76);
-    ctx.fillText(`İşletme ${businessesOwned} • Envanter ${inventoryItems}`, infoX, y + 94);
-    ctx.fillText(`PvP W/L ${wins}/${losses} • WinRate ${winRate}%`, infoX, y + 112);
-
-    const statsY = y + heroH + 14;
-    const cardW = Math.floor((w - 24) / 3);
-    const titles = [
-      ["İşletmeler", `${businessesOwned}`],
-      ["Envanter Değeri", `${moneyFmt(totalInventoryValue)}`],
-      ["PvP Gücü", `${wins} / ${losses}`],
-    ];
-    for (let i = 0; i < 3; i++) {
-      const cx = x + i * (cardW + 12);
-      drawGlassPanel(ctx, cx, statsY, cardW, 96, 20);
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.textAlign = "center";
-      ctx.font = "800 12px system-ui";
-      ctx.fillText(titles[i][0], cx + cardW / 2, statsY + 26);
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
-      ctx.fillText(titles[i][1], cx + cardW / 2, statsY + 62);
-    }
-
-    const btnY = statsY + 110;
-    const btnW = Math.floor((w - 14) / 2);
-    this.hitEditAvatar = { x, y: btnY, w: btnW, h: 52 };
-    this.hitLeaderboard = { x: x + btnW + 14, y: btnY, w: btnW, h: 52 };
-    drawButtonPlate(ctx, this.hitEditAvatar.x, this.hitEditAvatar.y, this.hitEditAvatar.w, this.hitEditAvatar.h, "blue");
-    drawButtonPlate(ctx, this.hitLeaderboard.x, this.hitLeaderboard.y, this.hitLeaderboard.w, this.hitLeaderboard.h, "gold");
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "900 17px system-ui";
-    ctx.fillText("📷 Avatar", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + 27);
-    ctx.fillText("🏆 Liderlik", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + 27);
-  }
-
-  _drawWalletTab(ctx, x, y, w, h, state) {
-    const wallet = this._wallet();
-    const p = state.player || {};
-    const tonRate = 0.05;
-    const currentYton = Number(state.coins || 0);
-    const availableTon = currentYton * tonRate;
-    const soldValue = Number(state.market?.soldYton || 0);
-    const boughtValue = Number(state.trade?.totalBoughtYton || 0);
-    const wonYton = Number(state.pvp?.wonYton || 0);
-
-    this.hitWalletButtons = [];
-
-    drawGlassPanel(ctx, x, y, w, 136, 22);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 18px system-ui";
-    ctx.fillText("Cüzdan Yönetimi", x + 16, y + 28);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(wallet.connected ? `${wallet.brand} • ${wallet.address}` : "Henüz cüzdan bağlı değil", x + 16, y + 50);
-    ctx.fillText(`YTON ${moneyFmt(currentYton)} • Çevrilebilir TON ${moneyFmt(availableTon, 2)} • TON Bakiye ${moneyFmt(wallet.tonBalance, 2)}`, x + 16, y + 70);
-    ctx.fillText(`Toplam Çevrilen ${moneyFmt(wallet.totalConvertedTon, 2)} TON • Toplam Çekilen ${moneyFmt(wallet.totalWithdrawnTon, 2)} TON`, x + 16, y + 90);
-
-    const btnY = y + 98;
-    const btnW = Math.floor((w - 24) / 3);
-    const brands = ["Tonkeeper", "MyTonWallet", "OpenMask"];
-    for (let i = 0; i < 3; i++) {
-      const rect = { x: x + i * (btnW + 12), y: btnY, w: btnW, h: 28 };
-      this.hitWalletButtons.push({ rect, action: "connect", brand: brands[i] });
-      drawButtonPlate(ctx, rect.x, rect.y, rect.w, rect.h, i === 0 ? "gold" : "muted");
-      ctx.fillStyle = "#fff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = "900 12px system-ui";
-      ctx.fillText(brands[i], rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
-    }
-
-    const boxY = y + 150;
-    const leftW = Math.floor((w - 14) / 2);
-    const rightX = x + leftW + 14;
-
-    drawGlassPanel(ctx, x, boxY, leftW, 146, 20);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 16px system-ui";
-    ctx.fillText("YTON → TON Dönüştür", x + 16, boxY + 26);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.fillText("1 YTON = 0.05 TON", x + 16, boxY + 48);
-    ctx.fillText(`Mevcut: ${moneyFmt(currentYton)} YTON`, x + 16, boxY + 68);
-    ctx.fillText(`Tahmini: ${moneyFmt(availableTon, 2)} TON`, x + 16, boxY + 88);
-    const convertRect = { x: x + 16, y: boxY + 102, w: leftW - 32, h: 32 };
-    this.hitWalletButtons.push({ rect: convertRect, action: "convert" });
-    drawButtonPlate(ctx, convertRect.x, convertRect.y, convertRect.w, convertRect.h, "blue");
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "900 13px system-ui";
-    ctx.fillText("Dönüştür", convertRect.x + convertRect.w / 2, convertRect.y + 17);
-
-    drawGlassPanel(ctx, rightX, boxY, leftW, 146, 20);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 16px system-ui";
-    ctx.fillText("Çekim Talebi", rightX + 16, boxY + 26);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.fillText("Min / Max limit yok", rightX + 16, boxY + 48);
-    ctx.fillText(`TON Bakiye: ${moneyFmt(wallet.tonBalance, 2)}`, rightX + 16, boxY + 68);
-    ctx.fillText(wallet.connected ? "Bağlı adres kullanılacak" : "Adres prompt ile alınacak", rightX + 16, boxY + 88);
-    const withdrawRect = { x: rightX + 16, y: boxY + 102, w: leftW - 32, h: 32 };
-    this.hitWalletButtons.push({ rect: withdrawRect, action: "withdraw" });
-    drawButtonPlate(ctx, withdrawRect.x, withdrawRect.y, withdrawRect.w, withdrawRect.h, "gold");
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "900 13px system-ui";
-    ctx.fillText("Çekim Oluştur", withdrawRect.x + withdrawRect.w / 2, withdrawRect.y + 17);
-
-    const ledgerY = boxY + 160;
-    drawGlassPanel(ctx, x, ledgerY, w, 220, 22);
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 16px system-ui";
-    ctx.fillText("Muhasebe & Rapor", x + 16, ledgerY + 28);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(`Satılan Ürün: ${moneyFmt(soldValue)} YTON • Alınan Ürün: ${moneyFmt(boughtValue)} YTON • Kazanılan YTON: ${moneyFmt(wonYton)}`, x + 16, ledgerY + 48);
-    ctx.fillText(`Dönüştürülen YTON: ${moneyFmt(wallet.totalConvertedTon / 0.05)} • Çekilen TON: ${moneyFmt(wallet.totalWithdrawnTon, 2)}`, x + 16, ledgerY + 66);
-
-    const rows = Array.isArray(wallet.ledger) ? wallet.ledger.slice(0, 5) : [];
-    const baseY = ledgerY + 90;
-    if (!rows.length) {
-      ctx.fillStyle = "rgba(255,255,255,0.56)";
-      ctx.font = "12px system-ui";
-      ctx.fillText("Henüz kayıt yok. Cüzdan bağla, dönüştür veya çekim yapınca burada görünür.", x + 16, baseY);
-    } else {
-      rows.forEach((row, idx) => {
-        const ry = baseY + idx * 24;
-        ctx.fillStyle = idx % 2 === 0 ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)";
-        fillRoundRect(ctx, x + 12, ry - 14, w - 24, 20, 8);
-        const d = new Date(Number(row.at || Date.now()));
-        const stamp = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-        ctx.fillStyle = "#fff";
-        ctx.font = "11px system-ui";
-        ctx.fillText(`${stamp} • ${String(row.type).toUpperCase()} • ${row.note || ""}`, x + 18, ry);
-      });
+    if (this.hitWalletRefresh && pointInRect(px, py, this.hitWalletRefresh)) {
+      this._syncWalletPanel();
+      return;
     }
   }
 
   render(ctx, w, h) {
     const state = this.store.get() || {};
+    const p = state.player || {};
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
-    const topReserved = Number(state?.ui?.hudReservedTop || 108);
-    const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
 
-    const bg = getImgSafe(this.assets, "background") || getImgSafe(this.assets, "trade") || null;
+    const bg =
+      getImgSafe(this.assets, "background") ||
+      getImgSafe(this.assets, "trade") ||
+      null;
+
     if (bg) {
       const iw = bg.width || 1;
       const ih = bg.height || 1;
       const scale = Math.max(w / iw, h / ih);
       const dw = iw * scale;
       const dh = ih * scale;
-      ctx.drawImage(bg, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      ctx.drawImage(bg, dx, dy, dw, dh);
     } else {
       ctx.fillStyle = "#0b0d12";
       ctx.fillRect(0, 0, w, h);
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.48)";
+    ctx.fillStyle = "rgba(0,0,0,0.42)";
     ctx.fillRect(0, 0, w, h);
 
-    const panelX = safe.x + 12;
-    const panelY = safe.y + topReserved + 8;
-    const panelW = safe.w - 24;
-    const panelH = safe.h - topReserved - bottomReserved - 18;
+    const vignette = ctx.createRadialGradient(
+      w * 0.5,
+      h * 0.44,
+      30,
+      w * 0.5,
+      h * 0.44,
+      Math.max(w, h) * 0.76
+    );
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(0.72, "rgba(0,0,0,0.16)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.58)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
 
-    drawGlassPanel(ctx, panelX, panelY, panelW, panelH, 28);
-    const innerX = panelX + 12;
-    const innerY = panelY + 12;
-    const innerW = panelW - 24;
-    const innerH = panelH - 24;
+    const panelW = Math.min(830, safe.w - 28);
+    const panelH = Math.min(720, safe.h - 32);
+    const panelX = safe.x + (safe.w - panelW) / 2;
+    const panelY = safe.y + 14;
 
-    this.hitClose = null;
-    this.hitTabs = [];
-    this.hitWalletButtons = [];
-    this.hitEditAvatar = null;
-    this.hitLeaderboard = null;
+    drawPanelGradient(ctx, panelX, panelY, panelW, panelH, "rgba(38,40,49,0.96)", "rgba(11,13,18,0.98)", 12);
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 12);
 
-    this._drawTopBar(ctx, innerX, innerY, innerW);
+    drawInnerGlow(ctx, panelX, panelY, panelW, panelH, "rgba(255,170,80,0.06)", 18);
 
-    const contentX = innerX;
-    const contentY = innerY + 68;
-    const contentW = innerW;
-    const contentH = innerH - 68;
+    const innerX = panelX + 10;
+    const innerY = panelY + 10;
+    const innerW = panelW - 20;
+    const innerH = panelH - 20;
 
-    if (this._profileTab() === "wallet") {
-      this._drawWalletTab(ctx, contentX, contentY, contentW, contentH, state);
-    } else {
-      this._drawProfileTab(ctx, contentX, contentY, contentW, contentH, state);
+    drawPanelGradient(ctx, innerX, innerY, innerW, innerH, "rgba(22,24,31,0.98)", "rgba(8,10,15,0.99)", 10);
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    strokeRoundRect(ctx, innerX + 0.5, innerY + 0.5, innerW - 1, innerH - 1, 10);
+
+    drawCornerPlate(ctx, panelX + 6, panelY + 6, 28, "tl");
+    drawCornerPlate(ctx, panelX + panelW - 34, panelY + 6, 28, "tr");
+    drawCornerPlate(ctx, panelX + 6, panelY + panelH - 34, 28, "bl");
+    drawCornerPlate(ctx, panelX + panelW - 34, panelY + panelH - 34, 28, "br");
+
+    const headX = innerX + 10;
+    const headY = innerY + 8;
+    const headW = innerW - 20;
+    const headH = 58;
+
+    drawHeaderPlate(ctx, headX, headY, headW, headH);
+
+    drawSlicedBarEnd(ctx, headX + 4, headY + 4, 64, headH - 8, false);
+    drawSlicedBarEnd(ctx, headX + headW - 68, headY + 4, 64, headH - 8, true);
+
+    const title1 = "PLAYER";
+    const title2 = "PROFILE";
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "900 28px system-ui";
+    const totalTitle = `${title1} ${title2}`;
+    const totalW = ctx.measureText(totalTitle).width;
+    const tX = headX + headW / 2;
+    const tY = headY + headH / 2 + 1;
+
+    ctx.fillStyle = "#f2f4f8";
+    ctx.fillText(title1, tX - 52, tY);
+    ctx.fillStyle = "#f1a54c";
+    ctx.fillText(title2, tX + 72, tY);
+
+    const accentLine = ctx.createLinearGradient(headX, 0, headX + headW, 0);
+    accentLine.addColorStop(0, "rgba(255,255,255,0)");
+    accentLine.addColorStop(0.5, "rgba(255,170,80,0.85)");
+    accentLine.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = accentLine;
+    fillRoundRect(ctx, headX + headW * 0.36, headY + headH - 4, headW * 0.28, 2, 1);
+
+    this.hitClose = { x: headX + headW - 52, y: headY + 9, w: 36, h: 36 };
+    drawHeaderPlate(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h);
+    ctx.fillStyle = "#f1f3f7";
+    ctx.font = "900 22px system-ui";
+    ctx.fillText("×", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + this.hitClose.h / 2 + 1);
+
+    const username = String(p.username || "Player").trim() || "Player";
+    const playerId = String(p.telegramId || p.id || "player_main");
+    const level = Math.max(1, Number(p.level || 1));
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+
+    const businessesOwned = Array.isArray(state?.businesses?.owned)
+      ? state.businesses.owned.length
+      : 0;
+
+    const inventoryList = Array.isArray(state?.inventory?.items)
+      ? state.inventory.items
+      : [];
+
+    const inventoryItems = inventoryList.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
+
+    const totalInventoryValue = inventoryList.reduce((sum, item) => {
+      const price = Number(item.marketPrice || item.sellPrice || item.price || 0);
+      const qty = Number(item.qty || 0);
+      return sum + Math.max(0, price * qty);
+    }, 0);
+
+    const clanName = String(state?.clan?.name || state?.clan?.tag || "No Clan");
+    const wins = Math.max(0, Number(state?.pvp?.wins || 0));
+    const losses = Math.max(0, Number(state?.pvp?.losses || 0));
+    const totalFight = wins + losses;
+    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
+    const kdText = losses > 0 ? (wins / losses).toFixed(2) : wins > 0 ? String(wins) : "0.00";
+    const topRank = clamp(999 - wins, 1, 999);
+
+    const isPremium = !!(
+      state.premium ||
+      p.premium ||
+      p.isPremium ||
+      p.membership === "premium"
+    );
+
+    const heroX = innerX + 12;
+    const heroY = headY + headH + 12;
+    const heroW = innerW - 24;
+    const heroH = 164;
+
+    drawMetalTile(ctx, heroX, heroY, heroW, heroH, 16);
+
+    const heroInsetX = heroX + 10;
+    const heroInsetY = heroY + 10;
+    const heroInsetW = heroW - 20;
+    const heroInsetH = heroH - 20;
+
+    const heroInsetGrad = ctx.createLinearGradient(heroInsetX, heroInsetY, heroInsetX, heroInsetY + heroInsetH);
+    heroInsetGrad.addColorStop(0, "rgba(54,49,52,0.38)");
+    heroInsetGrad.addColorStop(0.28, "rgba(32,34,43,0.16)");
+    heroInsetGrad.addColorStop(1, "rgba(11,12,18,0.06)");
+    ctx.fillStyle = heroInsetGrad;
+    fillRoundRect(ctx, heroInsetX, heroInsetY, heroInsetW, heroInsetH, 14);
+
+    const avatarFrameX = heroX + 16;
+    const avatarFrameY = heroY + 16;
+    const avatarFrameW = 148;
+    const avatarFrameH = 132;
+
+    drawMetalTile(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 16);
+
+    const avatarX = avatarFrameX + 10;
+    const avatarY = avatarFrameY + 10;
+    const avatarW = avatarFrameW - 20;
+    const avatarH = avatarFrameH - 20;
+
+    const avatarUrl = getPlayerAvatar(p);
+    if (avatarUrl !== this._avatarUrl) {
+      this._avatarUrl = avatarUrl;
+      this._avatarImg = makeImage(avatarUrl);
     }
 
-    if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(300, panelW - 40);
-      const th = 38;
-      const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - th - 12;
-      drawGlassPanel(ctx, tx, ty, tw, th, 14);
-      ctx.fillStyle = "#fff";
+    ctx.save();
+    roundRectPath(ctx, avatarX, avatarY, avatarW, avatarH, 12);
+    ctx.clip();
+
+    if (this._avatarImg && this._avatarImg.complete && this._avatarImg.naturalWidth > 0) {
+      ctx.drawImage(this._avatarImg, avatarX, avatarY, avatarW, avatarH);
+    } else {
+      const avGrad = ctx.createLinearGradient(avatarX, avatarY, avatarX, avatarY + avatarH);
+      avGrad.addColorStop(0, "#4b4f5a");
+      avGrad.addColorStop(1, "#262a32");
+      ctx.fillStyle = avGrad;
+      ctx.fillRect(avatarX, avatarY, avatarW, avatarH);
+
+      ctx.fillStyle = "#f1f3f7";
+      ctx.font = "900 38px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = "800 12px system-ui";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2 + 1);
+      ctx.fillText(getInitials(username), avatarX + avatarW / 2, avatarY + avatarH / 2 + 2);
     }
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    strokeRoundRect(ctx, avatarX + 0.5, avatarY + 0.5, avatarW - 1, avatarH - 1, 12);
+
+    if (isPremium) {
+      drawBadgeChip(ctx, avatarFrameX - 6, avatarFrameY - 8, 46, 26, "linear-gradient", "VIP");
+      const vipX = avatarFrameX - 2;
+      const vipY = avatarFrameY - 8;
+      const vipW = 42;
+      const vipH = 24;
+      const g = ctx.createLinearGradient(vipX, vipY, vipX, vipY + vipH);
+      g.addColorStop(0, "#ffe7a1");
+      g.addColorStop(1, "#ffc54e");
+      ctx.fillStyle = g;
+      fillRoundRect(ctx, vipX, vipY, vipW, vipH, 8);
+      ctx.fillStyle = "#32210a";
+      ctx.font = "900 13px system-ui";
+      ctx.fillText("VIP", vipX + vipW / 2, vipY + vipH / 2 + 1);
+    }
+
+    const onlineW = 84;
+    const onlineH = 22;
+    const onlineX = avatarFrameX + 10;
+    const onlineY = avatarFrameY + avatarFrameH - 30;
+    drawBadgeChip(ctx, onlineX, onlineY, onlineW, onlineH, "#27d85c", "ONLINE");
+
+    const infoX = avatarFrameX + avatarFrameW + 20;
+    const infoY = heroY + 24;
+    const infoW = heroW - (infoX - heroX) - 18;
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+
+    const nameSize = textFit(ctx, username, infoW * 0.52, 30, 900);
+    ctx.font = `900 ${nameSize}px system-ui`;
+    ctx.fillStyle = "#f3f6fb";
+    ctx.fillText(username, infoX, infoY + 4);
+
+    ctx.font = "700 14px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.46)";
+    ctx.fillText(`#${playerId}`, infoX, infoY + 34);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath();
+    ctx.moveTo(infoX, infoY + 54);
+    ctx.lineTo(infoX + infoW, infoY + 54);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(infoX + infoW * 0.54, infoY + 60);
+    ctx.lineTo(infoX + infoW * 0.54, infoY + 112);
+    ctx.stroke();
+
+    ctx.fillStyle = "#f1b24e";
+    ctx.font = "700 16px system-ui";
+    ctx.fillText("◉", infoX, infoY + 78);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 17px system-ui";
+    ctx.fillText("Level", infoX + 28, infoY + 78);
+    ctx.font = "900 20px system-ui";
+    ctx.fillText(String(level), infoX + 98, infoY + 78);
+
+    ctx.fillStyle = "#f1b24e";
+    ctx.font = "700 19px system-ui";
+    ctx.fillText("⚡", infoX + infoW * 0.58, infoY + 78);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 17px system-ui";
+    ctx.fillText("Energy", infoX + infoW * 0.58 + 38, infoY + 78);
+    ctx.font = "900 20px system-ui";
+    ctx.fillStyle = "#a7e47e";
+    ctx.fillText(`${energy}/${energyMax}`, infoX + infoW * 0.58 + 112, infoY + 78);
+
+    ctx.beginPath();
+    ctx.moveTo(infoX, infoY + 100);
+    ctx.lineTo(infoX + infoW, infoY + 100);
+    ctx.stroke();
+
+    ctx.fillStyle = "#f1b24e";
+    ctx.font = "700 16px system-ui";
+    ctx.fillText("◉", infoX, infoY + 122);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 17px system-ui";
+    ctx.fillText("Clan", infoX + 28, infoY + 122);
+    ctx.font = "900 19px system-ui";
+    ctx.fillText(clanName, infoX + 84, infoY + 122);
+
+    ctx.fillStyle = "#f1b24e";
+    ctx.font = "700 18px system-ui";
+    ctx.fillText("▣", infoX + infoW * 0.58, infoY + 122);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "700 17px system-ui";
+    ctx.fillText("Total Value", infoX + infoW * 0.58 + 34, infoY + 122);
+    ctx.font = "900 19px system-ui";
+    ctx.fillText(`${moneyFmt(totalInventoryValue)}`, infoX + infoW * 0.58 + 142, infoY + 122);
+
+    const cardsY = heroY + heroH + 16;
+    const cardsGap = 14;
+    const cardW = (heroW - cardsGap * 2) / 3;
+    const cardH = 192;
+
+    const card1X = heroX;
+    const card2X = heroX + cardW + cardsGap;
+    const card3X = heroX + (cardW + cardsGap) * 2;
+
+    const drawStatCard = (x, y, title, drawArt, bigLine, smallLineTop = "", smallLineBottom = "") => {
+      drawMetalTile(ctx, x, y, cardW, cardH, 16);
+
+      ctx.fillStyle = "#f0f2f6";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "900 18px system-ui";
+      ctx.fillText(title, x + cardW / 2, y + 22);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.beginPath();
+      ctx.moveTo(x + 12, y + 38);
+      ctx.lineTo(x + cardW - 12, y + 38);
+      ctx.stroke();
+
+      const artX = x + 16;
+      const artY = y + 46;
+      const artW = cardW - 32;
+      const artH = 84;
+
+      drawArt(ctx, artX, artY, artW, artH);
+
+      if (smallLineTop) {
+        ctx.fillStyle = "#f3f6fb";
+        ctx.font = "900 18px system-ui";
+        ctx.fillText(smallLineTop, x + cardW / 2, y + 148);
+      }
+
+      if (bigLine) {
+        ctx.fillStyle = "#f3f6fb";
+        ctx.font = "900 22px system-ui";
+        ctx.fillText(bigLine, x + cardW / 2, y + 150);
+      }
+
+      if (smallLineBottom) {
+        ctx.fillStyle = "rgba(255,255,255,0.70)";
+        ctx.font = "700 15px system-ui";
+        ctx.fillText(smallLineBottom, x + cardW / 2, y + 174);
+      }
+    };
+
+    drawStatCard(
+      card1X,
+      cardsY,
+      "BUSINESSES",
+      drawBusinessArtwork,
+      "",
+      `${businessesOwned} Owned`,
+      ""
+    );
+
+    drawStatCard(
+      card2X,
+      cardsY,
+      "INVENTORY",
+      drawCrateArtwork,
+      "",
+      `${inventoryItems} Items`,
+      ""
+    );
+
+    drawMetalTile(ctx, card3X, cardsY, cardW, cardH, 16);
+    ctx.fillStyle = "#f0f2f6";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "900 18px system-ui";
+    ctx.fillText("PVP STATS", card3X + cardW / 2, cardsY + 22);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.beginPath();
+    ctx.moveTo(card3X + 12, cardsY + 38);
+    ctx.lineTo(card3X + cardW - 12, cardsY + 38);
+    ctx.stroke();
+
+    drawSkullArtwork(ctx, card3X + 16, cardsY + 46, cardW - 32, 84);
+
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.font = "900 18px system-ui";
+    ctx.fillText("WINS", card3X + cardW * 0.34, cardsY + 148);
+    ctx.fillText("LOSSES", card3X + cardW * 0.69, cardsY + 148);
+
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "900 20px system-ui";
+    ctx.fillText(String(wins), card3X + cardW * 0.34, cardsY + 173);
+    ctx.fillText(String(losses), card3X + cardW * 0.69, cardsY + 173);
+
+    const stripY = cardsY + cardH + 16;
+    const stripH = 102;
+
+    drawMetalTile(ctx, heroX, stripY, heroW, stripH, 16);
+
+    const col1 = heroX + heroW / 6;
+    const col2 = heroX + heroW / 2;
+    const col3 = heroX + (heroW * 5) / 6;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.beginPath();
+    ctx.moveTo(heroX + heroW / 3, stripY + 16);
+    ctx.lineTo(heroX + heroW / 3, stripY + stripH - 16);
+    ctx.moveTo(heroX + heroW * 2 / 3, stripY + 16);
+    ctx.lineTo(heroX + heroW * 2 / 3, stripY + stripH - 16);
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = "700 13px system-ui";
+    ctx.fillText("Win Rate", col1, stripY + 26);
+    ctx.fillText("Kill / Death", col2, stripY + 26);
+    ctx.fillText("Top Rank", col3, stripY + 26);
+
+    ctx.fillStyle = "#ffbe57";
+    ctx.font = "900 28px system-ui";
+    ctx.fillText(`${winRate}%`, col1, stripY + 62);
+
+    ctx.fillStyle = "#f3f6fb";
+    ctx.fillText(kdText, col2, stripY + 62);
+
+    ctx.fillStyle = "#f7ba58";
+    ctx.fillText(`#${topRank}`, col3, stripY + 62);
+
+    ctx.fillStyle = "#f4b454";
+    ctx.font = "900 28px system-ui";
+    ctx.fillText("♛", col3, stripY + 86);
+
+    const btnY = stripY + stripH + 18;
+    const btnGap = 18;
+    const btnW = (heroW - btnGap) / 2;
+    const btnH = 58;
+
+    this.hitEditAvatar = { x: heroX, y: btnY, w: btnW, h: btnH };
+    this.hitLeaderboard = { x: heroX + btnW + btnGap, y: btnY, w: btnW, h: btnH };
+
+    drawButtonPlate(ctx, this.hitEditAvatar.x, this.hitEditAvatar.y, this.hitEditAvatar.w, this.hitEditAvatar.h, "blue");
+    drawButtonPlate(ctx, this.hitLeaderboard.x, this.hitLeaderboard.y, this.hitLeaderboard.w, this.hitLeaderboard.h, "amber");
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "900 18px system-ui";
+    ctx.fillText("📷  EDIT AVATAR", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + this.hitEditAvatar.h / 2 + 1);
+    ctx.fillText("🏆  LEADERBOARD", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + this.hitLeaderboard.h / 2 + 1);
+
+
+    const walletPanelY = btnY + btnH + 16;
+    const walletPanelH = 156;
+    drawMetalTile(ctx, heroX, walletPanelY, heroW, walletPanelH, 16);
+
+    const walletTitleX = heroX + 16;
+    const walletTitleY = walletPanelY + 22;
+    const wallet = this.walletConnection;
+    const latestWithdraw = Array.isArray(this.withdrawRequests) && this.withdrawRequests.length ? this.withdrawRequests[0] : null;
+    const ledger1 = Array.isArray(this.walletLedger) && this.walletLedger.length ? this.walletLedger[0] : null;
+    const ledger2 = Array.isArray(this.walletLedger) && this.walletLedger.length > 1 ? this.walletLedger[1] : null;
+    const walletLabel = wallet?.wallet_provider ? `${wallet.wallet_provider}` : "Bağlı cüzdan yok";
+    const walletAddress = wallet?.wallet_address ? String(wallet.wallet_address) : "Cüzdan bağlanmadı";
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "900 15px system-ui";
+    ctx.fillText("WALLET & WITHDRAW", walletTitleX, walletTitleY);
+
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(walletLabel, walletTitleX, walletTitleY + 22);
+    ctx.fillText(walletAddress.slice(0, 34), walletTitleX, walletTitleY + 40);
+
+    ctx.fillStyle = "rgba(255,210,120,0.92)";
+    ctx.font = "700 12px system-ui";
+    ctx.fillText(`1 YTON = 0.05 TON • Son çekim: ${latestWithdraw ? latestWithdraw.status : "-"}`, walletTitleX, walletTitleY + 62);
+
+    ctx.fillStyle = "rgba(255,255,255,0.62)";
+    ctx.font = "11px system-ui";
+    ctx.fillText(`Son kayıt: ${ledger1 ? `${ledger1.entry_type} ${ledger1.yton_amount || 0} YTON` : "-"}`, walletTitleX, walletTitleY + 86);
+    ctx.fillText(`Önceki kayıt: ${ledger2 ? `${ledger2.entry_type} ${ledger2.yton_amount || 0} YTON` : "-"}`, walletTitleX, walletTitleY + 102);
+
+    const actionY1 = walletPanelY + 24;
+    const actionY2 = walletPanelY + 72;
+    const bw = (heroW - 32 - 12) / 2;
+    const leftX = heroX + heroW - bw * 2 - 12;
+    const rightX = heroX + heroW - bw;
+
+    this.hitWalletConnect = { x: leftX, y: actionY1, w: bw - 12, h: 34 };
+    this.hitWalletRefresh = { x: rightX, y: actionY1, w: bw - 12, h: 34 };
+    this.hitConvert = { x: leftX, y: actionY2, w: bw - 12, h: 34 };
+    this.hitWithdraw = { x: rightX, y: actionY2, w: bw - 12, h: 34 };
+
+    drawButtonPlate(ctx, this.hitWalletConnect.x, this.hitWalletConnect.y, this.hitWalletConnect.w, this.hitWalletConnect.h, "blue");
+    drawButtonPlate(ctx, this.hitWalletRefresh.x, this.hitWalletRefresh.y, this.hitWalletRefresh.w, this.hitWalletRefresh.h, "amber");
+    drawButtonPlate(ctx, this.hitConvert.x, this.hitConvert.y, this.hitConvert.w, this.hitConvert.h, "blue");
+    drawButtonPlate(ctx, this.hitWithdraw.x, this.hitWithdraw.y, this.hitWithdraw.w, this.hitWithdraw.h, "amber");
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "900 13px system-ui";
+    ctx.fillText(wallet ? "CÜZDAN" : "BAĞLA", this.hitWalletConnect.x + this.hitWalletConnect.w / 2, this.hitWalletConnect.y + this.hitWalletConnect.h / 2 + 1);
+    ctx.fillText("YENİLE", this.hitWalletRefresh.x + this.hitWalletRefresh.w / 2, this.hitWalletRefresh.y + this.hitWalletRefresh.h / 2 + 1);
+    ctx.fillText("DÖNÜŞTÜR", this.hitConvert.x + this.hitConvert.w / 2, this.hitConvert.y + this.hitConvert.h / 2 + 1);
+    ctx.fillText("ÇEKİM", this.hitWithdraw.x + this.hitWithdraw.w / 2, this.hitWithdraw.y + this.hitWithdraw.h / 2 + 1);
+
+
+    this.hitBack = { x: heroX, y: innerY + innerH - 46, w: 92, h: 34 };
+    drawButtonPlate(ctx, this.hitBack.x, this.hitBack.y, this.hitBack.w, this.hitBack.h, "red");
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "900 14px system-ui";
+    ctx.fillText("← Geri", this.hitBack.x + this.hitBack.w / 2, this.hitBack.y + this.hitBack.h / 2 + 1);
   }
 }
