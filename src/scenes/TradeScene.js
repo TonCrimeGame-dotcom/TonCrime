@@ -121,14 +121,12 @@ export class TradeScene {
     this.hitTabs = [];
     this.hitButtons = [];
     this.hitLootButtons = [];
-    this._finalizeLootIfNeeded();
 
     this.toastText = "";
     this.toastUntil = 0;
 
     this.lootAnim = null;
     this.lootAnimUntil = 0;
-    this.hitLootButtons = [];
   }
 
   onEnter() {
@@ -157,6 +155,7 @@ export class TradeScene {
         searchQuery: trade.searchQuery || "",
       },
     });
+    this._refreshBusinessProduction();
   }
 
   _trade() {
@@ -887,74 +886,71 @@ export class TradeScene {
     return this._randomProductionAllocation(products, totalDaily);
   }
 
-  _refreshBusinessProduction() {
-    const s = this.store.get();
-    const now = Date.now();
 
-    const owned = (s.businesses?.owned || []).map((biz) => ({
-      ...biz,
-      products: (biz.products || []).map((p) => ({ ...p })),
-      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
-    }));
+_refreshBusinessProduction() {
+  const s = this.store.get();
+  const now = Date.now();
 
-    let changed = false;
+  const owned = (s.businesses?.owned || []).map((biz) => ({
+    ...biz,
+    products: (biz.products || []).map((p) => ({ ...p })),
+    pendingProduction: Array.isArray(biz.pendingProduction)
+      ? biz.pendingProduction.map((p) => ({ ...p }))
+      : [],
+  }));
 
-    for (const biz of owned) {
-      const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
-      if (!hasProducts) continue;
+  let changed = false;
 
-      if (!Array.isArray(biz.pendingProduction)) {
-        biz.pendingProduction = this._createPendingProduction(
-          biz.products,
-          Number(biz.dailyProduction || 50)
-        );
-        changed = true;
-      }
+  for (const biz of owned) {
+    const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
+    if (!hasProducts) continue;
 
-      if (!biz.productionStartedAt) {
-        biz.productionStartedAt = now;
-        changed = true;
-      }
-
-      if (!biz.productionExpireAt) {
-        biz.productionExpireAt = Number(biz.productionStartedAt) + DAY_MS;
-        changed = true;
-      }
-
-      const pendingTotal = (biz.pendingProduction || []).reduce(
-        (sum, row) => sum + Number(row.qty || 0),
-        0
-      );
-
-      if (now >= Number(biz.productionExpireAt || 0)) {
-        if (pendingTotal > 0) {
-          biz.pendingProduction = biz.pendingProduction.map((row) => ({
-            ...row,
-            qty: 0,
-          }));
-        }
-
-        biz.productionStartedAt = now;
-        biz.productionExpireAt = now + DAY_MS;
-        biz.pendingProduction = this._createPendingProduction(
-          biz.products,
-          Number(biz.dailyProduction || 50)
-        );
-        changed = true;
-      }
+    if (!Array.isArray(biz.pendingProduction) || !biz.pendingProduction.length) {
+      biz.pendingProduction = (biz.products || []).map((p) => ({ productId: p.id, qty: 0 }));
+      changed = true;
     }
 
-    if (changed) {
-      this.store.set({
-        businesses: {
-          ...(s.businesses || {}),
-          owned,
-        },
-      });
+    if (!biz.productionReadyAt) {
+      biz.productionReadyAt = now + DAY_MS;
+      changed = true;
+    }
+
+    if (!biz.productionExpireAt) {
+      biz.productionExpireAt = Number(biz.productionReadyAt) + DAY_MS;
+      changed = true;
+    }
+
+    const pendingTotal = (biz.pendingProduction || []).reduce(
+      (sum, row) => sum + Number(row.qty || 0),
+      0
+    );
+
+    if (pendingTotal <= 0 && now >= Number(biz.productionReadyAt || 0)) {
+      biz.pendingProduction = this._createPendingProduction(
+        biz.products,
+        Number(biz.dailyProduction || 50)
+      );
+      biz.productionExpireAt = now + DAY_MS;
+      changed = true;
+    } else if (pendingTotal > 0 && now >= Number(biz.productionExpireAt || 0)) {
+      biz.pendingProduction = (biz.products || []).map((p) => ({ productId: p.id, qty: 0 }));
+      biz.productionReadyAt = now + DAY_MS;
+      biz.productionExpireAt = Number(biz.productionReadyAt) + DAY_MS;
+      changed = true;
     }
   }
 
-  _collectBusinessProduction(bizId) {
+  if (changed) {
+    this.store.set({
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
+      },
+    });
+  }
+}
+
+_collectBusinessProduction(bizId) {
     this._refreshBusinessProduction();
 
     const s = this.store.get();
@@ -1138,6 +1134,9 @@ export class TradeScene {
   }
 
   update() {
+    this._refreshBusinessProduction();
+    this._finalizeLootIfNeeded();
+
     const px = this.input?.pointer?.x || 0;
     const py = this.input?.pointer?.y || 0;
 
@@ -1592,7 +1591,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
         (sum, row) => sum + Number(row.qty || 0),
         0
       );
-      const remainMs = Math.max(0, Number(biz.productionExpireAt || 0) - Date.now());
+      const targetTs = pendingCount > 0 ? Number(biz.productionExpireAt || 0) : Number(biz.productionReadyAt || 0);
+      const remainMs = Math.max(0, targetTs - Date.now());
       const remainHours = Math.floor(remainMs / (60 * 60 * 1000));
       const remainMinutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
 
@@ -1608,14 +1608,14 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.font = "11px system-ui";
       ctx.fillText(
         pendingCount > 0
-          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde topla`
-          : "Bekleyen üretim yok",
+          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde silinir`
+          : `Sonraki üretim ${remainHours}s ${remainMinutes}d sonra hazır`,
         x + 48,
         y + 64
       );
 
       const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
-      this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
+      if (pendingCount > 0) this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
       this._drawButton(ctx, collectRect, "Topla", pendingCount > 0 ? "gold" : "muted");
 
       let rowY = y + 82;
@@ -1946,6 +1946,92 @@ for (const p of products) {
     return y;
   }
 
+
+_buyBusiness(businessType) {
+  const s = this.store.get();
+  const p = s.player || {};
+  const level = Number(p.level || 1);
+  const isPremium = !!(p.isPremium || p.premium || s.isPremium || s.premium || p.membership === "premium");
+
+  if (level < 50 && !isPremium) {
+    this._showToast("Bu bölüm Lv 50+ veya Premium üyelerde açılır");
+    return;
+  }
+
+  const catalog = {
+    nightclub: {
+      price: 1000,
+      icon: "🌃",
+      name: "Velvet Night",
+      theme: "neon",
+      products: [
+        { id: "biz_night_whiskey_" + Date.now(), icon: "🥃", name: "Black Whiskey", rarity: "common", qty: 0, price: 28, energyGain: 8, desc: "Gece kulübü ürünü." },
+        { id: "biz_night_champ_" + Date.now(), icon: "🍾", name: "Premium Champagne", rarity: "rare", qty: 0, price: 44, energyGain: 14, desc: "Daha iyi enerji verir." },
+      ],
+    },
+    coffeeshop: {
+      price: 850,
+      icon: "🌿",
+      name: "Amsterdam Dreams",
+      theme: "green",
+      products: [
+        { id: "biz_coffee_weed_" + Date.now(), icon: "🍁", name: "White Widow", rarity: "rare", qty: 0, price: 36, energyGain: 12, desc: "Enerji için kullanılabilir." },
+      ],
+    },
+    brothel: {
+      price: 1200,
+      icon: "💋",
+      name: "Ruby House",
+      theme: "red",
+      products: [
+        { id: "biz_brothel_vip_" + Date.now(), icon: "🌹", name: "VIP Companion", rarity: "epic", qty: 0, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
+      ],
+    },
+  };
+
+  const cfg = catalog[businessType];
+  if (!cfg) {
+    this._showToast("İşletme tipi bulunamadı");
+    return;
+  }
+
+  if (Number(s.coins || 0) < Number(cfg.price || 0)) {
+    this._showToast("Yetersiz yton");
+    return;
+  }
+
+  const owned = (s.businesses?.owned || []).map((b) => ({ ...b, products: (b.products || []).map((p) => ({ ...p })) }));
+  const sameTypeCount = owned.filter((b) => String(b.type) === String(businessType)).length + 1;
+  const bizId = `biz_${businessType}_${Date.now()}`;
+  const biz = {
+    id: bizId,
+    type: businessType,
+    icon: cfg.icon,
+    name: cfg.name + (sameTypeCount > 1 ? ` ${sameTypeCount}` : ""),
+    ownerId: String(s.player?.id || "player_main"),
+    ownerName: String(s.player?.username || "Player"),
+    dailyProduction: 50,
+    stock: 0,
+    theme: cfg.theme,
+    products: cfg.products,
+    pendingProduction: cfg.products.map((p) => ({ productId: p.id, qty: 0 })),
+    productionReadyAt: Date.now() + DAY_MS,
+    productionExpireAt: Date.now() + DAY_MS * 2,
+  };
+
+  owned.unshift(biz);
+
+  this.store.set({
+    coins: Number(s.coins || 0) - Number(cfg.price || 0),
+    businesses: {
+      ...(s.businesses || {}),
+      owned,
+    },
+  });
+
+  this._showToast(`${biz.name} satın alındı`);
+}
+
   _renderBuy(ctx, x, y, w) {
     this._drawHeroCard(
       ctx,
@@ -1962,9 +2048,9 @@ for (const p of products) {
     y += 130;
 
     const buildings = [
-      { type: "nightclub", icon: "🌃", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 25+" },
-      { type: "coffeeshop", icon: "🌿", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 20+" },
-      { type: "brothel", icon: "💋", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 35+" },
+      { type: "nightclub", icon: "🌃", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 50+ / Premium" },
+      { type: "coffeeshop", icon: "🌿", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 50+ / Premium" },
+      { type: "brothel", icon: "💋", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 50+ / Premium" },
     ];
 
     for (const b of buildings) {
