@@ -351,20 +351,26 @@ export class ProfileScene {
     try {
       const wallet = this._wallet();
       const balance = Number(wallet.tonBalance || 0);
-     const raw = window.prompt(
-  `Kaç TON çekmek istiyorsun?\nMevcut TON: ${moneyFmt(balance, 2)}`,
-  String(Number(balance || 0).toFixed(2))
-);
-if (raw === null) return;
 
-const normalizedRaw = String(raw).trim().replace(",", ".");
-const tonAmount = Math.max(0, parseFloat(normalizedRaw));
+      const raw = window.prompt(
+        `Kaç TON çekmek istiyorsun?
+Mevcut TON: ${moneyFmt(balance, 2)}`,
+        String(Number(balance || 0).toFixed(2))
+      );
 
-if (!tonAmount || !Number.isFinite(tonAmount)) {
-  this._showToast("Geçersiz miktar");
-  return;
-}
+      if (raw === null) {
+        this._busy = false;
+        return;
       }
+
+      const normalizedRaw = String(raw).trim().replace(",", ".");
+      const tonAmount = Math.max(0, parseFloat(normalizedRaw));
+
+      if (!tonAmount || !Number.isFinite(tonAmount)) {
+        this._showToast("Geçersiz miktar");
+        return;
+      }
+
       if (tonAmount > balance) {
         this._showToast("Yetersiz TON bakiye");
         return;
