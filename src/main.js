@@ -255,8 +255,8 @@ const defaultState = {
     xpToNext: 100,
     weaponName: "Silah Yok",
     weaponBonus: "",
-    energy: 100,
-    energyMax: 100,
+    energy: 50,
+    energyMax: 50,
     energyIntervalMs: 5 * 60 * 1000,
     lastEnergyAt: Date.now(),
   },
@@ -405,8 +405,8 @@ async function syncProfileToSupabase() {
     age: p.age ?? null,
     level: Number(p.level || 1),
     coins: Number(s.coins || 0),
-    energy: Number(p.energy || 10),
-    energy_max: Number(p.energyMax || 10),
+    energy: Number(p.energy || 50),
+    energy_max: Number(p.energyMax || 50),
     updated_at: new Date().toISOString(),
   };
 
@@ -465,7 +465,7 @@ function tickEnergy() {
 
   const now = Date.now();
   const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
-  const maxE = Math.max(1, Number(p.energyMax || 10));
+  const maxE = Math.max(1, Number(p.energyMax || 50));
   const e = clamp(Number(p.energy || 0), 0, maxE);
 
   if (e >= maxE) return;
@@ -597,7 +597,7 @@ class MissionsScene {
   _grantEnergy(n) {
     const s = this.store.get();
     const p = s.player || {};
-    const maxE = Math.max(1, Number(p.energyMax || 10));
+    const maxE = Math.max(1, Number(p.energyMax || 50));
     const next = Math.min(maxE, Number(p.energy || 0) + Number(n || 0));
     this.store.set({ player: { ...p, energy: next } });
   }
@@ -1422,7 +1422,7 @@ window.tc.dev = {
   energy(n = 10) {
     const s = store.get();
     const p = s.player || {};
-    const maxE = Math.max(1, Number(p.energyMax || 10));
+    const maxE = Math.max(1, Number(p.energyMax || 50));
     const next = Math.min(maxE, Number(p.energy || 0) + Number(n || 0));
     store.set({ player: { ...p, energy: next } });
     console.log("energy:", store.get().player.energy);
