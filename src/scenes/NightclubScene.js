@@ -494,32 +494,77 @@ async _loadScriptOnce(srcList = []) {
   }
 
   _ensurePvpShell() {
-    const wrap = document.getElementById("pvpWrap");
+    let layer = document.getElementById("pvpLayer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "pvpLayer";
+      layer.style.position = "fixed";
+      layer.style.left = "0";
+      layer.style.right = "0";
+      layer.style.top = "0";
+      layer.style.bottom = "0";
+      layer.style.zIndex = "7000";
+      layer.style.pointerEvents = "none";
+      document.body.appendChild(layer);
+    }
+
+    let wrap = document.getElementById("pvpWrap");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.id = "pvpWrap";
+      layer.appendChild(wrap);
+    }
+
+    wrap.style.position = "fixed";
+    wrap.style.left = "12px";
+    wrap.style.right = "12px";
+    wrap.style.top = "96px";
+    wrap.style.bottom = "64px";
+    wrap.style.zIndex = "7000";
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.borderRadius = "16px";
+    wrap.style.border = "1px solid rgba(255,255,255,0.12)";
+    wrap.style.background = "rgba(8,10,16,0.88)";
+    wrap.style.backdropFilter = "blur(12px)";
+    wrap.style.overflow = "hidden";
+    wrap.style.pointerEvents = "auto";
+
+    wrap.innerHTML = `
+      <div id="pvpHeader" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 10px 8px;border-bottom:1px solid rgba(255,255,255,0.10);flex:0 0 auto;">
+        <div id="pvpLeftHead" style="display:flex;flex-direction:column;gap:4px;">
+          <div id="pvpStatus" style="font-weight:900;font-size:13px;color:rgba(255,255,255,0.92);">PvP • Kafes Dövüşü yükleniyor...</div>
+          <div id="pvpOpponentRow" style="font-size:12px;color:rgba(255,255,255,0.80);">
+            <span id="pvpSpinner" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);border-top-color:rgba(255,255,255,0.85);vertical-align:-2px;margin-right:8px;"></span>
+            Rakip: <b id="pvpOpponent" style="color:rgba(255,255,255,0.95);">ShadowWolf</b>
+          </div>
+        </div>
+        <div class="pvpBtns" style="display:flex;gap:8px;">
+          <button class="pvpBtn" id="pvpStart" type="button" style="display:none;">Başlat</button>
+          <button class="pvpBtn" id="pvpStop" type="button" style="display:none;">Durdur</button>
+          <button class="pvpBtn" id="pvpReset" type="button" style="display:none;">Sıfırla</button>
+        </div>
+      </div>
+      <div id="pvpBars" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;flex:0 0 auto;">
+        <div>
+          <div class="pvpBar" style="height:14px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);overflow:hidden;"><div class="pvpFill" id="enemyFill" style="height:100%;width:100%;transform-origin:left center;background:rgba(255,255,255,0.65);"></div></div>
+          <div class="pvpBarLabel" style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.95);margin-top:6px;"><span>Düşman</span><span id="enemyHpText">100</span></div>
+        </div>
+        <div>
+          <div class="pvpBar" style="height:14px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);overflow:hidden;"><div class="pvpFill" id="meFill" style="height:100%;width:100%;transform-origin:left center;background:rgba(255,255,255,0.65);"></div></div>
+          <div class="pvpBarLabel" style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.95);margin-top:6px;"><span>Sen</span><span id="meHpText">100</span></div>
+        </div>
+      </div>
+      <div id="arena" style="position:relative;flex:1 1 auto;min-height:280px;width:calc(100% - 20px);margin:0 10px 10px;border-radius:14px;background:rgba(0,0,0,0.92);overflow:hidden;box-sizing:border-box;"></div>
+    `;
+
     const arena = document.getElementById("arena");
     const status = document.getElementById("pvpStatus");
     const spinner = document.getElementById("pvpSpinner");
-    const opponent = document.getElementById("pvpOpponent");
-    const startBtn = document.getElementById("pvpStart");
-    const stopBtn = document.getElementById("pvpStop");
-    const resetBtn = document.getElementById("pvpReset");
     const enemyFill = document.getElementById("enemyFill");
     const meFill = document.getElementById("meFill");
     const enemyHpText = document.getElementById("enemyHpText");
     const meHpText = document.getElementById("meHpText");
-
-    if (!wrap || !arena || !status || !enemyFill || !meFill || !enemyHpText || !meHpText) {
-      throw new Error("PvP shell bulunamadı");
-    }
-
-    wrap.classList.add("open");
-    wrap.style.display = "flex";
-    wrap.style.pointerEvents = "auto";
-    if (status) status.textContent = "PvP • Kafes Dövüşü yükleniyor...";
-    if (spinner) spinner.classList.remove("hidden");
-    if (opponent) opponent.textContent = "ShadowWolf";
-    if (startBtn) startBtn.style.display = "none";
-    if (stopBtn) stopBtn.style.display = "none";
-    if (resetBtn) resetBtn.style.display = "none";
 
     return { arena, status, spinner, enemyFill, meFill, enemyHpText, meHpText };
   }
