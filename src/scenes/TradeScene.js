@@ -121,6 +121,7 @@ export class TradeScene {
     this.hitTabs = [];
     this.hitButtons = [];
     this.hitLootButtons = [];
+    this.hitLootButtons = [];
 
     this.toastText = "";
     this.toastUntil = 0;
@@ -986,12 +987,9 @@ _collectBusinessProduction(bizId) {
       0
     );
 
-    biz.pendingProduction = this._createPendingProduction(
-      biz.products,
-      Number(biz.dailyProduction || 50)
-    );
-    biz.productionStartedAt = now;
-    biz.productionExpireAt = now + DAY_MS;
+    biz.pendingProduction = (biz.products || []).map((p) => ({ productId: p.id, qty: 0 }));
+    biz.productionReadyAt = now + DAY_MS;
+    biz.productionExpireAt = biz.productionReadyAt + DAY_MS;
 
     this.store.set({
       businesses: {
@@ -1002,8 +1000,8 @@ _collectBusinessProduction(bizId) {
 
     this._showToast(`${fmtNum(pendingTotal)} ürün toplandı`);
   }
-    
-  async _sellBusinessProduct(bizId, productId) {
+
+async _sellBusinessProduct(bizId, productId) {
     const s = this.store.get();
     const businesses = (s.businesses?.owned || []).map((b) => ({
       ...b,
@@ -1764,38 +1762,56 @@ for (const p of products) {
       w,
       124,
       "Sandık & Çark",
-      this._isFreeSpinReady() ? "Kasa akışı • küçük ve büyük ödüller" : "Çarkta ödüller yazılı • döndür ve kazan",
+      "Günlük sandık ücretsiz • premium çark 100 yton",
       "PREMIUM LOOT",
       "🎰",
       "#c77dff"
     );
 
-    const freeRect = { x: x + 14, y: y + 76, w: 116, h: 34 };
-    const premiumRect = { x: x + 138, y: y + 76, w: 122, h: 34 };
-    this.hitButtons.push({ rect: freeRect, action: "free_spin" });
-    this.hitButtons.push({ rect: premiumRect, action: "premium_spin" });
-    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Günlük Sandık" : "Yarın Açılır", this._isFreeSpinReady() ? "primary" : "muted");
-    this._drawButton(ctx, premiumRect, "Premium Çark 100", "gold");
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(
+      this._isFreeSpinReady()
+        ? "Günlük sandık hazır • alt kutudan aç"
+        : "Günlük sandık bugün açıldı • yarın tekrar aktif",
+      x + 16,
+      y + 94
+    );
+    ctx.fillText("Premium çark her zaman aktif • ödüller çark üstünde görünür", x + 16, y + 112);
 
     y += 136;
 
     const gap = 10;
     const colW = Math.floor((w - gap) / 2);
 
-    const c1 = { x, y, w: colW, h: 112 };
-    const c2 = { x: x + colW + gap, y, w: colW, h: 112 };
-    this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
-    this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
+    const c1 = { x, y, w: colW, h: 132 };
+    const c2 = { x: x + colW + gap, y, w: colW, h: 132 };
 
     this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Günlük Sandık", "Her gün 1 kez ücretsiz aç", "📦", "#62b3ff");
     this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Premium Çark", "100 yton • animasyonlu ödül", "👑", "#ffcc66");
 
-    y += 124;
+    const freeBtn = { x: c1.x + 14, y: c1.y + 86, w: c1.w - 28, h: 34 };
+    const premiumBtn = { x: c2.x + 14, y: c2.y + 86, w: c2.w - 28, h: 34 };
+
+    this.hitButtons.push({ rect: freeBtn, action: "free_spin" });
+    this.hitButtons.push({ rect: premiumBtn, action: "premium_spin" });
+
+    this._drawButton(
+      ctx,
+      freeBtn,
+      this._isFreeSpinReady() ? "Günlük Sandık Aç" : "Yarın Açılır",
+      this._isFreeSpinReady() ? "primary" : "muted"
+    );
+    this._drawButton(ctx, premiumBtn, "Premium Çark 100", "gold");
+
+    y += 144;
 
     ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, x, y, w, 96, 18);
+    fillRoundRect(ctx, x, y, w, 82, 18);
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, x, y, w, 96, 18);
+    strokeRoundRect(ctx, x, y, w, 82, 18);
 
     ctx.fillStyle = "#fff";
     ctx.font = "900 14px system-ui";
@@ -1804,9 +1820,8 @@ for (const p of products) {
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
     ctx.fillText("💰 YTON   ⚡ Enerji   📦 Sandık   👑 Golden Pass", x + 14, y + 54);
-    ctx.fillText("Sandık ve çark açıldığında üstte animasyonlu overlay çalışır.", x + 14, y + 74);
 
-    y += 108;
+    y += 94;
     return y;
   }
 
@@ -2091,6 +2106,7 @@ _buyBusiness(businessType) {
     this.hitBack = null;
     this.hitTabs = [];
     this.hitButtons = [];
+    this.hitLootButtons = [];
 
     const bgImg =
       getImgSafe(this.assets, "trade") ||
