@@ -564,14 +564,91 @@
       if (this._launchingGame) return;
       this._launchingGame = true;
 
+      const ECONOMY = {
+        grid: { energy: 10, coins: 20, reward: 36, fee: 4, modeKey: "iq_arena" },
+        arena: { energy: 5, coins: 10, reward: 16, fee: 4, modeKey: "cage_fight" },
+        slotarena: { energy: 15, coins: 30, reward: 56, fee: 4, modeKey: "slot_arena" },
+      };
+
       const s = this.store?.get?.() || {};
       const pvp = { ...(s.pvp || {}) };
+      const player = { ...(s.player || {}) };
+      const economy = ECONOMY[id];
 
       pvp.selectedMode = id;
       pvp.source = this.source || "general";
-      this.store?.set?.({ pvp });
+
+      if (!economy) {
+        this.store?.set?.({ pvp });
+        this._launchingGame = false;
+        return;
+      }
+
+      const currentEnergy = Number(player.energy || 0);
+      const currentCoins = Number(s.coins || 0);
+
+      if (currentEnergy < economy.energy || currentCoins < economy.coins) {
+        this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: {
+              text: `Yetersiz bakiye • ${economy.energy} enerji + ${economy.coins} yton gerekli`,
+            },
+          }));
+        } catch (_) {}
+        this._launchingGame = false;
+        return;
+      }
+
+      let charged = false;
+      const chargeMatch = () => {
+        if (charged) return;
+        charged = true;
+        this.store?.set?.({
+          coins: Math.max(0, currentCoins - economy.coins),
+          player: {
+            ...player,
+            energy: Math.max(0, currentEnergy - economy.energy),
+          },
+          pvp: {
+            ...pvp,
+            selectedMode: id,
+            source: this.source || "general",
+            entryPaid: true,
+            entryEnergy: economy.energy,
+            entryCoins: economy.coins,
+            rewardCoins: economy.reward,
+            serverFee: economy.fee,
+            payoutDone: false,
+            matchStartedAt: Date.now(),
+            modeKey: economy.modeKey,
+          },
+        });
+      };
+
+      const refundMatch = () => {
+        if (!charged) return;
+        charged = false;
+        const latest = this.store?.get?.() || {};
+        const latestPlayer = { ...(latest.player || player) };
+        this.store?.set?.({
+          coins: Number(latest.coins || 0) + economy.coins,
+          player: {
+            ...latestPlayer,
+            energy: Number(latestPlayer.energy || 0) + economy.energy,
+          },
+          pvp: {
+            ...(latest.pvp || pvp),
+            selectedMode: null,
+            entryPaid: false,
+            payoutDone: false,
+          },
+        });
+      };
 
       try {
+        chargeMatch();
+
         const dom = ensurePvpDom();
 
         if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
@@ -772,6 +849,7 @@
         if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
         if (dom.spinner) dom.spinner.classList.add("hidden");
       } catch (err) {
+        refundMatch();
         console.error("[TonCrime] startGame fatal:", err);
         const status = document.getElementById("pvpStatus");
         const spinner = document.getElementById("pvpSpinner");
