@@ -121,7 +121,9 @@ export class TradeScene {
     this.hitTabs = [];
     this.hitButtons = [];
     this.hitLootButtons = [];
+    this.hitPremiumButton = null;
     this.hitLootButtons = [];
+    this.hitPremiumButton = null;
 
     this.toastText = "";
     this.toastUntil = 0;
@@ -143,6 +145,8 @@ export class TradeScene {
     this.lootAnimUntil = 0;
 
     this.store.set({
+      premium: !!s.premium,
+      premiumExpire: Number(s.premiumExpire || 0),
       trade: {
         ...trade,
         activeTab: trade.activeTab || "explore",
@@ -157,6 +161,58 @@ export class TradeScene {
       },
     });
     this._refreshBusinessProduction();
+  }
+
+  _isPremiumActive() {
+    const s = this.store.get() || {};
+    const expire = Number(s.premiumExpire || 0);
+    const manualFlag = !!(s.premium || s.player?.premium || s.player?.isPremium);
+    return manualFlag && (!expire || Date.now() < expire);
+  }
+
+  _ensurePremiumState() {
+    const s = this.store.get() || {};
+    const expire = Number(s.premiumExpire || 0);
+    if ((s.premium || s.player?.premium || s.player?.isPremium) && expire && Date.now() >= expire) {
+      this.store.set({
+        premium: false,
+        premiumExpire: 0,
+        player: { ...(s.player || {}), premium: false, isPremium: false },
+      });
+      return false;
+    }
+    return this._isPremiumActive();
+  }
+
+  _buyPremium() {
+    const s = this.store.get() || {};
+    const cost = 500;
+    const now = Date.now();
+    const durationMs = 24 * 60 * 60 * 1000;
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Premium için 500 yton gerekli");
+      return;
+    }
+    const currentExpire = Number(s.premiumExpire || 0);
+    const nextExpire = currentExpire > now ? currentExpire + durationMs : now + durationMs;
+    this.store.set({
+      coins: Number(s.coins || 0) - cost,
+      premium: true,
+      premiumExpire: nextExpire,
+      player: { ...(s.player || {}), premium: true, isPremium: true },
+    });
+    this._showToast("Premium üyelik aktif edildi");
+  }
+
+  _premiumRemainingText() {
+    const s = this.store.get() || {};
+    if (!this._isPremiumActive()) return "Kapalı";
+    const expire = Number(s.premiumExpire || 0);
+    if (!expire) return "Aktif";
+    const remain = Math.max(0, expire - Date.now());
+    const hours = Math.floor(remain / (60 * 60 * 1000));
+    const mins = Math.floor((remain % (60 * 60 * 1000)) / (60 * 1000));
+    return `${hours}s ${mins}d`;
   }
 
   _trade() {
@@ -423,14 +479,16 @@ export class TradeScene {
     const s = this.store.get();
     if (!reward) return "";
     if (reward.kind === "coins") {
-      this.store.set({ coins: Number(s.coins || 0) + Number(reward.amount || 0) });
-      return reward.label;
+      const bonusAmount = this._isPremiumActive() ? Math.floor(Number(reward.amount || 0) * 1.2) : Number(reward.amount || 0);
+      this.store.set({ coins: Number(s.coins || 0) + bonusAmount });
+      return `+${bonusAmount} YTON`;
     }
     if (reward.kind === "energy") {
       const p = { ...(s.player || {}) };
-      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
+      const bonusAmount = this._isPremiumActive() ? Math.floor(Number(reward.amount || 0) * 1.2) : Number(reward.amount || 0);
+      p.energy = clamp(Number(p.energy || 0) + bonusAmount, 0, Number(p.energyMax || 100));
       this.store.set({ player: p });
-      return reward.label;
+      return `+${bonusAmount} ENERJİ`;
     }
     if (reward.kind === "item" && reward.item) {
       const items = (s.inventory?.items || []).map((x) => ({ ...x }));
@@ -862,7 +920,8 @@ export class TradeScene {
     const p = { ...(s.player || {}) };
     const currentEnergy = Number(p.energy || 0);
     const maxEnergy = Number(p.energyMax || 100);
-    const gain = Math.min(Number(product.energyGain || 0), Math.max(0, maxEnergy - currentEnergy));
+    const rawGain = this._isPremiumActive() ? Math.floor(Number(product.energyGain || 0) * 1.2) : Number(product.energyGain || 0);
+    const gain = Math.min(rawGain, Math.max(0, maxEnergy - currentEnergy));
 
     if (gain <= 0) {
       this._showToast("Enerji full");
@@ -1132,6 +1191,7 @@ async _sellBusinessProduct(bizId, productId) {
   }
 
   update() {
+    this._ensurePremiumState();
     this._refreshBusinessProduction();
     this._finalizeLootIfNeeded();
 
@@ -1175,6 +1235,11 @@ async _sellBusinessProduct(bizId, productId) {
 
       if (this.hitBack && pointInRect(px, py, this.hitBack)) {
         this._goBack();
+        return;
+      }
+
+      if (this.hitPremiumButton && pointInRect(px, py, this.hitPremiumButton)) {
+        this._buyPremium();
         return;
       }
 
@@ -1966,7 +2031,7 @@ _buyBusiness(businessType) {
   const s = this.store.get();
   const p = s.player || {};
   const level = Number(p.level || 1);
-  const isPremium = !!(p.isPremium || p.premium || s.isPremium || s.premium || p.membership === "premium");
+  const isPremium = !!(p.isPremium || p.premium || s.isPremium || s.premium || p.membership === "premium") && (!s.premiumExpire || Date.now() < Number(s.premiumExpire || 0));
 
   if (level < 50 && !isPremium) {
     this._showToast("Bu bölüm Lv 50+ veya Premium üyelerde açılır");
@@ -2047,7 +2112,38 @@ _buyBusiness(businessType) {
   this._showToast(`${biz.name} satın alındı`);
 }
 
+  _drawPremiumCard(ctx, x, y, w) {
+    const active = this._isPremiumActive();
+    const h = 124;
+    const price = 500;
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, "rgba(44,30,8,0.58)");
+    grad.addColorStop(1, "rgba(16,10,4,0.72)");
+    ctx.fillStyle = grad;
+    fillRoundRect(ctx, x, y, w, h, 20);
+    ctx.strokeStyle = "rgba(255,214,120,0.22)";
+    strokeRoundRect(ctx, x, y, w, h, 20);
+    ctx.fillStyle = "#fff5dd";
+    ctx.font = "900 22px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("👑", x + 14, y + 28);
+    ctx.font = "900 15px system-ui";
+    ctx.fillText("Premium Üyelik", x + 48, y + 22);
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.font = "11px system-ui";
+    ctx.fillText(`Fiyat ${fmtNum(price)} yton • Süre 24 saat`, x + 48, y + 42);
+    ctx.fillText("Bonus: +%20 yton ödülü • +%20 enerji kazanımı", x + 48, y + 60);
+    ctx.fillText(`Durum: ${active ? "Aktif" : "Kapalı"} • Kalan: ${this._premiumRemainingText()}`, x + 48, y + 78);
+    const badgeRect = { x: x + w - 108, y: y + 16, w: 92, h: 28 };
+    this._drawButton(ctx, badgeRect, active ? "PREMIUM" : "VIP PASS", active ? "primary" : "muted");
+    this.hitPremiumButton = { x: x + w - 108, y: y + 78, w: 92, h: 30 };
+    this._drawButton(ctx, this.hitPremiumButton, active ? "Uzat" : "Satın Al", "gold");
+    return y + h + 12;
+  }
+
   _renderBuy(ctx, x, y, w) {
+    y = this._drawPremiumCard(ctx, x, y, w);
     this._drawHeroCard(
       ctx,
       x,
