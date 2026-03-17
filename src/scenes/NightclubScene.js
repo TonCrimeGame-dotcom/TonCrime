@@ -1,3 +1,12 @@
+
+function chance(prob) {
+  return Math.random() < Number(prob || 0);
+}
+
+function ensureArray(v) {
+  return Array.isArray(v) ? v : [];
+}
+
 export class NightclubScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -7,175 +16,297 @@ export class NightclubScene {
     this.scenes = scenes;
 
     this.scrollY = 0;
-    this.maxScroll = 0;
     this.dragging = false;
     this.downY = 0;
-    this.startScroll = 0;
-    this.moved = 0;
-    this.clickCandidate = false;
+    this.startScrollY = 0;
+    this.justDragged = false;
+    this.maxScroll = 0;
 
-    this.hitButtons = [];
-    this.backHit = null;
+    this.hitBuy = [];
+    this.hitPvp = null;
+    this.hitBack = null;
 
-    this.toastText = "";
+    this.toast = "";
     this.toastUntil = 0;
-    this.music = null;
-    this.musicStarted = false;
 
-    this.smoke = [];
-    this.blurUntil = 0;
-    this.flashUntil = 0;
-    this.lastFrameAt = 0;
+    this._music = null;
+    this._musicUnlocked = false;
+    this._pvpStartedFromNightclub = false;
+
+    this._onFirstUserGesture = this._onFirstUserGesture.bind(this);
+    this._onPvpWin = this._onPvpWin.bind(this);
+    this._onPvpLose = this._onPvpLose.bind(this);
 
     this.items = [
-      { id: "nc_alc_01", icon: "🥃", name: "Street Whiskey", energy: 4, price: 12, rarity: "common" },
-      { id: "nc_alc_02", icon: "🍺", name: "Dark Lager", energy: 5, price: 14, rarity: "common" },
-      { id: "nc_alc_03", icon: "🍷", name: "House Red Wine", energy: 6, price: 17, rarity: "common" },
-      { id: "nc_alc_04", icon: "🍸", name: "Neon Martini", energy: 7, price: 20, rarity: "common" },
-      { id: "nc_alc_05", icon: "🥂", name: "Club Prosecco", energy: 8, price: 23, rarity: "rare" },
-      { id: "nc_alc_06", icon: "🍹", name: "Tropical Mix", energy: 9, price: 26, rarity: "rare" },
-      { id: "nc_alc_07", icon: "🥃", name: "Oak Reserve", energy: 10, price: 29, rarity: "rare" },
-      { id: "nc_alc_08", icon: "🍾", name: "Velvet Champagne", energy: 11, price: 33, rarity: "rare" },
-      { id: "nc_alc_09", icon: "🍷", name: "Midnight Merlot", energy: 12, price: 36, rarity: "rare" },
-      { id: "nc_alc_10", icon: "🍸", name: "Blue Venom", energy: 13, price: 40, rarity: "epic" },
-      { id: "nc_alc_11", icon: "🥂", name: "Gold Spark", energy: 14, price: 44, rarity: "epic" },
-      { id: "nc_alc_12", icon: "🍺", name: "Imperial Stout", energy: 15, price: 48, rarity: "epic" },
-      { id: "nc_alc_13", icon: "🥃", name: "Black Barrel", energy: 16, price: 52, rarity: "epic" },
-      { id: "nc_alc_14", icon: "🍾", name: "Diamond Brut", energy: 17, price: 56, rarity: "epic" },
-      { id: "nc_alc_15", icon: "🍸", name: "Crimson Kiss", energy: 18, price: 61, rarity: "epic" },
-      { id: "nc_alc_16", icon: "🍷", name: "Royal Cabernet", energy: 19, price: 66, rarity: "epic" },
-      { id: "nc_alc_17", icon: "🥂", name: "Imperial Rosé", energy: 20, price: 71, rarity: "epic" },
-      { id: "nc_alc_18", icon: "🍹", name: "Electric Sunset", energy: 21, price: 76, rarity: "epic" },
-      { id: "nc_alc_19", icon: "🥃", name: "Smoked Bourbon", energy: 22, price: 82, rarity: "legendary" },
-      { id: "nc_alc_20", icon: "🍾", name: "Velour Prestige", energy: 23, price: 88, rarity: "legendary" },
-      { id: "nc_alc_21", icon: "🍸", name: "Phantom Dry", energy: 24, price: 94, rarity: "legendary" },
-      { id: "nc_alc_22", icon: "🥂", name: "Crystal Reserve", energy: 25, price: 101, rarity: "legendary" },
-      { id: "nc_alc_23", icon: "🥃", name: "King's Cask", energy: 26, price: 108, rarity: "legendary" },
-      { id: "nc_alc_24", icon: "🍷", name: "Velvet Noir", energy: 27, price: 115, rarity: "legendary" },
-      { id: "nc_alc_25", icon: "🍾", name: "Obsidian Gold", energy: 28, price: 123, rarity: "mythic" },
-      { id: "nc_alc_26", icon: "🍸", name: "Night Crown", energy: 29, price: 131, rarity: "mythic" },
-      { id: "nc_alc_27", icon: "🥂", name: "Saint Royale", energy: 30, price: 140, rarity: "mythic" },
-      { id: "nc_alc_28", icon: "🥃", name: "Mafia Reserve", energy: 31, price: 149, rarity: "mythic" },
-      { id: "nc_alc_29", icon: "🍾", name: "TonCrime Luxe", energy: 33, price: 159, rarity: "mythic" },
-      { id: "nc_alc_30", icon: "🥂", name: "Black Diamond Brut", energy: 35, price: 170, rarity: "mythic" },
-    ];
-
-    this.visitorsBase = [
-      { id: "blade", name: "Blade", tier: "Sokak", power: 9, rewardMin: 10, rewardMax: 20, avatar: "🕴️" },
-      { id: "zane", name: "Zane", tier: "Sokak", power: 11, rewardMin: 12, rewardMax: 22, avatar: "💣" },
-      { id: "scar", name: "Scar", tier: "VIP", power: 16, rewardMin: 18, rewardMax: 30, avatar: "🔪" },
-      { id: "vito", name: "Vito", tier: "VIP", power: 19, rewardMin: 22, rewardMax: 34, avatar: "🥷" },
-      { id: "ross", name: "Ross", tier: "Elite", power: 22, rewardMin: 26, rewardMax: 42, avatar: "🧤" },
-      { id: "nero", name: "Nero", tier: "Elite", power: 25, rewardMin: 30, rewardMax: 48, avatar: "👑" },
-      { id: "ghost", name: "Ghost", tier: "Mythic", power: 28, rewardMin: 34, rewardMax: 55, avatar: "☠️" },
-      { id: "onyx", name: "Onyx", tier: "Mythic", power: 30, rewardMin: 38, rewardMax: 60, avatar: "🦂" },
+      { id: "nc_alc_01", icon: "🥃", name: "Street Whiskey", energy: 4, price: 12, rarity: "Sokak", marketValue: 18, desc: "Sert viski. Hızlı enerji." },
+      { id: "nc_alc_02", icon: "🍺", name: "Dark Lager", energy: 5, price: 14, rarity: "Sokak", marketValue: 20, desc: "Ucuz ama iş görür." },
+      { id: "nc_alc_03", icon: "🍷", name: "House Red Wine", energy: 6, price: 17, rarity: "Sokak", marketValue: 24, desc: "Klasik kırmızı şarap." },
+      { id: "nc_alc_04", icon: "🍸", name: "Neon Martini", energy: 7, price: 20, rarity: "Sokak", marketValue: 28, desc: "Geceye uygun kokteyl." },
+      { id: "nc_alc_05", icon: "🥂", name: "Club Prosecco", energy: 8, price: 23, rarity: "Kulüp", marketValue: 33, desc: "Hafif lüks enerji içkisi." },
+      { id: "nc_alc_06", icon: "🍹", name: "Tropical Mix", energy: 9, price: 26, rarity: "Kulüp", marketValue: 38, desc: "Tatlı ama etkili." },
+      { id: "nc_alc_07", icon: "🥃", name: "Oak Reserve", energy: 10, price: 29, rarity: "Kulüp", marketValue: 43, desc: "Meşe fıçı aromalı viski." },
+      { id: "nc_alc_08", icon: "🍾", name: "Velvet Champagne", energy: 11, price: 33, rarity: "Kulüp", marketValue: 48, desc: "Kulübün imza şampanyası." },
+      { id: "nc_alc_09", icon: "🍷", name: "Midnight Merlot", energy: 12, price: 36, rarity: "Kulüp", marketValue: 53, desc: "Koyu ve yumuşak içim." },
+      { id: "nc_alc_10", icon: "🍸", name: "Blue Venom", energy: 13, price: 40, rarity: "VIP", marketValue: 59, desc: "VIP katın ünlü kokteyli." },
+      { id: "nc_alc_11", icon: "🥂", name: "Gold Spark", energy: 14, price: 44, rarity: "VIP", marketValue: 65, desc: "Altın pullu premium köpük." },
+      { id: "nc_alc_12", icon: "🍺", name: "Imperial Stout", energy: 15, price: 48, rarity: "VIP", marketValue: 71, desc: "Yoğun ve ağır bira." },
+      { id: "nc_alc_13", icon: "🥃", name: "Black Barrel", energy: 16, price: 52, rarity: "VIP", marketValue: 77, desc: "Yüksek dereceli viski." },
+      { id: "nc_alc_14", icon: "🍾", name: "Diamond Brut", energy: 17, price: 56, rarity: "VIP", marketValue: 84, desc: "Daha sert premium köpük." },
+      { id: "nc_alc_15", icon: "🍸", name: "Crimson Kiss", energy: 18, price: 61, rarity: "Elite", marketValue: 91, desc: "Elite kokteyl serisi." },
+      { id: "nc_alc_16", icon: "🍷", name: "Royal Cabernet", energy: 19, price: 66, rarity: "Elite", marketValue: 98, desc: "Uzun yıllanmış şarap." },
+      { id: "nc_alc_17", icon: "🥂", name: "Imperial Rosé", energy: 20, price: 71, rarity: "Elite", marketValue: 106, desc: "Pazar değeri yüksek." },
+      { id: "nc_alc_18", icon: "🍹", name: "Electric Sunset", energy: 21, price: 76, rarity: "Elite", marketValue: 114, desc: "Nadir gece kokteyli." },
+      { id: "nc_alc_19", icon: "🥃", name: "Smoked Bourbon", energy: 22, price: 82, rarity: "Elite", marketValue: 123, desc: "Duman aromalı bourbon." },
+      { id: "nc_alc_20", icon: "🍾", name: "Velour Prestige", energy: 23, price: 88, rarity: "Legend", marketValue: 132, desc: "Legend sınıfı şampanya." },
+      { id: "nc_alc_21", icon: "🍸", name: "Phantom Dry", energy: 24, price: 94, rarity: "Legend", marketValue: 141, desc: "Nadir dry martini." },
+      { id: "nc_alc_22", icon: "🥂", name: "Crystal Reserve", energy: 25, price: 101, rarity: "Legend", marketValue: 151, desc: "Saf premium seri." },
+      { id: "nc_alc_23", icon: "🥃", name: "King's Cask", energy: 26, price: 108, rarity: "Legend", marketValue: 162, desc: "Koleksiyonluk fıçı seçkisi." },
+      { id: "nc_alc_24", icon: "🍷", name: "Velvet Noir", energy: 27, price: 115, rarity: "Legend", marketValue: 173, desc: "En pahalı kırmızı." },
+      { id: "nc_alc_25", icon: "🍾", name: "Obsidian Gold", energy: 28, price: 123, rarity: "Mythic", marketValue: 185, desc: "Çok nadir kulüp şişesi." },
+      { id: "nc_alc_26", icon: "🍸", name: "Night Crown", energy: 29, price: 131, rarity: "Mythic", marketValue: 197, desc: "Özel menü kokteyli." },
+      { id: "nc_alc_27", icon: "🥂", name: "Saint Royale", energy: 30, price: 140, rarity: "Mythic", marketValue: 210, desc: "Özel etkinlik serisi." },
+      { id: "nc_alc_28", icon: "🥃", name: "Mafia Reserve", energy: 31, price: 149, rarity: "Mythic", marketValue: 224, desc: "Ağır premium viski." },
+      { id: "nc_alc_29", icon: "🍾", name: "TonCrime Luxe", energy: 33, price: 159, rarity: "Mythic", marketValue: 239, desc: "TonCrime özel seri." },
+      { id: "nc_alc_30", icon: "🥂", name: "Black Diamond Brut", energy: 35, price: 170, rarity: "Mythic", marketValue: 255, desc: "En üst seviye şişe." },
     ];
   }
 
   onEnter() {
     this.scrollY = 0;
-    this.maxScroll = 0;
     this.dragging = false;
-    this.moved = 0;
-    this.clickCandidate = false;
-    this.hitButtons = [];
-    this.backHit = null;
-    this.toastText = "";
-    this.toastUntil = 0;
-    this.blurUntil = 0;
-    this.flashUntil = 0;
-    this.lastFrameAt = performance.now();
+    this.justDragged = false;
+    this.hitBuy = [];
+    this.hitPvp = null;
+    this.hitBack = null;
+
     this._ensureState();
-    this._seedSmoke(18);
-    this._ensureMusic();
+    this._setupMusic();
+    this._playMusic();
+    this._bindEvents();
+
     this._pushSystemChat(`🪩 ${this._playerName()} Nightclub'a girdi.`);
   }
 
   onExit() {
     this.dragging = false;
-    if (this.music) {
-      try { this.music.pause(); } catch (_) {}
-    }
+    this._pauseMusic();
+    this._unbindEvents();
+    this._pushSystemChat(`🚪 ${this._playerName()} Nightclub'dan çıktı.`);
   }
 
   _ensureState() {
     const s = this.store.get() || {};
     const p = s.player || {};
+    const nightclub = s.nightclub || {};
     const inventory = s.inventory || {};
     const pvp = s.pvp || {};
-    const nightclub = s.nightclub || {};
-
-    const visitors = Array.isArray(nightclub.visitors) && nightclub.visitors.length ? nightclub.visitors : this._freshVisitors();
-    const notices = Array.isArray(nightclub.notices) ? nightclub.notices : [];
 
     this.store.set({
-      inventory: { ...inventory, items: Array.isArray(inventory.items) ? inventory.items : [] },
+      player: {
+        ...p,
+        energy: Number(p.energy ?? 10),
+        energyMax: Number(p.energyMax ?? 100),
+      },
+      inventory: {
+        ...inventory,
+        items: Array.isArray(inventory.items) ? inventory.items : [],
+      },
       pvp: {
-        ...pvp,
         wins: Number(pvp.wins || 0),
         losses: Number(pvp.losses || 0),
         rating: Number(pvp.rating || 1000),
         currentOpponent: pvp.currentOpponent || null,
-      },
-      player: {
-        ...p,
-        level: Math.max(1, Number(p.level || 1)),
-        xp: Number(p.xp || 0),
-        xpToNext: Math.max(100, Number(p.xpToNext || 100)),
-        energy: Number(p.energy || 0),
-        energyMax: Math.max(10, Number(p.energyMax || 100)),
+        leaderboard: Array.isArray(pvp.leaderboard) ? pvp.leaderboard : [],
+        history: Array.isArray(pvp.history) ? pvp.history : [],
       },
       nightclub: {
-        ...nightclub,
-        visitors,
-        notices,
         totalSpent: Number(nightclub.totalSpent || 0),
         totalBought: Number(nightclub.totalBought || 0),
+        lastRaidAt: Number(nightclub.lastRaidAt || 0),
+        raidCount: Number(nightclub.raidCount || 0),
         inventoryBought: Number(nightclub.inventoryBought || 0),
-        theftEvents: Number(nightclub.theftEvents || 0),
         pvpWins: Number(nightclub.pvpWins || 0),
         pvpLosses: Number(nightclub.pvpLosses || 0),
+        lastPvpAt: Number(nightclub.lastPvpAt || 0),
       },
     });
   }
 
-  _freshVisitors() {
-    return [...this.visitorsBase].sort(() => Math.random() - 0.5).slice(0, 4).map((v) => ({
-      ...v,
-      mood: ["Drunk", "Watching", "Aggro", "VIP Table"][Math.floor(Math.random() * 4)],
-    }));
+  _bindEvents() {
+    window.addEventListener("pointerdown", this._onFirstUserGesture, { passive: true });
+    window.addEventListener("touchstart", this._onFirstUserGesture, { passive: true });
+    window.addEventListener("tc:pvp:win", this._onPvpWin);
+    window.addEventListener("tc:pvp:lose", this._onPvpLose);
   }
 
-  _playerName() { const s = this.store.get() || {}; return String(s.player?.username || "Player"); }
-  _safeRect() { const safe = this.store.get()?.ui?.safe; return safe && Number.isFinite(safe.w) && Number.isFinite(safe.h) ? safe : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }; }
-
-  _getBg() {
-    if (typeof this.assets?.getImage === "function") return this.assets.getImage("nightclub_bg") || this.assets.getImage("nightclub");
-    if (typeof this.assets?.get === "function") return this.assets.get("nightclub_bg") || this.assets.get("nightclub");
-    return this.assets?.images?.nightclub_bg || this.assets?.images?.nightclub || null;
+  _unbindEvents() {
+    window.removeEventListener("pointerdown", this._onFirstUserGesture);
+    window.removeEventListener("touchstart", this._onFirstUserGesture);
+    window.removeEventListener("tc:pvp:win", this._onPvpWin);
+    window.removeEventListener("tc:pvp:lose", this._onPvpLose);
   }
 
-  _ensureMusic() {
-    if (this.musicStarted) return;
-    this.musicStarted = true;
+  _onFirstUserGesture() {
+    this._musicUnlocked = true;
+    this._playMusic();
+  }
+
+  _setupMusic() {
+    if (this._music) return;
+
     try {
-      this.music = new Audio("./src/assets/club.mp3");
-      this.music.loop = true;
-      this.music.volume = 0.30;
-      const play = () => {
-        if (!this.music) return;
-        this.music.play().catch(() => {});
-        window.removeEventListener("pointerdown", play);
-        window.removeEventListener("touchstart", play);
-        window.removeEventListener("click", play);
-      };
-      window.addEventListener("pointerdown", play, { passive: true, once: true });
-      window.addEventListener("touchstart", play, { passive: true, once: true });
-      window.addEventListener("click", play, { passive: true, once: true });
+      this._music = new Audio("./src/assets/club.mp3");
+      this._music.loop = true;
+      this._music.volume = 0.38;
+      this._music.preload = "auto";
+    } catch (_) {
+      this._music = null;
+    }
+  }
+
+  _playMusic() {
+    if (!this._music) return;
+    if (!this._musicUnlocked) return;
+
+    const state = this.store.get() || {};
+    const musicEnabled = state?.settings?.music !== false;
+
+    if (!musicEnabled) return;
+
+    this._music.play().catch(() => {});
+  }
+
+  _pauseMusic() {
+    try {
+      this._music?.pause();
     } catch (_) {}
   }
 
-  _rr(ctx, x, y, w, h, r) {
+  _onPvpWin(ev) {
+    if (!this._pvpStartedFromNightclub) return;
+    this._pvpStartedFromNightclub = false;
+    this._applyPvpResult("win", ev?.detail || {});
+  }
+
+  _onPvpLose(ev) {
+    if (!this._pvpStartedFromNightclub) return;
+    this._pvpStartedFromNightclub = false;
+    this._applyPvpResult("lose", ev?.detail || {});
+  }
+
+  _applyPvpResult(result, detail = {}) {
+    const s = this.store.get() || {};
+    const pvp = s.pvp || {};
+    const nightclub = s.nightclub || {};
+    const playerName = this._playerName();
+    const opponentName = String(detail?.opponent?.username || "Rakip");
+    const now = Date.now();
+
+    const wins = Number(pvp.wins || 0) + (result === "win" ? 1 : 0);
+    const losses = Number(pvp.losses || 0) + (result === "lose" ? 1 : 0);
+    const ratingChange = result === "win" ? 14 : -10;
+    const rating = Math.max(0, Number(pvp.rating || 1000) + ratingChange);
+
+    const prevBoard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.map((x) => ({ ...x })) : [];
+    const prevHistory = Array.isArray(pvp.history) ? pvp.history.map((x) => ({ ...x })) : [];
+
+    let meEntry = prevBoard.find((x) => x.id === "player_main");
+    if (!meEntry) {
+      meEntry = {
+        id: "player_main",
+        username: playerName,
+        wins: 0,
+        losses: 0,
+        rating: Number(pvp.rating || 1000),
+        source: "nightclub",
+      };
+      prevBoard.push(meEntry);
+    }
+
+    meEntry.username = playerName;
+    meEntry.wins = wins;
+    meEntry.losses = losses;
+    meEntry.rating = rating;
+    meEntry.source = "nightclub";
+
+    prevBoard.sort((a, b) => {
+      const ratingDiff = Number(b.rating || 0) - Number(a.rating || 0);
+      if (ratingDiff !== 0) return ratingDiff;
+      return Number(b.wins || 0) - Number(a.wins || 0);
+    });
+
+    const rankedBoard = prevBoard.slice(0, 50).map((row, idx) => ({
+      ...row,
+      rank: idx + 1,
+    }));
+
+    prevHistory.unshift({
+      id: `nightclub_pvp_${now}`,
+      result,
+      opponent: opponentName,
+      ts: now,
+      source: "nightclub",
+      ratingAfter: rating,
+    });
+
+    this.store.set({
+      pvp: {
+        ...pvp,
+        wins,
+        losses,
+        rating,
+        currentOpponent: detail?.opponent || null,
+        leaderboard: rankedBoard,
+        history: prevHistory.slice(0, 30),
+      },
+      nightclub: {
+        ...nightclub,
+        pvpWins: Number(nightclub.pvpWins || 0) + (result === "win" ? 1 : 0),
+        pvpLosses: Number(nightclub.pvpLosses || 0) + (result === "lose" ? 1 : 0),
+        lastPvpAt: now,
+      },
+    });
+
+    if (result === "win") {
+      this._showToast(`🏆 PvP kazandın • ${opponentName}`, 1800);
+      this._pushSystemChat(`🏆 ${playerName}, ${opponentName} karşısında PvP kazandı.`);
+    } else {
+      this._showToast(`💥 PvP kaybettin • ${opponentName}`, 1800);
+      this._pushSystemChat(`💥 ${playerName}, ${opponentName} karşısında PvP kaybetti.`);
+    }
+  }
+
+  _playerName() {
+    const s = this.store.get() || {};
+    return String(s?.player?.username || "Player");
+  }
+
+  _safe() {
+    const s = this.store.get() || {};
+    return s?.ui?.safe || {
+      x: 0,
+      y: 0,
+      w: window.innerWidth || 390,
+      h: window.innerHeight || 844,
+    };
+  }
+
+  _showToast(text, ms = 1400) {
+    this.toast = String(text || "");
+    this.toastUntil = Date.now() + ms;
+  }
+
+  _getBg() {
+    if (typeof this.assets?.getImage === "function") return this.assets.getImage("nightclub");
+    if (typeof this.assets?.get === "function") return this.assets.get("nightclub");
+    if (this.assets?.images instanceof Map) {
+      const entry = this.assets.images.get("nightclub");
+      return entry?.img || null;
+    }
+    return this.assets?.images?.nightclub || null;
+  }
+
+  _roundRect(ctx, x, y, w, h, r) {
     const rr = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
     ctx.moveTo(x + rr, y);
@@ -186,558 +317,626 @@ export class NightclubScene {
     ctx.closePath();
   }
 
+  _fillRoundRect(ctx, x, y, w, h, r) {
+    this._roundRect(ctx, x, y, w, h, r);
+    ctx.fill();
+  }
+
+  _strokeRoundRect(ctx, x, y, w, h, r) {
+    this._roundRect(ctx, x, y, w, h, r);
+    ctx.stroke();
+  }
+
+  _pointInRect(px, py, r) {
+    return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  _fmt(n) {
+    return Number(n || 0).toLocaleString("tr-TR");
+  }
+
+  _rarityColor(rarity) {
+    switch (String(rarity || "").toLowerCase()) {
+      case "sokak":
+        return "#b0b6c2";
+      case "kulüp":
+        return "#7fd0ff";
+      case "vip":
+        return "#ff9ecb";
+      case "elite":
+        return "#c77dff";
+      case "legend":
+        return "#ffc86b";
+      case "mythic":
+        return "#ff6b6b";
+      default:
+        return "#ffffff";
+    }
+  }
+
   _drawCover(ctx, img, x, y, w, h) {
     if (!img) {
-      ctx.fillStyle = "#0b0b0f";
+      ctx.fillStyle = "#130b11";
       ctx.fillRect(x, y, w, h);
       return;
     }
-    const iw = img.width || 1;
-    const ih = img.height || 1;
+
+    const iw = img.width || img.naturalWidth || 1;
+    const ih = img.height || img.naturalHeight || 1;
     const scale = Math.max(w / iw, h / ih);
     const dw = iw * scale;
     const dh = ih * scale;
     const dx = x + (w - dw) / 2;
     const dy = y + (h - dh) / 2;
+
     ctx.drawImage(img, dx, dy, dw, dh);
   }
 
-  _showToast(text, ms = 1700) { this.toastText = String(text || ""); this.toastUntil = Date.now() + ms; }
+  _clampScroll(viewH, contentH) {
+    this.maxScroll = Math.max(0, contentH - viewH);
+    if (this.scrollY < 0) this.scrollY = 0;
+    if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
+  }
+
+  _escapeHtml(str) {
+    return String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
 
   _pushSystemChat(text) {
     const s = this.store.get() || {};
-    const chatLog = Array.isArray(s.chatLog) ? s.chatLog.slice(-79) : [];
-    const item = { id: `sys_${Date.now()}_${Math.floor(Math.random() * 99999)}`, type: "system", username: "SYSTEM", text: String(text || ""), ts: Date.now() };
-    chatLog.push(item);
-    this.store.set({ chatLog });
-    try { window.dispatchEvent(new CustomEvent("tc:chat:push", { detail: item })); } catch (_) {}
-  }
+    const chat = Array.isArray(s.chatLog) ? s.chatLog.slice(-79) : [];
+    const ts = Date.now();
 
-  _pushNotice(text) {
-    const s = this.store.get() || {};
-    const nightclub = s.nightclub || {};
-    const notices = Array.isArray(nightclub.notices) ? nightclub.notices.map((x) => ({ ...x })) : [];
-    notices.unshift({ id: `notice_${Date.now()}`, text: String(text || ""), ts: Date.now() });
-    this.store.set({ nightclub: { ...nightclub, notices: notices.slice(0, 3) } });
-  }
+    chat.push({
+      id: `sys_${ts}_${Math.random().toString(36).slice(2, 7)}`,
+      type: "system",
+      username: "SYSTEM",
+      text: String(text || ""),
+      ts,
+    });
 
-  _seedSmoke(count) {
-    this.smoke = [];
-    const safe = this._safeRect();
-    for (let i = 0; i < count; i++) {
-      this.smoke.push({ x: safe.x + Math.random() * safe.w, y: safe.y + Math.random() * safe.h, r: 18 + Math.random() * 42, alpha: 0.04 + Math.random() * 0.08, vx: -0.10 + Math.random() * 0.20, vy: -0.12 - Math.random() * 0.28, life: 0.4 + Math.random() * 1.1 });
-    }
-  }
+    this.store.set({ chatLog: chat });
 
-  _updateFx() {
-    const now = performance.now();
-    let dt = this.lastFrameAt ? (now - this.lastFrameAt) / 16.6667 : 1;
-    this.lastFrameAt = now;
-    dt = Math.max(0.4, Math.min(2.2, dt));
-    const safe = this._safeRect();
-    for (const s of this.smoke) {
-      s.x += s.vx * dt * 2.0;
-      s.y += s.vy * dt * 2.0;
-      s.r += 0.04 * dt * 10;
-      s.life -= 0.0038 * dt * 10;
-      if (s.life <= 0 || s.y + s.r < safe.y - 30) {
-        s.x = safe.x + Math.random() * safe.w;
-        s.y = safe.y + safe.h + Math.random() * 24;
-        s.r = 18 + Math.random() * 42;
-        s.alpha = 0.04 + Math.random() * 0.08;
-        s.vx = -0.10 + Math.random() * 0.20;
-        s.vy = -0.12 - Math.random() * 0.28;
-        s.life = 0.6 + Math.random() * 1.1;
+    try {
+      window.dispatchEvent(
+        new CustomEvent("tc:chat:push", {
+          detail: {
+            id: `sys_${ts}`,
+            type: "system",
+            username: "SYSTEM",
+            text: String(text || ""),
+            ts,
+          },
+        })
+      );
+    } catch (_) {}
+
+    try {
+      const el = document.getElementById("chatMessages");
+      if (el) {
+        const row = document.createElement("div");
+        row.className = "msg";
+
+        const d = new Date(ts);
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mm = String(d.getMinutes()).padStart(2, "0");
+
+        row.innerHTML = `
+          <span class="meta">${hh}:${mm}</span>
+          <span><b>SYSTEM</b> ${this._escapeHtml(String(text || ""))}</span>
+        `;
+        el.appendChild(row);
+        el.scrollTop = el.scrollHeight;
       }
-    }
+    } catch (_) {}
   }
 
-  _gainXp(amount) {
-    const s = this.store.get() || {};
-    const p = { ...(s.player || {}) };
-    let xp = Number(p.xp || 0) + Number(amount || 0);
-    let level = Math.max(1, Number(p.level || 1));
-    const xpToNext = Math.max(100, Number(p.xpToNext || 100));
-    while (xp >= xpToNext) { xp -= xpToNext; level += 1; }
-    this.store.set({ player: { ...p, xp, level, xpToNext } });
-  }
-
-  _addInventoryItem(item) {
+  _mergeInventoryItem(item) {
     const s = this.store.get() || {};
     const inventory = s.inventory || {};
     const items = Array.isArray(inventory.items) ? inventory.items.map((x) => ({ ...x })) : [];
-    const existing = items.find((x) => String(x.name || "").toLowerCase() === String(item.name || "").toLowerCase() && String(x.kind || "") === String(item.kind || ""));
-    if (existing) existing.qty = Number(existing.qty || 0) + Number(item.qty || 1);
-    else items.unshift({ ...item });
-    this.store.set({ inventory: { ...inventory, items } });
+
+    const existing = items.find(
+      (x) =>
+        String(x.name || "").toLowerCase() === String(item.name || "").toLowerCase() &&
+        String(x.rarity || "").toLowerCase() === String(item.rarity || "").toLowerCase()
+    );
+
+    if (existing) {
+      existing.qty = Number(existing.qty || 0) + Number(item.qty || 1);
+      existing.marketPrice = Math.max(Number(existing.marketPrice || 0), Number(item.marketPrice || 0));
+      existing.sellPrice = Math.max(Number(existing.sellPrice || 0), Number(item.sellPrice || 0));
+      existing.energyGain = Math.max(Number(existing.energyGain || 0), Number(item.energyGain || 0));
+    } else {
+      items.unshift({ ...item });
+    }
+
+    this.store.set({
+      inventory: {
+        ...inventory,
+        items,
+      },
+    });
   }
 
-  _alcoholInventoryItem(item) {
-    return {
-      id: `night_item_${item.id}_${Date.now()}`,
-      kind: "consumable",
-      icon: item.icon || "🍾",
-      name: item.name,
-      rarity: item.rarity || "common",
-      qty: 1,
-      usable: true,
-      sellable: true,
-      marketable: true,
-      energyGain: Number(item.energy || 0),
-      sellPrice: Math.max(1, Math.floor(Number(item.price || 0) * 0.65)),
-      marketPrice: Number(item.price || 0),
-      desc: "Nightclub ürünü.",
-      source: "nightclub",
-    };
+async _loadScriptOnce(srcList = []) {
+    const list = Array.isArray(srcList) ? srcList : [srcList];
+    for (const src of list) {
+      if (!src) continue;
+      const existing = document.querySelector(`script[data-nightclub-pvp="${src}"]`);
+      if (existing?.dataset.loaded === "1") return src;
+      try {
+        await new Promise((resolve, reject) => {
+          const el = existing || document.createElement("script");
+          if (!existing) {
+            el.src = src;
+            el.defer = true;
+            el.dataset.nightclubPvp = src;
+            document.body.appendChild(el);
+          }
+          const ok = () => {
+            el.dataset.loaded = "1";
+            resolve(src);
+          };
+          const fail = () => reject(new Error(`yüklenemedi: ${src}`));
+          el.addEventListener("load", ok, { once: true });
+          el.addEventListener("error", fail, { once: true });
+        });
+        return src;
+      } catch (_) {}
+    }
+    throw new Error("pvpcage.js yüklenemedi");
   }
 
-  _maybeGift() {
-    if (!chance(0.26)) return null;
-    const pool = [
-      { kind: "consumable", icon: "🍾", name: "Premium Champagne", rarity: "rare", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 14, sellPrice: 28, marketPrice: 44, desc: "VIP masa hediyesi.", source: "nightclub_gift" },
-      { kind: "consumable", icon: "🥃", name: "Black Barrel", rarity: "epic", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 18, sellPrice: 38, marketPrice: 58, desc: "Bar arkasından düştü.", source: "nightclub_gift" },
-      { kind: "rare", icon: "📦", name: "Mystery Crate", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: true, energyGain: 0, sellPrice: 55, marketPrice: 78, desc: "Kulüp kasası hediyesi.", source: "nightclub_gift" },
-    ];
-    const gift = pool[Math.floor(Math.random() * pool.length)];
-    this._addInventoryItem({ ...gift, id: `gift_${Date.now()}` });
-    this._pushSystemChat(`🎁 ${this._playerName()} Nightclub içinde hediye buldu: ${gift.name}`);
-    this._pushNotice(`🎁 Hediye: ${gift.name}`);
-    return gift;
+  _ensurePvpShell() {
+    const wrap = document.getElementById("pvpWrap");
+    const arena = document.getElementById("arena");
+    const status = document.getElementById("pvpStatus");
+    const spinner = document.getElementById("pvpSpinner");
+    const opponent = document.getElementById("pvpOpponent");
+    const startBtn = document.getElementById("pvpStart");
+    const stopBtn = document.getElementById("pvpStop");
+    const resetBtn = document.getElementById("pvpReset");
+    const enemyFill = document.getElementById("enemyFill");
+    const meFill = document.getElementById("meFill");
+    const enemyHpText = document.getElementById("enemyHpText");
+    const meHpText = document.getElementById("meHpText");
+
+    if (!wrap || !arena || !status || !enemyFill || !meFill || !enemyHpText || !meHpText) {
+      throw new Error("PvP shell bulunamadı");
+    }
+
+    wrap.classList.add("open");
+    wrap.style.display = "flex";
+    wrap.style.pointerEvents = "auto";
+    if (status) status.textContent = "PvP • Kafes Dövüşü yükleniyor...";
+    if (spinner) spinner.classList.remove("hidden");
+    if (opponent) opponent.textContent = "ShadowWolf";
+    if (startBtn) startBtn.style.display = "none";
+    if (stopBtn) stopBtn.style.display = "none";
+    if (resetBtn) resetBtn.style.display = "none";
+
+    return { arena, status, spinner, enemyFill, meFill, enemyHpText, meHpText };
   }
 
-  _maybeCrowdTheft(source = "crowd") {
-    if (!chance(0.26)) return null;
+  async _openPvp() {
+    try {
+      const s = this.store.get() || {};
+      this.store.set({
+        pvp: {
+          ...(s.pvp || {}),
+          source: "nightclub",
+          selectedMode: "arena",
+        },
+      });
+
+      const shell = this._ensurePvpShell();
+      await this._loadScriptOnce(["./src/pvpcage.js", "./pvpcage.js"]);
+
+      if (!window.TonCrimePVP_CAGE) throw new Error("TonCrimePVP_CAGE bulunamadı");
+
+      window.TonCrimePVP = window.TonCrimePVP_CAGE;
+      window.TonCrimePVP.init?.({
+        arenaId: "arena",
+        statusId: "pvpStatus",
+        enemyFillId: "enemyFill",
+        meFillId: "meFill",
+        enemyHpTextId: "enemyHpText",
+        meHpTextId: "meHpText",
+      });
+      window.TonCrimePVP.setOpponent?.({ username: "ShadowWolf", isBot: true });
+      await new Promise((r) => setTimeout(r, 120));
+      window.TonCrimePVP.start?.();
+
+      if (shell.status) shell.status.textContent = "PvP • Kafes Dövüşü başladı";
+      if (shell.spinner) shell.spinner.classList.add("hidden");
+      this._showToast("Kafes Dövüşü açıldı");
+      this._pushSystemChat(`⚔️ ${this._playerName()} Nightclub içinden Kafes Dövüşü başlattı.`);
+    } catch (err) {
+      console.error("[Nightclub] PvP açılamadı:", err);
+      this._showToast("PvP açılamadı");
+      try {
+        this.scenes.go("pvp");
+      } catch (_) {}
+    }
+  }
+
+  _applyPoliceRaid(item) {
     const s = this.store.get() || {};
     const p = s.player || {};
     const nightclub = s.nightclub || {};
-    const energyLoss = Math.min(Number(p.energy || 0), Math.floor(4 + Math.random() * 15));
-    const coinLoss = Math.min(Number(s.coins || 0), Math.floor(7 + Math.random() * 30));
-    this.store.set({
-      coins: Math.max(0, Number(s.coins || 0) - coinLoss),
-      player: { ...p, energy: Math.max(0, Number(p.energy || 0) - energyLoss) },
-      nightclub: { ...nightclub, theftEvents: Number(nightclub.theftEvents || 0) + 1 },
-    });
-    this.blurUntil = Date.now() + 1500;
-    this.flashUntil = Date.now() + 220;
-    const text = `🥊 Gece kulübünde kavga çıktı (${source}) • -${energyLoss} enerji / -${coinLoss} yton`;
-    this._pushSystemChat(text);
-    this._pushNotice(text);
-    return { energyLoss, coinLoss };
-  }
 
-  _recordGlobalPvp(visitor, didWin, ratingDelta) {
-    const s = this.store.get() || {};
-    const p = s.player || {};
-    const pvp = s.pvp || {};
-    const nightclub = s.nightclub || {};
+    const energy = Number(p.energy || 0);
+    const lossEnergy = Math.max(4, Math.min(22, Math.ceil(Number(item.energy || 0) * 0.8)));
+    const lossCoins = Math.max(3, Math.floor(Number(item.price || 0) * 0.18));
+
     this.store.set({
-      pvp: { ...pvp, currentOpponent: visitor.name, wins: Number(pvp.wins || 0) + (didWin ? 1 : 0), losses: Number(pvp.losses || 0) + (didWin ? 0 : 1), rating: Math.max(0, Number(pvp.rating || 1000) + Number(ratingDelta || 0)) },
-      player: { ...p, pvpPlayed: Number(p.pvpPlayed || 0) + 1, pvpWins: Number(p.pvpWins || 0) + (didWin ? 1 : 0), pvpLosses: Number(p.pvpLosses || 0) + (didWin ? 0 : 1) },
-      nightclub: { ...nightclub, pvpWins: Number(nightclub.pvpWins || 0) + (didWin ? 1 : 0), pvpLosses: Number(nightclub.pvpLosses || 0) + (didWin ? 0 : 1) },
+      coins: Math.max(0, Number(s.coins || 0) - lossCoins),
+      player: {
+        ...p,
+        energy: Math.max(0, energy - lossEnergy),
+      },
+      nightclub: {
+        ...nightclub,
+        lastRaidAt: Date.now(),
+        raidCount: Number(nightclub.raidCount || 0) + 1,
+      },
     });
-    try { window.dispatchEvent(new Event(didWin ? "tc:pvp:win" : "tc:pvp:lose")); } catch (_) {}
+
+    this._showToast(`🚓 Polis baskını! -${lossEnergy} enerji / -${lossCoins} yton`, 1800);
+    this._pushSystemChat(
+      `🚓 Polis baskını Nightclub'da patladı. ${this._playerName()} ${lossEnergy} enerji ve ${lossCoins} yton kaybetti.`
+    );
   }
 
   _buy(item) {
     const s = this.store.get() || {};
     const p = s.player || {};
     const nightclub = s.nightclub || {};
+    const coins = Number(s.coins || 0);
     const price = Number(item.price || 0);
-    if (Number(s.coins || 0) < price) {
+    const gain = Number(item.energy || 0);
+    const energy = Number(p.energy || 0);
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+
+    if (coins < price) {
       this._showToast("Yetersiz yton");
       return;
     }
 
-    const energy = Number(p.energy || 0);
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
-    this.store.set({
-      coins: Number(s.coins || 0) - price,
-      nightclub: { ...nightclub, totalSpent: Number(nightclub.totalSpent || 0) + price, totalBought: Number(nightclub.totalBought || 0) + 1, inventoryBought: Number(nightclub.inventoryBought || 0) + (energy >= energyMax ? 1 : 0) },
-    });
+    const nextClub = {
+      ...nightclub,
+      totalSpent: Number(nightclub.totalSpent || 0) + price,
+      totalBought: Number(nightclub.totalBought || 0) + 1,
+      inventoryBought: Number(nightclub.inventoryBought || 0),
+    };
 
-    if (energy >= energyMax) {
-      this._addInventoryItem(this._alcoholInventoryItem(item));
-      this._showToast(`${item.name} envantere eklendi`, 1800);
-      this._pushSystemChat(`🍾 ${this._playerName()} ${item.name} aldı ve envantere attı.`);
-      this._pushNotice(`🍾 Envantere gitti: ${item.name}`);
+    if (energy < energyMax) {
+      const nextEnergy = Math.min(energyMax, energy + gain);
+      this.store.set({
+        coins: coins - price,
+        player: {
+          ...p,
+          energy: nextEnergy,
+        },
+        nightclub: nextClub,
+      });
+
+      this._showToast(`${item.name} kullanıldı • +${nextEnergy - energy} enerji`, 1500);
+      this._pushSystemChat(`🍾 ${this._playerName()} ${item.name} satın aldı. (-${price} yton / +${nextEnergy - energy} enerji)`);
     } else {
-      const gain = Math.min(Number(item.energy || 0), energyMax - energy);
-      this.store.set({ player: { ...this.store.get().player, energy: energy + gain } });
-      this._gainXp(1 + Math.floor(gain / 8));
-      this._showToast(`+${gain} enerji / -${price} yton`, 1700);
-      this._pushSystemChat(`🥂 ${this._playerName()} ${item.name} kullandı. +${gain} enerji`);
-      this._pushNotice(`🥂 ${item.name} kullanıldı (+${gain})`);
+      const inventoryItem = {
+        id: `inv_nightclub_${item.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        kind: "consumable",
+        icon: item.icon || "🍾",
+        name: item.name,
+        rarity: item.rarity || "Kulüp",
+        qty: 1,
+        usable: true,
+        sellable: true,
+        marketable: true,
+        energyGain: gain,
+        sellPrice: Math.max(1, Math.floor(price * 0.68)),
+        marketPrice: Number(item.marketValue || price || 0),
+        desc: item.desc || "Nightclub ürünü.",
+        source: "nightclub",
+        category: "alcohol",
+        createdAt: Date.now(),
+      };
+
+      nextClub.inventoryBought += 1;
+      this.store.set({
+        coins: coins - price,
+        nightclub: nextClub,
+      });
+      this._mergeInventoryItem(inventoryItem);
+      this._showToast(`${item.name} envantere eklendi`, 1500);
+      this._pushSystemChat(`🍾 ${this._playerName()} ${item.name} satın aldı. (-${price} yton / envantere eklendi)`);
     }
 
-    const gift = this._maybeGift();
-    const theft = this._maybeCrowdTheft("satın alım");
-    if (gift && theft) this._showToast(`🎁 ${gift.name} geldi ama içeride soyuldun`, 2400);
-    else if (gift) this._showToast(`🎁 Hediye geldi: ${gift.name}`, 2200);
-    else if (theft) this._showToast(`- ${theft.energyLoss} enerji / -${theft.coinLoss} yton`, 2200);
-  }
-
-  _attack(visitor) {
-    const s = this.store.get() || {};
-    const p = s.player || {};
-    const nightclub = s.nightclub || {};
-    const attackCost = 7;
-    if (Number(p.energy || 0) < attackCost) {
-      this._showToast(`PvP için ${attackCost} enerji lazım`);
-      return;
+    if (chance(0.20)) {
+      this._applyPoliceRaid(item);
     }
-
-    let winChance = 0.46 + Number(p.level || 1) * 0.004 - Number(visitor.power || 0) * 0.006;
-    winChance = Math.max(0.20, Math.min(0.82, winChance));
-    const didWin = Math.random() < winChance;
-    const ratingDelta = didWin ? (12 + Math.floor(Math.random() * 15)) : -(8 + Math.floor(Math.random() * 10));
-
-    let nextCoins = Number(s.coins || 0);
-    let nextEnergy = Math.max(0, Number(p.energy || 0) - attackCost);
-
-    if (didWin) {
-      const rewardCoins = visitor.rewardMin + Math.floor(Math.random() * (visitor.rewardMax - visitor.rewardMin + 1));
-      nextCoins += rewardCoins;
-      this._gainXp(8 + Math.floor(Math.random() * 8));
-      this._showToast(`⚔️ ${visitor.name} yenildi! +${rewardCoins} yton`, 2200);
-      this._pushSystemChat(`⚔️ ${this._playerName()} Nightclub içinde ${visitor.name}'ı yendi.`);
-      this._pushNotice(`⚔️ Kazanıldı: ${visitor.name}`);
-    } else {
-      const coinLoss = Math.min(nextCoins, 4 + Math.floor(Math.random() * 18));
-      const extraEnergyLoss = 4 + Math.floor(Math.random() * 12);
-      nextCoins = Math.max(0, nextCoins - coinLoss);
-      nextEnergy = Math.max(0, nextEnergy - extraEnergyLoss);
-      this.blurUntil = Date.now() + 1400;
-      this._showToast(`💥 ${visitor.name} seni dağıttı!`, 2200);
-      this._pushSystemChat(`💥 ${this._playerName()} Nightclub içinde ${visitor.name}'a kaybetti.`);
-      this._pushNotice(`💥 Kaybedildi: ${visitor.name}`);
-    }
-
-    const visitors = Array.isArray(nightclub.visitors) ? nightclub.visitors.map((x) => ({ ...x })) : [];
-    const idx = visitors.findIndex((x) => String(x.id) === String(visitor.id));
-    if (idx >= 0) {
-      visitors[idx].mood = didWin ? "Shaken" : "Laughing";
-      visitors[idx].power = Math.max(7, Math.min(34, Number(visitors[idx].power || 0) + (didWin ? 1 : 0)));
-    }
-
-    this.store.set({ coins: nextCoins, player: { ...this.store.get().player, energy: nextEnergy }, nightclub: { ...this.store.get().nightclub, visitors } });
-    if (chance(0.22)) this._maybeCrowdTheft("pvp");
-    this._recordGlobalPvp(visitor, didWin, ratingDelta);
   }
 
   update() {
-    this._updateFx();
+    const safe = this._safe();
     const px = this.input?.pointer?.x || 0;
     const py = this.input?.pointer?.y || 0;
 
+    const topReserved = Number(this.store.get()?.ui?.hudReservedTop || 82);
+    const bottomReserved = Number(this.store.get()?.ui?.chatReservedBottom || 82);
+
+    const panelX = safe.x + 14;
+    const panelY = safe.y + topReserved;
+    const panelW = safe.w - 28;
+    const panelH = safe.h - topReserved - bottomReserved - 10;
+
+    const listX = panelX + 10;
+    const listY = panelY + 104;
+    const listW = panelW - 20;
+    const listH = panelH - 116;
+
+    const rowH = 84;
+    const contentH = this.items.length * (rowH + 10);
+
+    this._clampScroll(listH, contentH);
+
     if (this.input?.justPressed?.()) {
       this.dragging = true;
+      this.justDragged = false;
       this.downY = py;
-      this.startScroll = this.scrollY;
-      this.moved = 0;
-      this.clickCandidate = true;
-      this._ensureMusic();
+      this.startScrollY = this.scrollY;
+      this._musicUnlocked = true;
+      this._playMusic();
     }
 
     if (this.dragging && this.input?.isDown?.()) {
       const dy = py - this.downY;
-      this.scrollY = Math.max(0, Math.min(this.maxScroll, this.startScroll - dy));
-      this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
+      if (Math.abs(dy) > 6) this.justDragged = true;
+      this.scrollY = this.startScrollY - dy;
+      this._clampScroll(listH, contentH);
     }
 
     if (this.dragging && this.input?.justReleased?.()) {
-      this.dragging = false;
-      if (!this.clickCandidate) return;
-
-      if (this.backHit && px >= this.backHit.x && px <= this.backHit.x + this.backHit.w && py >= this.backHit.y && py <= this.backHit.y + this.backHit.h) {
-        this._pushSystemChat(`🚪 ${this._playerName()} Nightclub'dan çıktı.`);
-        this.scenes.go("home");
-        return;
-      }
-
-      for (const h of this.hitButtons) {
-        if (!(px >= h.rect.x && px <= h.rect.x + h.rect.w && py >= h.rect.y && py <= h.rect.y + h.rect.h)) continue;
-        if (h.action === "buy") return this._buy(h.item);
-        if (h.action === "attack") return this._attack(h.visitor);
-        if (h.action === "refresh") {
-          const s = this.store.get() || {};
-          const nightclub = s.nightclub || {};
-          this.store.set({ nightclub: { ...nightclub, visitors: this._freshVisitors() } });
-          this._showToast("İçeridekiler değişti", 1400);
-          this._pushNotice("🪩 Yeni tipler içeride");
-          if (chance(0.16)) this._maybeCrowdTheft("masa değişimi");
+      if (!this.justDragged) {
+        if (this._pointInRect(px, py, this.hitBack)) {
+          this.scenes.go("home");
+          this.dragging = false;
+          this.justDragged = false;
           return;
         }
+
+        if (this._pointInRect(px, py, this.hitPvp)) {
+          this._openPvp();
+          this.dragging = false;
+          this.justDragged = false;
+          return;
+        }
+
+        for (const hit of this.hitBuy) {
+          if (this._pointInRect(px, py, hit.rect)) {
+            this._buy(hit.item);
+            break;
+          }
+        }
       }
+
+      this.dragging = false;
+      this.justDragged = false;
     }
   }
 
-  _drawSmoke(ctx) {
-    for (const s of this.smoke) {
-      const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
-      g.addColorStop(0, `rgba(255,205,205,${s.alpha * s.life})`);
-      g.addColorStop(0.45, `rgba(255,165,165,${s.alpha * 0.55 * s.life})`);
-      g.addColorStop(1, "rgba(160,80,120,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  _drawButton(ctx, rect, text, variant) {
-    let fill = "rgba(0,0,0,0.42)";
-    let stroke = "rgba(255,255,255,0.16)";
-    if (variant === "green") {
-      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(120,50,110,0.90)");
-      g.addColorStop(1, "rgba(70,24,66,0.95)");
-      fill = g;
-      stroke = "rgba(255,160,220,0.38)";
-    } else if (variant === "red") {
-      const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(138,48,48,0.85)");
-      g.addColorStop(1, "rgba(92,28,28,0.92)");
-      fill = g;
-      stroke = "rgba(255,140,140,0.34)";
-    }
-    this._rr(ctx, rect.x, rect.y, rect.w, rect.h, 12);
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "900 11px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 0.5);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-  }
-
-  _rarityColor(rarity) {
-    switch (String(rarity || "").toLowerCase()) {
-      case "rare": return "#63a8ff";
-      case "epic": return "#cd87ff";
-      case "legendary": return "#ffce6a";
-      case "mythic": return "#ff7fce";
-      default: return "#b8c0cc";
-    }
-  }
-
-  render(ctx) {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const W = Math.floor(ctx.canvas.width / dpr);
-    const H = Math.floor(ctx.canvas.height / dpr);
-    const safe = this._safeRect();
+  render(ctx, w, h) {
+    const safe = this._safe();
     const bg = this._getBg();
 
-    ctx.clearRect(0, 0, W, H);
-    if (Date.now() < this.blurUntil) {
-      ctx.save();
-      ctx.filter = "blur(5px) saturate(1.10) brightness(1.03)";
-      this._drawCover(ctx, bg, -10, -10, W + 20, H + 20);
-      ctx.restore();
-    } else {
-      this._drawCover(ctx, bg, 0, 0, W, H);
-    }
+    this.hitBuy = [];
+    this.hitPvp = null;
+    this.hitBack = null;
 
-    ctx.fillStyle = "rgba(0,0,0,0.42)";
-    ctx.fillRect(0, 0, W, H);
-    if (Date.now() < this.flashUntil) {
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
-      ctx.fillRect(0, 0, W, H);
-    }
-    this._drawSmoke(ctx);
+    this._drawCover(ctx, bg, 0, 0, w, h);
 
-    const panelX = safe.x + 12;
-    const panelY = Math.max(72, safe.y + 74);
-    const panelW = Math.max(220, safe.w - 24);
-    const panelH = Math.max(260, safe.h - 150);
+    const overlay = ctx.createLinearGradient(0, 0, 0, h);
+    overlay.addColorStop(0, "rgba(8,0,14,0.40)");
+    overlay.addColorStop(1, "rgba(0,0,0,0.62)");
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0, 0, w, h);
 
-    this._rr(ctx, panelX, panelY, panelW, panelH, 18);
-    ctx.fillStyle = "rgba(7,7,12,0.60)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    const state = this.store.get() || {};
+    const nightclub = state.nightclub || {};
+    const pvp = state.pvp || {};
+    const coins = Number(state.coins || 0);
+    const energy = Number(state?.player?.energy || 0);
+    const energyMax = Math.max(1, Number(state?.player?.energyMax || 100));
+    const topReserved = Number(state?.ui?.hudReservedTop || 82);
+    const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
+
+    const panelX = safe.x + 14;
+    const panelY = safe.y + topReserved;
+    const panelW = safe.w - 28;
+    const panelH = safe.h - topReserved - bottomReserved - 10;
+
+    ctx.fillStyle = "rgba(10,8,14,0.62)";
+    this._fillRoundRect(ctx, panelX, panelY, panelW, panelH, 18);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
     ctx.lineWidth = 1;
-    ctx.stroke();
+    this._strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 18);
 
-    const s = this.store.get() || {};
-    const p = s.player || {};
-    const pvp = s.pvp || {};
-    const nightclub = s.nightclub || {};
+    const titleX = panelX + 16;
+    const titleY = panelY + 30;
 
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "900 20px system-ui";
-    ctx.fillText("Nightclub", panelX + 16, panelY + 28);
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
-    ctx.font = "12px system-ui";
-    ctx.fillText("Satın al • enerji doldur • envantere at • içeridekilere saldır", panelX + 16, panelY + 48);
-    ctx.fillStyle = "rgba(255,214,120,0.96)";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 18px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Nightclub", titleX, titleY);
+
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "13px system-ui";
+    ctx.fillText("Alkol satın al, envantere at, PvP risk al.", titleX, titleY + 22);
+
+    this.hitBack = { x: panelX + 14, y: panelY + 52, w: 86, h: 32 };
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    this._fillRoundRect(ctx, this.hitBack.x, this.hitBack.y, this.hitBack.w, this.hitBack.h, 12);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    this._strokeRoundRect(ctx, this.hitBack.x, this.hitBack.y, this.hitBack.w, this.hitBack.h, 12);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 13px system-ui";
+    ctx.fillText("← Geri", this.hitBack.x + 16, this.hitBack.y + 21);
+
+    const rightInfoX = panelX + panelW - 170;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#ffd36c";
+    ctx.font = "900 12px system-ui";
+    ctx.fillText(`YTON: ${this._fmt(coins)}`, rightInfoX, panelY + 24);
+
+    ctx.fillStyle = "#ffffff";
     ctx.font = "800 12px system-ui";
-    ctx.fillText(`YTON: ${Number(s.coins || 0).toLocaleString("tr-TR")}`, panelX + 16, panelY + 70);
-    ctx.fillStyle = "rgba(255,255,255,0.86)";
-    ctx.fillText(`Enerji: ${Number(p.energy || 0).toLocaleString("tr-TR")}/${Number(p.energyMax || 100).toLocaleString("tr-TR")}`, panelX + 120, panelY + 70);
-    ctx.fillStyle = "rgba(255,255,255,0.66)";
-    ctx.fillText(`Genel PvP: ${Number(pvp.wins || 0).toLocaleString("tr-TR")}W / ${Number(pvp.losses || 0).toLocaleString("tr-TR")}L`, panelX + 16, panelY + 88);
-    ctx.fillText(`Risk: ${Number(nightclub.theftEvents || 0).toLocaleString("tr-TR")} olay`, panelX + 180, panelY + 88);
+    ctx.fillText(`Enerji: ${energy}/${energyMax}`, rightInfoX, panelY + 42);
 
-    const backW = 78;
-    const backH = 30;
-    const backX = panelX + panelW - backW - 14;
-    const backY = panelY + 12;
-    this.backHit = { x: backX, y: backY, w: backW, h: backH };
-    this._drawButton(ctx, this.backHit, "X", "ghost");
+    ctx.fillStyle = "rgba(255,165,165,0.95)";
+    ctx.font = "800 12px system-ui";
+    ctx.fillText(
+      `PvP: ${this._fmt(pvp.wins)}W / ${this._fmt(pvp.losses)}L`,
+      rightInfoX,
+      panelY + 60
+    );
 
-    const contentX = panelX + 10;
-    const contentY = panelY + 102;
-    const contentW = panelW - 20;
-    const contentH = panelH - 114;
+    ctx.fillStyle = "rgba(255,255,255,0.82)";
+    ctx.fillText(
+      `Envanter alım: ${this._fmt(nightclub.inventoryBought || 0)}`,
+      rightInfoX,
+      panelY + 78
+    );
 
-    const notices = Array.isArray(nightclub.notices) ? nightclub.notices : [];
-    const visitors = Array.isArray(nightclub.visitors) ? nightclub.visitors : [];
+    this.hitPvp = { x: panelX + panelW - 126, y: panelY + 48, w: 104, h: 34 };
+    const pvpGrad = ctx.createLinearGradient(this.hitPvp.x, this.hitPvp.y, this.hitPvp.x, this.hitPvp.y + this.hitPvp.h);
+    pvpGrad.addColorStop(0, "rgba(170,34,46,0.72)");
+    pvpGrad.addColorStop(1, "rgba(104,16,24,0.82)");
+    ctx.fillStyle = pvpGrad;
+    this._fillRoundRect(ctx, this.hitPvp.x, this.hitPvp.y, this.hitPvp.w, this.hitPvp.h, 12);
+    ctx.strokeStyle = "rgba(255,180,180,0.22)";
+    this._strokeRoundRect(ctx, this.hitPvp.x, this.hitPvp.y, this.hitPvp.w, this.hitPvp.h, 12);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 13px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("⚔ PvP Saldır", this.hitPvp.x + this.hitPvp.w / 2, this.hitPvp.y + 22);
 
-    const noticeSectionH = 86;
-    const visitorSectionH = 150;
-    const rowH = 86;
-    const productSectionTop = noticeSectionH + visitorSectionH + 28;
-    const fullContentH = productSectionTop + this.items.length * rowH + 20;
-
-    this.maxScroll = Math.max(0, fullContentH - contentH);
-    this.scrollY = Math.max(0, Math.min(this.maxScroll, this.scrollY));
-    this.hitButtons = [];
+    const listX = panelX + 10;
+    const listY = panelY + 104;
+    const listW = panelW - 20;
+    const listH = panelH - 116;
 
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(contentX, contentY, contentW, contentH);
+    this._roundRect(ctx, listX, listY, listW, listH, 16);
     ctx.clip();
 
-    let y = contentY - this.scrollY;
-    ctx.fillStyle = "rgba(255,255,255,0.94)";
-    ctx.font = "900 14px system-ui";
-    ctx.fillText("Nightclub Akışı", contentX + 2, y + 14);
-    y += 22;
+    const rowsBg = ctx.createLinearGradient(0, listY, 0, listY + listH);
+    rowsBg.addColorStop(0, "rgba(0,0,0,0.14)");
+    rowsBg.addColorStop(1, "rgba(0,0,0,0.28)");
+    ctx.fillStyle = rowsBg;
+    ctx.fillRect(listX, listY, listW, listH);
 
-    this._rr(ctx, contentX, y, contentW, 54, 14);
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.stroke();
+    let rowY = listY + 6 - this.scrollY;
+    const rowH = 84;
+    const gap = 10;
 
-    if (!notices.length) {
-      ctx.fillStyle = "rgba(255,255,255,0.62)";
-      ctx.font = "12px system-ui";
-      ctx.fillText("Henüz olay yok.", contentX + 12, y + 22);
-      ctx.fillText("Satın alım, soygun ve PvP olayları burada görünür.", contentX + 12, y + 40);
-    } else {
-      for (let i = 0; i < Math.min(2, notices.length); i++) {
-        ctx.fillStyle = i === 0 ? "rgba(255,214,120,0.95)" : "rgba(255,255,255,0.72)";
-        ctx.font = i === 0 ? "800 11px system-ui" : "11px system-ui";
-        ctx.fillText(String(notices[i].text || ""), contentX + 12, y + 20 + i * 18);
+    for (const item of this.items) {
+      if (rowY + rowH < listY - 20) {
+        rowY += rowH + gap;
+        continue;
       }
-    }
+      if (rowY > listY + listH + 20) break;
 
-    y += noticeSectionH;
-    ctx.fillStyle = "rgba(255,255,255,0.94)";
-    ctx.font = "900 14px system-ui";
-    ctx.fillText("İçeridekiler • Sadece bina içi PvP", contentX + 2, y + 14);
-
-    const refreshRect = { x: contentX + contentW - 104, y: y - 10, w: 96, h: 28 };
-    this.hitButtons.push({ rect: refreshRect, action: "refresh" });
-    this._drawButton(ctx, refreshRect, "Tipleri Yenile", "ghost");
-    y += 24;
-
-    const visitorGap = 8;
-    const visitorCardW = Math.floor((contentW - visitorGap * 3) / 4);
-    for (let i = 0; i < 4; i++) {
-      const v = visitors[i];
-      if (!v) continue;
-      const x = contentX + i * (visitorCardW + visitorGap);
-      const h = 104;
-      this._rr(ctx, x, y, visitorCardW, h, 14);
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,0.32)";
+      this._fillRoundRect(ctx, listX + 2, rowY, listW - 4, rowH, 16);
       ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      ctx.stroke();
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "900 22px system-ui";
-      ctx.fillText(v.avatar || "😶", x + 12, y + 28);
-      ctx.font = "900 12px system-ui";
-      ctx.fillText(v.name, x + 44, y + 20);
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "11px system-ui";
-      ctx.fillText(`${v.tier} • Power ${v.power.toLocaleString("tr-TR")}`, x + 44, y + 38);
-      ctx.fillText(`Mood: ${v.mood}`, x + 12, y + 58);
-      const atkRect = { x: x + 12, y: y + 68, w: visitorCardW - 24, h: 26 };
-      this.hitButtons.push({ rect: atkRect, action: "attack", visitor: v });
-      this._drawButton(ctx, atkRect, "Saldır", "red");
-    }
+      this._strokeRoundRect(ctx, listX + 2, rowY, listW - 4, rowH, 16);
 
-    y += visitorSectionH;
-    ctx.fillStyle = "rgba(255,255,255,0.94)";
-    ctx.font = "900 14px system-ui";
-    ctx.fillText("Ürünler", contentX + 2, y + 14);
-    y += 24;
+      const rarity = String(item.rarity || "");
+      const rColor = this._rarityColor(rarity);
 
-    for (let i = 0; i < this.items.length; i++) {
-      const item = this.items[i];
-      const rowY = y + i * rowH;
-      if (rowY > contentY + contentH + 12 || rowY + 72 < contentY - 12) continue;
-      this._rr(ctx, contentX, rowY, contentW, 72, 14);
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "900 13px system-ui";
-      ctx.fillText(item.icon || "🍾", contentX + 12, rowY + 20);
-      ctx.fillText(item.name, contentX + 38, rowY + 20);
-      ctx.fillStyle = this._rarityColor(item.rarity);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 24px system-ui";
+      ctx.textAlign = "left";
+      ctx.fillText(item.icon || "🍾", listX + 14, rowY + 26);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 15px system-ui";
+      ctx.fillText(item.name, listX + 50, rowY + 22);
+
+      ctx.fillStyle = rColor;
       ctx.font = "800 11px system-ui";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), contentX + 38, rowY + 38);
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.fillText(`Sınıf: ${rarity}`, listX + 50, rowY + 40);
+
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`+${item.energy} enerji`, contentX + 126, rowY + 38);
-      ctx.fillStyle = "rgba(255,214,120,0.96)";
-      ctx.fillText(`${item.price} yton`, contentX + 210, rowY + 38);
-      const buyRect = { x: contentX + contentW - 100, y: rowY + 19, w: 88, h: 34 };
-      this.hitButtons.push({ rect: buyRect, action: "buy", item });
-      this._drawButton(ctx, buyRect, "Satın Al", "green");
+      ctx.fillText(`+${item.energy} enerji`, listX + 50, rowY + 58);
+
+      ctx.fillStyle = "#ffd36c";
+      ctx.font = "12px system-ui";
+      ctx.fillText(`${item.price} yton`, listX + 150, rowY + 58);
+
+      ctx.fillStyle = "rgba(255,194,224,0.90)";
+      ctx.fillText(`Pazar: ${item.marketValue} yton`, listX + 230, rowY + 58);
+
+      const buyRect = { x: listX + listW - 112, y: rowY + 18, w: 96, h: 40 };
+      this.hitBuy.push({ rect: buyRect, item });
+
+      const buyGrad = ctx.createLinearGradient(buyRect.x, buyRect.y, buyRect.x, buyRect.y + buyRect.h);
+      buyGrad.addColorStop(0, "rgba(28,28,36,0.92)");
+      buyGrad.addColorStop(1, "rgba(10,10,14,0.96)");
+      ctx.fillStyle = buyGrad;
+      this._fillRoundRect(ctx, buyRect.x, buyRect.y, buyRect.w, buyRect.h, 16);
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      this._strokeRoundRect(ctx, buyRect.x, buyRect.y, buyRect.w, buyRect.h, 16);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.font = "900 14px system-ui";
+      ctx.fillText("Satın Al", buyRect.x + buyRect.w / 2, buyRect.y + 24);
+
+      rowY += rowH + gap;
     }
 
     ctx.restore();
 
     if (this.maxScroll > 0) {
-      const trackX = panelX + panelW - 6;
-      const trackY = contentY;
-      const trackH = contentH;
-      const thumbH = Math.max(36, (contentH / fullContentH) * trackH);
-      const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
+      const trackX = listX + listW - 5;
+      const trackY = listY + 10;
+      const trackH = listH - 20;
+      const thumbH = Math.max(40, (listH / (this.maxScroll + listH)) * trackH);
+      const ratio = this.scrollY / Math.max(1, this.maxScroll);
+      const thumbY = trackY + (trackH - thumbH) * ratio;
+
       ctx.fillStyle = "rgba(255,255,255,0.10)";
-      ctx.fillRect(trackX, trackY, 3, trackH);
-      ctx.fillStyle = "rgba(255,255,255,0.34)";
-      ctx.fillRect(trackX, thumbY, 3, thumbH);
+      this._fillRoundRect(ctx, trackX, trackY, 4, trackH, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.42)";
+      this._fillRoundRect(ctx, trackX, thumbY, 4, thumbH, 3);
     }
 
-    if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(360, panelW - 36);
-      const th = 40;
+    if (this.toast && Date.now() < this.toastUntil) {
+      const tw = Math.min(panelW - 24, Math.max(180, ctx.measureText(this.toast).width + 36));
+      const th = 42;
       const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - 52;
-      this._rr(ctx, tx, ty, tw, th, 12);
+      const ty = panelY + panelH - th - 14;
+
       ctx.fillStyle = "rgba(0,0,0,0.78)";
-      ctx.fill();
+      this._fillRoundRect(ctx, tx, ty, tw, th, 14);
       ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      ctx.stroke();
+      this._strokeRoundRect(ctx, tx, ty, tw, th, 14);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 13px system-ui";
       ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "800 12px system-ui";
-      ctx.textBaseline = "middle";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2 + 0.5);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
+      ctx.fillText(this.toast, tx + tw / 2, ty + 25);
     }
   }
 }
+
