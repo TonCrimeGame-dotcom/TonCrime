@@ -123,6 +123,9 @@ export class TradeScene {
 
     this.toastText = "";
     this.toastUntil = 0;
+
+    this.lootAnim = null;
+    this.lootAnimUntil = 0;
   }
 
   onEnter() {
@@ -134,6 +137,8 @@ export class TradeScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
+    this.lootAnim = null;
+    this.lootAnimUntil = 0;
 
     this.store.set({
       trade: {
@@ -355,9 +360,38 @@ export class TradeScene {
     return shop;
   }
 
+
+  _startLootAnimation(type, label, rewardText) {
+    this.lootAnim = {
+      type: type || "crate",
+      label: String(label || ""),
+      rewardText: String(rewardText || ""),
+      startedAt: Date.now(),
+      duration: type === "wheel" ? 2200 : 1800,
+    };
+    this.lootAnimUntil = this.lootAnim.startedAt + this.lootAnim.duration;
+  }
+
+  _randomProductionAllocation(products = [], totalDaily = 50) {
+    const list = (products || []).map((p) => ({ ...p })).filter(Boolean);
+    if (!list.length) return [];
+    const out = list.map((p) => ({ productId: p.id, qty: 0 }));
+    let remaining = Math.max(0, Math.floor(Number(totalDaily || 0)));
+
+    while (remaining > 0) {
+      const index = Math.floor(Math.random() * out.length);
+      const step = Math.min(remaining, 1 + Math.floor(Math.random() * 3));
+      out[index].qty += step;
+      remaining -= step;
+    }
+
+    return out.filter((x) => Number(x.qty || 0) > 0);
+  }
+
+
   _doFreeSpin() {
     if (!this._isFreeSpinReady()) {
-      this._showToast("Günlük ücretsiz çark kullanıldı");
+      this._showToast("Günlük sandık bugün açıldı");
       return;
     }
 
@@ -424,12 +458,14 @@ export class TradeScene {
       });
     }
 
+    this._startLootAnimation("crate", "Günlük Sandık", reward.text);
     this._showToast(reward.text, 1600);
   }
 
+
   _doPremiumSpin() {
     const s = this.store.get();
-    const cost = 90;
+    const cost = 100;
 
     if (Number(s.coins || 0) < cost) {
       this._showToast("Premium çark için yetersiz yton");
@@ -487,6 +523,7 @@ export class TradeScene {
       });
     }
 
+    this._startLootAnimation("wheel", "Premium Çark", reward.text);
     this._showToast(reward.text, 1600);
   }
 
@@ -824,20 +861,7 @@ export class TradeScene {
   }
   
   _createPendingProduction(products = [], totalDaily = 50) {
-    const safeProducts = (products || []).map((p) => ({ ...p }));
-    if (!safeProducts.length) return [];
-
-    const per = Math.floor(totalDaily / safeProducts.length);
-    let remainder = totalDaily - per * safeProducts.length;
-
-    return safeProducts.map((p) => {
-      const extra = remainder > 0 ? 1 : 0;
-      if (remainder > 0) remainder -= 1;
-      return {
-        productId: p.id,
-        qty: per + extra,
-      };
-    });
+    return this._randomProductionAllocation(products, totalDaily);
   }
 
   _refreshBusinessProduction() {
@@ -1702,7 +1726,7 @@ for (const p of products) {
       w,
       124,
       "Sandık & Çark",
-      this._isFreeSpinReady() ? "Günlük ücretsiz çark hazır" : "Premium loot sistemi aktif",
+      this._isFreeSpinReady() ? "Günlük sandık hazır" : "Premium çark aktif",
       "PREMIUM LOOT",
       "🎰",
       "#c77dff"
@@ -1712,8 +1736,8 @@ for (const p of products) {
     const premiumRect = { x: x + 138, y: y + 76, w: 122, h: 34 };
     this.hitButtons.push({ rect: freeRect, action: "free_spin" });
     this.hitButtons.push({ rect: premiumRect, action: "premium_spin" });
-    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Ücretsiz Çevir" : "Yarın Açılır", this._isFreeSpinReady() ? "primary" : "muted");
-    this._drawButton(ctx, premiumRect, "Premium Çark", "gold");
+    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Günlük Sandık" : "Yarın Açılır", this._isFreeSpinReady() ? "primary" : "muted");
+    this._drawButton(ctx, premiumRect, "Premium Çark 100", "gold");
 
     y += 136;
 
@@ -1725,8 +1749,8 @@ for (const p of products) {
     this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
     this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
 
-    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • satın al / sat", "📦", "#62b3ff");
-    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Legendary Crate", "140 yton • premium ödül", "👑", "#ffcc66");
+    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Günlük Sandık", "Her gün 1 kez ücretsiz aç", "📦", "#62b3ff");
+    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Premium Çark", "100 yton • animasyonlu ödül", "👑", "#ffcc66");
 
     y += 124;
 
@@ -1741,8 +1765,8 @@ for (const p of products) {
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    ctx.fillText("💰 YTON   ⚡ Enerji   📦 Mystery Crate   👑 Golden Pass", x + 14, y + 54);
-    ctx.fillText("Sonraki aşamada burada animasyonlu loot ekranı olacak.", x + 14, y + 74);
+    ctx.fillText("💰 YTON   ⚡ Enerji   📦 Sandık   👑 Golden Pass", x + 14, y + 54);
+    ctx.fillText("Sandık ve çark açıldığında üstte animasyonlu overlay çalışır.", x + 14, y + 74);
 
     y += 108;
     return y;
@@ -2096,6 +2120,45 @@ strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
       sg.addColorStop(1, "rgba(255,132,58,0.78)");
       ctx.fillStyle = sg;
       fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
+    }
+
+
+    if (this.lootAnim && Date.now() < this.lootAnimUntil) {
+      const anim = this.lootAnim;
+      const now = Date.now();
+      const t = clamp((now - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
+      const cx = panelX + panelW / 2;
+      const cy = panelY + panelH / 2 - 10;
+      const overlayAlpha = 0.18 + (1 - Math.abs(t - 0.5) * 2) * 0.16;
+
+      ctx.save();
+      ctx.fillStyle = `rgba(0,0,0,${overlayAlpha.toFixed(3)})`;
+      fillRoundRect(ctx, panelX + 18, panelY + 18, panelW - 36, panelH - 36, 28);
+
+      const pulse = 1 + Math.sin(t * Math.PI * (anim.type === "wheel" ? 5 : 3)) * 0.08;
+      const icon = anim.type === "wheel" ? "🎡" : "📦";
+      const ringR = 44 + t * 34;
+
+      ctx.strokeStyle = anim.type === "wheel" ? "rgba(255,196,100,0.80)" : "rgba(98,179,255,0.80)";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `900 ${Math.floor((anim.type === "wheel" ? 46 : 42) * pulse)}px system-ui`;
+      ctx.fillText(icon, cx, cy - 2);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 18px system-ui";
+      ctx.fillText(anim.label, cx, cy + 72);
+
+      ctx.fillStyle = "rgba(255,224,160,0.96)";
+      ctx.font = "900 16px system-ui";
+      ctx.fillText(anim.rewardText, cx, cy + 102);
+      ctx.restore();
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
