@@ -297,13 +297,13 @@ export class NightclubScene {
   }
 
   _getBg() {
-    if (typeof this.assets?.getImage === "function") return this.assets.getImage("nightclub");
-    if (typeof this.assets?.get === "function") return this.assets.get("nightclub");
+    if (typeof this.assets?.getImage === "function") return this.assets.getImage("nightclub-bg");
+    if (typeof this.assets?.get === "function") return this.assets.get("nightclub-bg");
     if (this.assets?.images instanceof Map) {
-      const entry = this.assets.images.get("nightclub");
+      const entry = this.assets.images.get("nightclub-bg");
       return entry?.img || null;
     }
-    return this.assets?.images?.nightclub || null;
+    return this.assets?.images?.nightclub-bg || null;
   }
 
   _roundRect(ctx, x, y, w, h, r) {
