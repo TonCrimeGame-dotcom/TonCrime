@@ -318,6 +318,24 @@ const initial = loaded
 const store = new Store(initial);
 window.tcStore = store;
 
+(function fixLegacyEnergyState() {
+  const s = store.get() || {};
+  const p = s.player || {};
+  const energy = Number(p.energy || 0);
+  const energyMax = Number(p.energyMax || 0);
+
+  // Eski kayıtlar 10 / 10 gibi yanlış değerlerle gelirse bir kez 50 / 50 düzelt.
+  if (energyMax <= 10 || energy <= 10) {
+    store.set({
+      player: {
+        ...p,
+        energy: 50,
+        energyMax: 50,
+      },
+    });
+  }
+})();
+
 normalizeGlobalUi(store);
 
 window.addEventListener("resize", () => {
@@ -392,6 +410,22 @@ async function syncProfileToSupabase() {
 
   const s = store.get();
   const p = s.player || {};
+
+  let syncEnergy = Number(p.energy || 0);
+  let syncEnergyMax = Number(p.energyMax || 0);
+
+  // Legacy 10/10 kayıtları otomatik 50/50 yap ve DB'ye öyle yaz.
+  if (syncEnergyMax <= 10 || syncEnergy <= 10) {
+    syncEnergy = 50;
+    syncEnergyMax = 50;
+    store.set({
+      player: {
+        ...p,
+        energy: syncEnergy,
+        energyMax: syncEnergyMax,
+      },
+    });
+  }
   const telegramId = String(
     p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
   );
@@ -405,8 +439,8 @@ async function syncProfileToSupabase() {
     age: p.age ?? null,
     level: Number(p.level || 1),
     coins: Number(s.coins || 0),
-    energy: Number(p.energy || 50),
-    energy_max: Number(p.energyMax || 50),
+    energy: syncEnergy || 50,
+    energy_max: syncEnergyMax || 50,
     updated_at: new Date().toISOString(),
   };
 
