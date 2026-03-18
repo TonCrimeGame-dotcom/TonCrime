@@ -1,33 +1,40 @@
-
 <!doctype html>
 <html lang="tr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>TonCrime Withdraw Admin</title>
+  <title>TonCrime Admin</title>
   <style>
-    body { font-family: system-ui, Arial; margin: 0; background: #0b0f16; color: #fff; }
-    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    .toolbar, .card { background: #121a26; border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 16px; }
-    .toolbar { display: grid; grid-template-columns: 1fr 180px 180px 120px; gap: 12px; align-items: end; margin-bottom: 16px; }
-    label { display: block; font-size: 12px; color: rgba(255,255,255,.7); margin-bottom: 6px; }
-    input, select, textarea, button { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: #0e141f; color: #fff; padding: 10px 12px; }
-    button { cursor: pointer; background: linear-gradient(180deg, #224a9e, #16356f); font-weight: 700; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
-    .actions { display: flex; gap: 8px; }
-    .gold { background: linear-gradient(180deg, #8a6620, #6b4e17); }
-    .red { background: linear-gradient(180deg, #8c2734, #671d28); }
-    .pill { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; border:1px solid rgba(255,255,255,.1); }
-    .pending { background:#403315; color:#ffd98c; }
-    .approved { background:#16304d; color:#8dc7ff; }
-    .paid { background:#17351e; color:#98ffb2; }
-    .rejected { background:#40181d; color:#ff9ba8; }
-    .muted { color: rgba(255,255,255,.65); }
+    body{margin:0;background:#0b1017;color:#fff;font-family:system-ui,Arial}
+    .wrap{max-width:1240px;margin:20px auto;padding:0 16px}
+    .toolbar,.card{background:#121a26;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px}
+    .toolbar{display:grid;grid-template-columns:1.2fr 1fr 180px 120px;gap:12px;align-items:end;margin-bottom:16px}
+    .tabs{display:flex;gap:8px;margin-bottom:16px}
+    .tabs button{width:auto;padding:10px 16px}
+    .hidden{display:none}
+    label{display:block;font-size:12px;color:rgba(255,255,255,.72);margin-bottom:6px}
+    input,select,button{width:100%;box-sizing:border-box;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#0e141f;color:#fff;padding:10px 12px}
+    button{cursor:pointer;font-weight:800;background:linear-gradient(180deg,#244d9c,#17356f)}
+    .gold{background:linear-gradient(180deg,#8a6520,#664a17)}
+    .red{background:linear-gradient(180deg,#912b38,#671d28)}
+    .green{background:linear-gradient(180deg,#1f7f59,#165941)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px;text-align:left;vertical-align:top}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.1)}
+    .pending{background:#402f13;color:#ffd98c}
+    .paid{background:#18331d;color:#9affb0}
+    .rejected{background:#40181d;color:#ff9aa7}
+    .statusbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
   </style>
 </head>
 <body>
   <div class="wrap">
+    <div class="statusbar">
+      <h2>TonCrime Admin Panel</h2>
+      <div id="statusText">Hazır</div>
+    </div>
+
     <div class="toolbar">
       <div>
         <label>Backend URL</label>
@@ -38,21 +45,20 @@
         <input id="adminKey" type="password" />
       </div>
       <div>
-        <label>Durum</label>
-        <select id="status">
-          <option value="pending">pending</option>
-          <option value="approved">approved</option>
-          <option value="paid">paid</option>
-          <option value="rejected">rejected</option>
-          <option value="all">all</option>
-        </select>
+        <label>Filtre / Arama</label>
+        <input id="queryInput" placeholder="status veya kullanıcı ara" />
       </div>
       <div>
-        <button id="loadBtn">Yükle</button>
+        <button id="reloadBtn">Yükle</button>
       </div>
     </div>
 
-    <div class="card">
+    <div class="tabs">
+      <button id="tabWithdraws">Çekimler</button>
+      <button id="tabProfiles">Enerji Reset</button>
+    </div>
+
+    <div id="withdrawsView" class="card">
       <table>
         <thead>
           <tr>
@@ -64,102 +70,218 @@
             <th>İşlem</th>
           </tr>
         </thead>
-        <tbody id="rows"></tbody>
+        <tbody id="withdrawRows"></tbody>
+      </table>
+    </div>
+
+    <div id="profilesView" class="card hidden">
+      <table>
+        <thead>
+          <tr>
+            <th>Kullanıcı</th>
+            <th>Telegram</th>
+            <th>Enerji</th>
+            <th>Coin</th>
+            <th>İşlem</th>
+          </tr>
+        </thead>
+        <tbody id="profileRows"></tbody>
       </table>
     </div>
   </div>
 
 <script>
-const rows = document.getElementById('rows');
-const loadBtn = document.getElementById('loadBtn');
+const backendUrl = document.getElementById('backendUrl');
+const adminKey = document.getElementById('adminKey');
+const queryInput = document.getElementById('queryInput');
+const reloadBtn = document.getElementById('reloadBtn');
+const withdrawRows = document.getElementById('withdrawRows');
+const profileRows = document.getElementById('profileRows');
+const statusText = document.getElementById('statusText');
+const withdrawsView = document.getElementById('withdrawsView');
+const profilesView = document.getElementById('profilesView');
+const tabWithdraws = document.getElementById('tabWithdraws');
+const tabProfiles = document.getElementById('tabProfiles');
 
-function pill(status) {
-  return `<span class="pill ${status}">${status}</span>`;
-}
+let activeTab = 'withdraws';
+let lastPendingCount = 0;
+
+function setStatus(text){ statusText.textContent = text; }
 
 async function api(path, options = {}) {
-  const base = document.getElementById('backendUrl').value.trim();
-  const key = document.getElementById('adminKey').value.trim();
-  const res = await fetch(base + path, {
+  const res = await fetch(backendUrl.value.trim() + path, {
     ...options,
     headers: {
       'content-type': 'application/json',
-      'x-admin-key': key,
+      'x-admin-key': adminKey.value.trim(),
       ...(options.headers || {})
     }
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error || 'Request failed');
+  if (!res.ok) throw new Error(json.error || 'İstek başarısız');
   return json;
 }
 
-async function loadRows() {
-  rows.innerHTML = `<tr><td colspan="6" class="muted">Yükleniyor...</td></tr>`;
+function pill(status){
+  return `<span class="pill ${status}">${status}</span>`;
+}
+
+function playBeep() {
   try {
-    const status = document.getElementById('status').value;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.06;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, 180);
+  } catch (_) {}
+}
+
+async function loadWithdraws() {
+  withdrawRows.innerHTML = '<tr><td colspan="6">Yükleniyor...</td></tr>';
+  try {
+    const rawQ = queryInput.value.trim();
+    const status = ['pending','paid','rejected','all'].includes(rawQ) ? rawQ : 'all';
     const data = await api(`/withdraws?status=${encodeURIComponent(status)}`);
-    const items = data.items || [];
+    let items = data.items || [];
+    if (rawQ && !['pending','paid','rejected','all'].includes(rawQ)) {
+      const q = rawQ.toLowerCase();
+      items = items.filter(x =>
+        String(x.username || '').toLowerCase().includes(q) ||
+        String(x.telegram_id || '').toLowerCase().includes(q) ||
+        String(x.wallet_address || '').toLowerCase().includes(q)
+      );
+    }
+    const pendingCount = items.filter(x => x.status === 'pending').length;
+    if (pendingCount > lastPendingCount) playBeep();
+    lastPendingCount = pendingCount;
+
     if (!items.length) {
-      rows.innerHTML = `<tr><td colspan="6" class="muted">Kayıt yok</td></tr>`;
+      withdrawRows.innerHTML = '<tr><td colspan="6">Kayıt yok</td></tr>';
       return;
     }
 
-    rows.innerHTML = items.map(item => `
+    withdrawRows.innerHTML = items.map(item => `
       <tr>
         <td>
           <div><strong>${item.username || '-'}</strong></div>
-          <div class="muted">${item.telegram_id || ''}</div>
+          <div>${item.telegram_id || ''}</div>
         </td>
-        <td>${item.wallet_address}</td>
+        <td>
+          <div>${item.wallet_address}</div>
+          <div>${item.tx_hash || ''}</div>
+        </td>
         <td>
           <div>${item.yton_amount} YTON</div>
-          <div class="muted">${item.ton_amount} TON</div>
+          <div>${item.ton_amount} TON</div>
         </td>
         <td>${pill(item.status)}</td>
         <td>${new Date(item.created_at).toLocaleString('tr-TR')}</td>
         <td>
+          ${item.status === 'pending' ? `
+            <div class="actions">
+              <button class="gold" onclick="payRow('${item.id}')">Onayla ve Öde</button>
+              <button class="red" onclick="rejectRow('${item.id}')">Reddet</button>
+            </div>
+          ` : 'Tamamlandı'}
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    withdrawRows.innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`;
+  }
+}
+
+async function loadProfiles() {
+  profileRows.innerHTML = '<tr><td colspan="5">Yükleniyor...</td></tr>';
+  try {
+    const data = await api(`/profiles?query=${encodeURIComponent(queryInput.value.trim())}`);
+    const items = data.items || [];
+    if (!items.length) {
+      profileRows.innerHTML = '<tr><td colspan="5">Kayıt yok</td></tr>';
+      return;
+    }
+    profileRows.innerHTML = items.map(item => `
+      <tr>
+        <td><strong>${item.username || '-'}</strong></td>
+        <td>${item.telegram_id || ''}</td>
+        <td>${item.energy}/${item.energy_max}</td>
+        <td>${item.coins}</td>
+        <td>
           <div class="actions">
-            <button onclick="approveRow('${item.id}')">Onayla</button>
-            <button class="gold" onclick="payRow('${item.id}')">Öde</button>
-            <button class="red" onclick="rejectRow('${item.id}')">Reddet</button>
+            <button class="green" onclick="resetEnergy('${item.id}')">Enerjiyi 50 Yap</button>
           </div>
         </td>
       </tr>
     `).join('');
   } catch (err) {
-    rows.innerHTML = `<tr><td colspan="6" class="muted">${err.message}</td></tr>`;
+    profileRows.innerHTML = `<tr><td colspan="5">${err.message}</td></tr>`;
   }
 }
 
-async function approveRow(id) {
-  const admin_note = prompt('Admin notu:', '') ?? '';
-  await api(`/withdraws/${id}/approve`, {
-    method: 'POST',
-    body: JSON.stringify({ admin_note })
-  });
-  loadRows();
+async function payRow(id) {
+  if (!confirm('Bu talebi onaylayıp ödemek istiyor musun?')) return;
+  try {
+    setStatus('Ödeme gönderiliyor...');
+    await api(`/withdraws/${id}/pay`, { method: 'POST', body: JSON.stringify({}) });
+    setStatus('Ödeme tamamlandı');
+    loadWithdraws();
+  } catch (err) {
+    alert(err.message);
+    setStatus('Ödeme hatası');
+  }
 }
 
 async function rejectRow(id) {
-  const admin_note = prompt('Red notu:', 'Rejected by admin') ?? 'Rejected by admin';
-  await api(`/withdraws/${id}/reject`, {
-    method: 'POST',
-    body: JSON.stringify({ admin_note })
-  });
-  loadRows();
+  const admin_note = prompt('Red notu:', 'Rejected by admin');
+  if (admin_note === null) return;
+  try {
+    await api(`/withdraws/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ admin_note })
+    });
+    setStatus('İstek reddedildi');
+    loadWithdraws();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
-async function payRow(id) {
-  if (!confirm('Bu çekimi ödemek istiyor musun?')) return;
-  await api(`/withdraws/${id}/pay`, {
-    method: 'POST',
-    body: JSON.stringify({})
-  });
-  loadRows();
+async function resetEnergy(id) {
+  if (!confirm('Bu kullanıcının enerjisini 50 / 50 yapmak istiyor musun?')) return;
+  try {
+    await api(`/profiles/${id}/reset-energy`, {
+      method: 'POST',
+      body: JSON.stringify({ energy: 50 })
+    });
+    setStatus('Enerji 50 / 50 yapıldı');
+    loadProfiles();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
-loadBtn.addEventListener('click', loadRows);
-loadRows();
+function showTab(name) {
+  activeTab = name;
+  withdrawsView.classList.toggle('hidden', name !== 'withdraws');
+  profilesView.classList.toggle('hidden', name !== 'profiles');
+  if (name === 'withdraws') loadWithdraws();
+  if (name === 'profiles') loadProfiles();
+}
+
+tabWithdraws.addEventListener('click', () => showTab('withdraws'));
+tabProfiles.addEventListener('click', () => showTab('profiles'));
+reloadBtn.addEventListener('click', () => activeTab === 'withdraws' ? loadWithdraws() : loadProfiles());
+
+setInterval(() => {
+  activeTab === 'withdraws' ? loadWithdraws() : loadProfiles();
+}, 10000);
+
+showTab('withdraws');
 </script>
 </body>
 </html>
