@@ -162,12 +162,29 @@ async function getTodayPaidTotalForProfile(profileId) {
   return (data || []).reduce((sum, row) => sum + asNumber(row.ton_amount, 0), 0);
 }
 
-function validateTonAddress(addressText) {
+function validateTonAddressOrThrow(addressText) {
+  const raw = String(addressText || '').trim();
+
+  if (!raw) {
+    throw new Error('Wallet address is required');
+  }
+
+  let parsed;
   try {
-    return Address.parse(String(addressText).trim()).toString();
+    parsed = Address.parse(raw);
   } catch {
     throw new Error('Invalid TON wallet address');
   }
+
+  const normalizedBounceable = parsed.toString({ urlSafe: true, bounceable: true });
+  const normalizedNonBounceable = parsed.toString({ urlSafe: true, bounceable: false });
+
+  return {
+    raw,
+    normalized: normalizedNonBounceable,
+    bounceable: normalizedBounceable,
+    nonBounceable: normalizedNonBounceable,
+  };
 }
 
 async function sendTon({ toAddress, tonAmount }) {
@@ -237,7 +254,7 @@ async function getWithdrawById(id) {
 }
 
 /* =========================
-   HEALTH
+   PUBLIC ROUTES
 ========================= */
 app.get('/health', async (_req, res) => {
   try {
@@ -246,6 +263,31 @@ app.get('/health', async (_req, res) => {
     res.json({ ok: true, uptime: process.uptime() });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || 'Health failed' });
+  }
+});
+
+/* =========================
+   WALLET VALIDATION (PUBLIC)
+========================= */
+app.post('/wallet/validate', async (req, res) => {
+  try {
+    const walletAddress = String(req.body?.wallet_address || '').trim();
+    const result = validateTonAddressOrThrow(walletAddress);
+
+    return res.json({
+      ok: true,
+      valid: true,
+      wallet_address: result.normalized,
+      bounceable: result.bounceable,
+      non_bounceable: result.nonBounceable,
+      message: 'Valid TON wallet address',
+    });
+  } catch (err) {
+    return res.status(400).json({
+      ok: false,
+      valid: false,
+      error: err.message || 'Invalid wallet address',
+    });
   }
 });
 
@@ -425,7 +467,8 @@ app.post('/withdraws/:id/pay', async (req, res) => {
       return res.status(409).json({ error: 'Only pending requests can be paid' });
     }
 
-    const normalizedWallet = validateTonAddress(preRow.wallet_address);
+    const walletInfo = validateTonAddressOrThrow(preRow.wallet_address);
+    const normalizedWallet = walletInfo.normalized;
     const tonAmount = asNumber(preRow.ton_amount, NaN);
     const ytonAmount = asNumber(preRow.yton_amount, 0);
 
