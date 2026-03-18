@@ -137,6 +137,11 @@ export class ProfileScene {
     this.hitWalletButtons = [];
     this.hitEditAvatar = null;
     this.hitLeaderboard = null;
+    this.hitInboxRows = [];
+    this._inboxLoaded = false;
+    this._inboxLoading = false;
+    this._inboxError = "";
+    this._lastInboxSyncAt = 0;
 
     this._avatarUrl = "";
     this._avatarImg = null;
@@ -162,9 +167,11 @@ export class ProfileScene {
         totalConvertedTon: Number(wallet.totalConvertedTon || 0),
         totalWithdrawnTon: Number(wallet.totalWithdrawnTon || 0),
         ledger: Array.isArray(wallet.ledger) ? wallet.ledger : [],
+        inbox: Array.isArray(wallet.inbox) ? wallet.inbox : [],
         lastWithdrawStatus: wallet.lastWithdrawStatus || "",
       },
     });
+    this._loadInbox(true);
   }
 
   _showToast(text, ms = 1600) {
@@ -184,10 +191,107 @@ export class ProfileScene {
         profileTab: tab,
       },
     });
+    if (tab === "inbox") this._loadInbox(true);
   }
 
   _wallet() {
     return this.store.get()?.wallet || {};
+  }
+
+  _inbox() {
+    const wallet = this._wallet();
+    return Array.isArray(wallet.inbox) ? wallet.inbox : [];
+  }
+
+  _setInbox(items = []) {
+    const wallet = this._wallet();
+    this.store.set({
+      wallet: {
+        ...wallet,
+        inbox: Array.isArray(items) ? items.slice(0, 20) : [],
+      },
+    });
+  }
+
+  async _loadInbox(force = false) {
+    const now = Date.now();
+    if (this._inboxLoading) return;
+    if (!force && this._inboxLoaded && now - this._lastInboxSyncAt < 15000) return;
+
+    this._inboxLoading = true;
+    this._inboxError = "";
+    try {
+      const profileId = await this._getProfileId();
+      const { data, error } = await supabase
+        .from("withdraw_requests")
+        .select("id,status,ton_amount,yton_amount,wallet_address,admin_note,note,created_at,updated_at,rejected_at,paid_at")
+        .eq("profile_id", profileId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+
+      const inbox = (data || []).map((row) => {
+        const status = String(row.status || "pending");
+        const ton = Number(row.ton_amount || 0);
+        const yton = Number(row.yton_amount || 0);
+        const addr = String(row.wallet_address || "");
+        const shortAddr = addr ? `${addr.slice(0, 8)}...${addr.slice(-6)}` : "-";
+        let title = "Çekim bekliyor";
+        let body = `${moneyFmt(ton, 2)} TON çekim talebin incelemede.`;
+        let accent = "blue";
+        if (status === "rejected") {
+          title = "Çekim reddedildi";
+          body = `${moneyFmt(ton, 2)} TON (${moneyFmt(yton)} YTON) çekim talebin reddedildi. ${row.admin_note ? `Sebep: ${row.admin_note}` : ""}`.trim();
+          accent = "red";
+        } else if (status === "paid") {
+          title = "Çekim ödendi";
+          body = `${moneyFmt(ton, 2)} TON çekimin ${shortAddr} adresine gönderildi.`;
+          accent = "green";
+        } else if (status === "processing") {
+          title = "Çekim işleniyor";
+          body = `${moneyFmt(ton, 2)} TON çekim talebin ödeme sırasına alındı.`;
+          accent = "gold";
+        }
+        return {
+          id: row.id,
+          type: "withdraw_status",
+          status,
+          accent,
+          title,
+          body,
+          shortAddr,
+          note: String(row.admin_note || row.note || ""),
+          at: row.rejected_at || row.paid_at || row.updated_at || row.created_at || new Date().toISOString(),
+        };
+      });
+
+      const prev = this._inbox();
+      const prevMap = new Map(prev.map((item) => [item.id, item.status]));
+      const latestRejected = inbox.find((item) => item.status === "rejected" && prevMap.get(item.id) && prevMap.get(item.id) !== "rejected");
+      if (latestRejected) {
+        this._showToast("Çekim reddedildi • Gelen kutusunu kontrol et", 2600);
+      }
+
+      this._setInbox(inbox);
+
+      const latestStatus = inbox[0]?.status || "";
+      const wallet = this._wallet();
+      this.store.set({
+        wallet: {
+          ...wallet,
+          lastWithdrawStatus: latestStatus || wallet.lastWithdrawStatus || "",
+        },
+      });
+
+      this._inboxLoaded = true;
+      this._lastInboxSyncAt = Date.now();
+    } catch (err) {
+      console.error("[ProfileScene] inbox load error:", err);
+      this._inboxError = err?.message || "Mesajlar yüklenemedi";
+    } finally {
+      this._inboxLoading = false;
+    }
   }
 
   _pushWalletLedger(type, amountTon = 0, amountYton = 0, note = "") {
@@ -252,6 +356,35 @@ export class ProfileScene {
     }
   }
 
+  async _validateTonWalletAddress(address) {
+    const raw = String(address || "").trim();
+    if (!raw) throw new Error("TON adresi gerekli");
+
+    const endpoints = [
+      String(window.TONCRIME_API_BASE || "").trim(),
+      `${window.location.origin}`
+    ].filter(Boolean);
+
+    let lastError = null;
+    for (const base of endpoints) {
+      try {
+        const res = await fetch(`${base.replace(/\/$/, "")}/wallet/validate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_address: raw }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.valid) {
+          throw new Error(json?.error || "Geçersiz TON cüzdan adresi");
+        }
+        return String(json.wallet_address || raw).trim();
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw new Error(lastError?.message || "TON adresi doğrulanamadı");
+  }
+
   async _connectWallet(brand) {
     if (this._busy) return;
     this._busy = true;
@@ -262,6 +395,7 @@ export class ProfileScene {
       const cleanBrand = String(chosen).trim();
       const address = window.prompt(`${cleanBrand} adresini gir:`, this._wallet().address || "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
       if (!address) return;
+      const normalizedAddress = await this._validateTonWalletAddress(address);
 
       const s = this.store.get() || {};
       const player = s.player || {};
@@ -273,7 +407,7 @@ export class ProfileScene {
         telegram_id: this._telegramId(),
         username: String(player.username || "Player"),
         wallet_provider: cleanBrand,
-        wallet_address: String(address).trim(),
+        wallet_address: normalizedAddress,
         is_active: true,
       };
 
@@ -288,7 +422,7 @@ export class ProfileScene {
           ...wallet,
           connected: true,
           brand: cleanBrand,
-          address: String(address).trim(),
+          address: normalizedAddress,
         },
       });
 
@@ -380,6 +514,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
         ? wallet.address
         : window.prompt("Çekim yapılacak TON adresi:", "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
       if (!targetAddress) return;
+      const normalizedAddress = await this._validateTonWalletAddress(targetAddress);
 
       const s = this.store.get() || {};
       const player = s.player || {};
@@ -392,7 +527,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
           profile_id: profileId,
           telegram_id: this._telegramId(),
           username: String(player.username || "Player"),
-          wallet_address: String(targetAddress).trim(),
+          wallet_address: normalizedAddress,
           yton_amount: Number(ytonAmount.toFixed(2)),
           ton_amount: Number(tonAmount.toFixed(6)),
           rate: 0.05,
@@ -413,8 +548,9 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
         },
       });
 
-      this._pushWalletLedger("withdraw", tonAmount, ytonAmount, `Çekim talebi • ${String(targetAddress).slice(0, 12)}...`);
-      await this._insertWalletLedger("withdraw", tonAmount, ytonAmount, `Withdraw pending • ${String(targetAddress).slice(0, 12)}...`, data?.id || null);
+      this._pushWalletLedger("withdraw", tonAmount, ytonAmount, `Çekim talebi • ${String(normalizedAddress).slice(0, 12)}...`);
+      await this._insertWalletLedger("withdraw", tonAmount, ytonAmount, `Withdraw pending • ${String(normalizedAddress).slice(0, 12)}...`, data?.id || null);
+      await this._loadInbox(true);
       this._showToast(`${moneyFmt(tonAmount, 2)} TON çekim talebi oluşturuldu`);
     } catch (err) {
       console.error("[ProfileScene] withdraw error:", err);
@@ -486,15 +622,17 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = "900 18px system-ui";
-    ctx.fillText(this._profileTab() === "wallet" ? "Cüzdan" : "Profil", x + 16, y + 33);
+    const topTitle = this._profileTab() === "wallet" ? "Cüzdan" : this._profileTab() === "inbox" ? "Mesajlar" : "Profil";
+    ctx.fillText(topTitle, x + 16, y + 33);
 
     const tabs = [
       { tab: "profile", label: "Profil" },
       { tab: "wallet", label: "Cüzdan" },
+      { tab: "inbox", label: "Mesaj" },
     ];
     this.hitTabs = [];
     let tx = x + 94;
-    const tw = clamp(Math.floor((w - 94 - 54 - 10) / 2), 72, 96);
+    const tw = clamp(Math.floor((w - 94 - 54 - 16) / 3), 62, 88);
     for (const t of tabs) {
       const rect = { x: tx, y: y + 10, w: tw, h: 32 };
       this.hitTabs.push({ rect, tab: t.tab });
@@ -907,6 +1045,73 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       }
     }
   }
+  _drawInboxTab(ctx, x, y, w, h, state) {
+    const rows = this._inbox();
+    const isMobile = w < 430;
+
+    if (!this._inboxLoaded && !this._inboxLoading) {
+      this._loadInbox(false);
+    }
+
+    drawGlassPanel(ctx, x, y, w, h, 22);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "900 18px system-ui";
+    ctx.fillText("Gelen Kutusu", x + 16, y + 28);
+
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = `${isMobile ? 11 : 12}px system-ui`;
+    ctx.fillText("Çekim taleplerinin durumu burada otomatik görünür.", x + 16, y + 48);
+
+    const top = y + 62;
+    const usableH = h - 76;
+    if (this._inboxLoading) {
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "13px system-ui";
+      ctx.fillText("Mesajlar yükleniyor...", x + 16, top + 18);
+      return;
+    }
+
+    if (this._inboxError) {
+      ctx.fillStyle = "rgba(255,150,150,0.95)";
+      ctx.font = "13px system-ui";
+      ctx.fillText(this._inboxError, x + 16, top + 18);
+      return;
+    }
+
+    if (!rows.length) {
+      ctx.fillStyle = "rgba(255,255,255,0.60)";
+      ctx.font = "13px system-ui";
+      ctx.fillText("Henüz mesaj yok. Çekim isteği verdiğinde burada görünür.", x + 16, top + 18);
+      return;
+    }
+
+    const gap = 10;
+    const rowH = isMobile ? 72 : 78;
+    const maxRows = Math.max(1, Math.floor((usableH - 8) / (rowH + gap)));
+    rows.slice(0, maxRows).forEach((row, idx) => {
+      const ry = top + idx * (rowH + gap);
+      drawButtonPlate(ctx, x + 12, ry, w - 24, rowH, row.accent || "muted");
+
+      ctx.fillStyle = row.accent === "red" ? "#ffd7d7" : "#ffffff";
+      ctx.font = `900 ${isMobile ? 14 : 15}px system-ui`;
+      ctx.fillText(row.title || "Mesaj", x + 24, ry + 22);
+
+      ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.font = `${isMobile ? 11 : 12}px system-ui`;
+      const body = String(row.body || "");
+      const note = row.note ? ` • ${row.note}` : "";
+      ctx.fillText((body + note).slice(0, isMobile ? 76 : 122), x + 24, ry + 42);
+
+      const d = new Date(row.at || Date.now());
+      const stamp = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      ctx.fillStyle = "rgba(255,255,255,0.60)";
+      ctx.font = `${isMobile ? 10 : 11}px system-ui`;
+      ctx.fillText(`${stamp} • ${String(row.status || "pending").toUpperCase()}`, x + 24, ry + rowH - 14);
+    });
+  }
+
 
   render(ctx, w, h) {
     const state = this.store.get() || {};
@@ -946,6 +1151,11 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     this.hitWalletButtons = [];
     this.hitEditAvatar = null;
     this.hitLeaderboard = null;
+    this.hitInboxRows = [];
+    this._inboxLoaded = false;
+    this._inboxLoading = false;
+    this._inboxError = "";
+    this._lastInboxSyncAt = 0;
 
     this._drawTopBar(ctx, innerX, innerY, innerW);
 
@@ -956,6 +1166,8 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
 
     if (this._profileTab() === "wallet") {
       this._drawWalletTab(ctx, contentX, contentY, contentW, contentH, state);
+    } else if (this._profileTab() === "inbox") {
+      this._drawInboxTab(ctx, contentX, contentY, contentW, contentH, state);
     } else {
       this._drawProfileTab(ctx, contentX, contentY, contentW, contentH, state);
     }
