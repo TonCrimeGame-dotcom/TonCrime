@@ -338,12 +338,16 @@
         });
       }
 
-      if (m.type === TILE.PUNCH) damage += SLOT_DAMAGE.punch + bonus * 2;
-      if (m.type === TILE.KICK) damage += SLOT_DAMAGE.kick + bonus * 3;
-      if (m.type === TILE.SLAP) damage += SLOT_DAMAGE.slap + bonus * 2;
-      if (m.type === TILE.HEAD) damage += SLOT_DAMAGE.head + bonus * 3;
-      if (m.type === TILE.WEED) heal += 10 + bonus * 3;
+     // DAMAGE sadece saldırı itemları
+if (m.type === TILE.PUNCH) damage += SLOT_DAMAGE.punch + bonus * 2;
+if (m.type === TILE.KICK) damage += SLOT_DAMAGE.kick + bonus * 3;
+if (m.type === TILE.SLAP) damage += SLOT_DAMAGE.slap + bonus * 2;
+if (m.type === TILE.HEAD) damage += SLOT_DAMAGE.head + bonus * 3;
 
+// HEAL sadece weed
+if (m.type === TILE.WEED) {
+  heal += 15 + bonus * 4;
+}
       for (const cell of m.cells) {
         remove.add(cell.r + ":" + cell.c);
       }
