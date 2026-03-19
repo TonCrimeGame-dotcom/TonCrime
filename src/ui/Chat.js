@@ -222,7 +222,7 @@ export function startChat(store) {
 
     const payload = {
       username: username(),
-      message: text,
+      text: text,
       player_meta: playerMeta(),
     };
 
