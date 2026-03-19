@@ -297,15 +297,6 @@ const defaultState = {
     hudReservedTop: 118,
     chatReservedBottom: 82,
   },
-
-  bots: [],
-  botState: {
-    enabled: true,
-    bootstrapped: false,
-    lastPresenceAt: 0,
-    lastMarketAt: 0,
-    lastChatAt: 0,
-  },
 };
 
 const loaded = loadStore();
