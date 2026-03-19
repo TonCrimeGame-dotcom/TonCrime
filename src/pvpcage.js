@@ -3,54 +3,32 @@
   const ICON_LIFE_MS = 500;
   const START_HP = 1000;
 
-  const DAMAGE = {
-    punch: 12,
-    kick: 14,
-    slap: 8,
-    brain: 16,
-    drink: 13,
-    skull: 15,
-    weedHeal: 25,
-  };
+const DAMAGE = {
+  punch: 12,
+  kick: 14,
+  slap: 8,
+  brain: 16,
+  skull: 15,
+  weedHeal: 25,
+  drinkHeal: 18,
+};
 
-  const ICON_PATHS = {
-    skull: "./src/assets/skull.png",
-    drink: "./src/assets/drink.png",
-    kick: "./src/assets/kick.png",
-    weed: "./src/assets/weed.png",
-    slap: "./src/assets/slap.png",
-    punch: "./src/assets/punch.png",
-    brain: "./src/assets/brain.png",
-  };
-
-  const ICON_IMAGES = {};
-  let ICONS_PRELOADED = false;
-
-  function preloadIcons() {
-    if (ICONS_PRELOADED) return;
-    ICONS_PRELOADED = true;
-
-    Object.entries(ICON_PATHS).forEach(([key, src]) => {
-      const img = new Image();
-      img.decoding = "async";
-      img.loading = "eager";
-      img.src = src;
-      ICON_IMAGES[key] = img;
-    });
-  }
-
-  const ICONS = [
-    { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false },
-    { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false },
-    { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false },
-    { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false },
-    { id: "drink", emoji: "🍾", label: "İÇKİ", color: "#ffd166", damage: DAMAGE.drink, bad: false, heal: false },
-    { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true },
-    { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false },
-  ];
+ const ICONS = [
+  { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false, flash: "rgba(255,168,74,0.16)" },
+  { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false, flash: "rgba(99,227,108,0.12)" },
+  { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false, flash: "rgba(124,182,255,0.14)" },
+  { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false, flash: "rgba(255,100,100,0.14)" },
+  { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true, flash: "rgba(51,221,119,0.18)" },
+  { id: "drink", emoji: "🍺", label: "İÇKİ", color: "#ffd166", damage: DAMAGE.drinkHeal, bad: false, heal: true, flash: "rgba(255,209,102,0.18)" },
+  { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false, flash: "rgba(255,77,109,0.20)" },
+];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
-  const BOT_NAMES = ["ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven"];
+  const BOT_NAMES = [
+    "ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven",
+    "BlackMamba", "NightHawk", "CrimsonJack", "DarkVenom", "MafiaKing", "BlueViper",
+    "SteelFang", "RedSkull", "SilentWolf", "NeonGhost", "FrostBite", "WildRaven", "TurboKhan"
+  ];
 
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
@@ -70,6 +48,30 @@
 
   function choice(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function ensureAudioContext() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    try {
+      if (!api._soundCtx) api._soundCtx = new Ctx();
+      if (api._soundCtx.state === "suspended") {
+        api._soundCtx.resume().catch(() => {});
+      }
+      return api._soundCtx;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function makeNoiseBuffer(ctx, duration = 0.2) {
+    const len = Math.max(1, Math.floor(ctx.sampleRate * duration));
+    const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    }
+    return buffer;
   }
 
   function roundRectPath(ctx, x, y, w, h, r) {
@@ -98,43 +100,6 @@
 
   function pointInRect(px, py, r) {
     return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-  }
-
-  function drawImageFit(ctx, img, x, y, w, h) {
-    if (!img || !img.complete || !(img.naturalWidth || img.width)) return false;
-
-    const iw = img.naturalWidth || img.width || 1;
-    const ih = img.naturalHeight || img.height || 1;
-    const scale = Math.min(w / iw, h / ih);
-    const dw = Math.max(4, iw * scale);
-    const dh = Math.max(4, ih * scale);
-    const dx = x + (w - dw) * 0.5;
-    const dy = y + (h - dh) * 0.5;
-
-    ctx.drawImage(img, dx, dy, dw, dh);
-    return true;
-  }
-
-  function drawImageCover(ctx, img, x, y, w, h, radius = 0) {
-    if (!img || !img.complete || !(img.naturalWidth || img.width)) return false;
-
-    const iw = img.naturalWidth || img.width || 1;
-    const ih = img.naturalHeight || img.height || 1;
-    const scale = Math.max(w / iw, h / ih);
-
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = x + (w - dw) * 0.5;
-    const dy = y + (h - dh) * 0.5;
-
-    ctx.save();
-    if (radius > 0) {
-      roundRectPath(ctx, x, y, w, h, radius);
-      ctx.clip();
-    }
-    ctx.drawImage(img, dx, dy, dw, dh);
-    ctx.restore();
-    return true;
   }
 
   function ensureStyle() {
@@ -398,7 +363,7 @@
           <div class="tc-cage-toast" id="tcCageToast"></div>
         </div>
 
-        <div class="tc-cage-rule">💀 kuru kafaya basarsan kendi canından 15 gider</div>
+        <div class="tc-cage-rule">💀 kuru kafa kendine vurur • 🌿 weed ve 🍺 drink can basar</div>
       </div>
     `;
   }
@@ -414,7 +379,6 @@
 
     init(opts = {}) {
       ensureStyle();
-      preloadIcons();
 
       const arena = document.getElementById(opts.arenaId || "arena");
       const status = document.getElementById(opts.statusId || "pvpStatus");
@@ -491,6 +455,9 @@
         currentIcon: null,
         particles: [],
         hitFlashUntil: 0,
+        hitFlashColor: "rgba(255,255,255,0.04)",
+        screenFlashUntil: 0,
+        screenFlashColor: "rgba(255,255,255,0.08)",
         botNextActionAt: 0,
       };
 
@@ -626,23 +593,21 @@
       const skullFailChance = 0.10;
 
       if (Math.random() < skullFailChance) {
-        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı");
+        const skull = ICONS.find((x) => x.id === "skull");
+        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı", skull);
       } else if (Math.random() > missChance) {
         const attack = choice(GOOD_ICONS);
         if (attack.heal) {
-          this._state.enemyHp = clamp(this._state.enemyHp + attack.damage, 0, START_HP);
-          this._state.hitFlashUntil = performance.now() + 90;
-          this._toast(`${this._opponent.username} OT kullandı • +${attack.damage} HP`, 620);
-          this._spawnBurst(0.28);
+          this._healEnemy(attack.damage, `${this._opponent.username} ${attack.label} kullandı`, attack);
         } else {
-          this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`);
+          this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`, attack);
         }
       }
 
       this._state.botNextActionAt = now + randInt(320, 760);
     },
 
-    _applyDamage(target, dmg, toastText) {
+    _applyDamage(target, dmg, toastText, iconMeta = null) {
       if (!this._state || this._state.finished) return;
 
       if (target === "enemy") {
@@ -651,21 +616,151 @@
         this._state.meHp = clamp(this._state.meHp - dmg, 0, START_HP);
       }
 
-      this._state.hitFlashUntil = performance.now() + 90;
+      this._state.hitFlashUntil = performance.now() + 110;
+      this._state.hitFlashColor = iconMeta?.flash || "rgba(255,255,255,0.05)";
+      this._flashScreen(iconMeta?.flash || "rgba(255,255,255,0.08)", 170);
+      this._playIconSound(iconMeta?.id || "punch");
       this._toast(toastText, 620);
-      this._spawnBurst(target === "enemy" ? 0.28 : 0.72);
+      this._spawnBurst(target === "enemy" ? 0.28 : 0.72, iconMeta?.color || "#ff965a");
     },
 
-    _healMe(amount, toastText) {
+    _healMe(amount, toastText, iconMeta = null) {
       if (!this._state || this._state.finished) return;
 
       this._state.meHp = clamp(this._state.meHp + amount, 0, START_HP);
-      this._state.hitFlashUntil = performance.now() + 90;
+      this._state.hitFlashUntil = performance.now() + 110;
+      this._state.hitFlashColor = iconMeta?.flash || "rgba(51,221,119,0.16)";
+      this._flashScreen(iconMeta?.flash || "rgba(51,221,119,0.18)", 190);
+      this._playIconSound(iconMeta?.id || "weed");
       this._toast(toastText, 620);
-      this._spawnBurst(0.72);
+      this._spawnBurst(0.72, iconMeta?.color || "#33dd77");
     },
 
-    _spawnBurst(anchorXRatio) {
+    _healEnemy(amount, toastText, iconMeta = null) {
+      if (!this._state || this._state.finished) return;
+
+      this._state.enemyHp = clamp(this._state.enemyHp + amount, 0, START_HP);
+      this._state.hitFlashUntil = performance.now() + 110;
+      this._state.hitFlashColor = iconMeta?.flash || "rgba(255,209,102,0.16)";
+      this._flashScreen(iconMeta?.flash || "rgba(255,209,102,0.18)", 170);
+      this._playIconSound(iconMeta?.id || "drink");
+      this._toast(toastText, 620);
+      this._spawnBurst(0.28, iconMeta?.color || "#ffd166");
+    },
+
+    _flashScreen(color, ms = 170) {
+      if (!this._state) return;
+      this._state.screenFlashColor = color || "rgba(255,255,255,0.08)";
+      this._state.screenFlashUntil = performance.now() + ms;
+    },
+
+    _playIconSound(iconId) {
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      const master = ctx.createGain();
+      master.gain.value = 0.045;
+      master.connect(ctx.destination);
+
+      const makeTone = (type, f1, f2, dur, vol, q = 0) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(f1, now);
+        if (f2 != null) osc.frequency.exponentialRampToValueAtTime(Math.max(40, f2), now + dur);
+        gain.gain.setValueAtTime(Math.max(0.0001, vol), now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        if (q > 0) {
+          const filter = ctx.createBiquadFilter();
+          filter.type = "bandpass";
+          filter.frequency.value = Math.max(80, f1);
+          filter.Q.value = q;
+          osc.connect(filter);
+          filter.connect(gain);
+        } else {
+          osc.connect(gain);
+        }
+        gain.connect(master);
+        osc.start(now);
+        osc.stop(now + dur + 0.02);
+      };
+
+      const makeNoise = (dur, vol, filterType = "highpass", filterFreq = 900, q = 0.7) => {
+        const src = ctx.createBufferSource();
+        src.buffer = makeNoiseBuffer(ctx, dur);
+        const filter = ctx.createBiquadFilter();
+        filter.type = filterType;
+        filter.frequency.value = filterFreq;
+        filter.Q.value = q;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(Math.max(0.0001, vol), now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(master);
+        src.start(now);
+        src.stop(now + dur + 0.02);
+      };
+
+      switch (iconId) {
+        case "skull":
+          makeTone("sawtooth", 220, 72, 0.34, 0.06);
+          makeTone("triangle", 480, 110, 0.28, 0.03);
+          makeNoise(0.22, 0.04, "bandpass", 640, 1.2);
+          break;
+        case "weed":
+          makeNoise(0.09, 0.028, "highpass", 2400, 0.5);
+          setTimeout(() => {
+            const t = ensureAudioContext();
+            if (!t) return;
+            const n2 = t.currentTime;
+            const o = t.createOscillator();
+            const g = t.createGain();
+            o.type = "triangle";
+            o.frequency.setValueAtTime(320, n2);
+            o.frequency.exponentialRampToValueAtTime(120, n2 + 0.18);
+            g.gain.setValueAtTime(0.02, n2);
+            g.gain.exponentialRampToValueAtTime(0.0001, n2 + 0.18);
+            o.connect(g); g.connect(t.destination);
+            o.start(n2); o.stop(n2 + 0.2);
+          }, 40);
+          break;
+        case "drink":
+          makeTone("triangle", 980, 760, 0.09, 0.03);
+          setTimeout(() => {
+            const t = ensureAudioContext();
+            if (!t) return;
+            const n2 = t.currentTime;
+            const o1 = t.createOscillator(); const o2 = t.createOscillator();
+            const g = t.createGain();
+            o1.type = "sine"; o2.type = "sine";
+            o1.frequency.value = 1420; o2.frequency.value = 1850;
+            g.gain.setValueAtTime(0.02, n2);
+            g.gain.exponentialRampToValueAtTime(0.0001, n2 + 0.12);
+            o1.connect(g); o2.connect(g); g.connect(t.destination);
+            o1.start(n2); o2.start(n2);
+            o1.stop(n2 + 0.12); o2.stop(n2 + 0.12);
+          }, 20);
+          break;
+        case "kick":
+        case "brain":
+          makeTone("sine", 120, 58, 0.16, 0.06);
+          makeNoise(0.06, 0.03, "lowpass", 780, 0.8);
+          break;
+        case "punch":
+          makeTone("sine", 155, 70, 0.12, 0.055);
+          makeNoise(0.04, 0.02, "bandpass", 980, 0.9);
+          break;
+        case "slap":
+          makeNoise(0.08, 0.05, "bandpass", 1400, 1.3);
+          makeTone("triangle", 360, 210, 0.07, 0.014);
+          break;
+        default:
+          makeTone("sine", 180, 90, 0.08, 0.04);
+      }
+    },
+    _spawnBurst(anchorXRatio, color = "#ff965a") {
       const canvas = this._els?.canvas;
       if (!canvas || !this._state) return;
 
@@ -682,6 +777,7 @@
           life: rand(0.4, 0.95),
           size: rand(2.5, 6),
           alpha: rand(0.25, 0.65),
+          color,
         });
       }
     },
@@ -779,26 +875,27 @@
       return true;
     },
 
-    _handleTap(x, y) {
-      const cur = this._state?.currentIcon;
-      if (!cur || cur.hit) return;
-      if (!pointInRect(x, y, cur)) return;
+_handleTap(x, y) {
+  const cur = this._state?.currentIcon;
+  if (!cur || cur.hit) return;
+  if (!pointInRect(x, y, cur)) return;
 
-      cur.hit = true;
-      this._state.currentIcon = null;
+  cur.hit = true;
+  this._state.currentIcon = null;
 
-      if (cur.bad) {
-        this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`);
-        return;
-      }
+  if (cur.bad) {
+    this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`, cur);
+    return;
+  }
 
-      if (cur.heal) {
-        this._healMe(cur.damage, `🌿 OT • +${cur.damage} HP`);
-        return;
-      }
+  if (cur.heal) {
+    const healPrefix = cur.id === "drink" ? "🍺 İÇKİ" : "🌿 OT";
+    this._healMe(cur.damage, `${healPrefix} • +${cur.damage} HP`, cur);
+    return;
+  }
 
-      this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`);
-    },
+  this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`, cur);
+},
 
     _checkFinish() {
       if (!this._state || this._state.finished) return;
@@ -813,64 +910,6 @@
       }
     },
 
-    _recordResult(win) {
-      const store = window.tcStore;
-      const now = Date.now();
-      const REWARD_COINS = 16;
-      const opponent = this._opponent?.username || "Rakip";
-      const resultItem = {
-        id: `pvp_${now}`,
-        opponent,
-        result: win ? "win" : "loss",
-        mode: "cage_fight",
-        meHp: Math.round(this._state?.meHp || 0),
-        enemyHp: Math.round(this._state?.enemyHp || 0),
-        at: now,
-      };
-
-      if (store?.get && store?.set) {
-        const state = store.get() || {};
-        const pvp = { ...(state.pvp || {}) };
-        const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
-        const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
-        const playerName = String(state?.player?.username || "Player");
-        const nextCoins = Number(state.coins || 0) + (win && !pvp.payoutDone ? REWARD_COINS : 0);
-
-        pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
-        pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
-        pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 16 : -10), 0, 99999);
-        pvp.currentOpponent = opponent;
-        pvp.recentMatches = [resultItem, ...recentMatches];
-        pvp.payoutDone = true;
-
-        const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
-        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
-        nextBoard.push({
-          id: String(state?.player?.id || "player_main"),
-          name: playerName,
-          wins: Number(pvp.wins || 0),
-          losses: Number(pvp.losses || 0),
-          rating: Number(pvp.rating || 1000),
-          score,
-          updatedAt: now,
-        });
-        nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-        pvp.leaderboard = nextBoard.slice(0, 50);
-
-        store.set({
-          coins: nextCoins,
-          pvp,
-        });
-      }
-
-      const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
-      try {
-        window.dispatchEvent(new CustomEvent(eventName, { detail: resultItem }));
-      } catch (_) {
-        window.dispatchEvent(new Event(eventName));
-      }
-    },
-
     _finish(win, reason) {
       if (!this._state || this._state.finished) return;
       this._state.finished = true;
@@ -878,7 +917,6 @@
 
       this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
       this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
-      this._recordResult(win);
       this._updateHud();
       this._render();
     },
@@ -904,7 +942,7 @@
       if (this._els.timeFill) this._els.timeFill.style.transform = `scaleX(${timePct / 100})`;
       if (this._els.timerText) this._els.timerText.textContent = String(sec);
       if (this._els.sub) {
-        this._els.sub.textContent = this._state.finished ? "Maç bitti" : `${sec} saniye • hızlı PvP`;
+        this._els.sub.textContent = this._state.finished ? "Maç bitti" : `${sec} saniye • ikon yakala`;
       }
     },
 
@@ -940,7 +978,12 @@
       this._drawCurrentIcon(ctx);
 
       if (performance.now() < this._state.hitFlashUntil) {
-        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        ctx.fillStyle = this._state.hitFlashColor || "rgba(255,255,255,0.04)";
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      if (performance.now() < this._state.screenFlashUntil) {
+        ctx.fillStyle = this._state.screenFlashColor || "rgba(255,255,255,0.08)";
         ctx.fillRect(0, 0, w, h);
       }
 
@@ -988,30 +1031,15 @@
       fillRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.06)");
       strokeRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.12)", 1.4);
 
-      const img = ICON_IMAGES[cur.id];
-      const pad = cur.w * 0.06;
-      const artBoxX = x + pad;
-      const artBoxY = y + pad;
-      const artBoxW = cur.w - pad * 2;
-      const artBoxH = cur.h - pad * 2;
-
-      const drew = drawImageCover(ctx, img, artBoxX, artBoxY, artBoxW, artBoxH, 14);
-
-      if (!drew) {
-        ctx.font = `900 ${Math.floor(cur.w * 0.58)}px system-ui, Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#fff";
-        ctx.fillText(cur.emoji, 0, -2);
-      }
-
-      ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.11))}px system-ui, Arial`;
+      ctx.font = `900 ${Math.floor(cur.w * 0.48)}px system-ui, Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.shadowColor = "rgba(0,0,0,0.45)";
-      ctx.shadowBlur = 8;
-      ctx.fillText(cur.label, 0, cur.h * 0.33);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(cur.emoji, 0, -6);
+
+      ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.12))}px system-ui, Arial`;
+      ctx.fillStyle = "rgba(255,255,255,0.84)";
+      ctx.fillText(cur.label, 0, cur.h * 0.27);
 
       ctx.restore();
     },
@@ -1020,7 +1048,7 @@
       if (!this._state?.particles?.length) return;
       for (const p of this._state.particles) {
         ctx.globalAlpha = clamp(p.life * p.alpha, 0, 1);
-        ctx.fillStyle = "rgba(255,150,90,1)";
+        ctx.fillStyle = p.color || "rgba(255,150,90,1)";
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
