@@ -25,6 +25,7 @@ import { startChat } from "./ui/Chat.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
+import { startBotEngine } from "./BotEngine.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -295,6 +296,15 @@ const defaultState = {
     safe: getSafeArea(),
     hudReservedTop: 118,
     chatReservedBottom: 82,
+  },
+
+  bots: [],
+  botState: {
+    enabled: true,
+    bootstrapped: false,
+    lastPresenceAt: 0,
+    lastMarketAt: 0,
+    lastChatAt: 0,
   },
 };
 
@@ -1597,6 +1607,7 @@ window.addEventListener("tc:openProfile", () => {
  * =======================================================*/
 startHud(store);
 startChat(store);
+startBotEngine(store);
 startMenu(store);
 startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
