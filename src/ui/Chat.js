@@ -88,7 +88,7 @@ export function startChat(store) {
     return {
       id: String(row?.id || `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
       username: usernameVal,
-      text: String(row?.text || ""),
+      text: String(row?.text || row?.message || ""),
       type: String(row?.msg_type || row?.type || "chat"),
       created_at: row?.created_at || new Date().toISOString(),
       player_meta: {
@@ -209,24 +209,25 @@ export function startChat(store) {
 
     const payload = {
       username: username(),
-      text,
+      message: text,
       player_meta: playerMeta(),
+      created_at: new Date().toISOString(),
     };
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("chat_messages")
-        .insert(payload)
-        .select("*")
-        .single();
+        .insert(payload);
       if (error) throw error;
-      addMessage(data);
+      addMessage({
+        ...payload,
+        id: `local_${Date.now()}`,
+      });
     } catch (err) {
       console.error("[CHAT] send failed:", err);
       addMessage({
         ...payload,
         id: `local_${Date.now()}`,
-        created_at: new Date().toISOString(),
       });
     }
   }
