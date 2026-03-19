@@ -89,7 +89,7 @@ export function startChat(store) {
       id: String(row?.id || `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
       username: usernameVal,
       text: String(row?.text || row?.message || ""),
-      type: String(row?.msg_type || row?.type || "chat"),
+      type: String(row?.type || "chat"),
       created_at: row?.created_at || new Date().toISOString(),
       player_meta: {
         ...meta,
@@ -188,18 +188,24 @@ export function startChat(store) {
   }
 
   function setOpen(isOpen) {
-    if (isOpen) {
+    const mobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+    const nextOpen = mobile ? false : !!isOpen;
+    if (nextOpen) {
       drawer.classList.add("open");
       toggleBtn.textContent = "Kapat";
     } else {
       drawer.classList.remove("open");
       toggleBtn.textContent = "Aç";
     }
-    try { localStorage.setItem(KEY_OPEN, isOpen ? "1" : "0"); } catch {}
+    try { localStorage.setItem(KEY_OPEN, nextOpen ? "1" : "0"); } catch {}
   }
 
   function getOpen() {
-    try { return localStorage.getItem(KEY_OPEN) === "1"; } catch { return false; }
+    try {
+      const mobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+      if (mobile) return false;
+      return localStorage.getItem(KEY_OPEN) === "1";
+    } catch { return false; }
   }
 
   async function send() {
@@ -211,23 +217,23 @@ export function startChat(store) {
       username: username(),
       message: text,
       player_meta: playerMeta(),
-      created_at: new Date().toISOString(),
     };
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("chat_messages")
-        .insert(payload);
+        .insert(payload)
+        .select("*")
+        .single();
       if (error) throw error;
-      addMessage({
-        ...payload,
-        id: `local_${Date.now()}`,
-      });
+      addMessage(data);
     } catch (err) {
       console.error("[CHAT] send failed:", err);
       addMessage({
         ...payload,
+        text,
         id: `local_${Date.now()}`,
+        created_at: new Date().toISOString(),
       });
     }
   }
@@ -388,6 +394,8 @@ export function startChat(store) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") send();
   });
+  input.addEventListener("focus", () => setOpen(false));
+  input.addEventListener("blur", () => setOpen(false));
 
   const titleWrap = document.getElementById("chatTitle");
   if (titleWrap && !titleWrap.querySelector(".tc-chat-online-count")) {
@@ -426,6 +434,9 @@ export function startChat(store) {
     }
     updateOnlineLabel();
   });
+
+  window.addEventListener("resize", () => setOpen(getOpen()));
+  window.addEventListener("orientationchange", () => setOpen(false));
 
   loadHistory();
   subscribeRealtime();
