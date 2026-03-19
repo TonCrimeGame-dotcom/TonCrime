@@ -434,6 +434,25 @@ export class Store {
         currentOpponent: null,
       },
 
+      bots: [
+        { id: "bot_shadowwolf", name: "ShadowWolf", online: true, archetype: "trader", coins: 6400, energy: 44, shopId: "bot_shop_shadowwolf", lastSeenAt: Date.now() },
+        { id: "bot_nightviper", name: "NightViper", online: false, archetype: "flipper", coins: 5200, energy: 39, shopId: "bot_shop_nightviper", lastSeenAt: Date.now() },
+        { id: "bot_ghostmafia", name: "GhostMafia", online: true, archetype: "seller", coins: 7800, energy: 47, shopId: "bot_shop_ghostmafia", lastSeenAt: Date.now() },
+        { id: "bot_ricovane", name: "RicoVane", online: false, archetype: "buyer", coins: 5800, energy: 35, shopId: "bot_shop_ricovane", lastSeenAt: Date.now() },
+        { id: "bot_ironfist", name: "IronFist", online: true, archetype: "buyer", coins: 6100, energy: 41, shopId: "bot_shop_ironfist", lastSeenAt: Date.now() },
+        { id: "bot_voltkral", name: "VoltKral", online: false, archetype: "seller", coins: 4900, energy: 28, shopId: "bot_shop_voltkral", lastSeenAt: Date.now() },
+        { id: "bot_slyraven", name: "SlyRaven", online: true, archetype: "trader", coins: 7050, energy: 33, shopId: "bot_shop_slyraven", lastSeenAt: Date.now() },
+        { id: "bot_blackmamba", name: "BlackMamba", online: false, archetype: "flipper", coins: 6650, energy: 31, shopId: "bot_shop_blackmamba", lastSeenAt: Date.now() },
+      ],
+
+      botState: {
+        enabled: true,
+        bootstrapped: false,
+        lastPresenceAt: 0,
+        lastMarketAt: 0,
+        lastChatAt: 0,
+      },
+
       settings: {
         music: true,
         sfx: true,
