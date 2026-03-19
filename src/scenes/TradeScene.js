@@ -74,6 +74,46 @@ function iconForType(type) {
   }
 }
 
+
+function getPointer(input) {
+  return (
+    input?.pointer ||
+    input?.p ||
+    input?.mouse ||
+    input?.state?.pointer ||
+    { x: 0, y: 0 }
+  );
+}
+
+function justPressed(input) {
+  if (typeof input?.justPressed === "function") return !!input.justPressed();
+  if (typeof input?.isJustPressed === "function") {
+    return (
+      !!input.isJustPressed("pointer") ||
+      !!input.isJustPressed("mouseLeft") ||
+      !!input.isJustPressed("touch")
+    );
+  }
+  return !!input?._justPressed || !!input?.mousePressed;
+}
+
+function justReleased(input) {
+  if (typeof input?.justReleased === "function") return !!input.justReleased();
+  if (typeof input?.isJustReleased === "function") {
+    return (
+      !!input.isJustReleased("pointer") ||
+      !!input.isJustReleased("mouseLeft") ||
+      !!input.isJustReleased("touch")
+    );
+  }
+  return !!input?._justReleased || !!input?.mouseReleased;
+}
+
+function isDown(input) {
+  if (typeof input?.isDown === "function") return !!input.isDown();
+  return !!input?.pointer?.down || !!input?.mouseDown || !!input?.state?.pointer?.down;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function todayKey() {
@@ -120,14 +160,9 @@ export class TradeScene {
     this.hitBack = null;
     this.hitTabs = [];
     this.hitButtons = [];
-    this.hitLootButtons = [];
-    this.hitPremiumButton = null;
 
     this.toastText = "";
     this.toastUntil = 0;
-
-    this.lootAnim = null;
-    this.lootAnimUntil = 0;
   }
 
   onEnter() {
@@ -139,12 +174,8 @@ export class TradeScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
-    this.lootAnim = null;
-    this.lootAnimUntil = 0;
 
     this.store.set({
-      premium: !!s.premium,
-      premiumExpire: Number(s.premiumExpire || 0),
       trade: {
         ...trade,
         activeTab: trade.activeTab || "explore",
@@ -158,59 +189,6 @@ export class TradeScene {
         searchQuery: trade.searchQuery || "",
       },
     });
-    this._refreshBusinessProduction();
-  }
-
-  _isPremiumActive() {
-    const s = this.store.get() || {};
-    const expire = Number(s.premiumExpire || 0);
-    const manualFlag = !!(s.premium || s.player?.premium || s.player?.isPremium);
-    return manualFlag && (!expire || Date.now() < expire);
-  }
-
-  _ensurePremiumState() {
-    const s = this.store.get() || {};
-    const expire = Number(s.premiumExpire || 0);
-    if ((s.premium || s.player?.premium || s.player?.isPremium) && expire && Date.now() >= expire) {
-      this.store.set({
-        premium: false,
-        premiumExpire: 0,
-        player: { ...(s.player || {}), premium: false, isPremium: false },
-      });
-      return false;
-    }
-    return this._isPremiumActive();
-  }
-
-  _buyPremium() {
-    const s = this.store.get() || {};
-    const cost = 500;
-    const now = Date.now();
-    const durationMs = 24 * 60 * 60 * 1000;
-    if (Number(s.coins || 0) < cost) {
-      this._showToast("Premium için 500 yton gerekli");
-      return;
-    }
-    const currentExpire = Number(s.premiumExpire || 0);
-    const nextExpire = currentExpire > now ? currentExpire + durationMs : now + durationMs;
-    this.store.set({
-      coins: Number(s.coins || 0) - cost,
-      premium: true,
-      premiumExpire: nextExpire,
-      player: { ...(s.player || {}), premium: true, isPremium: true },
-    });
-    this._showToast("Premium üyelik aktif edildi");
-  }
-
-  _premiumRemainingText() {
-    const s = this.store.get() || {};
-    if (!this._isPremiumActive()) return "Kapalı";
-    const expire = Number(s.premiumExpire || 0);
-    if (!expire) return "Aktif";
-    const remain = Math.max(0, expire - Date.now());
-    const hours = Math.floor(remain / (60 * 60 * 1000));
-    const mins = Math.floor((remain % (60 * 60 * 1000)) / (60 * 1000));
-    return `${hours}s ${mins}d`;
   }
 
   _trade() {
@@ -235,9 +213,9 @@ export class TradeScene {
 
     return {
       x: safe.x + 10,
-      y: safe.y + topReserved - 18,
+      y: safe.y + topReserved,
       w: safe.w - 20,
-      h: safe.h - topReserved - bottomReserved + 8,
+      h: safe.h - topReserved - bottomReserved - 10,
     };
   }
 
@@ -417,193 +395,139 @@ export class TradeScene {
     return shop;
   }
 
-
-  _startLootAnimation(type, label, rewardText) {
-    this.lootAnim = {
-      type: type || "crate",
-      label: String(label || ""),
-      rewardText: String(rewardText || ""),
-      startedAt: Date.now(),
-      duration: type === "wheel" ? 2200 : 1800,
-    };
-    this.lootAnimUntil = this.lootAnim.startedAt + this.lootAnim.duration;
-  }
-
-  _randomProductionAllocation(products = [], totalDaily = 50) {
-    const list = (products || []).map((p) => ({ ...p })).filter(Boolean);
-    if (!list.length) return [];
-    const out = list.map((p) => ({ productId: p.id, qty: 0 }));
-    let remaining = Math.max(0, Math.floor(Number(totalDaily || 0)));
-
-    while (remaining > 0) {
-      const index = Math.floor(Math.random() * out.length);
-      const step = Math.min(remaining, 1 + Math.floor(Math.random() * 3));
-      out[index].qty += step;
-      remaining -= step;
+  _doFreeSpin() {
+    if (!this._isFreeSpinReady()) {
+      this._showToast("Günlük ücretsiz çark kullanıldı");
+      return;
     }
 
-    return out.filter((x) => Number(x.qty || 0) > 0);
-  }
-
-
-
-  _buildWheelRewards() {
-    return [
-      { kind: "coins", amount: 40, label: "+40 YTON" },
-      { kind: "coins", amount: 80, label: "+80 YTON" },
-      { kind: "energy", amount: 20, label: "+20 ENERJİ" },
-      { kind: "energy", amount: 35, label: "+35 ENERJİ" },
-      { kind: "item", label: "GOLDEN PASS", item: { id: "gold_pass_" + Date.now(), kind: "rare", icon: "👑", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik ürünü." } },
-      { kind: "item", label: "MYSTERY CRATE", item: { id: "crate_" + Date.now(), kind: "rare", icon: "📦", name: "Mystery Crate", rarity: "rare", qty: 1, usable: false, sellable: true, marketable: true, sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." } },
-      { kind: "coins", amount: 140, label: "+140 YTON" },
-      { kind: "item", label: "LEGENDARY CRATE", item: { id: "legendary_" + Date.now(), kind: "rare", icon: "👑", name: "Legendary Crate", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: true, sellPrice: 90, marketPrice: 140, desc: "Premium sandık ödülü." } },
+    const rewards = [
+      { type: "coins", amount: 25, text: "+25 yton" },
+      { type: "coins", amount: 60, text: "+60 yton" },
+      { type: "energy", amount: 15, text: "+15 enerji" },
+      {
+        type: "item",
+        text: "Mystery Crate kazandın",
+        item: {
+          id: "crate_" + Date.now(),
+          kind: "rare",
+          icon: "📦",
+          name: "Mystery Crate",
+          rarity: "rare",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: true,
+          sellPrice: 45,
+          marketPrice: 60,
+          desc: "Sandık ödülü.",
+        },
+      },
     ];
-  }
 
-  _buildCrateRewards() {
-    return [
-      { kind: "coins", amount: 10, label: "+10 YTON", tier: "small" },
-      { kind: "coins", amount: 15, label: "+15 YTON", tier: "small" },
-      { kind: "coins", amount: 20, label: "+20 YTON", tier: "small" },
-      { kind: "energy", amount: 8, label: "+8 ENERJİ", tier: "small" },
-      { kind: "energy", amount: 10, label: "+10 ENERJİ", tier: "small" },
-      { kind: "coins", amount: 30, label: "+30 YTON", tier: "small" },
-      { kind: "item", label: "MYSTERY CRATE", tier: "big", item: { id: "crate_" + Date.now(), kind: "rare", icon: "📦", name: "Mystery Crate", rarity: "rare", qty: 1, usable: false, sellable: true, marketable: true, sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." } },
-      { kind: "item", label: "GOLDEN PASS", tier: "big", item: { id: "gold_pass_" + Date.now(), kind: "rare", icon: "👑", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik ürünü." } },
-    ];
-  }
-
-  _applyLootReward(reward) {
+    const reward = rewards[Math.floor(Math.random() * rewards.length)];
     const s = this.store.get();
-    if (!reward) return "";
-    if (reward.kind === "coins") {
-      const bonusAmount = this._isPremiumActive() ? Math.floor(Number(reward.amount || 0) * 1.2) : Number(reward.amount || 0);
-      this.store.set({ coins: Number(s.coins || 0) + bonusAmount });
-      return `+${bonusAmount} YTON`;
-    }
-    if (reward.kind === "energy") {
+
+    if (reward.type === "coins") {
+      this.store.set({
+        coins: Number(s.coins || 0) + Number(reward.amount || 0),
+        trade: {
+          ...(s.trade || {}),
+          lastFreeSpinDay: todayKey(),
+        },
+      });
+    } else if (reward.type === "energy") {
       const p = { ...(s.player || {}) };
-      const bonusAmount = this._isPremiumActive() ? Math.floor(Number(reward.amount || 0) * 1.2) : Number(reward.amount || 0);
-      p.energy = clamp(Number(p.energy || 0) + bonusAmount, 0, Number(p.energyMax || 100));
-      this.store.set({ player: p });
-      return `+${bonusAmount} ENERJİ`;
-    }
-    if (reward.kind === "item" && reward.item) {
+      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
+      this.store.set({
+        player: p,
+        trade: {
+          ...(s.trade || {}),
+          lastFreeSpinDay: todayKey(),
+        },
+      });
+    } else {
       const items = (s.inventory?.items || []).map((x) => ({ ...x }));
       const existing = items.find((x) => x.name === reward.item.name);
       if (existing) existing.qty = Number(existing.qty || 0) + 1;
       else items.unshift({ ...reward.item });
-      this.store.set({ inventory: { ...(s.inventory || {}), items } });
-      return reward.label;
-    }
-    return reward.label || "Ödül";
-  }
 
-  _openFreeCrate() {
-    if (!this._isFreeSpinReady()) {
-      this._showToast("Günlük sandık bugün açıldı");
-      return;
+      this.store.set({
+        inventory: {
+          ...(s.inventory || {}),
+          items,
+        },
+        trade: {
+          ...(s.trade || {}),
+          lastFreeSpinDay: todayKey(),
+        },
+      });
     }
-    const rewards = this._buildCrateRewards();
-    const weights = rewards.map((r) => r.tier === "big" ? 1 : 8);
-    let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
-    let resultIndex = 0;
-    for (let i = 0; i < weights.length; i++) {
-      roll -= weights[i];
-      if (roll <= 0) { resultIndex = i; break; }
-    }
-    this._setTrade({ ...this._trade(), lastFreeSpinDay: todayKey() });
-    this.lootAnim = {
-      kind: "crate",
-      phase: "spinning",
-      rewards,
-      resultIndex,
-      selectedReward: rewards[resultIndex],
-      startedAt: Date.now(),
-      duration: 1800,
-      resultApplied: false,
-      travel: 1700 + Math.random() * 500,
-    };
-    this.lootAnimUntil = this.lootAnim.startedAt + this.lootAnim.duration;
-  }
 
-  _openPremiumWheel() {
-    const s = this.store.get();
-    if (Number(s.coins || 0) < 100) {
-      this._showToast("Premium çark için yetersiz yton");
-      return;
-    }
-    this.lootAnim = {
-      kind: "wheel",
-      phase: "idle",
-      rewards: this._buildWheelRewards(),
-      startedAt: Date.now(),
-      duration: 0,
-      resultApplied: false,
-      selectedReward: null,
-      resultIndex: -1,
-      cost: 100,
-    };
-    this.lootAnimUntil = Number.MAX_SAFE_INTEGER;
+    this._showToast(reward.text, 1600);
   }
-
-  _spinPremiumWheel() {
-    if (!this.lootAnim || this.lootAnim.kind !== "wheel" || this.lootAnim.phase !== "idle") return;
-    const s = this.store.get();
-    const cost = Number(this.lootAnim.cost || 100);
-    if (Number(s.coins || 0) < cost) {
-      this._showToast("Premium çark için yetersiz yton");
-      this._closeLootOverlay();
-      return;
-    }
-    this.store.set({ coins: Number(s.coins || 0) - cost });
-    const rewards = this.lootAnim.rewards || this._buildWheelRewards();
-    const weights = rewards.map((r) => (r.kind === "item" ? 1 : (Number(r.amount || 0) >= 100 ? 2 : 5)));
-    let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
-    let resultIndex = 0;
-    for (let i = 0; i < weights.length; i++) {
-      roll -= weights[i];
-      if (roll <= 0) { resultIndex = i; break; }
-    }
-    const wedge = (Math.PI * 2) / rewards.length;
-    const turns = 5 + Math.floor(Math.random() * 3);
-    const targetAngle = turns * Math.PI * 2 + (Math.PI * 1.5) - (resultIndex * wedge + wedge / 2);
-    this.lootAnim.phase = "spinning";
-    this.lootAnim.startedAt = Date.now();
-    this.lootAnim.duration = 3000;
-    this.lootAnim.resultIndex = resultIndex;
-    this.lootAnim.selectedReward = rewards[resultIndex];
-    this.lootAnim.startAngle = 0;
-    this.lootAnim.targetAngle = targetAngle;
-    this.lootAnim.resultApplied = false;
-    this.lootAnimUntil = this.lootAnim.startedAt + this.lootAnim.duration;
-  }
-
-  _finalizeLootIfNeeded() {
-    if (!this.lootAnim || this.lootAnim.phase !== "spinning") return;
-    if (Date.now() < this.lootAnimUntil) return;
-    if (!this.lootAnim.resultApplied) {
-      const rewardText = this._applyLootReward(this.lootAnim.selectedReward);
-      this.lootAnim.rewardText = rewardText;
-      this.lootAnim.resultApplied = true;
-      this._showToast(`Şu ödülü kazandın: ${rewardText}`, 2400);
-    }
-    this.lootAnim.phase = "result";
-    this.lootAnimUntil = Date.now() + 2400;
-  }
-
-  _closeLootOverlay() {
-    this.lootAnim = null;
-    this.lootAnimUntil = 0;
-  }
-
-  _doFreeSpin() {
-    this._openFreeCrate();
-  }
-
 
   _doPremiumSpin() {
-    this._openPremiumWheel();
+    const s = this.store.get();
+    const cost = 90;
+
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Premium çark için yetersiz yton");
+      return;
+    }
+
+    const rewards = [
+      { type: "coins", amount: 180, text: "+180 yton" },
+      { type: "energy", amount: 30, text: "+30 enerji" },
+      {
+        type: "item",
+        text: "Golden Pass kazandın",
+        item: {
+          id: "gold_pass_" + Date.now(),
+          kind: "rare",
+          icon: "👑",
+          name: "Golden Pass",
+          rarity: "legendary",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: false,
+          sellPrice: 250,
+          marketPrice: 0,
+          desc: "Nadir etkinlik ürünü.",
+        },
+      },
+    ];
+
+    const reward = rewards[Math.floor(Math.random() * rewards.length)];
+
+    if (reward.type === "coins") {
+      this.store.set({
+        coins: Number(s.coins || 0) - cost + Number(reward.amount || 0),
+      });
+    } else if (reward.type === "energy") {
+      const p = { ...(s.player || {}) };
+      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
+      this.store.set({
+        coins: Number(s.coins || 0) - cost,
+        player: p,
+      });
+    } else {
+      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+      const existing = items.find((x) => x.name === reward.item.name);
+      if (existing) existing.qty = Number(existing.qty || 0) + 1;
+      else items.unshift({ ...reward.item });
+
+      this.store.set({
+        coins: Number(s.coins || 0) - cost,
+        inventory: {
+          ...(s.inventory || {}),
+          items,
+        },
+      });
+    }
+
+    this._showToast(reward.text, 1600);
   }
 
   _buyCrate(kind) {
@@ -918,8 +842,7 @@ export class TradeScene {
     const p = { ...(s.player || {}) };
     const currentEnergy = Number(p.energy || 0);
     const maxEnergy = Number(p.energyMax || 100);
-    const rawGain = this._isPremiumActive() ? Math.floor(Number(product.energyGain || 0) * 1.2) : Number(product.energyGain || 0);
-    const gain = Math.min(rawGain, Math.max(0, maxEnergy - currentEnergy));
+    const gain = Math.min(Number(product.energyGain || 0), Math.max(0, maxEnergy - currentEnergy));
 
     if (gain <= 0) {
       this._showToast("Enerji full");
@@ -941,74 +864,90 @@ export class TradeScene {
   }
   
   _createPendingProduction(products = [], totalDaily = 50) {
-    return this._randomProductionAllocation(products, totalDaily);
-  }
+    const safeProducts = (products || []).map((p) => ({ ...p }));
+    if (!safeProducts.length) return [];
 
+    const per = Math.floor(totalDaily / safeProducts.length);
+    let remainder = totalDaily - per * safeProducts.length;
 
-_refreshBusinessProduction() {
-  const s = this.store.get();
-  const now = Date.now();
-
-  const owned = (s.businesses?.owned || []).map((biz) => ({
-    ...biz,
-    products: (biz.products || []).map((p) => ({ ...p })),
-    pendingProduction: Array.isArray(biz.pendingProduction)
-      ? biz.pendingProduction.map((p) => ({ ...p }))
-      : [],
-  }));
-
-  let changed = false;
-
-  for (const biz of owned) {
-    const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
-    if (!hasProducts) continue;
-
-    if (!Array.isArray(biz.pendingProduction) || !biz.pendingProduction.length) {
-      biz.pendingProduction = (biz.products || []).map((p) => ({ productId: p.id, qty: 0 }));
-      changed = true;
-    }
-
-    if (!biz.productionReadyAt) {
-      biz.productionReadyAt = now + DAY_MS;
-      changed = true;
-    }
-
-    if (!biz.productionExpireAt) {
-      biz.productionExpireAt = Number(biz.productionReadyAt) + DAY_MS;
-      changed = true;
-    }
-
-    const pendingTotal = (biz.pendingProduction || []).reduce(
-      (sum, row) => sum + Number(row.qty || 0),
-      0
-    );
-
-    if (pendingTotal <= 0 && now >= Number(biz.productionReadyAt || 0)) {
-      biz.pendingProduction = this._createPendingProduction(
-        biz.products,
-        Number(biz.dailyProduction || 50)
-      );
-      biz.productionExpireAt = now + DAY_MS;
-      changed = true;
-    } else if (pendingTotal > 0 && now >= Number(biz.productionExpireAt || 0)) {
-      biz.pendingProduction = (biz.products || []).map((p) => ({ productId: p.id, qty: 0 }));
-      biz.productionReadyAt = now + DAY_MS;
-      biz.productionExpireAt = Number(biz.productionReadyAt) + DAY_MS;
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    this.store.set({
-      businesses: {
-        ...(s.businesses || {}),
-        owned,
-      },
+    return safeProducts.map((p) => {
+      const extra = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder -= 1;
+      return {
+        productId: p.id,
+        qty: per + extra,
+      };
     });
   }
-}
 
-_collectBusinessProduction(bizId) {
+  _refreshBusinessProduction() {
+    const s = this.store.get();
+    const now = Date.now();
+
+    const owned = (s.businesses?.owned || []).map((biz) => ({
+      ...biz,
+      products: (biz.products || []).map((p) => ({ ...p })),
+      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
+    }));
+
+    let changed = false;
+
+    for (const biz of owned) {
+      const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
+      if (!hasProducts) continue;
+
+      if (!Array.isArray(biz.pendingProduction)) {
+        biz.pendingProduction = this._createPendingProduction(
+          biz.products,
+          Number(biz.dailyProduction || 50)
+        );
+        changed = true;
+      }
+
+      if (!biz.productionStartedAt) {
+        biz.productionStartedAt = now;
+        changed = true;
+      }
+
+      if (!biz.productionExpireAt) {
+        biz.productionExpireAt = Number(biz.productionStartedAt) + DAY_MS;
+        changed = true;
+      }
+
+      const pendingTotal = (biz.pendingProduction || []).reduce(
+        (sum, row) => sum + Number(row.qty || 0),
+        0
+      );
+
+      if (now >= Number(biz.productionExpireAt || 0)) {
+        if (pendingTotal > 0) {
+          biz.pendingProduction = biz.pendingProduction.map((row) => ({
+            ...row,
+            qty: 0,
+          }));
+        }
+
+        biz.productionStartedAt = now;
+        biz.productionExpireAt = now + DAY_MS;
+        biz.pendingProduction = this._createPendingProduction(
+          biz.products,
+          Number(biz.dailyProduction || 50)
+        );
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.store.set({
+        businesses: {
+          ...(s.businesses || {}),
+          owned,
+        },
+      });
+    }
+  }
+
+  _collectBusinessProduction(bizId) {
     this._refreshBusinessProduction();
 
     const s = this.store.get();
@@ -1044,9 +983,12 @@ _collectBusinessProduction(bizId) {
       0
     );
 
-    biz.pendingProduction = (biz.products || []).map((p) => ({ productId: p.id, qty: 0 }));
-    biz.productionReadyAt = now + DAY_MS;
-    biz.productionExpireAt = biz.productionReadyAt + DAY_MS;
+    biz.pendingProduction = this._createPendingProduction(
+      biz.products,
+      Number(biz.dailyProduction || 50)
+    );
+    biz.productionStartedAt = now;
+    biz.productionExpireAt = now + DAY_MS;
 
     this.store.set({
       businesses: {
@@ -1057,8 +999,8 @@ _collectBusinessProduction(bizId) {
 
     this._showToast(`${fmtNum(pendingTotal)} ürün toplandı`);
   }
-
-async _sellBusinessProduct(bizId, productId) {
+    
+  async _sellBusinessProduct(bizId, productId) {
     const s = this.store.get();
     const businesses = (s.businesses?.owned || []).map((b) => ({
       ...b,
@@ -1189,14 +1131,11 @@ async _sellBusinessProduct(bizId, productId) {
   }
 
   update() {
-    this._ensurePremiumState();
-    this._refreshBusinessProduction();
-    this._finalizeLootIfNeeded();
+    const pointer = getPointer(this.input);
+    const px = Number(pointer?.x || 0);
+    const py = Number(pointer?.y || 0);
 
-    const px = this.input?.pointer?.x || 0;
-    const py = this.input?.pointer?.y || 0;
-
-    if (this.input?.justPressed?.()) {
+    if (justPressed(this.input)) {
       this.dragging = true;
       this.downY = py;
       this.startScrollY = this.scrollY;
@@ -1204,40 +1143,20 @@ async _sellBusinessProduct(bizId, productId) {
       this.clickCandidate = true;
     }
 
-    if (this.dragging && this.input?.isDown?.()) {
+    if (this.dragging && isDown(this.input)) {
       const dy = py - this.downY;
       this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 18) this.clickCandidate = false;
+      if (this.moved > 10) this.clickCandidate = false;
     }
 
-    if (this.dragging && this.input?.justReleased?.()) {
+    if (this.dragging && justReleased(this.input)) {
       this.dragging = false;
 
       if (!this.clickCandidate) return;
 
-      if (this.lootAnim) {
-        for (const h of this.hitLootButtons || []) {
-          if (!pointInRect(px, py, h.rect)) continue;
-          if (h.action === "loot_spin") {
-            this._spinPremiumWheel();
-            return;
-          }
-          if (h.action === "loot_close") {
-            this._closeLootOverlay();
-            return;
-          }
-        }
-        return;
-      }
-
       if (this.hitBack && pointInRect(px, py, this.hitBack)) {
         this._goBack();
-        return;
-      }
-
-      if (this.hitPremiumButton && pointInRect(px, py, this.hitPremiumButton)) {
-        this._buyPremium();
         return;
       }
 
@@ -1251,7 +1170,6 @@ async _sellBusinessProduct(bizId, productId) {
       for (const h of this.hitButtons) {
         if (!pointInRect(px, py, h.rect)) continue;
 
-        try {
         switch (h.action) {
           case "search":
             this._promptSearch();
@@ -1305,11 +1223,6 @@ async _sellBusinessProduct(bizId, productId) {
             return;
           default:
             return;
-        }
-        } catch (err) {
-          console.error("[TradeScene] button action failed:", h?.action, err);
-          this._showToast(err?.message || "İşlem başarısız");
-          return;
         }
       }
     }
@@ -1402,6 +1315,11 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.lineWidth = 1;
     strokeRoundRect(ctx, x, y, w, h, 24);
 
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = glow;
+    fillRoundRect(ctx, x + w - 96, y + 16, 66, 66, 22);
+    ctx.restore();
 
     ctx.fillStyle = "rgba(255,210,120,0.13)";
     fillRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
@@ -1658,8 +1576,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
         (sum, row) => sum + Number(row.qty || 0),
         0
       );
-      const targetTs = pendingCount > 0 ? Number(biz.productionExpireAt || 0) : Number(biz.productionReadyAt || 0);
-      const remainMs = Math.max(0, targetTs - Date.now());
+      const remainMs = Math.max(0, Number(biz.productionExpireAt || 0) - Date.now());
       const remainHours = Math.floor(remainMs / (60 * 60 * 1000));
       const remainMinutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
 
@@ -1675,14 +1592,14 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.font = "11px system-ui";
       ctx.fillText(
         pendingCount > 0
-          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde silinir`
-          : `Sonraki üretim ${remainHours}s ${remainMinutes}d sonra hazır`,
+          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde topla`
+          : "Bekleyen üretim yok",
         x + 48,
         y + 64
       );
 
       const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
-      if (pendingCount > 0) this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
+      this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
       this._drawButton(ctx, collectRect, "Topla", pendingCount > 0 ? "gold" : "muted");
 
       let rowY = y + 82;
@@ -1831,56 +1748,38 @@ for (const p of products) {
       w,
       124,
       "Sandık & Çark",
-      "Günlük sandık ücretsiz • premium çark 100 yton",
+      this._isFreeSpinReady() ? "Günlük ücretsiz çark hazır" : "Premium loot sistemi aktif",
       "PREMIUM LOOT",
       "🎰",
       "#c77dff"
     );
 
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(
-      this._isFreeSpinReady()
-        ? "Günlük sandık hazır • alt kutudan aç"
-        : "Günlük sandık bugün açıldı • yarın tekrar aktif",
-      x + 16,
-      y + 94
-    );
-    ctx.fillText("Premium çark her zaman aktif • ödüller çark üstünde görünür", x + 16, y + 112);
+    const freeRect = { x: x + 14, y: y + 76, w: 116, h: 34 };
+    const premiumRect = { x: x + 138, y: y + 76, w: 122, h: 34 };
+    this.hitButtons.push({ rect: freeRect, action: "free_spin" });
+    this.hitButtons.push({ rect: premiumRect, action: "premium_spin" });
+    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Ücretsiz Çevir" : "Yarın Açılır", this._isFreeSpinReady() ? "primary" : "muted");
+    this._drawButton(ctx, premiumRect, "Premium Çark", "gold");
 
     y += 136;
 
     const gap = 10;
     const colW = Math.floor((w - gap) / 2);
 
-    const c1 = { x, y, w: colW, h: 132 };
-    const c2 = { x: x + colW + gap, y, w: colW, h: 132 };
+    const c1 = { x, y, w: colW, h: 112 };
+    const c2 = { x: x + colW + gap, y, w: colW, h: 112 };
+    this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
+    this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
 
-    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Günlük Sandık", "Her gün 1 kez ücretsiz aç", "📦", "#62b3ff");
-    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Premium Çark", "100 yton • animasyonlu ödül", "👑", "#ffcc66");
+    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • satın al / sat", "📦", "#62b3ff");
+    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Legendary Crate", "140 yton • premium ödül", "👑", "#ffcc66");
 
-    const freeBtn = { x: c1.x + 14, y: c1.y + 86, w: c1.w - 28, h: 34 };
-    const premiumBtn = { x: c2.x + 14, y: c2.y + 86, w: c2.w - 28, h: 34 };
-
-    this.hitButtons.push({ rect: freeBtn, action: "free_spin" });
-    this.hitButtons.push({ rect: premiumBtn, action: "premium_spin" });
-
-    this._drawButton(
-      ctx,
-      freeBtn,
-      this._isFreeSpinReady() ? "Günlük Sandık Aç" : "Yarın Açılır",
-      this._isFreeSpinReady() ? "primary" : "muted"
-    );
-    this._drawButton(ctx, premiumBtn, "Premium Çark 100", "gold");
-
-    y += 144;
+    y += 124;
 
     ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, x, y, w, 82, 18);
+    fillRoundRect(ctx, x, y, w, 96, 18);
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, x, y, w, 82, 18);
+    strokeRoundRect(ctx, x, y, w, 96, 18);
 
     ctx.fillStyle = "#fff";
     ctx.font = "900 14px system-ui";
@@ -1888,9 +1787,10 @@ for (const p of products) {
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    ctx.fillText("💰 YTON   ⚡ Enerji   📦 Sandık   👑 Golden Pass", x + 14, y + 54);
+    ctx.fillText("💰 YTON   ⚡ Enerji   📦 Mystery Crate   👑 Golden Pass", x + 14, y + 54);
+    ctx.fillText("Sonraki aşamada burada animasyonlu loot ekranı olacak.", x + 14, y + 74);
 
-    y += 94;
+    y += 108;
     return y;
   }
 
@@ -2030,124 +1930,7 @@ for (const p of products) {
     return y;
   }
 
-
-_buyBusiness(businessType) {
-  const s = this.store.get();
-  const p = s.player || {};
-  const level = Number(p.level || 1);
-  const isPremium = !!(p.isPremium || p.premium || s.isPremium || s.premium || p.membership === "premium") && (!s.premiumExpire || Date.now() < Number(s.premiumExpire || 0));
-
-  if (level < 50 && !isPremium) {
-    this._showToast("Bu bölüm Lv 50+ veya Premium üyelerde açılır");
-    return;
-  }
-
-  const catalog = {
-    nightclub: {
-      price: 1000,
-      icon: "🌃",
-      name: "Velvet Night",
-      theme: "neon",
-      products: [
-        { id: "biz_night_whiskey_" + Date.now(), icon: "🥃", name: "Black Whiskey", rarity: "common", qty: 0, price: 28, energyGain: 8, desc: "Gece kulübü ürünü." },
-        { id: "biz_night_champ_" + Date.now(), icon: "🍾", name: "Premium Champagne", rarity: "rare", qty: 0, price: 44, energyGain: 14, desc: "Daha iyi enerji verir." },
-      ],
-    },
-    coffeeshop: {
-      price: 850,
-      icon: "🌿",
-      name: "Amsterdam Dreams",
-      theme: "green",
-      products: [
-        { id: "biz_coffee_weed_" + Date.now(), icon: "🍁", name: "White Widow", rarity: "rare", qty: 0, price: 36, energyGain: 12, desc: "Enerji için kullanılabilir." },
-      ],
-    },
-    brothel: {
-      price: 1200,
-      icon: "💋",
-      name: "Ruby House",
-      theme: "red",
-      products: [
-        { id: "biz_brothel_vip_" + Date.now(), icon: "🌹", name: "VIP Companion", rarity: "epic", qty: 0, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
-      ],
-    },
-  };
-
-  const cfg = catalog[businessType];
-  if (!cfg) {
-    this._showToast("İşletme tipi bulunamadı");
-    return;
-  }
-
-  if (Number(s.coins || 0) < Number(cfg.price || 0)) {
-    this._showToast("Yetersiz yton");
-    return;
-  }
-
-  const owned = (s.businesses?.owned || []).map((b) => ({ ...b, products: (b.products || []).map((p) => ({ ...p })) }));
-  const sameTypeCount = owned.filter((b) => String(b.type) === String(businessType)).length + 1;
-  const bizId = `biz_${businessType}_${Date.now()}`;
-  const biz = {
-    id: bizId,
-    type: businessType,
-    icon: cfg.icon,
-    name: cfg.name + (sameTypeCount > 1 ? ` ${sameTypeCount}` : ""),
-    ownerId: String(s.player?.id || "player_main"),
-    ownerName: String(s.player?.username || "Player"),
-    dailyProduction: 50,
-    stock: 0,
-    theme: cfg.theme,
-    products: cfg.products,
-    pendingProduction: cfg.products.map((p) => ({ productId: p.id, qty: 0 })),
-    productionReadyAt: Date.now() + DAY_MS,
-    productionExpireAt: Date.now() + DAY_MS * 2,
-  };
-
-  owned.unshift(biz);
-
-  this.store.set({
-    coins: Number(s.coins || 0) - Number(cfg.price || 0),
-    businesses: {
-      ...(s.businesses || {}),
-      owned,
-    },
-  });
-
-  this._showToast(`${biz.name} satın alındı`);
-}
-
-  _drawPremiumCard(ctx, x, y, w) {
-    const active = this._isPremiumActive();
-    const h = 124;
-    const price = 500;
-    const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, "rgba(44,30,8,0.58)");
-    grad.addColorStop(1, "rgba(16,10,4,0.72)");
-    ctx.fillStyle = grad;
-    fillRoundRect(ctx, x, y, w, h, 20);
-    ctx.strokeStyle = "rgba(255,214,120,0.22)";
-    strokeRoundRect(ctx, x, y, w, h, 20);
-    ctx.fillStyle = "#fff5dd";
-    ctx.font = "900 22px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText("👑", x + 14, y + 28);
-    ctx.font = "900 15px system-ui";
-    ctx.fillText("Premium Üyelik", x + 48, y + 22);
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.font = "11px system-ui";
-    ctx.fillText(`Fiyat ${fmtNum(price)} yton • Süre 24 saat`, x + 48, y + 42);
-    ctx.fillText("Bonus: +%20 yton ödülü • +%20 enerji kazanımı", x + 48, y + 60);
-    ctx.fillText(`Durum: ${active ? "Aktif" : "Kapalı"} • Kalan: ${this._premiumRemainingText()}`, x + 48, y + 78);
-    const badgeRect = { x: x + w - 108, y: y + 16, w: 92, h: 28 };
-    this._drawButton(ctx, badgeRect, active ? "PREMIUM" : "VIP PASS", active ? "primary" : "muted");
-    this.hitPremiumButton = { x: x + w - 108, y: y + 78, w: 92, h: 30 };
-    this._drawButton(ctx, this.hitPremiumButton, active ? "Uzat" : "Satın Al", "gold");
-    return y + h + 12;
-  }
-
   _renderBuy(ctx, x, y, w) {
-    y = this._drawPremiumCard(ctx, x, y, w);
     this._drawHeroCard(
       ctx,
       x,
@@ -2163,9 +1946,9 @@ _buyBusiness(businessType) {
     y += 130;
 
     const buildings = [
-      { type: "nightclub", icon: "🌃", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 50+ / Premium" },
-      { type: "coffeeshop", icon: "🌿", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 50+ / Premium" },
-      { type: "brothel", icon: "💋", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 50+ / Premium" },
+      { type: "nightclub", icon: "🌃", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 25+" },
+      { type: "coffeeshop", icon: "🌿", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 20+" },
+      { type: "brothel", icon: "💋", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 35+" },
     ];
 
     for (const b of buildings) {
@@ -2206,7 +1989,6 @@ _buyBusiness(businessType) {
     this.hitBack = null;
     this.hitTabs = [];
     this.hitButtons = [];
-    this.hitLootButtons = [];
 
     const bgImg =
       getImgSafe(this.assets, "trade") ||
@@ -2254,18 +2036,18 @@ _buyBusiness(businessType) {
     const panelW = safe.w;
     const panelH = safe.h;
 
-   const shellGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-shellGrad.addColorStop(0, "rgba(8,12,18,0.08)");
-shellGrad.addColorStop(1, "rgba(4,8,14,0.12)");
-ctx.fillStyle = shellGrad;
-fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
+    const shellGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    shellGrad.addColorStop(0, "rgba(8,12,18,0.26)");
+    shellGrad.addColorStop(1, "rgba(4,8,14,0.34)");
+    ctx.fillStyle = shellGrad;
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
-ctx.strokeStyle = "rgba(255,255,255,0.04)";
-ctx.lineWidth = 1;
-strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
 
-this.hitBack = { x: panelX + panelW - 42, y: panelY + 6, w: 34, h: 34 };
+  this.hitBack = { x: panelX + 12, y: panelY + 10, w: 40, h: 40 };
 this._drawButton(ctx, this.hitBack, "✕", "muted");
 
     
@@ -2309,14 +2091,14 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
     const contentW = panelW - 16;
     const contentH = panelY + panelH - 8 - contentTop;
 
-   const contentGrad = ctx.createLinearGradient(contentX, contentY, contentX, contentY + contentH);
-contentGrad.addColorStop(0, "rgba(8,12,18,0.10)");
-contentGrad.addColorStop(1, "rgba(4,8,14,0.14)");
-ctx.fillStyle = contentGrad;
-fillRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
+    const contentGrad = ctx.createLinearGradient(contentX, contentY, contentX, contentY + contentH);
+    contentGrad.addColorStop(0, "rgba(8,12,18,0.22)");
+    contentGrad.addColorStop(1, "rgba(4,8,14,0.30)");
+    ctx.fillStyle = contentGrad;
+    fillRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
 
-ctx.strokeStyle = "rgba(255,255,255,0.03)";
-strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
 
     ctx.save();
     roundRectPath(ctx, contentX, contentY, contentW, contentH, 24);
@@ -2362,177 +2144,6 @@ strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
       fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
     }
 
-
-
-    if (this.lootAnim) {
-      const anim = this.lootAnim;
-      const now = Date.now();
-      const ox = panelX + 18;
-      const oy = panelY + 18;
-      const ow = panelW - 36;
-      const oh = panelH - 36;
-      const cx = ox + ow / 2;
-      const cy = oy + oh / 2 - 20;
-
-      ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.70)";
-      fillRoundRect(ctx, ox, oy, ow, oh, 28);
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, ox, oy, ow, oh, 28);
-
-      if (anim.kind === "wheel") {
-        const rewards = anim.rewards || [];
-        const wedge = (Math.PI * 2) / Math.max(1, rewards.length);
-        let angle = 0;
-        if (anim.phase === "spinning") {
-          const t = clamp((now - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
-          const ease = 1 - Math.pow(1 - t, 3);
-          angle = (anim.startAngle || 0) + ((anim.targetAngle || 0) - (anim.startAngle || 0)) * ease;
-        } else if (anim.phase === "result") {
-          angle = anim.targetAngle || 0;
-        }
-
-        const radius = Math.min(ow, oh) * 0.28;
-        const colors = ["#ffb347","#ff6b6b","#5ec7ff","#7ee081","#c77dff","#ffd166","#ff925a","#8cc8ff"];
-
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(angle);
-        for (let i = 0; i < rewards.length; i++) {
-          const start = i * wedge;
-          const end = start + wedge;
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.arc(0, 0, radius, start, end);
-          ctx.closePath();
-          ctx.fillStyle = colors[i % colors.length];
-          ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.35)";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          ctx.save();
-          ctx.rotate(start + wedge / 2);
-          ctx.textAlign = "right";
-          ctx.textBaseline = "middle";
-          ctx.fillStyle = "#fff";
-          ctx.font = "900 10px system-ui";
-          const label = String(rewards[i].label || "").slice(0, 12);
-          ctx.fillText(label, radius - 10, 0);
-          ctx.restore();
-        }
-        ctx.restore();
-
-        ctx.fillStyle = "#111";
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius * 0.20, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.35)";
-        ctx.stroke();
-
-        ctx.fillStyle = "#ffd36c";
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - radius - 20);
-        ctx.lineTo(cx - 12, cy - radius + 10);
-        ctx.lineTo(cx + 12, cy - radius + 10);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#fff";
-        ctx.font = "900 22px system-ui";
-        ctx.fillText("Premium Çark", cx, oy + 34);
-
-        if (anim.phase === "idle") {
-          const spinRect = { x: cx - 74, y: oy + oh - 64, w: 148, h: 40 };
-          this.hitLootButtons.push({ rect: spinRect, action: "loot_spin" });
-          this._drawButton(ctx, spinRect, "Döndür", "gold");
-        } else if (anim.phase === "result") {
-          ctx.fillStyle = "rgba(255,224,160,0.98)";
-          ctx.font = "900 18px system-ui";
-          ctx.fillText(`Şu ödülü kazandın: ${anim.rewardText || ""}`, cx, oy + oh - 82);
-
-          const closeRect = { x: cx - 26, y: oy + oh - 56, w: 52, h: 36 };
-          this.hitLootButtons.push({ rect: closeRect, action: "loot_close" });
-          this._drawButton(ctx, closeRect, "X", "primary");
-        } else {
-          ctx.fillStyle = "rgba(255,255,255,0.86)";
-          ctx.font = "800 14px system-ui";
-          ctx.fillText("Çark dönüyor...", cx, oy + oh - 42);
-        }
-      } else if (anim.kind === "crate") {
-        const rewards = anim.rewards || [];
-        const slotW = Math.min(ow - 80, 320);
-        const slotH = 78;
-        const slotX = cx - slotW / 2;
-        const slotY = cy - slotH / 2 + 16;
-        const boxW = 112;
-        const gap = 16;
-
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#fff";
-        ctx.font = "900 22px system-ui";
-        ctx.fillText("Günlük Sandık", cx, oy + 34);
-
-        fillRoundRect(ctx, slotX, slotY, slotW, slotH, 18);
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        ctx.fillRect(slotX, slotY, slotW, slotH);
-        ctx.strokeStyle = "rgba(255,255,255,0.16)";
-        strokeRoundRect(ctx, slotX, slotY, slotW, slotH, 18);
-
-        ctx.strokeStyle = "#ffd36c";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(cx, slotY - 8);
-        ctx.lineTo(cx, slotY + slotH + 8);
-        ctx.stroke();
-
-        let offset = 0;
-        if (anim.phase === "spinning") {
-          const t = clamp((now - anim.startedAt) / Math.max(1, anim.duration), 0, 1);
-          const ease = 1 - Math.pow(1 - t, 3);
-          offset = (anim.travel || 1800) * (1 - ease);
-        }
-        const centerBase = cx - boxW / 2 - (anim.resultIndex || 0) * (boxW + gap);
-
-        for (let i = 0; i < rewards.length; i++) {
-          const rx = centerBase + i * (boxW + gap) + offset;
-          if (rx + boxW < slotX - 120 || rx > slotX + slotW + 120) continue;
-
-          const reward = rewards[i];
-          fillRoundRect(ctx, rx, slotY + 8, boxW, slotH - 16, 16);
-          ctx.fillStyle = reward.tier === "big" ? "rgba(255,196,100,0.18)" : "rgba(255,255,255,0.08)";
-          ctx.fillRect(rx, slotY + 8, boxW, slotH - 16);
-          ctx.strokeStyle = reward.tier === "big" ? "rgba(255,196,100,0.55)" : "rgba(255,255,255,0.16)";
-          strokeRoundRect(ctx, rx, slotY + 8, boxW, slotH - 16, 16);
-
-          ctx.fillStyle = "#fff";
-          ctx.font = "900 14px system-ui";
-          ctx.fillText(reward.kind === "item" ? (reward.item?.icon || "🎁") : (reward.kind === "energy" ? "⚡" : "💰"), rx + boxW / 2, slotY + 28);
-          ctx.font = "900 12px system-ui";
-          ctx.fillText(String(reward.label || "").slice(0, 14), rx + boxW / 2, slotY + 54);
-        }
-
-        if (anim.phase === "result") {
-          ctx.fillStyle = "rgba(255,224,160,0.98)";
-          ctx.font = "900 18px system-ui";
-          ctx.fillText(`Şu ödülü kazandın: ${anim.rewardText || ""}`, cx, oy + oh - 82);
-
-          const closeRect = { x: cx - 26, y: oy + oh - 56, w: 52, h: 36 };
-          this.hitLootButtons.push({ rect: closeRect, action: "loot_close" });
-          this._drawButton(ctx, closeRect, "X", "primary");
-        } else {
-          ctx.fillStyle = "rgba(255,255,255,0.86)";
-          ctx.font = "800 14px system-ui";
-          ctx.fillText("Kasa dönüyor...", cx, oy + oh - 42);
-        }
-      }
-
-      ctx.restore();
-    }
-
     if (this.toastText && Date.now() < this.toastUntil) {
       const tw = Math.min(panelW - 28, 290);
       const th = 40;
@@ -2553,7 +2164,6 @@ strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
     }
   }
 }
-
 
 
 
