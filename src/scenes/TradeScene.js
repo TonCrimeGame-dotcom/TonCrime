@@ -1208,7 +1208,7 @@ async _sellBusinessProduct(bizId, productId) {
       const dy = py - this.downY;
       this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
       this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
+      if (this.moved > 18) this.clickCandidate = false;
     }
 
     if (this.dragging && this.input?.justReleased?.()) {
@@ -1251,6 +1251,7 @@ async _sellBusinessProduct(bizId, productId) {
       for (const h of this.hitButtons) {
         if (!pointInRect(px, py, h.rect)) continue;
 
+        try {
         switch (h.action) {
           case "search":
             this._promptSearch();
@@ -1304,6 +1305,11 @@ async _sellBusinessProduct(bizId, productId) {
             return;
           default:
             return;
+        }
+        } catch (err) {
+          console.error("[TradeScene] button action failed:", h?.action, err);
+          this._showToast(err?.message || "İşlem başarısız");
+          return;
         }
       }
     }
@@ -2259,7 +2265,7 @@ ctx.lineWidth = 1;
 strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
 
-this.hitBack = { x: panelX + 8, y: panelY + 6, w: 34, h: 34 };
+this.hitBack = { x: panelX + panelW - 42, y: panelY + 6, w: 34, h: 34 };
 this._drawButton(ctx, this.hitBack, "✕", "muted");
 
     
