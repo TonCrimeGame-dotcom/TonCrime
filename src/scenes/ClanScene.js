@@ -891,51 +891,65 @@ export class ClanScene {
 
     const player = this.store?.get?.()?.player || {};
     const hpPct = clamp(Number(boss.hp || 0) / Math.max(1, Number(boss.maxHp || 1)), 0, 1);
+    const narrow = w < 430;
+    const veryNarrow = w < 360;
+    const pad = narrow ? 14 : 18;
 
-    this.drawCard(ctx, x, y, w, 130, boss.name || "SOKAK KRALI", "Clan Boss Raid");
+    this.drawCard(ctx, x, y, w, narrow ? 156 : 130, boss.name || "SOKAK KRALI", "Clan Boss Raid");
 
     ctx.fillStyle = "#fff";
-    ctx.font = "700 13px Arial";
+    ctx.font = narrow ? "700 12px Arial" : "700 13px Arial";
     ctx.fillText(
       `Sezon: ${Number(boss.season || 1)}  •  Durum: ${String(boss.status || "active").toUpperCase()}`,
-      x + 16,
+      x + pad,
       y + 68
     );
 
-    fillRR(ctx, x + 16, y + 82, w - 32, 18, 9, "rgba(255,255,255,0.08)");
-    fillRR(ctx, x + 16, y + 82, (w - 32) * hpPct, 18, 9, hpPct > 0.3 ? "#ef4444" : "#f97316");
+    fillRR(ctx, x + pad, y + 82, w - pad * 2, 18, 9, "rgba(255,255,255,0.08)");
+    fillRR(ctx, x + pad, y + 82, (w - pad * 2) * hpPct, 18, 9, hpPct > 0.3 ? "#ef4444" : "#f97316");
 
     ctx.fillStyle = "#fff";
-    ctx.font = "700 13px Arial";
-    ctx.fillText(`HP ${shortNum(boss.hp)} / ${shortNum(boss.maxHp)}`, x + 16, y + 116);
+    ctx.font = narrow ? "700 12px Arial" : "700 13px Arial";
+    const statLines = [
+      `HP ${shortNum(boss.hp)} / ${shortNum(boss.maxHp)}`,
+      `Süre ${fmtTimeLeft(Number(boss.endsAt || 0) - Date.now())}`,
+      `Sen ${shortNum(spinInfo.totalDamage || 0)} dmg`,
+    ];
+    if (narrow) {
+      let infoY = y + 116;
+      for (const line of statLines) {
+        ctx.fillText(line, x + pad, infoY);
+        infoY += 18;
+      }
+    } else {
+      ctx.fillText(statLines[0], x + pad, y + 116);
+      ctx.fillText(statLines[1], x + 220, y + 116);
+      ctx.fillText(statLines[2], x + 360, y + 116);
+    }
 
-    const leftMs = Number(boss.endsAt || 0) - Date.now();
-    ctx.fillText(`Süre ${fmtTimeLeft(leftMs)}`, x + 220, y + 116);
-    ctx.fillText(`Sen ${shortNum(spinInfo.totalDamage || 0)} dmg`, x + 360, y + 116);
+    y += narrow ? 172 : 146;
 
-    y += 146;
-
-    const machineH = 360;
+    const machineH = narrow ? 328 : 360;
     this.drawCard(ctx, x, y, w, machineH, "BOSS SLOT", "Profesyonel reel engine");
 
-    const machineX = x + 18;
+    const machineX = x + pad;
     const machineY = y + 60;
-    const machineW = w - 36;
-    const machineInnerH = 190;
+    const machineW = w - pad * 2;
+    const machineInnerH = narrow ? 168 : 190;
 
     fillRR(ctx, machineX, machineY, machineW, machineInnerH, 24, "rgba(14,16,20,0.58)");
     strokeRR(ctx, machineX, machineY, machineW, machineInnerH, 24, "rgba(255,190,50,0.18)", 2);
 
     fillRR(ctx, machineX + 12, machineY + 12, machineW - 24, 30, 12, "rgba(255,190,50,0.10)");
     ctx.fillStyle = "#ffd166";
-    ctx.font = "900 14px Arial";
+    ctx.font = narrow ? "900 12px Arial" : "900 14px Arial";
     ctx.textAlign = "center";
     ctx.fillText("CLAN BOSS SLOT MACHINE", machineX + machineW / 2, machineY + 31);
     ctx.textAlign = "left";
 
-    const reelGap = 14;
-    const reelW = Math.min(120, (machineW - 52 - reelGap * 2) / 3);
-    const reelH = 118;
+    const reelGap = narrow ? 8 : 14;
+    const reelW = Math.max(veryNarrow ? 74 : 82, Math.min(narrow ? 92 : 120, (machineW - 24 - reelGap * 2) / 3));
+    const reelH = narrow ? 100 : 118;
     const reelsTotal = reelW * 3 + reelGap * 2;
     const reelX0 = machineX + (machineW - reelsTotal) / 2;
     const reelY = machineY + 54;
@@ -946,13 +960,13 @@ export class ClanScene {
       this.drawSingleReel(ctx, this.reels[i], rx, reelY, reelW, reelH);
     }
 
-    fillRR(ctx, machineX + 10, centerLineY - 22, machineW - 20, 44, 14, "rgba(255,215,90,0.045)");
-    strokeRR(ctx, machineX + 10, centerLineY - 22, machineW - 20, 44, 14, "rgba(255,215,90,0.55)", 2);
+    fillRR(ctx, machineX + 10, centerLineY - 20, machineW - 20, 40, 14, "rgba(255,215,90,0.045)");
+    strokeRR(ctx, machineX + 10, centerLineY - 20, machineW - 20, 40, 14, "rgba(255,215,90,0.55)", 2);
 
     const spinBtn = {
-      x: x + 20,
+      x: x + pad,
       y: y + machineH - 62,
-      w: w - 40,
+      w: w - pad * 2,
       h: 42,
     };
 
@@ -972,12 +986,14 @@ export class ClanScene {
     );
 
     ctx.fillStyle = disabled ? "rgba(255,255,255,0.72)" : "#111";
-    ctx.font = "900 16px Arial";
+    ctx.font = narrow ? "900 13px Arial" : "900 16px Arial";
     ctx.textAlign = "center";
 
     const spinLabel = this.spinState?.active
       ? "DÖNÜYOR..."
-      : `SPIN • ${spinInfo.spinsLeft} HAK • ${Number(spinInfo.energyPerSpin || boss.energyPerSpin || 0)} ENERJİ`;
+      : narrow
+        ? `SPIN • ${spinInfo.spinsLeft} HAK • ${Number(spinInfo.energyPerSpin || boss.energyPerSpin || 0)} EN`
+        : `SPIN • ${spinInfo.spinsLeft} HAK • ${Number(spinInfo.energyPerSpin || boss.energyPerSpin || 0)} ENERJİ`;
 
     ctx.fillText(spinLabel, spinBtn.x + spinBtn.w / 2, spinBtn.y + 27);
     ctx.textAlign = "left";
@@ -990,43 +1006,70 @@ export class ClanScene {
 
     const last = boss.lastResult || {};
     const lastSymbols = Array.isArray(last.symbols) ? last.symbols : ["punch", "kick", "slap"];
+    const tileW = Math.min(78, Math.floor((w - pad * 2 - 18) / 3));
+    const tileGap = Math.max(6, Math.floor((w - pad * 2 - tileW * 3) / 2));
+    const lastCardH = narrow ? 176 : 146;
 
-    this.drawCard(ctx, x, y, w, 146, "Son Vuruş", "Spin sonucu");
+    this.drawCard(ctx, x, y, w, lastCardH, "Son Vuruş", "Spin sonucu");
 
-    let sx = x + 18;
+    let sx = x + pad;
     for (let i = 0; i < 3; i++) {
       const sym = SYMBOL_META[lastSymbols[i]] || SYMBOL_META.punch;
-      fillRR(ctx, sx, y + 60, 78, 54, 14, sym.color);
+      fillRR(ctx, sx, y + 60, tileW, 54, 14, sym.color);
       ctx.fillStyle = "#fff";
-      ctx.font = "700 26px Arial";
+      ctx.font = narrow ? "700 22px Arial" : "700 26px Arial";
       ctx.textAlign = "center";
-      ctx.fillText(sym.emoji, sx + 39, y + 95);
+      ctx.fillText(sym.emoji, sx + tileW / 2, y + 95);
       ctx.textAlign = "left";
-      sx += 90;
+      sx += tileW + tileGap;
     }
 
     ctx.fillStyle = "#fff";
-    ctx.font = "700 14px Arial";
-    ctx.fillText(`Combo: ${last.combo || "-"}`, x + 18, y + 132);
-    ctx.fillText(`Hasar: ${shortNum(last.damage || 0)}`, x + 220, y + 132);
-    ctx.fillText(`Enerji: ${player.energy || 0}/${player.energyMax || 100}`, x + 380, y + 132);
+    ctx.font = narrow ? "700 12px Arial" : "700 14px Arial";
+    if (narrow) {
+      ctx.fillText(`Combo: ${last.combo || "-"}`, x + pad, y + 132);
+      ctx.fillText(`Hasar: ${shortNum(last.damage || 0)}`, x + pad, y + 150);
+      ctx.fillText(`Enerji: ${player.energy || 0}/${player.energyMax || 100}`, x + pad, y + 168);
+    } else {
+      ctx.fillText(`Combo: ${last.combo || "-"}`, x + 18, y + 132);
+      ctx.fillText(`Hasar: ${shortNum(last.damage || 0)}`, x + 220, y + 132);
+      ctx.fillText(`Enerji: ${player.energy || 0}/${player.energyMax || 100}`, x + 380, y + 132);
+    }
 
-    y += 162;
+    y += lastCardH + 16;
 
-    this.drawCard(ctx, x, y, w, 136, "Raid Bilgisi", "Genel boss durumu");
+    const raidCardH = narrow ? 176 : 136;
+    this.drawCard(ctx, x, y, w, raidCardH, "Raid Bilgisi", "Genel boss durumu");
     ctx.fillStyle = "#fff";
-    ctx.font = "700 14px Arial";
-    ctx.fillText(`Toplam Hasar: ${shortNum(boss.totalDamage || 0)}`, x + 18, y + 62);
-    ctx.fillText(`Toplam Spin: ${shortNum(boss.totalSpins || 0)}`, x + 18, y + 90);
-    ctx.fillText(`En İyi Hit: ${shortNum(spinInfo.bestHit || 0)}`, x + 18, y + 118);
-    ctx.fillText(`En İyi Combo: ${spinInfo.bestCombo || "-"}`, x + 260, y + 62);
-    ctx.fillText(`Günlük Limit: ${Number(spinInfo.dailySpinLimit || 0)}`, x + 260, y + 90);
-    ctx.fillText(`Kalan Hak: ${Number(spinInfo.spinsLeft || 0)}`, x + 260, y + 118);
+    ctx.font = narrow ? "700 12px Arial" : "700 14px Arial";
+    if (narrow) {
+      const rows = [
+        `Toplam Hasar: ${shortNum(boss.totalDamage || 0)}`,
+        `Toplam Spin: ${shortNum(boss.totalSpins || 0)}`,
+        `En İyi Hit: ${shortNum(spinInfo.bestHit || 0)}`,
+        `En İyi Combo: ${spinInfo.bestCombo || "-"}`,
+        `Günlük Limit: ${Number(spinInfo.dailySpinLimit || 0)}`,
+        `Kalan Hak: ${Number(spinInfo.spinsLeft || 0)}`,
+      ];
+      let ry = y + 62;
+      for (const row of rows) {
+        ctx.fillText(row, x + pad, ry);
+        ry += 18;
+      }
+    } else {
+      ctx.fillText(`Toplam Hasar: ${shortNum(boss.totalDamage || 0)}`, x + 18, y + 62);
+      ctx.fillText(`Toplam Spin: ${shortNum(boss.totalSpins || 0)}`, x + 18, y + 90);
+      ctx.fillText(`En İyi Hit: ${shortNum(spinInfo.bestHit || 0)}`, x + 18, y + 118);
+      ctx.fillText(`En İyi Combo: ${spinInfo.bestCombo || "-"}`, x + 260, y + 62);
+      ctx.fillText(`Günlük Limit: ${Number(spinInfo.dailySpinLimit || 0)}`, x + 260, y + 90);
+      ctx.fillText(`Kalan Hak: ${Number(spinInfo.spinsLeft || 0)}`, x + 260, y + 118);
+    }
 
-    y += 152;
+    y += raidCardH + 16;
 
     const board = this.getLeaderboard();
-    const boardH = Math.max(110, 72 + board.length * 38);
+    const rowH = narrow ? 44 : 38;
+    const boardH = Math.max(110, 72 + board.length * rowH);
     this.drawCard(ctx, x, y, w, boardH, "Boss Liderlik", "En çok hasar verenler");
 
     let by = y + 58;
@@ -1036,14 +1079,20 @@ export class ClanScene {
       ctx.fillText("Henüz kayıt yok.", x + 18, by + 6);
     } else {
       board.forEach((p, i) => {
-        fillRR(ctx, x + 12, by - 16, w - 24, 28, 10, "rgba(255,255,255,0.03)");
+        fillRR(ctx, x + 12, by - 16, w - 24, narrow ? 34 : 28, 10, "rgba(255,255,255,0.03)");
         ctx.fillStyle = "#fff";
-        ctx.font = "700 13px Arial";
-        ctx.fillText(`#${i + 1} ${p.name || "Player"}`, x + 22, by + 2);
-        ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText(`DMG ${shortNum(p.totalDamage || 0)}`, x + 220, by + 2);
-        ctx.fillText(`BEST ${shortNum(p.bestHit || 0)}`, x + 380, by + 2);
-        by += 38;
+        ctx.font = narrow ? "700 12px Arial" : "700 13px Arial";
+        if (narrow) {
+          ctx.fillText(`#${i + 1} ${p.name || "Player"}`, x + 22, by + 1);
+          ctx.fillStyle = "rgba(255,255,255,0.78)";
+          ctx.fillText(`DMG ${shortNum(p.totalDamage || 0)} • BEST ${shortNum(p.bestHit || 0)}`, x + 22, by + 18);
+        } else {
+          ctx.fillText(`#${i + 1} ${p.name || "Player"}`, x + 22, by + 2);
+          ctx.fillStyle = "rgba(255,255,255,0.78)";
+          ctx.fillText(`DMG ${shortNum(p.totalDamage || 0)}`, x + 220, by + 2);
+          ctx.fillText(`BEST ${shortNum(p.bestHit || 0)}`, x + 380, by + 2);
+        }
+        by += rowH;
       });
     }
 
