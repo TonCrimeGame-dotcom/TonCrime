@@ -8,7 +8,7 @@ import { supabase } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
-import { BootScene } from "./scenes/BootScene.js";
+import * as BootSceneModule from "./scenes/BootScene.js";
 import { IntroScene } from "./scenes/IntroScene.js";
 import { HomeScene } from "./scenes/HomeScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
@@ -26,6 +26,8 @@ import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
+
+const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -973,6 +975,9 @@ window.tc.dev = {
 };
 
 /* ===== SCENES REGISTER ===== */
+if (typeof BootScene !== "function") {
+  throw new Error('BootScene export bulunamadı. BootScene.js içinde export default veya export class BootScene olmalı.');
+}
 scenes.register("boot", new BootScene({ assets, i18n, scenes }));
 scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
