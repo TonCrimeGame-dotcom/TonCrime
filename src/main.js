@@ -1015,7 +1015,7 @@ if (typeof window.PvpScene === "function") {
   );
 } else {
   console.warn("[TonCrime] PvpScene bulunamadı, geçici fallback çalıştı.");
-  scenes.register("pvp", new PvpScene({ store, input, assets, scenes }));
+  scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
 }
 
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
