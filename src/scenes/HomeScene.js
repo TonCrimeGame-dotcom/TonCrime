@@ -1003,7 +1003,13 @@ scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
 if (typeof window.PvpScene === "function") {
   scenes.register(
     "pvp",
-    new window.PvpScene({ store, input, assets, scenes, source: "menu" })
+    new window.PvpScene({
+      store,
+      input,
+      assets,
+      scenes,
+      source: "menu",
+    })
   );
 } else {
   console.warn("[TonCrime] PvpScene bulunamadı, fallback MissionsScene çalıştı.");
@@ -1021,6 +1027,14 @@ scenes.register(
   "clan_create",
   new ClanCreateScene({ store, input, i18n, assets, scenes })
 );
+
+window.addEventListener("tc:openPvp", () => {
+  try {
+    scenes.go("pvp");
+  } catch (err) {
+    console.warn("[TonCrime] tc:openPvp açılamadı:", err);
+  }
+});
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
@@ -1069,14 +1083,6 @@ startMenu(store);
 startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
 startPvpLobby();
-
-window.addEventListener("tc:openPvp", () => {
-  try {
-    scenes.go("pvp");
-  } catch (err) {
-    console.error("[TonCrime] PvP scene açılamadı:", err);
-  }
-});
 
 normalizeGlobalUi(store);
 
