@@ -30,6 +30,22 @@ function getImgSafe(assets, key) {
   return assets.images?.[key] || null;
 }
 
+function drawCoverImage(ctx, img, x, y, w, h) {
+  if (!img) return false;
+
+  const iw = img.width || img.naturalWidth || 1;
+  const ih = img.height || img.naturalHeight || 1;
+  if (!iw || !ih) return false;
+
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
+}
+
 export class HomeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.assets = assets;
@@ -97,7 +113,6 @@ export class HomeScene {
     ];
   }
 
-
   update() {
     const c = this.carousel;
     const px = this.input.pointer.x;
@@ -125,7 +140,7 @@ export class HomeScene {
 
       const items = this._carouselItems();
       const dragDX = c.dragNowX - c.dragStartX;
-      const threshold = 48;
+      const threshold = 44;
 
       if (dragDX > threshold) {
         c.index = Math.max(0, c.index - 1);
@@ -136,12 +151,12 @@ export class HomeScene {
       if (c.clickCandidate && pointInRect(px, py, this._cardRect)) {
         const item = items[c.index];
 
-      if (item.sceneKey === "pvp" || item.id === "pvp") {
-  try {
-    this.scenes.go("pvp");
-  } catch (_) {}
-  return;
-}
+        if (item.sceneKey === "pvp" || item.id === "pvp") {
+          try {
+            window.dispatchEvent(new Event("tc:openPvp"));
+          } catch (_) {}
+          return;
+        }
 
         try {
           this.scenes.go(item.sceneKey);
@@ -153,9 +168,12 @@ export class HomeScene {
   render(ctx, w, h) {
     const state = this.store.get();
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
+    const isNarrow = safe.w <= 520;
 
-    const topReserved = Number(state?.ui?.hudReservedTop || 118);
-    const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
+    const topReservedBase = Number(state?.ui?.hudReservedTop || 118);
+    const bottomReservedBase = Number(state?.ui?.chatReservedBottom || 82);
+    const topReserved = isNarrow ? Math.max(96, topReservedBase - 6) : topReservedBase;
+    const bottomReserved = isNarrow ? Math.max(84, bottomReservedBase + 8) : bottomReservedBase;
 
     const bg = getImgSafe(this.assets, "background");
     if (bg) {
@@ -172,7 +190,7 @@ export class HomeScene {
       ctx.fillRect(0, 0, w, h);
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.30)";
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
     ctx.fillRect(0, 0, w, h);
 
     const carouselTop = safe.y + topReserved;
@@ -180,18 +198,21 @@ export class HomeScene {
     const areaH = Math.max(180, carouselBottom - carouselTop);
 
     const cx = safe.x + safe.w / 2;
-    const cy = carouselTop + areaH / 2;
+    const cy = carouselTop + areaH * (isNarrow ? 0.45 : 0.48);
 
     const items = this._carouselItems();
     const idx = Math.max(0, Math.min(this.carousel.index, items.length - 1));
     this.carousel.index = idx;
 
-    const cardW = Math.min(safe.w * 0.58, 410);
-    const cardH = Math.min(areaH * 0.72, 320);
-    const sideScale = 0.72;
-    const sideW = cardW * sideScale;
-    const maxSpacingByScreen = Math.max(cardW * 0.56, safe.w / 2 - sideW / 2 - 8);
-    const spacing = Math.min(cardW * 0.88, maxSpacingByScreen);
+    const cardW = isNarrow
+      ? Math.min(safe.w * 0.56, 270)
+      : Math.min(safe.w * 0.58, 410);
+    const cardH = isNarrow
+      ? Math.min(areaH * 0.58, 300)
+      : Math.min(areaH * 0.72, 320);
+    const sideScale = isNarrow ? 0.74 : 0.72;
+    const maxSpacingByScreen = Math.max(cardW * (isNarrow ? 0.62 : 0.56), safe.w / 2 - (cardW * sideScale) / 2 - 8);
+    const spacing = Math.min(cardW * (isNarrow ? 0.92 : 0.88), maxSpacingByScreen);
 
     const dragDX = this.carousel.dragging
       ? this.carousel.dragNowX - this.carousel.dragStartX
@@ -227,7 +248,7 @@ export class HomeScene {
       ctx.save();
       ctx.globalAlpha = dist === 0 ? 1 : 0.9;
 
-      ctx.fillStyle = "rgba(0,0,0,0.56)";
+      ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.42)" : "rgba(0,0,0,0.52)";
       fillRoundRect(ctx, x2, y2, w2, h2, 18);
 
       ctx.save();
@@ -236,48 +257,38 @@ export class HomeScene {
 
       const img = getCardImage(item);
       if (img) {
-        const iw = img.width || 1;
-        const ih = img.height || 1;
-
-        ctx.fillStyle = "rgba(0,0,0,0.22)";
+        ctx.fillStyle = "rgba(0,0,0,0.16)";
         ctx.fillRect(x2, y2, w2, h2);
-
-        const fitPad = dist === 0 ? 10 : 12;
-        const fitScale = Math.min((w2 - fitPad * 2) / iw, (h2 - fitPad * 2) / ih);
-        const fitW = iw * fitScale;
-        const fitH = ih * fitScale;
-        const fitX = x2 + (w2 - fitW) / 2;
-        const fitY = y2 + (h2 - fitH) / 2;
-
-        ctx.drawImage(img, fitX, fitY, fitW, fitH);
-
-        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.18)";
+        drawCoverImage(ctx, img, x2, y2, w2, h2);
+        ctx.fillStyle = dist === 0 ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.24)";
         ctx.fillRect(x2, y2, w2, h2);
       } else {
         ctx.fillStyle = "rgba(255,255,255,0.08)";
         ctx.fillRect(x2, y2, w2, h2);
       }
 
-      const grad = ctx.createLinearGradient(0, y2 + h2 * 0.42, 0, y2 + h2);
+      const grad = ctx.createLinearGradient(0, y2 + h2 * 0.38, 0, y2 + h2);
       grad.addColorStop(0, "rgba(0,0,0,0)");
-      grad.addColorStop(1, "rgba(0,0,0,0.78)");
+      grad.addColorStop(1, "rgba(0,0,0,0.82)");
       ctx.fillStyle = grad;
       ctx.fillRect(x2, y2, w2, h2);
 
       ctx.restore();
 
       ctx.strokeStyle =
-        dist === 0 ? "rgba(255,255,255,0.34)" : "rgba(255,255,255,0.14)";
+        dist === 0 ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.12)";
       strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
 
       const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = dist === 0 ? "700 18px system-ui" : "700 15px system-ui";
+      ctx.font = dist === 0
+        ? (isNarrow ? "800 16px system-ui" : "700 18px system-ui")
+        : (isNarrow ? "800 13px system-ui" : "700 15px system-ui");
       ctx.shadowColor = "rgba(0,0,0,0.85)";
       ctx.shadowBlur = 12;
-      ctx.fillText(title, x2 + w2 / 2, y2 + h2 - 28);
+      ctx.fillText(title, x2 + w2 / 2, y2 + h2 - (isNarrow ? 24 : 28));
       ctx.shadowBlur = 0;
 
       ctx.restore();
@@ -297,15 +308,15 @@ export class HomeScene {
 
     visibleCards.forEach(drawCard);
 
-    const dotsY = Math.min(carouselBottom - 10, cy + cardH / 2 + 18);
-    const dotGap = 10;
+    const dotsY = Math.min(carouselBottom - 14, cy + cardH / 2 + (isNarrow ? 24 : 18));
+    const dotGap = isNarrow ? 12 : 10;
     const total = (items.length - 1) * dotGap;
     const startX = cx - total / 2;
 
     for (let i = 0; i < items.length; i++) {
       ctx.beginPath();
       const dx = startX + i * dotGap;
-      ctx.arc(dx, dotsY, 3, 0, Math.PI * 2);
+      ctx.arc(dx, dotsY, isNarrow ? 4 : 3, 0, Math.PI * 2);
       ctx.closePath();
       ctx.fillStyle =
         i === idx ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.28)";
