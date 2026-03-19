@@ -1,42 +1,26 @@
+import { supabase } from "../supabase.js";
 
-const KEY_MSG = "toncrime_chat_messages_v2";
+const BOT_NAMES = [
+  "ShadowWolf","NightViper","GhostMafia","RicoVane","IronFist","VoltKral","SlyRaven","BlackMamba",
+  "CrimsonJack","SteelFang","NeonGhost","FrostBite","DarkViper","TurboKhan","NoirJack","SilentCrow",
+  "RedSkull","BlueVenom","WolfZero","NightHawk","MafiaKing","ArcticFox","CobraX","PhantomRay",
+  "RavenEye","StormJack","KrakenTR","LunaWolf","HexFang","ColdShade","ReaperOne","VortexAce"
+];
 
+const CLANS = ["CJ","NW","GM","VK","IF","SR","TRD","PVP","NOVA","HEX","VOID","VIP"];
 const PUBLIC_CHAT_LINES = [
-  "selam millet",
-  "markette uygun ürün var mı?",
-  "bugün trade akıyor",
-  "black markette fiyat düştü",
-  "stok topladım birazdan satış açarım",
-  "coffeeshop ürünleri iyi gidiyor",
-  "bu gece pvp dönecek gibi",
-  "listinglere bakın yeni şeyler var",
-  "birazdan tekrar gelirim",
-  "bugün şanslı hissediyorum",
-  "marketi takip edin",
-  "premium çark açan var mı?",
-  "pazarda fırsat kolluyorum",
-  "şehre yeni düştüm selam",
-  "boss ve pvp arasında gidip geliyorum",
+  "selam millet", "trade dönüyor", "black markette fırsat var", "markete yeni düştüm", "stok yeniledim",
+  "bugün şans açık gibi", "gece kulübü iyi satıyor", "coffeeshop tarafı hareketli", "uygun listing gördüm", "marketi takip edin"
 ];
-
 const PVP_REPLY_LINES = [
-  "var ben onlineyim",
-  "var 1v1 çıkar",
-  "hazırsan gelirim",
-  "şu an aktifim gel",
-  "slot arena da dönerim",
-  "iq arena için hazırım",
-  "rakip arıyorsan varım",
+  "var ben hazırım", "2-3 kişi online görünüyor", "gel arena aç", "slot arena girelim", "ben varım çağır"
 ];
-
-const PVP_CALL_LINES = [
-  "pvp için online olan var mı?",
-  "1v1 isteyen gelsin",
-  "slot arena arıyorum",
-  "iq arena rakibi lazım",
-  "kim pvp dönecek?",
+const PVP_SEARCH_LINES = [
+  "pvp için online olan var mı?", "arena dönecek var mı?", "iq arena isteyen?", "slot arena rakip aranıyor"
 ];
-
+const SYSTEM_ACTIVITY_LINES = [
+  "legendary item buldu", "market fiyatını güncelledi", "pvp kazandı", "stok yeniledi", "yeni listing açtı"
+];
 const BOT_CATALOG = [
   { itemName: "Night Whiskey", icon: "🥃", rarity: "common", price: 27, energyGain: 7, usable: true, desc: "Hızlı enerji ürünü." },
   { itemName: "Club Champagne", icon: "🍾", rarity: "rare", price: 45, energyGain: 13, usable: true, desc: "Lüks içki." },
@@ -44,163 +28,105 @@ const BOT_CATALOG = [
   { itemName: "OG Kush", icon: "🍁", rarity: "rare", price: 35, energyGain: 11, usable: true, desc: "Coffeeshop ürünü." },
   { itemName: "Moon Rocks", icon: "🌿", rarity: "epic", price: 62, energyGain: 18, usable: true, desc: "Nadir ürün." },
   { itemName: "VIP Companion", icon: "💋", rarity: "epic", price: 95, energyGain: 22, usable: true, desc: "Yüksek enerji itemi." },
-  { itemName: "Deluxe Service", icon: "🌹", rarity: "legendary", price: 160, energyGain: 30, usable: true, desc: "En üst seviye ürün." },
+  { itemName: "Deluxe Service", icon: "🌹", rarity: "legendary", price: 160, energyGain: 30, usable: true, desc: "En üst seviye ürün." }
 ];
 
-const BASE_BOT_POOL = [
-  ["ShadowWolf","trader","WOLF","🐺"],["NightViper","flipper","NV","🐍"],["GhostMafia","seller","GM","👻"],
-  ["RicoVane","buyer","RV","🕶️"],["IronFist","buyer","IF","🥊"],["VoltKral","seller","VK","⚡"],
-  ["SlyRaven","trader","SR","🦅"],["BlackMamba","flipper","BM","🐍"],["CrimsonJack","seller","CJ","🃏"],
-  ["DarkVenom","buyer","DV","☠️"],["MafiaKing","seller","MK","👑"],["BlueViper","trader","BV","🧿"],
-  ["SteelFang","buyer","SF","🦊"],["RedSkull","flipper","RS","💀"],["SilentWolf","seller","SW","🌙"],
-  ["NeonGhost","trader","NG","🕯️"],["FrostBite","buyer","FB","❄️"],["WildRaven","seller","WR","🦅"],
-  ["TurboKhan","flipper","TK","🔥"],["NovaStrike","buyer","NS","☄️"],["KobraHan","trader","KH","🐉"],
-  ["ScarFace","seller","SC","😈"],["NightCobra","buyer","NC","🐍"],["ZeroMercy","flipper","ZM","🩸"],
-  ["VenomBoy","seller","VB","🦂"],["LuckyDice","trader","LD","🎲"],["BalkanBoss","buyer","BB","🕴️"],
-  ["StormRider","seller","ST","🌩️"],["NitroWolf","flipper","NW","🚀"],["HellCrow","trader","HC","🐦"],
-  ["UrbanKing","seller","UK","🏙️"],["MertKing","buyer","ME","🦁"],["DeltaFox","flipper","DF","🦊"],
-  ["ChromeAce","trader","CA","♠️"],["RapidKral","seller","RK","⚙️"],["IstanbulWolf","buyer","IW","🌉"],
-];
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function choice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function shuffle(arr) { const out = arr.slice(); for (let i=out.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [out[i],out[j]]=[out[j],out[i]];} return out; }
 
-const NAME_SUFFIXES = ["X","TR","One","Prime","Zero","77","Pro","Elite","Dark","Neo","Max","Boss"];
-const ARCHETYPES = ["trader", "buyer", "seller", "flipper"];
-const CLANS = ["WOLF", "NV", "GM", "RV", "IF", "VK", "SR", "BM", "CJ", "DV", "MK", "BV"];
-const AVATARS = ["🐺","🐍","👻","🕶️","🥊","⚡","🦅","🃏","☠️","👑","🧿","🦊","🌙","❄️","🔥","🐉","🎲"];
+function makeBot(idx, existing = {}) {
+  const name = BOT_NAMES[idx % BOT_NAMES.length] + (idx >= BOT_NAMES.length ? `${idx}` : "");
+  return {
+    id: `bot_${idx}_${name.toLowerCase()}`,
+    name,
+    clan: choice(CLANS),
+    online: Math.random() < 0.55,
+    archetype: choice(["trader","buyer","seller","flipper","pvp"]),
+    premium: Math.random() < 0.18,
+    level: 35 + Math.floor(Math.random() * 45),
+    rating: 900 + Math.floor(Math.random() * 900),
+    wins: Math.floor(Math.random() * 80),
+    losses: Math.floor(Math.random() * 80),
+    shopId: `bot_shop_${idx}_${name.toLowerCase()}`,
+    lastSeenAt: Date.now(),
+    ...existing,
+  };
+}
 
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
+function normalizeBots(existing = []) {
+  const list = [];
+  const existingMap = new Map((existing || []).map((b) => [b.id, b]));
+  for (let i = 0; i < 32; i++) {
+    const fresh = makeBot(i);
+    list.push({ ...fresh, ...(existingMap.get(fresh.id) || {}) });
+  }
+  return list;
 }
-function choice(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+
+function botMeta(bot) {
+  return {
+    username: bot.name,
+    isBot: true,
+    online: !!bot.online,
+    premium: !!bot.premium,
+    clan: bot.clan || "",
+    level: Number(bot.level || 1),
+    rating: Number(bot.rating || 1000),
+    wins: Number(bot.wins || 0),
+    losses: Number(bot.losses || 0),
+  };
 }
-function nowHHMM() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-function loadChatMessages() {
+
+async function insertMessage({ username, text, msg_type = "chat", is_bot = true, player_meta = null }) {
+  const payload = {
+    username,
+    text,
+    msg_type,
+    is_bot,
+    player_meta: player_meta || null,
+  };
   try {
-    const raw = localStorage.getItem(KEY_MSG);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
+    await supabase.from("chat_messages").insert(payload);
+  } catch (err) {
+    console.error("[BotEngine] chat insert failed:", err);
   }
 }
-function saveChatMessages(arr) {
+
+function emitProfiles(bots) {
   try {
-    localStorage.setItem(KEY_MSG, JSON.stringify(arr));
-  } catch {}
-}
-function dispatchChatMessage(message) {
-  const detail = {
-    id: String(message.id || `m_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
-    user: String(message.user || "?"),
-    text: String(message.text || ""),
-    time: String(message.time || nowHHMM()),
-    kind: String(message.kind || "chat"),
-    systemType: String(message.systemType || "info"),
-    premium: !!message.premium,
-    clan: String(message.clan || ""),
-    online: message.online !== false,
-    profileId: String(message.profileId || ""),
-    isBot: !!message.isBot,
-    level: Number(message.level || 1),
-    rating: Number(message.rating || 1000),
-    avatar: String(message.avatar || ""),
-    bio: String(message.bio || ""),
-  };
-  const msgs = loadChatMessages();
-  msgs.push(detail);
-  if (msgs.length > 350) msgs.splice(0, msgs.length - 350);
-  saveChatMessages(msgs);
-  try {
-    window.dispatchEvent(new CustomEvent("tc:chat:add", { detail }));
+    window.dispatchEvent(new CustomEvent("tc:bot:profiles", { detail: { bots: bots.map((b) => ({ name: b.name, ...botMeta(b) })) } }));
   } catch (_) {}
 }
-function buildBotPool() {
-  const out = BASE_BOT_POOL.slice();
-  for (let i = 0; i < BASE_BOT_POOL.length; i++) {
-    const [name] = BASE_BOT_POOL[i];
-    const suffix = NAME_SUFFIXES[i % NAME_SUFFIXES.length];
-    out.push([
-      `${name}${suffix}`,
-      ARCHETYPES[i % ARCHETYPES.length],
-      CLANS[i % CLANS.length],
-      AVATARS[i % AVATARS.length],
-    ]);
-  }
-  return out;
-}
-const BOT_POOL = buildBotPool();
 
-function botTemplates() {
-  const now = Date.now();
-  return BOT_POOL.map((row, index) => ({
-    id: `bot_${row[0].toLowerCase()}`,
-    name: row[0],
-    online: index % 3 !== 1,
-    archetype: row[1],
-    clan: row[2],
-    avatar: row[3],
-    coins: 4000 + Math.floor(Math.random() * 5000),
-    energy: 22 + Math.floor(Math.random() * 28),
-    shopId: `bot_shop_${row[0].toLowerCase()}`,
-    premium: Math.random() < 0.25,
-    level: 10 + Math.floor(Math.random() * 55),
-    rating: 900 + Math.floor(Math.random() * 700),
-    bio: choice([
-      "Marketi sürekli takip ediyor.",
-      "PvP ve ticaret arasında geziyor.",
-      "Offline takılır ama fırsat görünce gelir.",
-      "Şehirde uzun süredir aktif.",
-      "Daha çok listing kovalar.",
-      "PvP rakibi ararken market de takip ediyor.",
-    ]),
-    lastSeenAt: now,
-  }));
-}
-function normalizeBots(existing) {
-  const defaults = botTemplates();
-  const map = new Map((existing || []).map((b) => [b.id, b]));
-  return defaults.map((b) => ({ ...b, ...(map.get(b.id) || {}) }));
-}
 function ensureBotShop(shop, bot) {
-  if (shop) {
-    return {
-      ...shop,
-      ownerId: bot.id,
-      ownerName: bot.name,
-      online: !!bot.online,
-      totalListings: Number(shop.totalListings || 0),
-    };
-  }
+  if (shop) return { ...shop, ownerId: bot.id, ownerName: bot.name, online: !!bot.online, totalListings: Number(shop.totalListings || 0) };
+  const type = choice(["nightclub","coffeeshop","brothel","blackmarket"]);
   return {
     id: bot.shopId,
     businessId: bot.shopId.replace("bot_shop_", "bot_business_"),
-    type: choice(["nightclub", "coffeeshop", "brothel", "blackmarket"]),
-    icon: choice(["🌃", "🌿", "💋", "🕶️"]),
+    type,
+    icon: type === "nightclub" ? "🌃" : type === "coffeeshop" ? "🌿" : type === "brothel" ? "💋" : "🕶️",
     name: `${bot.name} Market`,
     ownerId: bot.id,
     ownerName: bot.name,
     online: !!bot.online,
     theme: "dark",
-    rating: 4.0 + Math.random() * 0.9,
+    rating: 4.1 + Math.random() * 0.8,
     totalListings: 0,
   };
 }
+
 function ensureMarketSeed(state, bots) {
   const market = state.market || { shops: [], listings: [] };
   const shops = Array.isArray(market.shops) ? market.shops.map((x) => ({ ...x })) : [];
   const listings = Array.isArray(market.listings) ? market.listings.map((x) => ({ ...x })) : [];
-
-  for (const bot of bots.slice(0, 32)) {
+  for (const bot of bots) {
     const idx = shops.findIndex((x) => x.id === bot.shopId);
     const ensured = ensureBotShop(idx >= 0 ? shops[idx] : null, bot);
-    if (idx >= 0) shops[idx] = ensured;
-    else shops.push(ensured);
-
-    const ownListings = listings.filter((x) => x.shopId === bot.shopId);
-    if (!ownListings.length) {
+    if (idx >= 0) shops[idx] = ensured; else shops.push(ensured);
+    const own = listings.filter((x) => x.shopId === bot.shopId);
+    if (!own.length) {
       const count = 1 + Math.floor(Math.random() * 3);
       for (let i = 0; i < count; i++) {
         const item = choice(BOT_CATALOG);
@@ -211,7 +137,7 @@ function ensureMarketSeed(state, bots) {
           itemName: item.itemName,
           rarity: item.rarity,
           stock: 1 + Math.floor(Math.random() * 12),
-          price: Math.max(1, item.price + Math.floor(Math.random() * 10 - 4)),
+          price: Math.max(1, item.price + Math.floor(Math.random() * 11) - 5),
           energyGain: item.energyGain,
           usable: item.usable,
           desc: item.desc,
@@ -220,273 +146,208 @@ function ensureMarketSeed(state, bots) {
       }
     }
   }
-
-  for (const shop of shops) {
-    shop.totalListings = listings.filter((x) => x.shopId === shop.id).length;
-  }
-
+  for (const shop of shops) shop.totalListings = listings.filter((x) => x.shopId === shop.id).length;
   return { shops, listings };
 }
+
+function mutatePresence(bots) {
+  const now = Date.now();
+  const next = bots.map((bot) => {
+    const toggleChance = bot.online ? 0.20 : 0.30;
+    let online = bot.online;
+    if (Math.random() < toggleChance) online = !online;
+    return { ...bot, online, lastSeenAt: online ? now : Number(bot.lastSeenAt || now) };
+  });
+  let onlineCount = next.filter((x) => x.online).length;
+  if (onlineCount < 8) {
+    for (const bot of next) {
+      if (!bot.online && Math.random() < 0.8) {
+        bot.online = true;
+        onlineCount += 1;
+        if (onlineCount >= 8) break;
+      }
+    }
+  }
+  if (onlineCount > 20) {
+    for (const bot of next) {
+      if (bot.online && Math.random() < 0.5) {
+        bot.online = false;
+        onlineCount -= 1;
+        if (onlineCount <= 20) break;
+      }
+    }
+  }
+  return next;
+}
+
 function marketAction(state, bots) {
   const market = state.market || { shops: [], listings: [] };
   const shops = (market.shops || []).map((x) => ({ ...x }));
   const listings = (market.listings || []).map((x) => ({ ...x }));
   const onlineBots = bots.filter((x) => x.online);
-  if (!onlineBots.length) return { shops, listings, activity: null, systemType: "market" };
-
+  if (!onlineBots.length) return { shops, listings, activity: null, actor: null, type: "market" };
+  const actor = choice(onlineBots);
   for (const bot of bots) {
     const shopIdx = shops.findIndex((x) => x.id === bot.shopId);
     if (shopIdx >= 0) shops[shopIdx] = { ...shops[shopIdx], online: !!bot.online, ownerName: bot.name };
   }
-
-  const actor = choice(onlineBots);
-  const mode = choice(["price", "buy", "sell", "restock", "pvpcall", "pvpwin", "rare"]);
-
+  const mode = choice(["price","buy","sell","restock","event"]);
   if (mode === "price" && listings.length) {
     const target = choice(listings);
-    const delta = Math.floor(Math.random() * 7) - 3;
-    target.price = Math.max(1, Number(target.price || 1) + delta);
-    return { shops, listings, activity: `${actor.name} fiyat güncelledi`, systemType: "market" };
+    target.price = Math.max(1, Number(target.price || 1) + Math.floor(Math.random() * 7) - 3);
+    return { shops, listings, activity: `${actor.name} market fiyatını güncelledi`, actor, type: "market" };
   }
-
   if (mode === "buy") {
     const available = listings.filter((x) => x.shopId !== actor.shopId && Number(x.stock || 0) > 0);
     if (available.length) {
       const target = choice(available);
-      const qty = Math.min(Number(target.stock || 0), 1 + Math.floor(Math.random() * 2));
-      target.stock = Math.max(0, Number(target.stock || 0) - qty);
-      if (target.stock <= 0) {
-        const idx = listings.findIndex((x) => x.id === target.id);
-        if (idx >= 0) listings.splice(idx, 1);
-      }
-      return { shops, listings, activity: `${actor.name} marketten ${target.itemName} aldı`, systemType: "market" };
+      target.stock = Math.max(0, Number(target.stock || 0) - 1);
+      return { shops, listings, activity: `${actor.name} ${target.itemName} satın aldı`, actor, type: "market" };
     }
   }
-
-  if (mode === "pvpcall") {
-    return { shops, listings, activity: `${actor.name} PvP için online`, systemType: "pvp" };
-  }
-
-  if (mode === "pvpwin") {
-    return { shops, listings, activity: `${actor.name} PvP kazandı`, systemType: "pvp" };
-  }
-
-  if (mode === "rare") {
-    return { shops, listings, activity: `${actor.name} legendary item buldu`, systemType: "rare" };
-  }
-
-  if (mode === "sell" || mode === "restock") {
-    const ownShop = shops.find((x) => x.id === actor.shopId) || ensureBotShop(null, actor);
-    if (!shops.find((x) => x.id === ownShop.id)) shops.push(ownShop);
-    const ownListings = listings.filter((x) => x.shopId === actor.shopId);
-    if (ownListings.length && mode === "restock") {
-      const target = choice(ownListings);
-      target.stock = clamp(Number(target.stock || 0) + (1 + Math.floor(Math.random() * 4)), 1, 99);
-      target.price = Math.max(1, Number(target.price || 1) + Math.floor(Math.random() * 5) - 2);
-      return { shops, listings, activity: `${actor.name} stoğunu yeniledi`, systemType: "market" };
+  if (mode === "restock") {
+    const own = listings.filter((x) => x.shopId === actor.shopId);
+    if (own.length) {
+      const target = choice(own);
+      target.stock = clamp(Number(target.stock || 0) + 1 + Math.floor(Math.random() * 4), 1, 99);
+      return { shops, listings, activity: `${actor.name} stoğunu yeniledi`, actor, type: "market" };
     }
-    const item = choice(BOT_CATALOG);
-    listings.unshift({
-      id: `bot_listing_${actor.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      shopId: actor.shopId,
-      icon: item.icon,
-      itemName: item.itemName,
-      rarity: item.rarity,
-      stock: 2 + Math.floor(Math.random() * 10),
-      price: Math.max(1, item.price + Math.floor(Math.random() * 9) - 4),
-      energyGain: item.energyGain,
-      usable: item.usable,
-      desc: item.desc,
-      botOwned: true,
-    });
-    return { shops, listings, activity: `${actor.name} pazara yeni ürün koydu`, systemType: "market" };
   }
-
-  return { shops, listings, activity: null, systemType: "market" };
-}
-function pushSystem(text, systemType = "info") {
-  dispatchChatMessage({
-    kind: "system",
-    systemType,
-    user: "SYSTEM",
-    text,
-    time: nowHHMM(),
+  if (mode === "event") {
+    return { shops, listings, activity: `${actor.name} ${choice(SYSTEM_ACTIVITY_LINES)}`, actor, type: choice(["system","pvp","market"]) };
+  }
+  const item = choice(BOT_CATALOG);
+  listings.unshift({
+    id: `bot_listing_${actor.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    shopId: actor.shopId,
+    icon: item.icon,
+    itemName: item.itemName,
+    rarity: item.rarity,
+    stock: 1 + Math.floor(Math.random() * 12),
+    price: Math.max(1, item.price + Math.floor(Math.random() * 11) - 5),
+    energyGain: item.energyGain,
+    usable: item.usable,
+    desc: item.desc,
+    botOwned: true,
   });
-}
-function pushBotLine(bot, text) {
-  dispatchChatMessage({
-    kind: "chat",
-    user: bot.name,
-    text,
-    time: nowHHMM(),
-    premium: !!bot.premium,
-    clan: String(bot.clan || ""),
-    online: !!bot.online,
-    profileId: bot.id,
-    isBot: true,
-    level: Number(bot.level || 1),
-    rating: Number(bot.rating || 1000),
-    avatar: String(bot.avatar || ""),
-    bio: String(bot.bio || ""),
-  });
+  return { shops, listings, activity: `${actor.name} pazara yeni ürün koydu`, actor, type: "market" };
 }
 
 export function startBotEngine(store) {
   if (!store || window.__tcBotEngineStarted) return window.__tcBotEngine;
   window.__tcBotEngineStarted = true;
 
+  const runtime = { lastReplyAt: 0, channel: null };
+
+  function setState(patch) {
+    store.set(patch);
+    emitProfiles(normalizeBots(store.get()?.bots || []));
+  }
+
   function bootstrap() {
     const state = store.get() || {};
     const bots = normalizeBots(state.bots);
-    const botState = {
-      enabled: true,
-      bootstrapped: true,
-      lastPresenceAt: Date.now(),
-      lastMarketAt: Date.now(),
-      lastChatAt: Date.now(),
-      ...(state.botState || {}),
-    };
+    const botState = { enabled: true, bootstrapped: true, lastPresenceAt: Date.now(), lastMarketAt: Date.now(), lastChatAt: Date.now(), ...(state.botState || {}) };
     const marketSeed = ensureMarketSeed(state, bots);
-    store.set({
-      bots,
-      botState,
-      market: {
-        ...(state.market || {}),
-        shops: marketSeed.shops,
-        listings: marketSeed.listings,
-      },
-    });
+    setState({ bots, botState, market: { ...(state.market || {}), shops: marketSeed.shops, listings: marketSeed.listings } });
   }
 
-  function tickPresence() {
+  async function pushSystem(text, type = "system") {
+    await insertMessage({ username: "SYSTEM", text, msg_type: type, is_bot: true, player_meta: { username: "SYSTEM", isBot: true, online: true, clan: "SYS", premium: false, level: 99, rating: 9999, wins: 0, losses: 0 } });
+  }
+
+  async function pushBotLine(bot, text, type = "chat") {
+    await insertMessage({ username: bot.name, text, msg_type: type, is_bot: true, player_meta: botMeta(bot) });
+  }
+
+  async function tickPresence() {
     const state = store.get() || {};
     if (state.botState?.enabled === false) return;
     const prevBots = normalizeBots(state.bots);
-    const nextBots = prevBots.map((bot) => {
-      const toggleChance = bot.online ? 0.14 : 0.18;
-      let online = bot.online;
-      if (Math.random() < toggleChance) online = !online;
-      return {
-        ...bot,
-        online,
-        lastSeenAt: online ? Date.now() : Number(bot.lastSeenAt || Date.now()),
-        energy: clamp(Number(bot.energy || 0) + (online ? 1 : -1), 10, 50),
-      };
-    });
-
-    let onlineCount = nextBots.filter((x) => x.online).length;
-    if (onlineCount < 8) {
-      for (const bot of nextBots) {
-        if (!bot.online && Math.random() < 0.8) {
-          bot.online = true;
-          onlineCount += 1;
-          if (onlineCount >= 8) break;
-        }
-      }
-    }
-
+    const bots = mutatePresence(prevBots);
     const shops = (state.market?.shops || []).map((shop) => {
-      const bot = nextBots.find((b) => b.shopId === shop.id);
+      const bot = bots.find((b) => b.shopId === shop.id);
       return bot ? { ...shop, online: !!bot.online, ownerName: bot.name } : shop;
     });
+    setState({ bots, botState: { ...(state.botState || {}), lastPresenceAt: Date.now() }, market: { ...(state.market || {}), shops } });
 
-    for (const bot of nextBots) {
-      const prev = prevBots.find((x) => x.id === bot.id);
-      if (!prev) continue;
-      if (prev.online !== bot.online && Math.random() < 0.6) {
-        pushSystem(`${bot.name} ${bot.online ? "oyuna girdi" : "oyundan çıktı"}`, "presence");
-      }
+    const changed = [];
+    for (let i = 0; i < bots.length; i++) {
+      if (!!bots[i].online !== !!prevBots[i]?.online) changed.push(bots[i]);
     }
-
-    store.set({
-      bots: nextBots,
-      botState: { ...(state.botState || {}), lastPresenceAt: Date.now() },
-      market: { ...(state.market || {}), shops },
-    });
+    if (changed.length && Math.random() < 0.8) {
+      const bot = choice(changed);
+      await pushSystem(`${bot.name} ${bot.online ? "oyuna girdi" : "oyundan çıktı"}`, "presence");
+    }
   }
 
-  function tickMarket() {
+  async function tickMarket() {
     const state = store.get() || {};
     if (state.botState?.enabled === false) return;
     const bots = normalizeBots(state.bots);
     const next = marketAction(state, bots);
-    for (const shop of next.shops) {
-      shop.totalListings = next.listings.filter((x) => x.shopId === shop.id).length;
-    }
-    store.set({
-      market: {
-        ...(state.market || {}),
-        shops: next.shops,
-        listings: next.listings,
-      },
-      botState: { ...(state.botState || {}), lastMarketAt: Date.now() },
-    });
-    if (next.activity) pushSystem(next.activity, next.systemType || "market");
+    for (const shop of next.shops) shop.totalListings = next.listings.filter((x) => x.shopId === shop.id).length;
+    setState({ market: { ...(state.market || {}), shops: next.shops, listings: next.listings }, botState: { ...(state.botState || {}), lastMarketAt: Date.now() } });
+    if (next.activity) await pushSystem(next.activity, next.type || "market");
   }
 
-  function tickChat() {
+  async function tickChat() {
     const state = store.get() || {};
     if (state.botState?.enabled === false) return;
     const bots = normalizeBots(state.bots).filter((x) => x.online);
     if (!bots.length) return;
     const bot = choice(bots);
-    const msgs = loadChatMessages();
-    const last = msgs[msgs.length - 1] || {};
-    const lower = String(last.text || "").toLowerCase();
-
-    if (lower.includes("pvp") && lower.includes("online")) {
-      pushBotLine(bot, choice(PVP_REPLY_LINES));
-    } else if (Math.random() < 0.22) {
-      pushBotLine(bot, choice(PVP_CALL_LINES));
-    } else {
-      pushBotLine(bot, choice(PUBLIC_CHAT_LINES));
-    }
-
-    store.set({
-      botState: { ...(state.botState || {}), lastChatAt: Date.now() },
-    });
+    const linePool = Math.random() < 0.28 ? PVP_SEARCH_LINES : PUBLIC_CHAT_LINES;
+    await pushBotLine(bot, choice(linePool));
+    setState({ botState: { ...(state.botState || {}), lastChatAt: Date.now() } });
   }
 
-  function tickSpam() {
-    const state = store.get() || {};
-    if (state.botState?.enabled === false) return;
-    const onlineBots = normalizeBots(state.bots).filter((x) => x.online);
-    if (!onlineBots.length) return;
-    const actor = choice(onlineBots);
-    const eventRoll = Math.random();
-    if (eventRoll < 0.35) {
-      pushSystem(`${actor.name} PvP arıyor`, "pvp");
-    } else if (eventRoll < 0.65) {
-      pushSystem(`${actor.name} marketi takip ediyor`, "market");
-    } else {
-      pushSystem(`${actor.name} şehirde aktif`, "presence");
-    }
+  function subscribeReplies() {
+    try { runtime.channel?.unsubscribe?.(); } catch (_) {}
+    runtime.channel = supabase
+      .channel("toncrime-bot-replies")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, async (payload) => {
+        const msg = payload?.new;
+        if (!msg || msg.is_bot) return;
+        const lower = String(msg.text || "").toLowerCase();
+        const state = store.get() || {};
+        const bots = normalizeBots(state.bots).filter((x) => x.online);
+        if (!bots.length) return;
+        if (Date.now() - runtime.lastReplyAt < 4000) return;
+        let replyChance = 0;
+        let lines = PUBLIC_CHAT_LINES;
+        if (lower.includes("pvp") && lower.includes("online")) {
+          replyChance = 0.85;
+          lines = PVP_REPLY_LINES;
+        } else if (lower.includes("arena") || lower.includes("rakip")) {
+          replyChance = 0.7;
+          lines = PVP_REPLY_LINES;
+        } else if (lower.includes("trade") || lower.includes("market") || lower.includes("listing")) {
+          replyChance = 0.5;
+          lines = PUBLIC_CHAT_LINES;
+        }
+        if (!replyChance || Math.random() > replyChance) return;
+        runtime.lastReplyAt = Date.now();
+        const bot = choice(bots);
+        setTimeout(() => { pushBotLine(bot, choice(lines)); }, 1000 + Math.floor(Math.random() * 2500));
+      })
+      .subscribe();
   }
 
   bootstrap();
+  subscribeReplies();
 
-  const presenceTimer = setInterval(tickPresence, 9000);
-  const marketTimer = setInterval(tickMarket, 12000);
-  const chatTimer = setInterval(() => {
-    if (Math.random() < 0.82) tickChat();
-  }, 10000);
-  const spamTimer = setInterval(() => {
-    if (Math.random() < 0.55) tickSpam();
-  }, 17000);
+  const presenceTimer = setInterval(() => { tickPresence(); }, 9000);
+  const marketTimer = setInterval(() => { if (Math.random() < 0.85) tickMarket(); }, 12000);
+  const chatTimer = setInterval(() => { if (Math.random() < 0.78) tickChat(); }, 10000);
 
   window.__tcBotEngine = {
     stop() {
-      clearInterval(presenceTimer);
-      clearInterval(marketTimer);
-      clearInterval(chatTimer);
-      clearInterval(spamTimer);
+      clearInterval(presenceTimer); clearInterval(marketTimer); clearInterval(chatTimer);
+      try { runtime.channel?.unsubscribe?.(); } catch (_) {}
       window.__tcBotEngineStarted = false;
     },
-    tickPresence,
-    tickMarket,
-    tickChat,
-    tickSpam,
-    bootstrap,
+    bootstrap, tickPresence, tickMarket, tickChat,
   };
 
   window.tcBots = window.__tcBotEngine;
