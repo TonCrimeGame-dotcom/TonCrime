@@ -94,7 +94,7 @@ export function startChat(store) {
       player_meta: {
         ...meta,
         username: usernameVal,
-        isBot: !!(row?.is_bot || meta.isBot),
+        isBot: !!meta.isBot,
         premium: !!meta.premium,
         clan: String(meta.clan || ""),
         level: Number(meta.level || 1),
@@ -211,7 +211,6 @@ export function startChat(store) {
       username: username(),
       text,
       msg_type: "chat",
-      is_bot: false,
       player_meta: playerMeta(),
     };
 
@@ -406,6 +405,16 @@ export function startChat(store) {
     drawer.style.display = currentScene === "profile" ? "none" : "";
     requestAnimationFrame(visLoop);
   }
+
+  window.addEventListener("tc:chat:local-message", (e) => {
+    const row = e?.detail;
+    if (!row) return;
+    addMessage({
+      ...row,
+      id: row.id || `local_evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` ,
+      created_at: row.created_at || new Date().toISOString(),
+    });
+  });
 
   window.addEventListener("tc:bot:profiles", (e) => {
     const detail = e.detail || {};
