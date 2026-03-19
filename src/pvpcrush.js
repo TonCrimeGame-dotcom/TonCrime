@@ -3,6 +3,7 @@
   const START_HP = 1000;
   const START_MOVES = 12;
   const ACTIONS_PER_TURN = 2;
+  const TURN_TIME_MS = 40000;
   const DRAG_THRESHOLD = 16;
 
   const TILE = {
@@ -87,6 +88,13 @@
   function choice(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
+
+  function fmtTurnTime(ms) {
+    const total = Math.max(0, Math.ceil(ms / 1000));
+    const sec = total % 60;
+    return `00:${String(sec).padStart(2, "0")}`;
+  }
+
 
   function pointInRect(px, py, r) {
     return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
@@ -459,7 +467,7 @@
           <div class="tc-cage-toast tc-crush-toast" id="tcCrushToast"></div>
         </div>
 
-        <div class="tc-cage-rule tc-crush-rule">Sürükleyerek veya dokunarak taş değiştir • 4'lü / 5'li / 6'lı eşleşme extra move verir</div>
+        <div class="tc-cage-rule tc-crush-rule">Sürükleyerek veya dokunarak taş değiştir • Raund başı 40sn • Extra move en fazla 2 hakta kalır</div>
       </div>
     `;
   }
@@ -721,6 +729,120 @@
     _flashAlpha: 0,
     _flashColor: "#ffd166",
     _animFrame: null,
+    _turnTicker: null,
+    _audioCtx: null,
+    _shakeUntil: 0,
+
+
+    _ensureAudio() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!this._audioCtx) {
+        try {
+          this._audioCtx = new AC();
+        } catch (_) {
+          return null;
+        }
+      }
+      if (this._audioCtx?.state === "suspended") {
+        this._audioCtx.resume().catch(() => {});
+      }
+      return this._audioCtx;
+    },
+
+    _playExplosionSound(power = 1) {
+      const ac = this._ensureAudio();
+      if (!ac) return;
+      const now = ac.currentTime;
+      const dur = 0.12 + Math.min(0.22, power * 0.025);
+
+      try {
+        const buffer = ac.createBuffer(1, Math.max(1, Math.floor(ac.sampleRate * dur)), ac.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          const t = i / data.length;
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.2);
+        }
+
+        const noise = ac.createBufferSource();
+        noise.buffer = buffer;
+
+        const noiseFilter = ac.createBiquadFilter();
+        noiseFilter.type = "lowpass";
+        noiseFilter.frequency.setValueAtTime(1800 + power * 120, now);
+        noiseFilter.frequency.exponentialRampToValueAtTime(220, now + dur);
+
+        const noiseGain = ac.createGain();
+        noiseGain.gain.setValueAtTime(0.0001, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.18 + Math.min(0.18, power * 0.02), now + 0.01);
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+        const osc = ac.createOscillator();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(130 + power * 6, now);
+        osc.frequency.exponentialRampToValueAtTime(45, now + dur);
+
+        const oscGain = ac.createGain();
+        oscGain.gain.setValueAtTime(0.0001, now);
+        oscGain.gain.exponentialRampToValueAtTime(0.08 + Math.min(0.1, power * 0.012), now + 0.01);
+        oscGain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(ac.destination);
+
+        osc.connect(oscGain);
+        oscGain.connect(ac.destination);
+
+        noise.start(now);
+        noise.stop(now + dur);
+        osc.start(now);
+        osc.stop(now + dur);
+      } catch (_) {}
+    },
+
+    _beginTurn(turn) {
+      if (!this._state) return;
+      this._state.turn = turn;
+      this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+      if (turn === "me") this._state.meActionLeft = ACTIONS_PER_TURN;
+      else this._state.enemyActionLeft = ACTIONS_PER_TURN;
+      this._updateHud();
+      this._render();
+    },
+
+    _forceTurnTimeout(turn) {
+      if (!this._state || this._state.finished || this._state.turn !== turn) return;
+      if (turn === "me") {
+        this._state.meActionLeft = 0;
+        this._state.info = "Süre doldu • sıra rakipte";
+        this._toast("Süre doldu");
+        this._beginTurn("enemy");
+        if (this._running && !this._checkFinish()) {
+          clearTimeout(this._turnTimer);
+          this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(450, 900));
+        }
+      } else {
+        this._state.enemyActionLeft = 0;
+        this._state.info = "Rakibin süresi doldu";
+        this._toast("Rakibin süresi doldu");
+        this._beginTurn("me");
+        this._locked = false;
+      }
+    },
+
+    _startTurnTicker() {
+      clearInterval(this._turnTicker);
+      this._turnTicker = setInterval(() => {
+        if (!this._state || this._state.finished || this._state.matchmaking) return;
+        const left = Number(this._state.turnDeadlineAt || 0) - Date.now();
+        if (left <= 0) {
+          this._forceTurnTimeout(this._state.turn);
+          return;
+        }
+        this._updateHud();
+      }, 200);
+    },
 
     async init(opts = {}) {
       injectStyle();
@@ -782,6 +904,7 @@
       this._inited = true;
       this._setStatus("IQ ARENA hazır");
       this._startFxLoop();
+      this._startTurnTicker();
     },
 
     setOpponent(opp) {
@@ -801,6 +924,7 @@
       this._locked = true;
       this._state.matchmaking = true;
       this._state.turn = "me";
+      this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
       this._state.info = "Rakip aranıyor...";
       this._setStatus("IQ ARENA • rakip aranıyor");
       this._toast("Rakip aranıyor...");
@@ -823,6 +947,7 @@
       this._dragFromTile = null;
       clearTimeout(this._turnTimer);
       clearTimeout(this._queueTimer);
+      clearInterval(this._turnTicker);
       this._turnTimer = null;
       this._queueTimer = null;
       if (this._state) {
@@ -836,8 +961,10 @@
     reset() {
       clearTimeout(this._turnTimer);
       clearTimeout(this._queueTimer);
+      clearInterval(this._turnTicker);
       this._turnTimer = null;
       this._queueTimer = null;
+      this._startTurnTicker();
       this._running = false;
       this._locked = false;
       this._selected = null;
@@ -864,6 +991,7 @@
         info: "Maç hazır",
         matchmaking: false,
         finished: false,
+        turnDeadlineAt: Date.now() + TURN_TIME_MS,
       };
 
       if (this._els?.meName) {
@@ -1151,8 +1279,10 @@
         const cy = rect.y + rect.h / 2;
         const count = burst.kind === "extra" ? 18 + burst.len * 2 : 10 + burst.len * 2;
 
-        this._flashAlpha = 0.24 + Math.min(0.22, burst.len * 0.03);
+        this._flashAlpha = 0.24 + Math.min(0.28, burst.len * 0.04);
         this._flashColor = color;
+        this._shakeUntil = Date.now() + 90 + burst.len * 28;
+        this._playExplosionSound(burst.len + (burst.kind === "extra" ? 2 : 0));
 
         this._effects.push({
           type: "label",
@@ -1177,6 +1307,20 @@
             radius: burst.kind === "extra" ? 2.2 + Math.random() * 2.5 : 1.5 + Math.random() * 1.8,
             life: 0,
             duration: 520 + Math.random() * 260,
+            color,
+          });
+        }
+
+        for (let i = 0; i < 6 + burst.len; i++) {
+          this._effects.push({
+            type: "spark",
+            x: cx + (-rect.w * 0.18 + Math.random() * rect.w * 0.36),
+            y: cy + (-rect.h * 0.18 + Math.random() * rect.h * 0.36),
+            vx: -0.8 + Math.random() * 1.6,
+            vy: -1.8 - Math.random() * 1.4,
+            size: 3 + Math.random() * 4,
+            life: 0,
+            duration: 280 + Math.random() * 180,
             color,
           });
         }
@@ -1217,6 +1361,10 @@
               fx.x += fx.vx * (dt / 16.6667);
               fx.y += fx.vy * (dt / 16.6667);
               fx.vy += 0.04 * (dt / 16.6667);
+            } else if (fx.type === "spark") {
+              fx.x += fx.vx * (dt / 16.6667);
+              fx.y += fx.vy * (dt / 16.6667);
+              fx.vy += 0.07 * (dt / 16.6667);
             } else if (fx.type === "label") {
               fx.y -= 0.34 * (dt / 16.6667);
             } else if (fx.type === "ring") {
@@ -1258,8 +1406,9 @@
       if (this._els.rootMeText) this._els.rootMeText.textContent = `${Math.round(s.meHp)} / ${START_HP}`;
       if (this._els.rootEnemyText) this._els.rootEnemyText.textContent = `${Math.round(s.enemyHp)} / ${START_HP}`;
 
-      if (this._els.meMoves) this._els.meMoves.textContent = `Hamle: ${s.meMoves} • Raund: ${s.meActionLeft}/2`;
-      if (this._els.enemyMoves) this._els.enemyMoves.textContent = `Hamle: ${s.enemyMoves} • Raund: ${s.enemyActionLeft}/2`;
+      const timeLeft = fmtTurnTime(Math.max(0, Number(s.turnDeadlineAt || 0) - Date.now()));
+      if (this._els.meMoves) this._els.meMoves.textContent = `Hamle: ${s.meMoves} • Raund: ${s.meActionLeft}/2 • Süre: ${s.turn === "me" && !s.matchmaking && !s.finished ? timeLeft : "--:--"}`;
+      if (this._els.enemyMoves) this._els.enemyMoves.textContent = `Hamle: ${s.enemyMoves} • Raund: ${s.enemyActionLeft}/2 • Süre: ${s.turn === "enemy" && !s.matchmaking && !s.finished ? timeLeft : "--:--"}`;
 
       if (this._els.turn) {
         if (s.matchmaking) {
@@ -1274,7 +1423,7 @@
       if (this._els.sub) {
         this._els.sub.textContent = s.matchmaking
           ? "5sn içinde rakip bulunmazsa bot gelir"
-          : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username}`;
+          : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}`;
       }
     },
 
@@ -1320,8 +1469,7 @@
 
       const move = calcBotMove(this._state.board, this._state.enemyHp);
       if (!move) {
-        this._state.turn = "me";
-        this._state.meActionLeft = ACTIONS_PER_TURN;
+        this._beginTurn("me");
         this._state.info = "Rakip hamle bulamadı";
         this._updateHud();
         this._render();
@@ -1382,10 +1530,10 @@
       this._state.board = board;
 
       if (actor === "me") {
-        this._state.meMoves = Math.max(0, this._state.meMoves - 1 + totalExtra);
+        this._state.meMoves = Math.max(0, this._state.meMoves - 1);
         this._state.meHp = clamp(this._state.meHp + totalHeal, 0, START_HP);
         this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, START_HP);
-        this._state.meActionLeft = clamp(this._state.meActionLeft - 1 + totalExtra, 0, 99);
+        this._state.meActionLeft = clamp(this._state.meActionLeft - 1 + totalExtra, 0, ACTIONS_PER_TURN);
 
         if (totalExtra > 0) {
           this._toast(
@@ -1398,16 +1546,16 @@
         }
 
         if (this._state.meMoves <= 0 || this._state.meActionLeft <= 0) {
-          this._state.turn = "enemy";
-          this._state.enemyActionLeft = ACTIONS_PER_TURN;
+          this._beginTurn("enemy");
         } else {
+          this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
           this._state.turn = "me";
         }
       } else {
-        this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1 + totalExtra);
+        this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1);
         this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, START_HP);
         this._state.meHp = clamp(this._state.meHp - totalDamage, 0, START_HP);
-        this._state.enemyActionLeft = clamp(this._state.enemyActionLeft - 1 + totalExtra, 0, 99);
+        this._state.enemyActionLeft = clamp(this._state.enemyActionLeft - 1 + totalExtra, 0, ACTIONS_PER_TURN);
 
         if (totalExtra > 0) {
           this._toast(
@@ -1420,9 +1568,9 @@
         }
 
         if (this._state.enemyMoves <= 0 || this._state.enemyActionLeft <= 0) {
-          this._state.turn = "me";
-          this._state.meActionLeft = ACTIONS_PER_TURN;
+          this._beginTurn("me");
         } else {
+          this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
           this._state.turn = "enemy";
         }
       }
@@ -1537,6 +1685,10 @@
           ctx.beginPath();
           ctx.arc(fx.x, fx.y, fx.radius * (0.8 + (1 - t) * 0.35), 0, Math.PI * 2);
           ctx.fill();
+        } else if (fx.type === "spark") {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = fx.color;
+          fillRoundRect(ctx, fx.x - fx.size * 0.5, fx.y - fx.size * 0.5, fx.size, fx.size, 2, fx.color);
         } else if (fx.type === "label") {
           ctx.globalAlpha = alpha;
           ctx.textAlign = "center";
@@ -1570,6 +1722,10 @@
       if (w < 20 || h < 20) return;
 
       ctx.clearRect(0, 0, w, h);
+      ctx.save();
+      if (Date.now() < this._shakeUntil) {
+        ctx.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+      }
 
       const boardPad = clamp(Math.round(w * 0.018), 6, 10);
       const usableW = w - boardPad * 2;
@@ -1656,6 +1812,7 @@
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
+      ctx.restore();
       this._updateHud();
     },
   };
