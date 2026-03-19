@@ -1,8 +1,6 @@
+import { supabase } from "../supabase.js";
 
 export function startChat(store) {
-  const KEY_MSG = "toncrime_chat_messages_v2";
-  const KEY_OPEN = "toncrime_chat_open_v1";
-
   const drawer = document.getElementById("chatDrawer");
   const header = document.getElementById("chatHeader");
   const toggleBtn = document.getElementById("chatToggle");
@@ -15,19 +13,47 @@ export function startChat(store) {
     return;
   }
 
-  injectChatStyle();
+  if (window.__tcChatStarted) return window.__tcChatApi;
+  window.__tcChatStarted = true;
 
-  const username = () => store.get()?.player?.username ?? "Player";
-  const friendSet = new Set();
+  const KEY_OPEN = "toncrime_chat_open_v1";
+  const LOCAL_CACHE_KEY = "toncrime_chat_fallback_v2";
+  const MAX_MESSAGES = 180;
+  const state = {
+    channel: null,
+    botProfileMap: new Map(),
+    botStatusMap: new Map(),
+    messageMap: new Map(),
+    profileModal: null,
+    onlineTextEl: null,
+  };
 
-  function nowHHMM() {
-    const d = new Date();
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
+  ensureChatStyle();
+  ensureProfileModal();
 
-  function loadMessages() {
+  const username = () => String(store.get()?.player?.username || "Player").trim() || "Player";
+  const telegramId = () => String(store.get()?.player?.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "").trim();
+  const playerMeta = () => {
+    const s = store.get() || {};
+    const p = s.player || {};
+    const clan = s.clan || {};
+    return {
+      username: username(),
+      telegramId: telegramId(),
+      level: Number(p.level || 1),
+      premium: !!(s.premium || p.premium || p.isPremium),
+      clan: String(clan.name || clan.tag || ""),
+      rating: Number(s.pvp?.rating || 1000),
+      wins: Number(s.pvp?.wins || 0),
+      losses: Number(s.pvp?.losses || 0),
+      online: true,
+      isBot: false,
+    };
+  };
+
+  function loadFallbackMessages() {
     try {
-      const raw = localStorage.getItem(KEY_MSG);
+      const raw = localStorage.getItem(LOCAL_CACHE_KEY);
       const arr = raw ? JSON.parse(raw) : [];
       return Array.isArray(arr) ? arr : [];
     } catch {
@@ -35,9 +61,9 @@ export function startChat(store) {
     }
   }
 
-  function saveMessages(arr) {
+  function saveFallbackMessages(arr) {
     try {
-      localStorage.setItem(KEY_MSG, JSON.stringify(arr));
+      localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(arr.slice(-MAX_MESSAGES)));
     } catch {}
   }
 
@@ -50,69 +76,115 @@ export function startChat(store) {
       .replaceAll("'", "&#39;");
   }
 
-  function systemClass(type) {
-    switch (String(type || "")) {
-      case "market": return "tc-chat-system-market";
-      case "presence": return "tc-chat-system-presence";
-      case "pvp": return "tc-chat-system-pvp";
-      case "rare": return "tc-chat-system-rare";
-      default: return "tc-chat-system-info";
-    }
+  function hhmm(value) {
+    const d = value ? new Date(value) : new Date();
+    if (Number.isNaN(d.getTime())) return "--:--";
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
-  function makeUserMarkup(m) {
-    const premium = m.premium ? `<span class="tc-chat-premium">PREM</span>` : "";
-    const clan = m.clan ? `<span class="tc-chat-clan">[${escapeHtml(m.clan)}]</span>` : "";
-    const online = m.online !== false ? `<span class="tc-chat-online">ONLINE</span>` : `<span class="tc-chat-offline">OFFLINE</span>`;
-    return `
-      <button class="tc-chat-userbtn" type="button"
-        data-profile-id="${escapeHtml(m.profileId || "")}"
-        data-user="${escapeHtml(m.user || "?")}"
-        data-premium="${m.premium ? "1" : "0"}"
-        data-clan="${escapeHtml(m.clan || "")}"
-        data-online="${m.online !== false ? "1" : "0"}"
-        data-level="${escapeHtml(String(m.level || 1))}"
-        data-rating="${escapeHtml(String(m.rating || 1000))}"
-        data-avatar="${escapeHtml(m.avatar || "🙂")}"
-        data-bio="${escapeHtml(m.bio || "")}">
-        ${escapeHtml(m.avatar || "🙂")} <span>${escapeHtml(m.user || "?")}</span>
-      </button>
-      ${clan}
-      ${premium}
-      ${online}
-    `;
+  function normalizeMessage(row) {
+    const meta = row?.player_meta && typeof row.player_meta === "object" ? row.player_meta : {};
+    const usernameVal = String(row?.username || meta.username || row?.user || "?").trim() || "?";
+    return {
+      id: String(row?.id || `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+      username: usernameVal,
+      text: String(row?.text || ""),
+      type: String(row?.msg_type || row?.type || "chat"),
+      created_at: row?.created_at || new Date().toISOString(),
+      player_meta: {
+        ...meta,
+        username: usernameVal,
+        isBot: !!(row?.is_bot || meta.isBot),
+        premium: !!meta.premium,
+        clan: String(meta.clan || ""),
+        level: Number(meta.level || 1),
+        rating: Number(meta.rating || 1000),
+        wins: Number(meta.wins || 0),
+        losses: Number(meta.losses || 0),
+        online: meta.online !== false,
+      },
+    };
   }
 
-  function appendMessage(m) {
-    const row = document.createElement("div");
-    row.className = `msg ${m.kind === "system" ? "tc-chat-system-row" : "tc-chat-user-row"}`;
+  function sortMessages() {
+    return [...state.messageMap.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(-MAX_MESSAGES);
+  }
 
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = m.time ?? "--:--";
-    row.appendChild(meta);
+  function persistFallback() {
+    saveFallbackMessages(sortMessages());
+  }
 
-    const body = document.createElement("div");
-    body.className = "tc-chat-body";
-
-    if (m.kind === "system") {
-      body.innerHTML = `<div class="tc-chat-system-pill ${systemClass(m.systemType)}">${escapeHtml(m.text || "")}</div>`;
-    } else {
-      body.innerHTML = `
-        <div class="tc-chat-headline">${makeUserMarkup(m)}</div>
-        <div class="tc-chat-text">${escapeHtml(m.text || "")}</div>
-      `;
+  function addMessage(row, shouldRender = true) {
+    const msg = normalizeMessage(row);
+    state.messageMap.set(msg.id, msg);
+    if (msg.player_meta?.isBot) {
+      state.botProfileMap.set(msg.username, msg.player_meta);
+      state.botStatusMap.set(msg.username, msg.player_meta.online !== false);
     }
+    if (shouldRender) renderMessages();
+    persistFallback();
+  }
 
-    row.appendChild(body);
-    msgBox.appendChild(row);
-    msgBox.scrollTop = msgBox.scrollHeight;
+  function applyMessages(rows = []) {
+    state.messageMap.clear();
+    for (const row of rows) addMessage(row, false);
+    renderMessages();
+    persistFallback();
+  }
+
+  function currentOnlineText() {
+    const humans = 1;
+    let bots = 0;
+    for (const val of state.botStatusMap.values()) if (val) bots += 1;
+    return `${humans + bots} online`;
+  }
+
+  function updateOnlineLabel() {
+    if (!state.onlineTextEl) return;
+    state.onlineTextEl.textContent = currentOnlineText();
   }
 
   function renderMessages() {
-    const msgs = loadMessages();
+    const msgs = sortMessages();
     msgBox.innerHTML = "";
-    for (const m of msgs) appendMessage(m);
+    for (const m of msgs) {
+      const row = document.createElement("div");
+      row.className = `msg tc-chat-row tc-chat-type-${m.type}`;
+
+      const meta = document.createElement("div");
+      meta.className = "meta tc-chat-time";
+      meta.textContent = hhmm(m.created_at);
+
+      const body = document.createElement("div");
+      body.className = "tc-chat-body";
+
+      if (m.type === "system" || m.type === "presence" || m.type === "market" || m.type === "pvp") {
+        body.innerHTML = `<div class="tc-chat-system-badge tc-chat-system-${escapeHtml(m.type)}">${escapeHtml(m.text)}</div>`;
+      } else {
+        const sender = document.createElement("button");
+        sender.type = "button";
+        sender.className = "tc-chat-user";
+        sender.innerHTML = `${escapeHtml(m.username)}${m.player_meta?.clan ? ` <small>[${escapeHtml(m.player_meta.clan)}]</small>` : ""}${m.player_meta?.premium ? '<span class="tc-chat-premium">PREMIUM</span>' : ''}${m.player_meta?.online ? '<span class="tc-chat-online">ONLINE</span>' : ''}`;
+        sender.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openProfileCard(m.player_meta || { username: m.username });
+        });
+
+        const text = document.createElement("div");
+        text.className = "tc-chat-text";
+        text.textContent = m.text;
+
+        body.appendChild(sender);
+        body.appendChild(text);
+      }
+
+      row.appendChild(meta);
+      row.appendChild(body);
+      msgBox.appendChild(row);
+    }
+    updateOnlineLabel();
+    msgBox.scrollTop = msgBox.scrollHeight;
   }
 
   function setOpen(isOpen) {
@@ -123,110 +195,187 @@ export function startChat(store) {
       drawer.classList.remove("open");
       toggleBtn.textContent = "Aç";
     }
-    try {
-      localStorage.setItem(KEY_OPEN, isOpen ? "1" : "0");
-    } catch {}
+    try { localStorage.setItem(KEY_OPEN, isOpen ? "1" : "0"); } catch {}
   }
 
   function getOpen() {
+    try { return localStorage.getItem(KEY_OPEN) === "1"; } catch { return false; }
+  }
+
+  async function send() {
+    const text = String(input.value || "").trim();
+    if (!text) return;
+    input.value = "";
+
+    const payload = {
+      username: username(),
+      text,
+      msg_type: "chat",
+      is_bot: false,
+      player_meta: playerMeta(),
+    };
+
     try {
-      return localStorage.getItem(KEY_OPEN) === "1";
-    } catch {
-      return false;
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .insert(payload)
+        .select("*")
+        .single();
+      if (error) throw error;
+      addMessage(data);
+    } catch (err) {
+      console.error("[CHAT] send failed:", err);
+      addMessage({
+        ...payload,
+        id: `local_${Date.now()}`,
+        created_at: new Date().toISOString(),
+      });
     }
   }
 
-  function send() {
-    const text = (input.value || "").trim();
-    if (!text) return;
+  async function loadHistory() {
+    try {
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .limit(MAX_MESSAGES);
+      if (error) throw error;
+      applyMessages(data || []);
+    } catch (err) {
+      console.error("[CHAT] history load failed:", err);
+      applyMessages(loadFallbackMessages());
+    }
+  }
 
-    const msgs = loadMessages();
-    const payload = {
-      id: `local_${Date.now()}`,
-      kind: "chat",
-      user: username(),
-      text,
-      time: nowHHMM(),
-      premium: false,
-      clan: "",
-      online: true,
-      profileId: "player_main",
-      isBot: false,
-      level: Number(store.get()?.player?.level || 1),
-      rating: Number(store.get()?.pvp?.rating || 1000),
-      avatar: "🙂",
-      bio: "Şehirde dolaşıyor.",
-    };
-    msgs.push(payload);
-    if (msgs.length > 350) msgs.splice(0, msgs.length - 350);
+  function subscribeRealtime() {
+    try {
+      state.channel?.unsubscribe?.();
+    } catch (_) {}
 
-    saveMessages(msgs);
-    input.value = "";
-    renderMessages();
+    state.channel = supabase
+      .channel("toncrime-chat-room")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages" },
+        (payload) => {
+          if (payload?.new) addMessage(payload.new);
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[CHAT] realtime subscribed");
+        }
+      });
   }
 
   function hardBindPointer(el, handler) {
-    el.addEventListener(
-      "pointerdown",
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handler(e);
-      },
-      { capture: true }
-    );
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handler(e);
+    }, { capture: true });
   }
 
-  function closeProfileCard() {
-    const old = drawer.querySelector(".tc-chat-profile-card");
-    if (old) old.remove();
-  }
-
-  function openProfileCard(data) {
-    closeProfileCard();
-    const card = document.createElement("div");
-    card.className = "tc-chat-profile-card";
-    const isFriend = friendSet.has(data.profileId);
-    card.innerHTML = `
-      <button class="tc-chat-profile-close" type="button">✕</button>
-      <div class="tc-chat-profile-avatar">${escapeHtml(data.avatar || "🙂")}</div>
-      <div class="tc-chat-profile-name">${escapeHtml(data.user || "?")}</div>
-      <div class="tc-chat-profile-meta">
-        <span>${data.online === "1" ? "🟢 Online" : "⚫ Offline"}</span>
-        <span>Lv ${escapeHtml(data.level || "1")}</span>
-        <span>Rating ${escapeHtml(data.rating || "1000")}</span>
-      </div>
-      <div class="tc-chat-profile-badges">
-        ${data.premium === "1" ? '<span class="tc-chat-premium">Premium</span>' : '<span class="tc-chat-offline">Standart</span>'}
-        ${data.clan ? `<span class="tc-chat-clan">Clan ${escapeHtml(data.clan)}</span>` : '<span class="tc-chat-offline">Clan yok</span>'}
-      </div>
-      <div class="tc-chat-profile-bio">${escapeHtml(data.bio || "Şehirde aktif.")}</div>
-      <div class="tc-chat-profile-actions">
-        <button class="tc-chat-profile-action" data-action="friend">${isFriend ? "Arkadaş eklendi" : "Arkadaş ekle"}</button>
-        <button class="tc-chat-profile-action" data-action="pvp">PvP çağır</button>
+  function ensureProfileModal() {
+    if (document.getElementById("tcChatProfileModal")) {
+      state.profileModal = document.getElementById("tcChatProfileModal");
+      return;
+    }
+    const modal = document.createElement("div");
+    modal.id = "tcChatProfileModal";
+    modal.className = "tc-chat-profile-modal hidden";
+    modal.innerHTML = `
+      <div class="tc-chat-profile-card">
+        <button class="tc-chat-profile-close" type="button">✕</button>
+        <div class="tc-chat-profile-title" id="tcChatProfileTitle">Oyuncu</div>
+        <div class="tc-chat-profile-sub" id="tcChatProfileSub">Bilgi</div>
+        <div class="tc-chat-profile-grid">
+          <div><span>Durum</span><b id="tcChatProfileOnline">Offline</b></div>
+          <div><span>Seviye</span><b id="tcChatProfileLevel">1</b></div>
+          <div><span>Clan</span><b id="tcChatProfileClan">Yok</b></div>
+          <div><span>Premium</span><b id="tcChatProfilePremium">Hayır</b></div>
+          <div><span>Rating</span><b id="tcChatProfileRating">1000</b></div>
+          <div><span>Skor</span><b id="tcChatProfileScore">0/0</b></div>
+        </div>
+        <div class="tc-chat-profile-actions">
+          <button type="button" data-action="friend">Arkadaş ekle</button>
+          <button type="button" data-action="pvp">PvP çağır</button>
+        </div>
       </div>
     `;
-    drawer.appendChild(card);
+    document.body.appendChild(modal);
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal || e.target.classList.contains("tc-chat-profile-close")) {
+        modal.classList.add("hidden");
+      }
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-action");
+      if (action === "friend") {
+        window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text: "Arkadaş sistemi yakında" } }));
+      }
+      if (action === "pvp") {
+        window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text: "PvP daveti gönderildi" } }));
+      }
+    });
+    state.profileModal = modal;
+  }
 
-    card.querySelector(".tc-chat-profile-close")?.addEventListener("click", closeProfileCard);
-    card.querySelector('[data-action="friend"]')?.addEventListener("click", () => {
-      friendSet.add(data.profileId);
-      card.querySelector('[data-action="friend"]').textContent = "Arkadaş eklendi";
-    });
-    card.querySelector('[data-action="pvp"]')?.addEventListener("click", () => {
-      const msgs = loadMessages();
-      msgs.push({
-        id: `sys_${Date.now()}`,
-        kind: "system",
-        systemType: "pvp",
-        user: "SYSTEM",
-        text: `${data.user} PvP için çağrıldı`,
-        time: nowHHMM(),
-      });
-      saveMessages(msgs);
-      renderMessages();
-      closeProfileCard();
-    });
+  function openProfileCard(meta) {
+    const modal = state.profileModal;
+    if (!modal) return;
+    const title = modal.querySelector("#tcChatProfileTitle");
+    const sub = modal.querySelector("#tcChatProfileSub");
+    const online = modal.querySelector("#tcChatProfileOnline");
+    const level = modal.querySelector("#tcChatProfileLevel");
+    const clan = modal.querySelector("#tcChatProfileClan");
+    const premium = modal.querySelector("#tcChatProfilePremium");
+    const rating = modal.querySelector("#tcChatProfileRating");
+    const score = modal.querySelector("#tcChatProfileScore");
+    title.textContent = meta?.username || "Oyuncu";
+    sub.textContent = meta?.isBot ? "Bot profil kartı" : "Oyuncu profil kartı";
+    online.textContent = meta?.online ? "Online" : "Offline";
+    level.textContent = String(meta?.level || 1);
+    clan.textContent = meta?.clan || "Yok";
+    premium.textContent = meta?.premium ? "Evet" : "Hayır";
+    rating.textContent = String(meta?.rating || 1000);
+    score.textContent = `${Number(meta?.wins || 0)}W / ${Number(meta?.losses || 0)}L`;
+    modal.classList.remove("hidden");
+  }
+
+  function ensureChatStyle() {
+    if (document.getElementById("tc-chat-style-v2")) return;
+    const style = document.createElement("style");
+    style.id = "tc-chat-style-v2";
+    style.textContent = `
+      #chatTitle { display:flex; align-items:center; justify-content:space-between; width:100%; }
+      .tc-chat-online-count { font-size:11px; color:rgba(120,255,170,.84); margin-left:auto; margin-right:8px; }
+      .tc-chat-row { align-items:flex-start; }
+      .tc-chat-body { flex:1; min-width:0; }
+      .tc-chat-user { background:none; border:0; padding:0; color:#fff; font:800 13px system-ui; cursor:pointer; display:flex; gap:6px; align-items:center; }
+      .tc-chat-user small { color:rgba(255,255,255,.7); font-size:11px; }
+      .tc-chat-premium { font-size:9px; padding:1px 6px; border-radius:999px; background:linear-gradient(180deg,#ffe79b,#ffc63d); color:#111; }
+      .tc-chat-online { font-size:9px; padding:1px 6px; border-radius:999px; border:1px solid rgba(100,255,150,.24); color:#8cffb3; }
+      .tc-chat-text { color:rgba(255,255,255,.92); font-size:13px; line-height:1.25; word-break:break-word; margin-top:3px; }
+      .tc-chat-system-badge { display:inline-block; max-width:100%; padding:8px 12px; border-radius:12px; font:800 12px system-ui; }
+      .tc-chat-system-system, .tc-chat-system-presence { background:linear-gradient(180deg,rgba(20,80,40,.72),rgba(8,32,18,.84)); border:1px solid rgba(120,255,170,.18); color:#d7ffe8; }
+      .tc-chat-system-market { background:linear-gradient(180deg,rgba(66,48,16,.74),rgba(34,20,6,.84)); border:1px solid rgba(255,210,120,.22); color:#ffe8b4; }
+      .tc-chat-system-pvp { background:linear-gradient(180deg,rgba(52,26,78,.78),rgba(22,10,40,.86)); border:1px solid rgba(210,150,255,.22); color:#efd9ff; }
+      .tc-chat-profile-modal { position:fixed; inset:0; background:rgba(0,0,0,.56); z-index:12000; display:grid; place-items:center; padding:20px; }
+      .tc-chat-profile-modal.hidden { display:none; }
+      .tc-chat-profile-card { width:min(92vw,360px); border-radius:18px; border:1px solid rgba(255,255,255,.12); background:rgba(12,16,24,.96); color:#fff; padding:16px; position:relative; box-shadow:0 20px 60px rgba(0,0,0,.45); }
+      .tc-chat-profile-close { position:absolute; right:12px; top:12px; width:32px; height:32px; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:#fff; }
+      .tc-chat-profile-title { font:900 18px system-ui; margin-bottom:4px; }
+      .tc-chat-profile-sub { color:rgba(255,255,255,.68); font-size:12px; margin-bottom:12px; }
+      .tc-chat-profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+      .tc-chat-profile-grid div { padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.04); }
+      .tc-chat-profile-grid span { display:block; color:rgba(255,255,255,.62); font-size:11px; margin-bottom:4px; }
+      .tc-chat-profile-grid b { font-size:13px; }
+      .tc-chat-profile-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+      .tc-chat-profile-actions button { height:38px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.08); color:#fff; font:800 12px system-ui; }
+    `;
+    document.head.appendChild(style);
   }
 
   hardBindPointer(toggleBtn, () => setOpen(!drawer.classList.contains("open")));
@@ -241,11 +390,16 @@ export function startChat(store) {
     if (e.key === "Enter") send();
   });
 
-  msgBox.addEventListener("click", (e) => {
-    const btn = e.target.closest(".tc-chat-userbtn");
-    if (!btn) return;
-    openProfileCard(btn.dataset);
-  });
+  const titleWrap = document.getElementById("chatTitle");
+  if (titleWrap && !titleWrap.querySelector(".tc-chat-online-count")) {
+    const onlineEl = document.createElement("span");
+    onlineEl.className = "tc-chat-online-count";
+    onlineEl.textContent = "1 online";
+    titleWrap.appendChild(onlineEl);
+    state.onlineTextEl = onlineEl;
+  } else {
+    state.onlineTextEl = titleWrap?.querySelector(".tc-chat-online-count") || null;
+  }
 
   function visLoop() {
     const currentScene = window.tcScenes?._currentKey || "";
@@ -253,74 +407,21 @@ export function startChat(store) {
     requestAnimationFrame(visLoop);
   }
 
-  window.addEventListener("tc:chat:refresh", renderMessages);
-  window.addEventListener("tc:chat:add", () => {
-    renderMessages();
+  window.addEventListener("tc:bot:profiles", (e) => {
+    const detail = e.detail || {};
+    const bots = Array.isArray(detail.bots) ? detail.bots : [];
+    for (const bot of bots) {
+      if (!bot?.name) continue;
+      state.botProfileMap.set(bot.name, bot);
+      state.botStatusMap.set(bot.name, bot.online !== false);
+    }
+    updateOnlineLabel();
   });
 
-  window.tcChat = window.tcChat || {};
-  window.tcChat.refresh = renderMessages;
-  window.tcChat.openProfile = openProfileCard;
-
-  renderMessages();
+  loadHistory();
+  subscribeRealtime();
   setOpen(getOpen());
   visLoop();
 
-  function injectChatStyle() {
-    if (document.getElementById("tc-chat-upgrade-style")) return;
-    const style = document.createElement("style");
-    style.id = "tc-chat-upgrade-style";
-    style.textContent = `
-      #chatMessages .msg { align-items:flex-start; }
-      .tc-chat-body { flex:1; min-width:0; }
-      .tc-chat-system-row .tc-chat-body { padding-top:1px; }
-      .tc-chat-system-pill {
-        display:inline-block;
-        padding:8px 12px;
-        border-radius:12px;
-        font-weight:800;
-        font-size:12px;
-        letter-spacing:.2px;
-        border:1px solid rgba(255,255,255,0.12);
-        backdrop-filter: blur(6px);
-      }
-      .tc-chat-system-market { background:rgba(0,110,255,0.14); color:#d8e8ff; border-color:rgba(90,170,255,0.28); }
-      .tc-chat-system-presence { background:rgba(20,160,120,0.14); color:#dcfff2; border-color:rgba(80,255,190,0.22); }
-      .tc-chat-system-pvp { background:rgba(255,90,90,0.15); color:#ffe3e3; border-color:rgba(255,120,120,0.28); }
-      .tc-chat-system-rare { background:rgba(180,90,255,0.16); color:#f4e3ff; border-color:rgba(210,140,255,0.34); }
-      .tc-chat-system-info { background:rgba(255,255,255,0.08); color:#fff; }
-      .tc-chat-headline { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
-      .tc-chat-userbtn {
-        appearance:none; border:0; background:transparent; color:#fff; font-weight:900; padding:0; cursor:pointer;
-      }
-      .tc-chat-userbtn:hover { text-decoration:underline; }
-      .tc-chat-premium, .tc-chat-clan, .tc-chat-online, .tc-chat-offline {
-        display:inline-flex; align-items:center; height:18px; padding:0 6px; border-radius:999px; font-size:10px; font-weight:900;
-      }
-      .tc-chat-premium { background:linear-gradient(180deg,#ffe79b,#ffc63d); color:#111; }
-      .tc-chat-clan { background:rgba(124,182,255,0.18); color:#dbe8ff; }
-      .tc-chat-online { background:rgba(41,223,101,0.18); color:#d9ffe7; }
-      .tc-chat-offline { background:rgba(255,255,255,0.10); color:#ddd; }
-      .tc-chat-text { color:rgba(255,255,255,0.94); word-break:break-word; }
-      .tc-chat-profile-card {
-        position:absolute; left:10px; right:10px; bottom:54px; z-index:10001;
-        background:rgba(10,10,14,0.92); border:1px solid rgba(255,255,255,0.14); border-radius:16px;
-        padding:14px; backdrop-filter:blur(10px); box-shadow:0 14px 28px rgba(0,0,0,0.35);
-      }
-      .tc-chat-profile-close {
-        position:absolute; right:10px; top:10px; width:30px; height:30px; border-radius:10px; border:1px solid rgba(255,255,255,0.14);
-        background:rgba(255,255,255,0.06); color:#fff; cursor:pointer;
-      }
-      .tc-chat-profile-avatar { font-size:34px; margin-bottom:6px; }
-      .tc-chat-profile-name { color:#fff; font-size:16px; font-weight:900; margin-bottom:6px; }
-      .tc-chat-profile-meta, .tc-chat-profile-badges { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; color:#ddd; font-size:12px; }
-      .tc-chat-profile-bio { color:#cfcfcf; font-size:12px; margin-bottom:10px; }
-      .tc-chat-profile-actions { display:flex; gap:8px; }
-      .tc-chat-profile-action {
-        flex:1; height:34px; border-radius:12px; border:1px solid rgba(255,255,255,0.14);
-        background:rgba(255,255,255,0.08); color:#fff; font-weight:800; cursor:pointer;
-      }
-    `;
-    document.head.appendChild(style);
-  }
+  window.__tcChatApi = { renderMessages, openProfileCard };
 }
