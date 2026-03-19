@@ -1246,3 +1246,6 @@ export class ClanScene {
     return y + h + 16;
   }
 }
+
+
+export default ClanScene;
