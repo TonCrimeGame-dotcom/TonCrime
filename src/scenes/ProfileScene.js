@@ -258,20 +258,20 @@ export class ProfileScene {
         const yton = Number(row.yton_amount || 0);
         const addr = String(row.wallet_address || "");
         const shortAddr = addr ? `${addr.slice(0, 8)}...${addr.slice(-6)}` : "-";
-        let title = "Ã‡ekim bekliyor";
-        let body = `${moneyFmt(ton, 2)} TON Ã§ekim talebin incelemede.`;
+        let title = "Çekim bekliyor";
+        let body = `${moneyFmt(ton, 2)} TON çekim talebin incelemede.`;
         let accent = "blue";
         if (status === "rejected") {
-          title = "Ã‡ekim reddedildi";
-          body = `${moneyFmt(ton, 2)} TON (${moneyFmt(yton)} YTON) Ã§ekim talebin reddedildi. ${row.admin_note ? `Sebep: ${row.admin_note}` : ""}`.trim();
+          title = "Çekim reddedildi";
+          body = `${moneyFmt(ton, 2)} TON (${moneyFmt(yton)} YTON) çekim talebin reddedildi. ${row.admin_note ? `Sebep: ${row.admin_note}` : ""}`.trim();
           accent = "red";
         } else if (status === "paid") {
-          title = "Ã‡ekim Ã¶dendi";
-          body = `${moneyFmt(ton, 2)} TON Ã§ekimin ${shortAddr} adresine gÃ¶nderildi.`;
+          title = "Çekim ödendi";
+          body = `${moneyFmt(ton, 2)} TON çekimin ${shortAddr} adresine gönderildi.`;
           accent = "green";
         } else if (status === "processing") {
-          title = "Ã‡ekim iÅŸleniyor";
-          body = `${moneyFmt(ton, 2)} TON Ã§ekim talebin Ã¶deme sÄ±rasÄ±na alÄ±ndÄ±.`;
+          title = "Çekim işleniyor";
+          body = `${moneyFmt(ton, 2)} TON çekim talebin ödeme sırasına alındı.`;
           accent = "gold";
         }
         return {
@@ -293,7 +293,7 @@ export class ProfileScene {
       const prevMap = new Map(prev.map((item) => [item.id, item.status]));
       const latestRejected = inbox.find((item) => item.status === "rejected" && prevMap.get(item.id) && prevMap.get(item.id) !== "rejected");
       if (latestRejected) {
-        this._showToast("Ã‡ekim reddedildi â€¢ Gelen kutusunu kontrol et", 2600);
+        this._showToast("Çekim reddedildi • Gelen kutusunu kontrol et", 2600);
       }
 
       this._setInbox(inbox);
@@ -314,8 +314,8 @@ export class ProfileScene {
       console.error("[ProfileScene] inbox load error:", err);
       const msg = String(err?.message || "");
       this._inboxError = msg.includes("Lock broken by another request")
-        ? "Mesajlar kÄ±sa sÃ¼reli yoÄŸunluk nedeniyle tekrar deneniyor..."
-        : (msg || "Mesajlar yÃ¼klenemedi");
+        ? "Mesajlar kısa süreli yoğunluk nedeniyle tekrar deneniyor..."
+        : (msg || "Mesajlar yüklenemedi");
     } finally {
       if (reqSeq === this._inboxReqSeq) {
         this._inboxLoading = false;
@@ -354,7 +354,7 @@ export class ProfileScene {
 
   async _getProfileId() {
     const telegramId = this._telegramId();
-    if (!telegramId) throw new Error("telegram_id bulunamadÄ±");
+    if (!telegramId) throw new Error("telegram_id bulunamadı");
 
     const { data, error } = await supabase
       .from("profiles")
@@ -363,7 +363,7 @@ export class ProfileScene {
       .maybeSingle();
 
     if (error) throw error;
-    if (!data?.id) throw new Error("Profil bulunamadÄ±");
+    if (!data?.id) throw new Error("Profil bulunamadı");
 
     return data.id;
   }
@@ -404,14 +404,14 @@ export class ProfileScene {
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.valid) {
-          throw new Error(json?.error || "GeÃ§ersiz TON cÃ¼zdan adresi");
+          throw new Error(json?.error || "Geçersiz TON cüzdan adresi");
         }
         return String(json.wallet_address || raw).trim();
       } catch (err) {
         lastError = err;
       }
     }
-    throw new Error(lastError?.message || "TON adresi doÄŸrulanamadÄ±");
+    throw new Error(lastError?.message || "TON adresi doğrulanamadı");
   }
 
   async _connectWallet(brand) {
@@ -419,7 +419,7 @@ export class ProfileScene {
     this._busy = true;
     try {
       const brands = ["Tonkeeper", "MyTonWallet", "OpenMask", "Tonhub"];
-      const chosen = brand || window.prompt(`CÃ¼zdan markasÄ± seÃ§:\n${brands.join(" / ")}`, "Tonkeeper");
+      const chosen = brand || window.prompt(`Cüzdan markası seç:\n${brands.join(" / ")}`, "Tonkeeper");
       if (!chosen) return;
       const cleanBrand = String(chosen).trim();
       const address = window.prompt(`${cleanBrand} adresini gir:`, this._wallet().address || "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
@@ -455,12 +455,12 @@ export class ProfileScene {
         },
       });
 
-      this._pushWalletLedger("connect", 0, 0, `${cleanBrand} baÄŸlandÄ±`);
-      await this._insertWalletLedger("wallet_connect", 0, 0, `${cleanBrand} baÄŸlandÄ±`);
-      this._showToast(`${cleanBrand} baÄŸlandÄ±`);
+      this._pushWalletLedger("connect", 0, 0, `${cleanBrand} bağlandı`);
+      await this._insertWalletLedger("wallet_connect", 0, 0, `${cleanBrand} bağlandı`);
+      this._showToast(`${cleanBrand} bağlandı`);
     } catch (err) {
       console.error("[ProfileScene] connect wallet error:", err);
-      this._showToast(err?.message || "CÃ¼zdan baÄŸlanamadÄ±");
+      this._showToast(err?.message || "Cüzdan bağlanamadı");
     } finally {
       this._busy = false;
     }
@@ -472,12 +472,12 @@ export class ProfileScene {
     try {
       const s = this.store.get() || {};
       const currentYton = Number(s.coins || 0);
-      const raw = window.prompt("KaÃ§ YTON dÃ¶nÃ¼ÅŸtÃ¼rmek istiyorsun?\n1 YTON = 0.05 TON", "100");
+      const raw = window.prompt("Kaç YTON dönüştürmek istiyorsun?\n1 YTON = 0.05 TON", "100");
       if (raw === null) return;
 
       const amountYton = Math.max(0, Number(raw));
       if (!amountYton || !Number.isFinite(amountYton)) {
-        this._showToast("GeÃ§ersiz miktar");
+        this._showToast("Geçersiz miktar");
         return;
       }
       if (amountYton > currentYton) {
@@ -499,10 +499,10 @@ export class ProfileScene {
 
       this._pushWalletLedger("convert", tonAmount, amountYton, `${moneyFmt(amountYton)} YTON -> ${moneyFmt(tonAmount, 2)} TON`);
       await this._insertWalletLedger("convert", tonAmount, amountYton, `${moneyFmt(amountYton)} YTON -> ${moneyFmt(tonAmount, 2)} TON`);
-      this._showToast(`${moneyFmt(amountYton)} YTON dÃ¶nÃ¼ÅŸtÃ¼rÃ¼ldÃ¼`);
+      this._showToast(`${moneyFmt(amountYton)} YTON dönüştürüldü`);
     } catch (err) {
       console.error("[ProfileScene] convert error:", err);
-      this._showToast(err?.message || "DÃ¶nÃ¼ÅŸtÃ¼rme baÅŸarÄ±sÄ±z");
+      this._showToast(err?.message || "Dönüştürme başarısız");
     } finally {
       this._busy = false;
     }
@@ -516,7 +516,7 @@ export class ProfileScene {
       const balance = Number(wallet.tonBalance || 0);
 
       const raw = window.prompt(
-        `KaÃ§ TON Ã§ekmek istiyorsun?
+        `Kaç TON çekmek istiyorsun?
 Mevcut TON: ${moneyFmt(balance, 2)}`,
         String(Number(balance || 0).toFixed(2))
       );
@@ -530,7 +530,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       const tonAmount = Math.max(0, parseFloat(normalizedRaw));
 
       if (!tonAmount || !Number.isFinite(tonAmount)) {
-        this._showToast("GeÃ§ersiz miktar");
+        this._showToast("Geçersiz miktar");
         return;
       }
 
@@ -541,7 +541,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
 
       const targetAddress = wallet.connected && wallet.address
         ? wallet.address
-        : window.prompt("Ã‡ekim yapÄ±lacak TON adresi:", "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        : window.prompt("Çekim yapılacak TON adresi:", "UQxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
       if (!targetAddress) return;
       const normalizedAddress = await this._validateTonWalletAddress(targetAddress);
 
@@ -561,7 +561,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
           ton_amount: Number(tonAmount.toFixed(6)),
           rate: 0.05,
           status: "pending",
-          note: "ProfileScene Ã§ekim talebi",
+          note: "ProfileScene çekim talebi",
         })
         .select()
         .single();
@@ -577,13 +577,13 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
         },
       });
 
-      this._pushWalletLedger("withdraw", tonAmount, ytonAmount, `Ã‡ekim talebi â€¢ ${String(normalizedAddress).slice(0, 12)}...`);
-      await this._insertWalletLedger("withdraw", tonAmount, ytonAmount, `Withdraw pending â€¢ ${String(normalizedAddress).slice(0, 12)}...`, data?.id || null);
+      this._pushWalletLedger("withdraw", tonAmount, ytonAmount, `Çekim talebi • ${String(normalizedAddress).slice(0, 12)}...`);
+      await this._insertWalletLedger("withdraw", tonAmount, ytonAmount, `Withdraw pending • ${String(normalizedAddress).slice(0, 12)}...`, data?.id || null);
       await this._loadInbox(true);
-      this._showToast(`${moneyFmt(tonAmount, 2)} TON Ã§ekim talebi oluÅŸturuldu`);
+      this._showToast(`${moneyFmt(tonAmount, 2)} TON çekim talebi oluşturuldu`);
     } catch (err) {
       console.error("[ProfileScene] withdraw error:", err);
-      this._showToast(err?.message || "Ã‡ekim talebi baÅŸarÄ±sÄ±z");
+      this._showToast(err?.message || "Çekim talebi başarısız");
     } finally {
       this._busy = false;
     }
@@ -666,12 +666,12 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     }
 
     if (this.hitEditAvatar && pointInRect(px, py, this.hitEditAvatar)) {
-      this._showToast("Avatar dÃ¼zenleme yakÄ±nda");
+      this._showToast("Avatar düzenleme yakında");
       return;
     }
 
     if (this.hitLeaderboard && pointInRect(px, py, this.hitLeaderboard)) {
-      this._showToast("Leaderboard yakÄ±nda");
+      this._showToast("Leaderboard yakında");
       return;
     }
   }
@@ -693,12 +693,12 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = "900 18px system-ui";
-    const topTitle = this._profileTab() === "wallet" ? "CÃ¼zdan" : this._profileTab() === "inbox" ? "Mesajlar" : "Profil";
+    const topTitle = this._profileTab() === "wallet" ? "Cüzdan" : this._profileTab() === "inbox" ? "Mesajlar" : "Profil";
     ctx.fillText(topTitle, x + 16, y + 33);
 
     const tabs = [
       { tab: "profile", label: "Profil" },
-      { tab: "wallet", label: "CÃ¼zdan" },
+      { tab: "wallet", label: "Cüzdan" },
       { tab: "inbox", label: "Mesaj" },
     ];
     this.hitTabs = [];
@@ -803,10 +803,10 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     this._drawTextLines(
       ctx,
       [
-        `Seviye ${Math.max(1, Number(p.level || 1))} â€¢ Clan ${clanName}`,
-        `Enerji ${Number(p.energy || 0)}/${Number(p.energyMax || 100)} â€¢ YTON ${moneyFmt(state.coins || 0)}`,
-        `Ä°ÅŸletme ${businessesOwned} â€¢ Envanter ${inventoryItems}`,
-        `PvP W/L ${wins}/${losses} â€¢ WinRate ${winRate}%`,
+        `Seviye ${Math.max(1, Number(p.level || 1))} • Clan ${clanName}`,
+        `Enerji ${Number(p.energy || 0)}/${Number(p.energyMax || 100)} • YTON ${moneyFmt(state.coins || 0)}`,
+        `İşletme ${businessesOwned} • Envanter ${inventoryItems}`,
+        `PvP W/L ${wins}/${losses} • WinRate ${winRate}%`,
       ],
       infoX,
       y + 56,
@@ -820,7 +820,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     const gap = 10;
     const smallCardH = 90;
     const titles = [
-      ["Ä°ÅŸletmeler", `${businessesOwned}`],
+      ["İşletmeler", `${businessesOwned}`],
       ["Envanter", `${moneyFmt(totalInventoryValue)}`],
       ["PvP", `${wins}/${losses}`],
     ];
@@ -857,8 +857,8 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 15px system-ui";
-      ctx.fillText("ğŸ“· Avatar", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + 25);
-      ctx.fillText("ğŸ† Liderlik", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + 25);
+      ctx.fillText("📷 Avatar", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + 25);
+      ctx.fillText("🏆 Liderlik", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + 25);
     } else {
       const cardW = Math.floor((w - 24) / 3);
       for (let i = 0; i < 3; i++) {
@@ -882,8 +882,8 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 17px system-ui";
-      ctx.fillText("ğŸ“· Avatar", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + 27);
-      ctx.fillText("ğŸ† Liderlik", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + 27);
+      ctx.fillText("📷 Avatar", this.hitEditAvatar.x + this.hitEditAvatar.w / 2, this.hitEditAvatar.y + 27);
+      ctx.fillText("🏆 Liderlik", this.hitLeaderboard.x + this.hitLeaderboard.w / 2, this.hitLeaderboard.y + 27);
     }
   }
 
@@ -905,17 +905,17 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = "900 18px system-ui";
-    ctx.fillText("CÃ¼zdan YÃ¶netimi", x + 16, y + 28);
+    ctx.fillText("Cüzdan Yönetimi", x + 16, y + 28);
 
     const addrText = wallet.connected
-      ? `${wallet.brand} â€¢ ${String(wallet.address || "").slice(0, isMobile ? 20 : 34)}`
-      : "HenÃ¼z cÃ¼zdan baÄŸlÄ± deÄŸil";
+      ? `${wallet.brand} • ${String(wallet.address || "").slice(0, isMobile ? 20 : 34)}`
+      : "Henüz cüzdan bağlı değil";
     this._drawTextLines(
       ctx,
       [
         addrText,
-        `YTON ${moneyFmt(currentYton)} â€¢ TON ${moneyFmt(wallet.tonBalance, 2)}`,
-        `Ã‡evrilebilir ${moneyFmt(availableTon, 2)} â€¢ Ã‡ekilen ${moneyFmt(wallet.totalWithdrawnTon, 2)}`,
+        `YTON ${moneyFmt(currentYton)} • TON ${moneyFmt(wallet.tonBalance, 2)}`,
+        `Çevrilebilir ${moneyFmt(availableTon, 2)} • Çekilen ${moneyFmt(wallet.totalWithdrawnTon, 2)}`,
       ],
       x + 16,
       y + 50,
@@ -931,7 +931,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "right";
       ctx.textBaseline = "alphabetic";
       ctx.font = `${isMobile ? 10 : 11}px system-ui`;
-      ctx.fillText("KaydÄ±r â†“", x + w - 16, y + 28);
+      ctx.fillText("Kaydır ↓", x + w - 16, y + 28);
     }
     const brandY = y + (isMobile ? 86 : 98);
     const gap = 8;
@@ -955,7 +955,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = "900 16px system-ui";
-      ctx.fillText("YTON â†’ TON DÃ¶nÃ¼ÅŸtÃ¼r", x + 16, boxY + 26);
+      ctx.fillText("YTON → TON Dönüştür", x + 16, boxY + 26);
       this._drawTextLines(
         ctx,
         [
@@ -974,7 +974,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 13px system-ui";
-      ctx.fillText("DÃ¶nÃ¼ÅŸtÃ¼r", convertRect.x + convertRect.w / 2, convertRect.y + 17);
+      ctx.fillText("Dönüştür", convertRect.x + convertRect.w / 2, convertRect.y + 17);
 
       const wy = boxY + cardH + 10;
       drawGlassPanel(ctx, x, wy, w, cardH, 20);
@@ -982,13 +982,13 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = "900 16px system-ui";
-      ctx.fillText("Ã‡ekim Talebi", x + 16, wy + 26);
+      ctx.fillText("Çekim Talebi", x + 16, wy + 26);
       this._drawTextLines(
         ctx,
         [
           "Min / Max limit yok",
           `TON Bakiye: ${moneyFmt(wallet.tonBalance, 2)}`,
-          wallet.connected ? "BaÄŸlÄ± adres kullanÄ±lacak" : "Adres prompt ile alÄ±nacak",
+          wallet.connected ? "Bağlı adres kullanılacak" : "Adres prompt ile alınacak",
           wallet.lastWithdrawStatus ? `Son durum: ${wallet.lastWithdrawStatus}` : "Son durum: -",
         ],
         x + 16,
@@ -1002,7 +1002,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 13px system-ui";
-      ctx.fillText("Ã‡ekim OluÅŸtur", withdrawRect.x + withdrawRect.w / 2, withdrawRect.y + 17);
+      ctx.fillText("Çekim Oluştur", withdrawRect.x + withdrawRect.w / 2, withdrawRect.y + 17);
 
       const ledgerY = wy + cardH + 10;
       drawGlassPanel(ctx, x, ledgerY, w, 210, 22);
@@ -1013,15 +1013,15 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.fillText("Muhasebe & Rapor", x + 16, ledgerY + 28);
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
-      ctx.fillText(`SatÄ±ÅŸ ${moneyFmt(soldValue)} â€¢ AlÄ±ÅŸ ${moneyFmt(boughtValue)} â€¢ KazanÃ§ ${moneyFmt(wonYton)}`, x + 16, ledgerY + 48);
-      ctx.fillText(`DÃ¶nÃ¼ÅŸÃ¼m ${moneyFmt(wallet.totalConvertedTon / 0.05)} YTON â€¢ Ã‡ekim ${moneyFmt(wallet.totalWithdrawnTon, 2)} TON`, x + 16, ledgerY + 66);
+      ctx.fillText(`Satış ${moneyFmt(soldValue)} • Alış ${moneyFmt(boughtValue)} • Kazanç ${moneyFmt(wonYton)}`, x + 16, ledgerY + 48);
+      ctx.fillText(`Dönüşüm ${moneyFmt(wallet.totalConvertedTon / 0.05)} YTON • Çekim ${moneyFmt(wallet.totalWithdrawnTon, 2)} TON`, x + 16, ledgerY + 66);
 
       const rows = Array.isArray(wallet.ledger) ? wallet.ledger.slice(0, 5) : [];
       const baseY = ledgerY + 90;
       if (!rows.length) {
         ctx.fillStyle = "rgba(255,255,255,0.56)";
         ctx.font = "12px system-ui";
-        ctx.fillText("HenÃ¼z kayÄ±t yok.", x + 16, baseY);
+        ctx.fillText("Henüz kayıt yok.", x + 16, baseY);
       } else {
         rows.forEach((row, idx) => {
           const ry = baseY + idx * 22;
@@ -1031,7 +1031,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
           const stamp = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
           ctx.fillStyle = "#fff";
           ctx.font = "10px system-ui";
-          ctx.fillText(`${stamp} â€¢ ${String(row.type).toUpperCase()} â€¢ ${row.note || ""}`, x + 18, ry);
+          ctx.fillText(`${stamp} • ${String(row.type).toUpperCase()} • ${row.note || ""}`, x + 18, ry);
         });
       }
     } else {
@@ -1043,7 +1043,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = "900 16px system-ui";
-      ctx.fillText("YTON â†’ TON DÃ¶nÃ¼ÅŸtÃ¼r", x + 16, boxY + 26);
+      ctx.fillText("YTON → TON Dönüştür", x + 16, boxY + 26);
       this._drawTextLines(
         ctx,
         [
@@ -1062,20 +1062,20 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 13px system-ui";
-      ctx.fillText("DÃ¶nÃ¼ÅŸtÃ¼r", convertRect.x + convertRect.w / 2, convertRect.y + 17);
+      ctx.fillText("Dönüştür", convertRect.x + convertRect.w / 2, convertRect.y + 17);
 
       drawGlassPanel(ctx, rightX, boxY, leftW, 146, 20);
       ctx.fillStyle = "#fff";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = "900 16px system-ui";
-      ctx.fillText("Ã‡ekim Talebi", rightX + 16, boxY + 26);
+      ctx.fillText("Çekim Talebi", rightX + 16, boxY + 26);
       this._drawTextLines(
         ctx,
         [
           "Min / Max limit yok",
           `TON Bakiye: ${moneyFmt(wallet.tonBalance, 2)}`,
-          wallet.connected ? "BaÄŸlÄ± adres kullanÄ±lacak" : "Adres prompt ile alÄ±nacak",
+          wallet.connected ? "Bağlı adres kullanılacak" : "Adres prompt ile alınacak",
           wallet.lastWithdrawStatus ? `Son durum: ${wallet.lastWithdrawStatus}` : "Son durum: -",
         ],
         rightX + 16,
@@ -1089,7 +1089,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 13px system-ui";
-      ctx.fillText("Ã‡ekim OluÅŸtur", withdrawRect.x + withdrawRect.w / 2, withdrawRect.y + 17);
+      ctx.fillText("Çekim Oluştur", withdrawRect.x + withdrawRect.w / 2, withdrawRect.y + 17);
 
       const ledgerY = boxY + 160;
       drawGlassPanel(ctx, x, ledgerY, w, 220, 22);
@@ -1100,15 +1100,15 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.fillText("Muhasebe & Rapor", x + 16, ledgerY + 28);
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`SatÄ±lan ÃœrÃ¼n: ${moneyFmt(soldValue)} YTON â€¢ AlÄ±nan ÃœrÃ¼n: ${moneyFmt(boughtValue)} YTON â€¢ KazanÄ±lan YTON: ${moneyFmt(wonYton)}`, x + 16, ledgerY + 48);
-      ctx.fillText(`DÃ¶nÃ¼ÅŸtÃ¼rÃ¼len YTON: ${moneyFmt(wallet.totalConvertedTon / 0.05)} â€¢ Ã‡ekilen TON: ${moneyFmt(wallet.totalWithdrawnTon, 2)}`, x + 16, ledgerY + 66);
+      ctx.fillText(`Satılan Ürün: ${moneyFmt(soldValue)} YTON • Alınan Ürün: ${moneyFmt(boughtValue)} YTON • Kazanılan YTON: ${moneyFmt(wonYton)}`, x + 16, ledgerY + 48);
+      ctx.fillText(`Dönüştürülen YTON: ${moneyFmt(wallet.totalConvertedTon / 0.05)} • Çekilen TON: ${moneyFmt(wallet.totalWithdrawnTon, 2)}`, x + 16, ledgerY + 66);
 
       const rows = Array.isArray(wallet.ledger) ? wallet.ledger.slice(0, 5) : [];
       const baseY = ledgerY + 90;
       if (!rows.length) {
         ctx.fillStyle = "rgba(255,255,255,0.56)";
         ctx.font = "12px system-ui";
-        ctx.fillText("HenÃ¼z kayÄ±t yok. CÃ¼zdan baÄŸla, dÃ¶nÃ¼ÅŸtÃ¼r veya Ã§ekim yapÄ±nca burada gÃ¶rÃ¼nÃ¼r.", x + 16, baseY);
+        ctx.fillText("Henüz kayıt yok. Cüzdan bağla, dönüştür veya çekim yapınca burada görünür.", x + 16, baseY);
       } else {
         rows.forEach((row, idx) => {
           const ry = baseY + idx * 24;
@@ -1118,7 +1118,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
           const stamp = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
           ctx.fillStyle = "#fff";
           ctx.font = "11px system-ui";
-          ctx.fillText(`${stamp} â€¢ ${String(row.type).toUpperCase()} â€¢ ${row.note || ""}`, x + 18, ry);
+          ctx.fillText(`${stamp} • ${String(row.type).toUpperCase()} • ${row.note || ""}`, x + 18, ry);
         });
       }
     }
@@ -1136,14 +1136,14 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
 
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.font = `${isMobile ? 11 : 12}px system-ui`;
-    ctx.fillText("Ã‡ekim taleplerinin durumu burada otomatik gÃ¶rÃ¼nÃ¼r.", x + 16, y + 48);
+    ctx.fillText("Çekim taleplerinin durumu burada otomatik görünür.", x + 16, y + 48);
 
     const top = y + 62;
     const usableH = h - 76;
     if (this._inboxLoading) {
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "13px system-ui";
-      ctx.fillText("Mesajlar yÃ¼kleniyor...", x + 16, top + 18);
+      ctx.fillText("Mesajlar yükleniyor...", x + 16, top + 18);
       return;
     }
 
@@ -1157,7 +1157,7 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
     if (!rows.length) {
       ctx.fillStyle = "rgba(255,255,255,0.60)";
       ctx.font = "13px system-ui";
-      ctx.fillText("HenÃ¼z mesaj yok. Ã‡ekim isteÄŸi verdiÄŸinde burada gÃ¶rÃ¼nÃ¼r.", x + 16, top + 18);
+      ctx.fillText("Henüz mesaj yok. Çekim isteği verdiğinde burada görünür.", x + 16, top + 18);
       return;
     }
 
@@ -1174,14 +1174,14 @@ Mevcut TON: ${moneyFmt(balance, 2)}`,
       ctx.fillStyle = "rgba(255,255,255,0.78)";
       ctx.font = `${isMobile ? 11 : 12}px system-ui`;
       const body = String(row.body || "");
-      const note = row.note ? ` â€¢ ${row.note}` : "";
+      const note = row.note ? ` • ${row.note}` : "";
       ctx.fillText((body + note).slice(0, isMobile ? 76 : 122), x + 24, ry + 42);
 
       const d = new Date(row.at || Date.now());
       const stamp = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
       ctx.fillStyle = "rgba(255,255,255,0.60)";
       ctx.font = `${isMobile ? 10 : 11}px system-ui`;
-      ctx.fillText(`${stamp} â€¢ ${String(row.status || "pending").toUpperCase()}`, x + 24, ry + rowH - 14);
+      ctx.fillText(`${stamp} • ${String(row.status || "pending").toUpperCase()}`, x + 24, ry + rowH - 14);
     });
   }
 
