@@ -1000,8 +1000,25 @@ scenes.register(
 );
 
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
-scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
+scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
 
+if (typeof window.PvpScene === "function") {
+  scenes.register(
+    "pvp",
+    new window.PvpScene({
+      store,
+      input,
+      assets,
+      scenes,
+      source: "menu",
+    })
+  );
+} else {
+  console.warn("[TonCrime] PvpScene bulunamadı, geçici fallback çalıştı.");
+  scenes.register("pvp", new PvpScenee({ store, input, assets, scenes }));
+}
+
+scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 
 scenes.register(
