@@ -1000,8 +1000,6 @@ scenes.register(
 );
 
 scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
-scenes.register("xxx", new StarsScene({ store, input, i18n, assets, scenes }));
-
 if (typeof window.PvpScene === "function") {
   scenes.register(
     "pvp",
@@ -1018,7 +1016,6 @@ if (typeof window.PvpScene === "function") {
   scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
 }
 
-scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 
 scenes.register(
