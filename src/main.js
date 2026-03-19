@@ -982,7 +982,7 @@ scenes.register("boot", new BootScene({ assets, i18n, scenes }));
 scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("missions", new MissionsScene({ store, input, assets, scenes }));
-scenes.register("trade", new TradeScene({ store, scenes, assets }));
+scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
 
 scenes.register(
   "coffeeshop",
