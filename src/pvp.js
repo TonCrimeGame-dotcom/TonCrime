@@ -433,8 +433,8 @@
         {
           id: "slotarena",
           title: "Slot Arena",
-          subtitle: "Sweet Bonanza PvP",
-          desc: "4x6 tumble slot PvP. 6+ aynı ikon patlar, combo devam eder, 4 bonus ile 10 free spin açılır.",
+          subtitle: "Slot Tadında PvP",
+          desc: "6x6 tumble slot PvP.",
           tags: ["Slot", "Tumble", "Bonus", "Çarpan", "PvP"],
           open: true,
           accent: "#ff5ea8",
