@@ -210,7 +210,6 @@ export function startChat(store) {
     const payload = {
       username: username(),
       text,
-      msg_type: "chat",
       player_meta: playerMeta(),
     };
 
