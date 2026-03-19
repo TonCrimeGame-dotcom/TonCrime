@@ -7,8 +7,6 @@
   const BONUS_TRIGGER = 4;
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
-  const WIN_CHANCE = 0.006;
-  const BONUS_WIN_SHARE = 0.006;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
@@ -17,7 +15,7 @@
     kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
     slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
     punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8 },
+    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 12 },
   };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
@@ -89,101 +87,10 @@
     };
   }
 
-  function shuffle(arr) {
-    const out = arr.slice();
-    for (let i = out.length - 1; i > 0; i--) {
-      const j = randInt(0, i);
-      [out[i], out[j]] = [out[j], out[i]];
-    }
-    return out;
-  }
-
-  function countsToBoard(counts) {
-    const pool = [];
-    for (const [type, count] of Object.entries(counts || {})) {
-      for (let i = 0; i < Number(count || 0); i++) {
-        pool.push(type);
-      }
-    }
-
-    while (pool.length < ROWS * COLS) {
-      pool.push(choice(PAY_SYMBOLS));
-    }
-
-    const shuffled = shuffle(pool).slice(0, ROWS * COLS);
-    const board = [];
-    let idx = 0;
-    for (let r = 0; r < ROWS; r++) {
-      const row = [];
-      for (let c = 0; c < COLS; c++) {
-        row.push(createCell(shuffled[idx++]));
-      }
-      board.push(row);
-    }
-    return board;
-  }
-
-  function buildLoseCounts(allowBonus = true) {
-    const counts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
-    let remaining = ROWS * COLS;
-
-    if (allowBonus) {
-      counts.bonus = randInt(0, Math.min(BONUS_TRIGGER - 1, 2));
-      remaining -= counts.bonus;
-    }
-
-    const pay = shuffle(PAY_SYMBOLS);
-    for (let i = 0; i < pay.length; i++) {
-      const type = pay[i];
-      const slotsLeft = pay.length - i - 1;
-      const minReserve = slotsLeft * 2;
-      const cap = Math.min(MIN_CLUSTER - 1, remaining - minReserve);
-      const minTake = slotsLeft === 0 ? remaining : 2;
-      const take = slotsLeft === 0 ? remaining : randInt(minTake, Math.max(minTake, cap));
-      counts[type] = take;
-      remaining -= take;
-    }
-
-    return counts;
-  }
-
-  function buildWinCounts(allowBonus = true, preferBonus = false) {
-    const counts = buildLoseCounts(allowBonus);
-
-    if (allowBonus && preferBonus) {
-      const extra = BONUS_TRIGGER - counts.bonus;
-      counts.bonus = BONUS_TRIGGER;
-      let budget = extra;
-      const pay = shuffle(PAY_SYMBOLS);
-      for (const type of pay) {
-        if (budget <= 0) break;
-        const take = Math.min(budget, Math.max(0, counts[type] - 1));
-        counts[type] -= take;
-        budget -= take;
-      }
-      return counts;
-    }
-
-    const target = choice(PAY_SYMBOLS);
-    const desired = MIN_CLUSTER;
-    const extra = Math.max(0, desired - counts[target]);
-    let budget = extra;
-    const pay = shuffle(PAY_SYMBOLS.filter((x) => x !== target));
-    for (const type of pay) {
-      if (budget <= 0) break;
-      const take = Math.min(budget, Math.max(0, counts[type] - 1));
-      counts[type] -= take;
-      budget -= take;
-    }
-    counts[target] += extra - budget;
-    return counts;
-  }
-
-  function makeBoard(forceWin = null, allowBonus = true) {
-    const wantWin = typeof forceWin === "boolean" ? forceWin : Math.random() < WIN_CHANCE;
-    const preferBonus = wantWin && allowBonus && Math.random() < BONUS_WIN_SHARE;
-    const counts = wantWin ? buildWinCounts(allowBonus, preferBonus) : buildLoseCounts(allowBonus);
-    return countsToBoard(counts);
+  function makeBoard() {
+    return Array.from({ length: ROWS }, () =>
+      Array.from({ length: COLS }, () => createCell(weightedSymbol(true)))
+    );
   }
 
   function cloneBoard(board) {
@@ -210,7 +117,7 @@
   }
 
   function getMultiplierDrop() {
-    const count = randInt(1, 2);
+    const count = randInt(1, 3);
     const out = [];
     for (let i = 0; i < count; i++) {
       const value = choice(BONUS_MULTI_VALUES);
@@ -233,26 +140,18 @@
     const hits = [];
     let damage = 0;
 
-    let bestType = null;
-    let bestCount = 0;
     for (const [type, count] of counts.entries()) {
-      if (count >= MIN_CLUSTER && count > bestCount) {
-        bestType = type;
-        bestCount = count;
-      }
-    }
-
-    if (bestType) {
-      const meta = ICONS[bestType];
-      const extra = bestCount - MIN_CLUSTER;
-      const hitDamage = meta.base * bestCount + extra * meta.base * 0.7;
+      if (count < MIN_CLUSTER) continue;
+      const meta = ICONS[type];
+      const extra = count - MIN_CLUSTER;
+      const hitDamage = meta.base * count + extra * meta.base * 0.7;
       damage += hitDamage;
-      hits.push({ type: bestType, count: bestCount, damage: hitDamage });
+      hits.push({ type, count, damage: hitDamage });
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const cell = board[r][c];
-          if (cell && cell.type === bestType) remove.add(`${r}:${c}`);
+          if (cell && cell.type === type) remove.add(`${r}:${c}`);
         }
       }
     }
@@ -280,35 +179,13 @@
     return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
 
-  function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
+  function tumble(board, removeSet, allowBonus = true) {
     const next = cloneBoard(board);
     const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
 
     for (const key of removeSet) {
       const [r, c] = key.split(":").map(Number);
       if (next[r] && next[r][c]) next[r][c] = null;
-    }
-
-    const currentCounts = { weed: 0, brain: 0, drink: 0, kick: 0, slap: 0, punch: 0, bonus: 0 };
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = next[r][c];
-        if (cell) currentCounts[cell.type] = (currentCounts[cell.type] || 0) + 1;
-      }
-    }
-
-    function safeRefillSymbol() {
-      const pool = shuffle(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
-      for (const id of pool) {
-        const cap = id === "bonus" ? BONUS_TRIGGER - 1 : MIN_CLUSTER - 1;
-        if ((currentCounts[id] || 0) < cap) {
-          currentCounts[id] = (currentCounts[id] || 0) + 1;
-          return id;
-        }
-      }
-      const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
-      currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
-      return fallback;
     }
 
     for (let c = 0; c < COLS; c++) {
@@ -329,8 +206,7 @@
 
       let newCount = 0;
       while (wr >= 0) {
-        const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
-        next[wr][c] = createCell(newType);
+        next[wr][c] = createCell(weightedSymbol(allowBonus));
         newCount += 1;
         dropMap[wr][c] = newCount + wr + 1;
         wr -= 1;
@@ -789,7 +665,7 @@
 
     _setupState() {
       this._state = {
-        board: makeBoard(false, false),
+        board: makeBoard(),
         meHp: START_HP,
         enemyHp: START_HP,
         meSpins: BASE_SPINS,
@@ -801,7 +677,7 @@
         bonusOwner: null,
         bonusSpinsLeft: 0,
         bonusMultiplierBank: 0,
-        displayedMultiplier: 1,
+        displayedMultiplier: 0,
         multipliers: [],
         tumbleIndex: 0,
         info: "Hazır",
@@ -862,17 +738,7 @@
         this.stop();
         try {
           const wrap = document.getElementById("pvpWrap");
-          if (wrap) {
-            wrap.classList.remove("open");
-            wrap.style.display = "none";
-          }
-          const arena = document.getElementById("arena");
-          if (arena) arena.innerHTML = "";
-          if (window.tcStore?.get && window.tcStore?.set) {
-            const st = window.tcStore.get() || {};
-            window.tcStore.set({ pvp: { ...(st.pvp || {}), selectedMode: null } });
-          }
-          window.dispatchEvent(new Event("tc:openPvp"));
+          if (wrap) wrap.classList.remove("open");
         } catch (_) {}
       };
 
@@ -943,7 +809,9 @@
       const s = this._state;
       const mePct = clamp(s.meHp / START_HP, 0, 1) * 100;
       const enemyPct = clamp(s.enemyHp / START_HP, 0, 1) * 100;
-      const countdown = s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0
+      const countdown = s.turn === "me" && !s.spinning && !s.finished && !s.inBonus && s.decisionEndsAt > 0
+        ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000))
+        : s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0
         ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000))
         : 0;
 
@@ -963,7 +831,7 @@
       this._els.meSpins.textContent = meSpinTxt;
       this._els.enemySpins.textContent = enemySpinTxt;
       this._els.turn.textContent = s.inBonus
-        ? `${s.turn === "me" ? "SEN" : "RAKİP"} BONUS x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
+        ? `${s.turn === "me" ? "SEN" : "RAKİP"} BONUS x${Math.max(0, Math.round(s.displayedMultiplier || 0))}`
         : (s.turn === "me" ? "SEN" : "RAKİP");
       this._els.sub.textContent = s.info;
 
@@ -976,7 +844,7 @@
         ? "RAKİP DÜŞÜNÜYOR"
         : "SONUÇ";
       const chipTumble = s.inBonus
-        ? `ÇARPAN x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
+        ? `ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
         : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
 
       if (this._els.chipBase) this._els.chipBase.textContent = chipBase;
@@ -1046,25 +914,7 @@
       this._updateHud();
       this._render();
 
-      const playedSpins = actor === "me"
-        ? (BASE_SPINS - s.meSpins)
-        : (BASE_SPINS - s.enemySpins);
-
-      const isBonusTurn = s.inBonus && s.bonusOwner === actor;
-      const currentWinChance = isBonusTurn
-        ? 0.05
-        : playedSpins < 8
-        ? 0
-        : playedSpins < 14
-        ? 0.002
-        : WIN_CHANCE;
-
-      const wantWin = Math.random() < currentWinChance;
-      const allowBonusOnSpin = isBonusTurn
-        ? false
-        : playedSpins >= 12 && Math.random() < 0.06;
-
-      s.board = makeBoard(wantWin, allowBonusOnSpin);
+      s.board = makeBoard();
       await this._spinAnimation();
 
       if (s.inBonus && s.bonusOwner === actor) {
@@ -1078,11 +928,11 @@
       await this._resolveTumbles(actor);
 
       if (s.inBonus && s.bonusOwner === actor && s.bonusSpinsLeft <= 0) {
-        s.info = `BONUS BİTTİ • x${Math.max(1, Math.round(s.displayedMultiplier || 1))} sıfırlandı`;
+        s.info = `BONUS BİTTİ • x${Math.max(1, s.bonusMultiplierBank)} sıfırlandı`;
         s.inBonus = false;
         s.bonusOwner = null;
         s.bonusMultiplierBank = 0;
-        s.displayedMultiplier = 1;
+        s.displayedMultiplier = 0;
         s.multipliers = [];
         await new Promise((r) => setTimeout(r, 650));
       }
@@ -1102,14 +952,14 @@
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 1320;
+      const duration = 720;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
           const ease = 1 - Math.pow(1 - t, 3);
-          s.spinOffset = (1 - ease) * 92;
+          s.spinOffset = (1 - ease) * 38;
           this._render();
           if (t >= 1) {
             s.spinOffset = 0;
@@ -1129,15 +979,14 @@
       s.dropProgress = 0;
 
       const start = performance.now();
-      const duration = 900;
+      const duration = 360;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
-          const easeOut = 1 - Math.pow(1 - t, 3.3);
-          const overshoot = Math.sin(Math.min(1, t) * Math.PI) * 0.11 * (1 - t);
-          s.dropProgress = clamp(easeOut + overshoot, 0, 1.08);
+          const ease = 1 - Math.pow(1 - t, 3);
+          s.dropProgress = ease;
           this._render();
           if (t >= 1) {
             s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
@@ -1165,10 +1014,10 @@
         chain += 1;
         s.tumbleIndex = chain;
         s.markedRemove = new Set(res.remove);
-        s.flashUntil = Date.now() + 340;
+        s.flashUntil = Date.now() + 300;
         s.info = res.damage > 0 ? `${chain}. tumble • 8+ ikon patladı` : `${chain}. tumble • bonus kontrol`;
         this._render();
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((r) => setTimeout(r, 420));
 
         if (res.damage > 0) {
           let hitDamage = res.damage;
@@ -1177,9 +1026,9 @@
             s.multipliers = drops;
             const addMulti = drops.reduce((sum, d) => sum + d.value, 0);
             s.bonusMultiplierBank += addMulti;
-            s.displayedMultiplier = 1 + s.bonusMultiplierBank;
-            hitDamage *= 1 + s.bonusMultiplierBank * 0.08;
-            s.info = `${chain}. tumble • x${Math.max(1, Math.round(s.displayedMultiplier))} çarpan`;
+            s.displayedMultiplier = s.bonusMultiplierBank;
+            hitDamage *= Math.max(1, s.bonusMultiplierBank);
+            s.info = `${chain}. tumble • x${s.bonusMultiplierBank} çarpan`;
           } else {
             s.info = `${chain}. tumble`;
           }
@@ -1192,23 +1041,17 @@
         if (res.bonusTriggered) {
           s.inBonus = true;
           s.bonusOwner = actor;
-          s.bonusSpinsLeft = BONUS_SPINS;
+          s.bonusSpinsLeft += BONUS_SPINS;
           s.bonusMultiplierBank = 0;
-          s.displayedMultiplier = 1;
+          s.displayedMultiplier = 0;
           s.multipliers = [];
           bonusJustStarted = true;
-          this._toast(`⭐ BONUS AÇILDI! +${BONUS_SPINS} free spin`, 1400);
-          s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus kazandı`;
+          this._toast(`⭐ BONUS AÇILDI! +${BONUS_SPINS} spin`, 1400);
+          s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus aldı`;
         }
 
-        await new Promise((r) => setTimeout(r, 220));
-        const forceLoseRefill = !(s.inBonus && s.bonusOwner === actor);
-        const tum = tumble(
-          s.board,
-          res.remove,
-          !(s.inBonus && s.bonusOwner === actor),
-          forceLoseRefill
-        );
+        await new Promise((r) => setTimeout(r, 180));
+        const tum = tumble(s.board, res.remove, true);
         s.markedRemove = new Set();
         s.board = tum.board;
         await this._animateDrop(tum.dropMap);
@@ -1405,10 +1248,9 @@
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
+          const px = x + c * (cellW + gap);
           const extraRows = s.dropMap?.[r]?.[c] || 0;
-          const slidePx = extraRows > 0 ? (1 - Math.min(1, s.dropProgress)) * (c % 2 === 0 ? -1 : 1) * Math.min(14, 4 + extraRows * 2.4) : 0;
-          const px = x + c * (cellW + gap) + slidePx;
-          const dropPx = extraRows > 0 ? (1 - Math.min(1, s.dropProgress)) * extraRows * (cellH + gap) : 0;
+          const dropPx = extraRows > 0 ? (1 - s.dropProgress) * extraRows * (cellH + gap) : 0;
           const py = y + r * (cellH + gap) - dropPx + spinOffset;
           const cell = board[r][c];
           const meta = ICONS[cell?.type] || ICONS.punch;
@@ -1421,9 +1263,8 @@
           fillRoundRect(ctx, px, py, cellW, cellH, 18, panel);
           strokeRoundRect(ctx, px, py, cellW, cellH, 18, marked ? "rgba(255,220,120,0.88)" : "rgba(255,255,255,0.11)", marked ? 2.1 : 1.2);
 
-          const glow = ctx.createRadialGradient(px + cellW / 2, py + cellH / 2, 6, px + cellW / 2, py + cellH / 2, Math.max(cellW, cellH) * 0.58);
-          glow.addColorStop(0, marked ? `rgba(255,245,185,${0.88 + flashPulse * 0.12})` : meta.color + "99");
-          glow.addColorStop(0.52, marked ? `rgba(255,208,94,${0.36 + flashPulse * 0.18})` : meta.color + "36");
+          const glow = ctx.createRadialGradient(px + cellW / 2, py + cellH / 2, 6, px + cellW / 2, py + cellH / 2, Math.max(cellW, cellH) * 0.52);
+          glow.addColorStop(0, marked ? "rgba(255,235,150,0.95)" : meta.color + "99");
           glow.addColorStop(1, "rgba(0,0,0,0)");
           ctx.fillStyle = glow;
           ctx.beginPath();
@@ -1431,11 +1272,8 @@
           ctx.fill();
 
           if (marked) {
-            ctx.fillStyle = `rgba(255,255,255,${0.14 + flashPulse * 0.24})`;
+            ctx.fillStyle = `rgba(255,255,255,${0.10 + flashPulse * 0.18})`;
             fillRoundRect(ctx, px + 3, py + 3, cellW - 6, cellH - 6, 15, ctx.fillStyle);
-            ctx.strokeStyle = `rgba(255,232,150,${0.64 + flashPulse * 0.26})`;
-            ctx.lineWidth = 2.4;
-            strokeRoundRect(ctx, px + 2, py + 2, cellW - 4, cellH - 4, 16, ctx.strokeStyle, ctx.lineWidth);
           }
 
           ctx.textAlign = "center";
@@ -1474,6 +1312,34 @@
         ctx.fillText(`x${m.value}`, 0, 1);
         ctx.restore();
       }
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    },
+
+    _drawHudInsideStage(ctx, x, y, w) {
+      const s = this._state;
+      const infoY = y + 18;
+      const countdown = s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0 ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000)) : 0;
+
+      const chip1 = s.inBonus
+        ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
+        : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
+      const chip2 = s.inBonus
+        ? `TOPLAM ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
+        : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
+      const chip3 = s.turn === "me" && !s.spinning && !s.finished ? `SPIN SÜRESİ ${countdown}` : (s.turn === "enemy" ? "RAKİP DÜŞÜNÜYOR" : "SONUÇ");
+
+      fillRoundRect(ctx, x, infoY, 116, 26, 13, "rgba(0,0,0,0.34)");
+      fillRoundRect(ctx, x + w - 166, infoY, 166, 26, 13, "rgba(0,0,0,0.34)");
+      fillRoundRect(ctx, x + (w - 128) / 2, infoY, 128, 26, 13, "rgba(0,0,0,0.34)");
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "800 12px system-ui, Arial";
+      ctx.textBaseline = "middle";
+      ctx.fillText(chip1, x + 12, infoY + 13);
+      ctx.textAlign = "center";
+      ctx.fillText(chip3, x + w / 2, infoY + 13);
+      ctx.textAlign = "right";
+      ctx.fillText(chip2, x + w - 12, infoY + 13);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
     },
