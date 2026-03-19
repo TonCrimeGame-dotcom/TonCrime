@@ -1,16 +1,14 @@
 (function () {
   const COLS = 6;
   const ROWS = 6;
-  const START_HP = 10000;
+  const START_HP = 1000;
   const BASE_SPINS = 25;
   const BONUS_SPINS = 10;
   const BONUS_TRIGGER = 4;
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
-  const WIN_CHANCE = 0.14;
-  const BONUS_WIN_SHARE = 0.18;
-  const REFILL_TUMBLE_CHANCE = 0.20;
-  const BONUS_TRIGGER_CHANCE = 0.08;
+  const WIN_CHANCE = 0.006;
+  const BONUS_WIN_SHARE = 0.006;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
@@ -90,91 +88,6 @@
       type: symbolId,
     };
   }
-
-  function isHealSymbol(type) {
-    return type === "weed" || type === "drink";
-  }
-
-  function formatAmount(n) {
-    return Math.max(0, Math.round(Number(n || 0)));
-  }
-
-  function audioCtxSafe() {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return null;
-    if (!window.__tcSlotAudioCtx) {
-      try {
-        window.__tcSlotAudioCtx = new Ctx();
-      } catch (_) {
-        return null;
-      }
-    }
-    const ctx = window.__tcSlotAudioCtx;
-    if (ctx?.state === "suspended") {
-      ctx.resume().catch(() => {});
-    }
-    return ctx;
-  }
-
-  function playTone(freq = 440, duration = 0.08, type = "sine", volume = 0.03, when = 0) {
-    const ctx = audioCtxSafe();
-    if (!ctx) return;
-    const now = ctx.currentTime + when;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(volume, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + duration + 0.02);
-  }
-
-  function playNoiseBurst(duration = 0.12, volume = 0.035, when = 0) {
-    const ctx = audioCtxSafe();
-    if (!ctx) return;
-    const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * duration)), ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (data.length * 0.2));
-    }
-    const src = ctx.createBufferSource();
-    const filter = ctx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.value = 900;
-    const gain = ctx.createGain();
-    const now = ctx.currentTime + when;
-    gain.gain.setValueAtTime(volume, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    src.buffer = buffer;
-    src.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    src.start(now);
-    src.stop(now + duration + 0.02);
-  }
-
-  function playSlotSpinSound() {
-    const step = 0.055;
-    [520, 600, 680, 760, 840, 920].forEach((freq, i) => {
-      playTone(freq, 0.045, "square", 0.018, i * step);
-    });
-  }
-
-  function playCasinoExplodeSound() {
-    playNoiseBurst(0.11, 0.04, 0);
-    playTone(160, 0.10, "sawtooth", 0.03, 0);
-    playTone(320, 0.09, "triangle", 0.018, 0.02);
-  }
-
-  function playHealSound() {
-    playTone(480, 0.08, "triangle", 0.02, 0);
-    playTone(640, 0.10, "triangle", 0.02, 0.05);
-  }
-
 
   function shuffle(arr) {
     const out = arr.slice();
@@ -267,17 +180,10 @@
   }
 
   function makeBoard(forceWin = null, allowBonus = true) {
-    const roll = Math.random();
-    const wantWin = typeof forceWin === "boolean"
-      ? forceWin
-      : roll < WIN_CHANCE;
-
-    if (!wantWin) {
-      return countsToBoard(buildLoseCounts(allowBonus));
-    }
-
-    const preferBonus = allowBonus && Math.random() < BONUS_WIN_SHARE;
-    return countsToBoard(buildWinCounts(allowBonus, preferBonus));
+    const wantWin = typeof forceWin === "boolean" ? forceWin : Math.random() < WIN_CHANCE;
+    const preferBonus = wantWin && allowBonus && Math.random() < BONUS_WIN_SHARE;
+    const counts = wantWin ? buildWinCounts(allowBonus, preferBonus) : buildLoseCounts(allowBonus);
+    return countsToBoard(counts);
   }
 
   function cloneBoard(board) {
@@ -326,37 +232,27 @@
     const remove = new Set();
     const hits = [];
     let damage = 0;
-    let heal = 0;
 
-    const winners = [];
+    let bestType = null;
+    let bestCount = 0;
     for (const [type, count] of counts.entries()) {
-      if (count >= MIN_CLUSTER) winners.push({ type, count });
+      if (count >= MIN_CLUSTER && count > bestCount) {
+        bestType = type;
+        bestCount = count;
+      }
     }
 
-    winners.sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return Number(ICONS[b.type]?.base || 0) - Number(ICONS[a.type]?.base || 0);
-    });
-
-    const capped = winners.slice(0, inBonus ? 2 : 1);
-
-    for (const win of capped) {
-      const meta = ICONS[win.type];
-      const extra = win.count - MIN_CLUSTER;
-      const amount = meta.base * win.count + extra * meta.base * 0.7;
-
-      if (isHealSymbol(win.type)) {
-        heal += amount;
-      } else {
-        damage += amount;
-      }
-
-      hits.push({ type: win.type, count: win.count, damage: amount, heal: isHealSymbol(win.type) });
+    if (bestType) {
+      const meta = ICONS[bestType];
+      const extra = bestCount - MIN_CLUSTER;
+      const hitDamage = meta.base * bestCount + extra * meta.base * 0.7;
+      damage += hitDamage;
+      hits.push({ type: bestType, count: bestCount, damage: hitDamage });
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const cell = board[r][c];
-          if (cell && cell.type === win.type) remove.add(`${r}:${c}`);
+          if (cell && cell.type === bestType) remove.add(`${r}:${c}`);
         }
       }
     }
@@ -381,18 +277,10 @@
       }
     }
 
-    return {
-      hits,
-      damage,
-      heal,
-      remove,
-      bonusCount,
-      bonusTriggered,
-      hasAction: remove.size > 0,
-    };
+    return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
 
-  function tumble(board, removeSet, allowBonus = true, forceLoseRefill = false) {
+  function tumble(board, removeSet, allowBonus = true, forceLoseRefill = true) {
     const next = cloneBoard(board);
     const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
 
@@ -418,25 +306,9 @@
           return id;
         }
       }
-      const fallback = choice(PAY_SYMBOLS);
+      const fallback = choice(allowBonus ? ALL_SYMBOLS : PAY_SYMBOLS);
       currentCounts[fallback] = (currentCounts[fallback] || 0) + 1;
       return fallback;
-    }
-
-    function expressiveRefillSymbol() {
-      if (forceLoseRefill || Math.random() > REFILL_TUMBLE_CHANCE) {
-        return safeRefillSymbol();
-      }
-
-      if (allowBonus && Math.random() < BONUS_TRIGGER_CHANCE) {
-        currentCounts.bonus = (currentCounts.bonus || 0) + 1;
-        return "bonus";
-      }
-
-      const weighted = shuffle(PAY_SYMBOLS);
-      const pick = weighted[0];
-      currentCounts[pick] = (currentCounts[pick] || 0) + 1;
-      return pick;
     }
 
     for (let c = 0; c < COLS; c++) {
@@ -457,7 +329,7 @@
 
       let newCount = 0;
       while (wr >= 0) {
-        const newType = expressiveRefillSymbol();
+        const newType = forceLoseRefill ? safeRefillSymbol() : weightedSymbol(allowBonus);
         next[wr][c] = createCell(newType);
         newCount += 1;
         dropMap[wr][c] = newCount + wr + 1;
@@ -792,7 +664,7 @@
 
           <div class="tc-cage-title-wrap tc-crush-title-wrap">
             <div class="tc-cage-neon tc-crush-neon">SLOT ARENA</div>
-            <div class="tc-cage-sub tc-crush-sub" id="tcSlotSub">Sweet style slot PvP</div>
+            <div class="tc-cage-sub tc-crush-sub" id="tcSlotSub">6x6 tumble PvP • 4 BONUS ile free spin • 3 sn karar süresi</div>
           </div>
         </div>
 
@@ -821,14 +693,14 @@
 
         <div class="tc-slot-footer">
           <div class="tc-slot-meta" id="tcSlotMetaWrap">
-            <div class="tc-slot-meta-chip" id="tcSlotChipBase"></div>
-            <div class="tc-slot-meta-chip" id="tcSlotChipTimer"></div>
-            <div class="tc-slot-meta-chip" id="tcSlotChipTumble">SON SPIN 0</div>
+            <div class="tc-slot-meta-chip" id="tcSlotChipBase">BASE 25</div>
+            <div class="tc-slot-meta-chip" id="tcSlotChipTimer">SPIN SÜRESİ 3</div>
+            <div class="tc-slot-meta-chip" id="tcSlotChipTumble">TUMBLE 0</div>
           </div>
           <button class="tc-slot-spinbtn" id="tcSlotSpinBtn" type="button">SPIN BAŞLAT</button>
         </div>
 
-        <div class="tc-cage-rule tc-crush-rule">8+ aynı ikon anywhere = patlar • 4+ BONUS = 10 free spin</div>
+        <div class="tc-cage-rule tc-crush-rule">8+ aynı ikon anywhere = patlar • 4+ BONUS = 10 free spin • Spin tuşu için 3 sn var</div>
       </div>
     `;
   }
@@ -937,9 +809,6 @@
         flashUntil: 0,
         shakeUntil: 0,
         spinOffset: 0,
-        spinDropProgress: 1,
-        lastSpinImpact: 0,
-        lastSpinKind: "damage",
         dropMap: Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0)),
         dropProgress: 1,
         markedRemove: new Set(),
@@ -1098,21 +967,20 @@
         : (s.turn === "me" ? "SEN" : "RAKİP");
       this._els.sub.textContent = s.info;
 
-      const chipBase = "";
+      const chipBase = s.inBonus
+        ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
+        : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
       const chipTimer = s.turn === "me" && !s.spinning && !s.finished
         ? `SPIN SÜRESİ ${countdown}`
-        : "";
-      const spinWord = s.lastSpinKind === "heal" ? "CAN" : "HASAR";
-      const chipTumble = `SON SPIN ${formatAmount(s.lastSpinImpact)} ${spinWord}`;
+        : s.turn === "enemy" && !s.finished
+        ? "RAKİP DÜŞÜNÜYOR"
+        : "SONUÇ";
+      const chipTumble = s.inBonus
+        ? `ÇARPAN x${Math.max(1, Math.round(s.displayedMultiplier || 1))}`
+        : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
 
-      if (this._els.chipBase) {
-        this._els.chipBase.textContent = chipBase;
-        this._els.chipBase.style.display = chipBase ? "flex" : "none";
-      }
-      if (this._els.chipTimer) {
-        this._els.chipTimer.textContent = chipTimer;
-        this._els.chipTimer.style.display = chipTimer ? "flex" : "none";
-      }
+      if (this._els.chipBase) this._els.chipBase.textContent = chipBase;
+      if (this._els.chipTimer) this._els.chipTimer.textContent = chipTimer;
       if (this._els.chipTumble) this._els.chipTumble.textContent = chipTumble;
 
       if (this._els.spinBtn) {
@@ -1144,7 +1012,6 @@
         }, PLAYER_DECISION_MS + 40);
       } else {
         s.decisionEndsAt = 0;
-        s.info = `${this._opponent.username || "Rakip"} bulundu`;
         this._queueAutoTurn(900);
       }
     },
@@ -1175,8 +1042,6 @@
       s.spinning = true;
       s.tumbleIndex = 0;
       s.markedRemove = new Set();
-      s.lastSpinImpact = 0;
-      s.lastSpinKind = "damage";
       s.info = actor === "me" ? "Spin atılıyor..." : `${this._opponent.username || "Rakip"} spin atıyor...`;
       this._updateHud();
       this._render();
@@ -1187,20 +1052,19 @@
 
       const isBonusTurn = s.inBonus && s.bonusOwner === actor;
       const currentWinChance = isBonusTurn
-        ? 0.34
-        : playedSpins < 5
-        ? 0.10
-        : playedSpins < 12
-        ? 0.14
-        : 0.18;
+        ? 0.05
+        : playedSpins < 8
+        ? 0
+        : playedSpins < 14
+        ? 0.002
+        : WIN_CHANCE;
 
       const wantWin = Math.random() < currentWinChance;
       const allowBonusOnSpin = isBonusTurn
         ? false
-        : playedSpins >= 6 && Math.random() < 0.12;
+        : playedSpins >= 12 && Math.random() < 0.06;
 
       s.board = makeBoard(wantWin, allowBonusOnSpin);
-      playSlotSpinSound();
       await this._spinAnimation();
 
       if (s.inBonus && s.bonusOwner === actor) {
@@ -1238,18 +1102,17 @@
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 920;
-      s.spinDropProgress = 0;
+      const duration = 1320;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
-          const ease = 1 - Math.pow(1 - t, 3.4);
-          s.spinDropProgress = ease;
+          const ease = 1 - Math.pow(1 - t, 3);
+          s.spinOffset = (1 - ease) * 92;
           this._render();
           if (t >= 1) {
-            s.spinDropProgress = 1;
+            s.spinOffset = 0;
             this._render();
             resolve();
             return;
@@ -1293,7 +1156,6 @@
       const s = this._state;
       let chain = 0;
       let totalDamage = 0;
-      let totalHeal = 0;
       let bonusJustStarted = false;
 
       while (true) {
@@ -1304,45 +1166,27 @@
         s.tumbleIndex = chain;
         s.markedRemove = new Set(res.remove);
         s.flashUntil = Date.now() + 340;
-        s.info = res.damage > 0 || res.heal > 0 ? `${chain}. patlama` : `${chain}. bonus kontrol`;
+        s.info = res.damage > 0 ? `${chain}. tumble • 8+ ikon patladı` : `${chain}. tumble • bonus kontrol`;
         this._render();
-        await new Promise((r) => setTimeout(r, 420));
+        await new Promise((r) => setTimeout(r, 700));
 
-        if (res.damage > 0 || res.heal > 0) {
+        if (res.damage > 0) {
           let hitDamage = res.damage;
-          let hitHeal = res.heal;
-
           if (s.inBonus && s.bonusOwner === actor) {
             const drops = getMultiplierDrop();
             s.multipliers = drops;
             const addMulti = drops.reduce((sum, d) => sum + d.value, 0);
             s.bonusMultiplierBank += addMulti;
             s.displayedMultiplier = 1 + s.bonusMultiplierBank;
-            const mult = 1 + s.bonusMultiplierBank * 0.08;
-            hitDamage *= mult;
-            hitHeal *= mult;
-            s.info = `${chain}. patlama • x${Math.max(1, Math.round(s.displayedMultiplier))} çarpan`;
+            hitDamage *= 1 + s.bonusMultiplierBank * 0.08;
+            s.info = `${chain}. tumble • x${Math.max(1, Math.round(s.displayedMultiplier))} çarpan`;
           } else {
-            s.info = `${chain}. patlama`;
+            s.info = `${chain}. tumble`;
           }
-
-          if (hitDamage > 0) {
-            totalDamage += hitDamage;
-            this._applyDelta(actor === "me" ? "enemy" : "me", hitDamage, "damage");
-          }
-          if (hitHeal > 0) {
-            totalHeal += hitHeal;
-            this._applyDelta(actor, hitHeal, "heal");
-          }
-
+          totalDamage += hitDamage;
+          this._applyDamage(actor === "me" ? "enemy" : "me", hitDamage);
           this._spawnHitFx(res.hits, actor === "me");
-          if (hitDamage > 0 && hitHeal > 0) {
-            this._toast(`${this._hitSummary(res.hits)} • ${Math.round(hitDamage)} hasar + ${Math.round(hitHeal)} can`, 950);
-          } else if (hitDamage > 0) {
-            this._toast(`${this._hitSummary(res.hits)} • ${Math.round(hitDamage)} hasar`, 900);
-          } else {
-            this._toast(`${this._hitSummary(res.hits)} • ${Math.round(hitHeal)} can`, 900);
-          }
+          this._toast(`${this._hitSummary(res.hits)} • ${Math.round(hitDamage)} hasar`, 900);
         }
 
         if (res.bonusTriggered) {
@@ -1357,38 +1201,31 @@
           s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus kazandı`;
         }
 
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 220));
+        const forceLoseRefill = !(s.inBonus && s.bonusOwner === actor);
         const tum = tumble(
           s.board,
           res.remove,
           !(s.inBonus && s.bonusOwner === actor),
-          false
+          forceLoseRefill
         );
         s.markedRemove = new Set();
         s.board = tum.board;
         await this._animateDrop(tum.dropMap);
-        await new Promise((r) => setTimeout(r, 90));
+        await new Promise((r) => setTimeout(r, 120));
         if (this._checkFinish()) return;
       }
 
-      if (totalDamage <= 0 && totalHeal <= 0 && !bonusJustStarted) {
+      if (totalDamage <= 0 && !bonusJustStarted) {
         s.info = s.turn === "me" ? "Boş spin" : "Rakip boş spin";
-        s.lastSpinImpact = 0;
-        s.lastSpinKind = "damage";
         this._toast("Kazanç yok", 700);
-      } else if (totalHeal > totalDamage) {
-        s.lastSpinImpact = totalHeal;
-        s.lastSpinKind = "heal";
-      } else {
-        s.lastSpinImpact = totalDamage;
-        s.lastSpinKind = "damage";
       }
       s.markedRemove = new Set();
     },
 
     _hitSummary(hits) {
       if (!hits || !hits.length) return "Kazanç";
-      return hits.slice(0, 2).map((h) => `${ICONS[h.type].label} x${h.count}${h.heal ? " ♥" : ""}`).join(" + ");
+      return hits.slice(0, 2).map((h) => `${ICONS[h.type].label} x${h.count}`).join(" + ");
     },
 
     _spawnHitFx(hits, fromMe) {
@@ -1408,17 +1245,10 @@
       this._state.shakeUntil = Date.now() + 180;
     },
 
-    _applyDelta(target, amount, kind = "damage") {
+    _applyDamage(target, amount) {
       if (!this._state || amount <= 0) return;
-      if (kind === "heal") {
-        if (target === "enemy") this._state.enemyHp = clamp(this._state.enemyHp + amount, 0, START_HP);
-        else this._state.meHp = clamp(this._state.meHp + amount, 0, START_HP);
-        playHealSound();
-      } else {
-        if (target === "enemy") this._state.enemyHp = clamp(this._state.enemyHp - amount, 0, START_HP);
-        else this._state.meHp = clamp(this._state.meHp - amount, 0, START_HP);
-        playCasinoExplodeSound();
-      }
+      if (target === "enemy") this._state.enemyHp = clamp(this._state.enemyHp - amount, 0, START_HP);
+      else this._state.meHp = clamp(this._state.meHp - amount, 0, START_HP);
       this._updateHud();
     },
 
@@ -1438,7 +1268,7 @@
       }
 
       s.turn = s.turn === "me" ? "enemy" : "me";
-      s.info = s.turn === "me" ? "Sıran sende • 3 sn içinde spin başlat" : `${this._opponent.username || "Rakip"} bulundu`;
+      s.info = s.turn === "me" ? "Sıran sende • 3 sn içinde spin başlat" : `${this._opponent.username || "Rakip"} sırada`;
       this._updateHud();
       this._render();
       this._checkFinish();
@@ -1484,7 +1314,6 @@
     _recordResult(win) {
       const store = window.tcStore;
       const now = Date.now();
-      const REWARD_COINS = 56;
       const opponent = this._opponent?.username || "Rakip";
       const resultItem = {
         id: `pvp_${now}`,
@@ -1499,7 +1328,6 @@
       if (store?.get && store?.set) {
         const state = store.get() || {};
         const pvp = { ...(state.pvp || {}) };
-        const nextCoins = Number(state.coins || 0) + (win && !pvp.payoutDone ? REWARD_COINS : 0);
         const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
         const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
         const playerName = String(state?.player?.username || "Player");
@@ -1524,13 +1352,7 @@
         nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
         pvp.leaderboard = nextBoard.slice(0, 50);
 
-        store.set({
-          coins: nextCoins,
-          pvp: {
-            ...pvp,
-            payoutDone: true,
-          },
-        });
+        store.set({ pvp });
       }
 
       const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
@@ -1578,19 +1400,16 @@
       const gap = Math.max(small ? 3 : 5, Math.floor(Math.min(w / COLS, h / ROWS) * (small ? 0.05 : 0.08)));
       const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
       const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
+      const spinOffset = s.spinOffset || 0;
       const flashPulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.02);
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const extraRows = s.dropMap?.[r]?.[c] || 0;
-          const delay = (r * 0.06) + (c * 0.03);
-          const localSpin = clamp((s.spinDropProgress - delay) / 0.58, 0, 1);
-          const spinDropPx = (1 - (1 - localSpin) ** 3) < 1
-            ? (1 - localSpin) * (cellH + gap) * (3.2 + r * 0.18)
-            : 0;
+          const slidePx = extraRows > 0 ? (1 - Math.min(1, s.dropProgress)) * (c % 2 === 0 ? -1 : 1) * Math.min(14, 4 + extraRows * 2.4) : 0;
+          const px = x + c * (cellW + gap) + slidePx;
           const dropPx = extraRows > 0 ? (1 - Math.min(1, s.dropProgress)) * extraRows * (cellH + gap) : 0;
-          const px = x + c * (cellW + gap);
-          const py = y + r * (cellH + gap) - dropPx - spinDropPx;
+          const py = y + r * (cellH + gap) - dropPx + spinOffset;
           const cell = board[r][c];
           const meta = ICONS[cell?.type] || ICONS.punch;
           const key = `${r}:${c}`;
