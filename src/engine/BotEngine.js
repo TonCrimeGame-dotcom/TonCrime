@@ -1,3 +1,4 @@
+
 const KEY_MSG = "toncrime_chat_messages_v2";
 
 const PUBLIC_CHAT_LINES = [
@@ -12,6 +13,10 @@ const PUBLIC_CHAT_LINES = [
   "birazdan tekrar gelirim",
   "bugün şanslı hissediyorum",
   "marketi takip edin",
+  "premium çark açan var mı?",
+  "pazarda fırsat kolluyorum",
+  "şehre yeni düştüm selam",
+  "boss ve pvp arasında gidip geliyorum",
 ];
 
 const PVP_REPLY_LINES = [
@@ -19,6 +24,17 @@ const PVP_REPLY_LINES = [
   "var 1v1 çıkar",
   "hazırsan gelirim",
   "şu an aktifim gel",
+  "slot arena da dönerim",
+  "iq arena için hazırım",
+  "rakip arıyorsan varım",
+];
+
+const PVP_CALL_LINES = [
+  "pvp için online olan var mı?",
+  "1v1 isteyen gelsin",
+  "slot arena arıyorum",
+  "iq arena rakibi lazım",
+  "kim pvp dönecek?",
 ];
 
 const BOT_CATALOG = [
@@ -31,7 +47,7 @@ const BOT_CATALOG = [
   { itemName: "Deluxe Service", icon: "🌹", rarity: "legendary", price: 160, energyGain: 30, usable: true, desc: "En üst seviye ürün." },
 ];
 
-const BOT_POOL = [
+const BASE_BOT_POOL = [
   ["ShadowWolf","trader","WOLF","🐺"],["NightViper","flipper","NV","🐍"],["GhostMafia","seller","GM","👻"],
   ["RicoVane","buyer","RV","🕶️"],["IronFist","buyer","IF","🥊"],["VoltKral","seller","VK","⚡"],
   ["SlyRaven","trader","SR","🦅"],["BlackMamba","flipper","BM","🐍"],["CrimsonJack","seller","CJ","🃏"],
@@ -43,8 +59,13 @@ const BOT_POOL = [
   ["VenomBoy","seller","VB","🦂"],["LuckyDice","trader","LD","🎲"],["BalkanBoss","buyer","BB","🕴️"],
   ["StormRider","seller","ST","🌩️"],["NitroWolf","flipper","NW","🚀"],["HellCrow","trader","HC","🐦"],
   ["UrbanKing","seller","UK","🏙️"],["MertKing","buyer","ME","🦁"],["DeltaFox","flipper","DF","🦊"],
-  ["ChromeAce","trader","CA","♠️"],["RapidKral","seller","RK","⚙️"],["IstanbulWolf","buyer","IW","🌉"]
+  ["ChromeAce","trader","CA","♠️"],["RapidKral","seller","RK","⚙️"],["IstanbulWolf","buyer","IW","🌉"],
 ];
+
+const NAME_SUFFIXES = ["X","TR","One","Prime","Zero","77","Pro","Elite","Dark","Neo","Max","Boss"];
+const ARCHETYPES = ["trader", "buyer", "seller", "flipper"];
+const CLANS = ["WOLF", "NV", "GM", "RV", "IF", "VK", "SR", "BM", "CJ", "DV", "MK", "BV"];
+const AVATARS = ["🐺","🐍","👻","🕶️","🥊","⚡","🦅","🃏","☠️","👑","🧿","🦊","🌙","❄️","🔥","🐉","🎲"];
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -83,28 +104,48 @@ function dispatchChatMessage(message) {
     online: message.online !== false,
     profileId: String(message.profileId || ""),
     isBot: !!message.isBot,
+    level: Number(message.level || 1),
+    rating: Number(message.rating || 1000),
+    avatar: String(message.avatar || ""),
+    bio: String(message.bio || ""),
   };
   const msgs = loadChatMessages();
   msgs.push(detail);
-  if (msgs.length > 250) msgs.splice(0, msgs.length - 250);
+  if (msgs.length > 350) msgs.splice(0, msgs.length - 350);
   saveChatMessages(msgs);
   try {
     window.dispatchEvent(new CustomEvent("tc:chat:add", { detail }));
   } catch (_) {}
 }
+function buildBotPool() {
+  const out = BASE_BOT_POOL.slice();
+  for (let i = 0; i < BASE_BOT_POOL.length; i++) {
+    const [name] = BASE_BOT_POOL[i];
+    const suffix = NAME_SUFFIXES[i % NAME_SUFFIXES.length];
+    out.push([
+      `${name}${suffix}`,
+      ARCHETYPES[i % ARCHETYPES.length],
+      CLANS[i % CLANS.length],
+      AVATARS[i % AVATARS.length],
+    ]);
+  }
+  return out;
+}
+const BOT_POOL = buildBotPool();
+
 function botTemplates() {
   const now = Date.now();
   return BOT_POOL.map((row, index) => ({
     id: `bot_${row[0].toLowerCase()}`,
     name: row[0],
-    online: index % 2 === 0,
+    online: index % 3 !== 1,
     archetype: row[1],
     clan: row[2],
     avatar: row[3],
     coins: 4000 + Math.floor(Math.random() * 5000),
     energy: 22 + Math.floor(Math.random() * 28),
     shopId: `bot_shop_${row[0].toLowerCase()}`,
-    premium: Math.random() < 0.22,
+    premium: Math.random() < 0.25,
     level: 10 + Math.floor(Math.random() * 55),
     rating: 900 + Math.floor(Math.random() * 700),
     bio: choice([
@@ -113,6 +154,7 @@ function botTemplates() {
       "Offline takılır ama fırsat görünce gelir.",
       "Şehirde uzun süredir aktif.",
       "Daha çok listing kovalar.",
+      "PvP rakibi ararken market de takip ediyor.",
     ]),
     lastSeenAt: now,
   }));
@@ -151,7 +193,7 @@ function ensureMarketSeed(state, bots) {
   const shops = Array.isArray(market.shops) ? market.shops.map((x) => ({ ...x })) : [];
   const listings = Array.isArray(market.listings) ? market.listings.map((x) => ({ ...x })) : [];
 
-  for (const bot of bots.slice(0, 20)) {
+  for (const bot of bots.slice(0, 32)) {
     const idx = shops.findIndex((x) => x.id === bot.shopId);
     const ensured = ensureBotShop(idx >= 0 ? shops[idx] : null, bot);
     if (idx >= 0) shops[idx] = ensured;
@@ -198,7 +240,7 @@ function marketAction(state, bots) {
   }
 
   const actor = choice(onlineBots);
-  const mode = choice(["price", "buy", "sell", "restock", "pvpcall"]);
+  const mode = choice(["price", "buy", "sell", "restock", "pvpcall", "pvpwin", "rare"]);
 
   if (mode === "price" && listings.length) {
     const target = choice(listings);
@@ -223,6 +265,14 @@ function marketAction(state, bots) {
 
   if (mode === "pvpcall") {
     return { shops, listings, activity: `${actor.name} PvP için online`, systemType: "pvp" };
+  }
+
+  if (mode === "pvpwin") {
+    return { shops, listings, activity: `${actor.name} PvP kazandı`, systemType: "pvp" };
+  }
+
+  if (mode === "rare") {
+    return { shops, listings, activity: `${actor.name} legendary item buldu`, systemType: "rare" };
   }
 
   if (mode === "sell" || mode === "restock") {
@@ -274,6 +324,10 @@ function pushBotLine(bot, text) {
     online: !!bot.online,
     profileId: bot.id,
     isBot: true,
+    level: Number(bot.level || 1),
+    rating: Number(bot.rating || 1000),
+    avatar: String(bot.avatar || ""),
+    bio: String(bot.bio || ""),
   });
 }
 
@@ -302,9 +356,6 @@ export function startBotEngine(store) {
         listings: marketSeed.listings,
       },
     });
-   const fakeOnline = 1500 + Math.floor(Math.random() * 1500);
-
-pushSystem(`Şehir aktif: ${fakeOnline} online`, "presence");
   }
 
   function tickPresence() {
@@ -312,24 +363,24 @@ pushSystem(`Şehir aktif: ${fakeOnline} online`, "presence");
     if (state.botState?.enabled === false) return;
     const prevBots = normalizeBots(state.bots);
     const nextBots = prevBots.map((bot) => {
-      const toggleChance = bot.online ? 0.16 : 0.26;
+      const toggleChance = bot.online ? 0.14 : 0.18;
       let online = bot.online;
       if (Math.random() < toggleChance) online = !online;
       return {
         ...bot,
         online,
         lastSeenAt: online ? Date.now() : Number(bot.lastSeenAt || Date.now()),
-        energy: clamp(Number(bot.energy || 0) + (online ? 1 : 0), 10, 50),
+        energy: clamp(Number(bot.energy || 0) + (online ? 1 : -1), 10, 50),
       };
     });
 
     let onlineCount = nextBots.filter((x) => x.online).length;
-    if (onlineCount < 6) {
+    if (onlineCount < 8) {
       for (const bot of nextBots) {
-        if (!bot.online && Math.random() < 0.7) {
+        if (!bot.online && Math.random() < 0.8) {
           bot.online = true;
           onlineCount += 1;
-          if (onlineCount >= 6) break;
+          if (onlineCount >= 8) break;
         }
       }
     }
@@ -342,7 +393,7 @@ pushSystem(`Şehir aktif: ${fakeOnline} online`, "presence");
     for (const bot of nextBots) {
       const prev = prevBots.find((x) => x.id === bot.id);
       if (!prev) continue;
-      if (prev.online !== bot.online && Math.random() < 0.9) {
+      if (prev.online !== bot.online && Math.random() < 0.6) {
         pushSystem(`${bot.name} ${bot.online ? "oyuna girdi" : "oyundan çıktı"}`, "presence");
       }
     }
@@ -385,6 +436,8 @@ pushSystem(`Şehir aktif: ${fakeOnline} online`, "presence");
 
     if (lower.includes("pvp") && lower.includes("online")) {
       pushBotLine(bot, choice(PVP_REPLY_LINES));
+    } else if (Math.random() < 0.22) {
+      pushBotLine(bot, choice(PVP_CALL_LINES));
     } else {
       pushBotLine(bot, choice(PUBLIC_CHAT_LINES));
     }
@@ -394,24 +447,45 @@ pushSystem(`Şehir aktif: ${fakeOnline} online`, "presence");
     });
   }
 
+  function tickSpam() {
+    const state = store.get() || {};
+    if (state.botState?.enabled === false) return;
+    const onlineBots = normalizeBots(state.bots).filter((x) => x.online);
+    if (!onlineBots.length) return;
+    const actor = choice(onlineBots);
+    const eventRoll = Math.random();
+    if (eventRoll < 0.35) {
+      pushSystem(`${actor.name} PvP arıyor`, "pvp");
+    } else if (eventRoll < 0.65) {
+      pushSystem(`${actor.name} marketi takip ediyor`, "market");
+    } else {
+      pushSystem(`${actor.name} şehirde aktif`, "presence");
+    }
+  }
+
   bootstrap();
 
-  const presenceTimer = setInterval(tickPresence, 8000);
-  const marketTimer = setInterval(tickMarket, 11000);
+  const presenceTimer = setInterval(tickPresence, 9000);
+  const marketTimer = setInterval(tickMarket, 12000);
   const chatTimer = setInterval(() => {
-    if (Math.random() < 0.78) tickChat();
-  }, 13000);
+    if (Math.random() < 0.82) tickChat();
+  }, 10000);
+  const spamTimer = setInterval(() => {
+    if (Math.random() < 0.55) tickSpam();
+  }, 17000);
 
   window.__tcBotEngine = {
     stop() {
       clearInterval(presenceTimer);
       clearInterval(marketTimer);
       clearInterval(chatTimer);
+      clearInterval(spamTimer);
       window.__tcBotEngineStarted = false;
     },
     tickPresence,
     tickMarket,
     tickChat,
+    tickSpam,
     bootstrap,
   };
 
