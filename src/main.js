@@ -22,6 +22,7 @@ import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
 import { startHud } from "./ui/Hud.js";
 import { startChat } from "./ui/Chat.js";
+import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
@@ -1050,6 +1051,7 @@ window.addEventListener("tc:pvp:lose", () => {
 /* ===== UI ===== */
 startHud(store);
 startChat(store);
+startBotEngine(store);
 startMenu(store);
 startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
