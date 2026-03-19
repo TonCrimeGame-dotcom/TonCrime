@@ -53,6 +53,20 @@ export function startChat(store) {
     msgBox.scrollTop = msgBox.scrollHeight;
   }
 
+
+  function pushExternalMessage(message) {
+    const msgs = loadMessages();
+    msgs.push({
+      user: String(message?.user || "?"),
+      text: String(message?.text || ""),
+      time: String(message?.time || nowHHMM()),
+    });
+    if (msgs.length > 200) msgs.splice(0, msgs.length - 200);
+
+    saveMessages(msgs);
+    renderMessages();
+  }
+
   function setOpen(isOpen) {
     if (isOpen) {
       drawer.classList.add("open");
@@ -121,6 +135,17 @@ export function startChat(store) {
     drawer.style.display = currentScene === "profile" ? "none" : "";
     requestAnimationFrame(visLoop);
   }
+
+  window.addEventListener("tc:chat:refresh", renderMessages);
+  window.addEventListener("tc:chat:add", (ev) => {
+    try {
+      pushExternalMessage(ev?.detail || {});
+    } catch (_) {}
+  });
+
+  window.tcChat = window.tcChat || {};
+  window.tcChat.refresh = renderMessages;
+  window.tcChat.addMessage = pushExternalMessage;
 
   renderMessages();
   setOpen(getOpen());
