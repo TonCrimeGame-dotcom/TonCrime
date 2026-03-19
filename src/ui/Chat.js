@@ -187,9 +187,12 @@ export function startChat(store) {
     msgBox.scrollTop = msgBox.scrollHeight;
   }
 
+  function isMobile() {
+    return !!(window.matchMedia && window.matchMedia("(max-width: 768px)").matches);
+  }
+
   function setOpen(isOpen) {
-    const mobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
-    const nextOpen = mobile ? false : !!isOpen;
+    const nextOpen = !!isOpen;
     if (nextOpen) {
       drawer.classList.add("open");
       toggleBtn.textContent = "Kapat";
@@ -197,15 +200,19 @@ export function startChat(store) {
       drawer.classList.remove("open");
       toggleBtn.textContent = "Aç";
     }
-    try { localStorage.setItem(KEY_OPEN, nextOpen ? "1" : "0"); } catch {}
+    try {
+      if (isMobile()) localStorage.removeItem(KEY_OPEN);
+      else localStorage.setItem(KEY_OPEN, nextOpen ? "1" : "0");
+    } catch {}
   }
 
   function getOpen() {
     try {
-      const mobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
-      if (mobile) return false;
+      if (isMobile()) return false;
       return localStorage.getItem(KEY_OPEN) === "1";
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
 
   async function send() {
@@ -394,8 +401,6 @@ export function startChat(store) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") send();
   });
-  input.addEventListener("focus", () => setOpen(false));
-  input.addEventListener("blur", () => setOpen(false));
 
   const titleWrap = document.getElementById("chatTitle");
   if (titleWrap && !titleWrap.querySelector(".tc-chat-online-count")) {
@@ -435,8 +440,14 @@ export function startChat(store) {
     updateOnlineLabel();
   });
 
-  window.addEventListener("resize", () => setOpen(getOpen()));
+  window.addEventListener("resize", () => {
+    if (isMobile()) setOpen(false);
+  });
   window.addEventListener("orientationchange", () => setOpen(false));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) setOpen(false);
+  });
+  window.addEventListener("pagehide", () => setOpen(false));
 
   loadHistory();
   subscribeRealtime();
