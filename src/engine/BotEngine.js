@@ -302,7 +302,9 @@ export function startBotEngine(store) {
         listings: marketSeed.listings,
       },
     });
-    pushSystem(`Şehir aktif: ${bots.filter((b) => b.online).length} bot online`, "presence");
+   const fakeOnline = 1500 + Math.floor(Math.random() * 1500);
+
+pushSystem(`Şehir aktif: ${fakeOnline} online`, "presence");
   }
 
   function tickPresence() {
