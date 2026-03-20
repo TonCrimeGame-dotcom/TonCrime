@@ -449,11 +449,13 @@ const DAMAGE = {
     },
 
     async _preloadAssets() {
+      this._assetsReady = false;
       const out = {};
       await Promise.all(Object.keys(ICON_PATHS).map(async (key) => {
         out[key] = await loadImage(ICON_PATHS[key]);
       }));
       this._iconImages = out;
+      this._assetsReady = true;
       this._render();
     },
 
@@ -577,6 +579,7 @@ const DAMAGE = {
 
     _updateIcon(now) {
       if (!this._state || this._state.finished) return;
+      if (!this._assetsReady) return;
 
       const cur = this._state.currentIcon;
       if (cur && now >= cur.expiresAt) {
@@ -1072,9 +1075,10 @@ _handleTap(x, y) {
         const dh = Math.max(8, ih * fit);
         ctx.drawImage(img, -dw / 2, -dh / 2 - 4, dw, dh);
       } else {
-        const rg = ctx.createRadialGradient(0, 0, 6, 0, 0, cur.w * 0.5);
-        rg.addColorStop(0, cur.color + "bb");
-        rg.addColorStop(1, "rgba(0,0,0,0)");
+        // PNG yok — sadece renkli daire göster, emoji/harf yok
+        const rg = ctx.createRadialGradient(0, -3, 4, 0, -3, cur.w * 0.32);
+        rg.addColorStop(0, cur.color + "ee");
+        rg.addColorStop(1, cur.color + "44");
         ctx.fillStyle = rg;
         ctx.beginPath();
         ctx.arc(0, -3, cur.w * 0.28, 0, Math.PI * 2);
