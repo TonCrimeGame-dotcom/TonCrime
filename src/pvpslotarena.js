@@ -5,7 +5,7 @@
   const BASE_SPINS = 25;
   const BONUS_SPINS = 10;
   const BONUS_TRIGGER = 4;
-  const MIN_CLUSTER = 8;
+  const MIN_CLUSTER = 9;
   const PLAYER_DECISION_MS = 3000;
 
   const ICONS = {
@@ -68,35 +68,16 @@
     ctx.stroke();
   }
 
-  function weightedSymbol(includeBonus = true, counts = null) {
+  function weightedSymbol(includeBonus = true) {
     const list = includeBonus ? ALL_SYMBOLS : PAY_SYMBOLS;
-    const effective = [];
     let total = 0;
-
-    for (const id of list) {
-      const seen = Number(counts?.[id] || 0);
-      let weight = Number(ICONS[id].weight || 1);
-
-      if (id === "bonus") {
-        if (seen >= 2) weight *= 0.60;
-        if (seen >= 3) weight *= 0.45;
-      } else {
-        if (seen >= 5) weight *= 0.78;
-        if (seen >= 6) weight *= 0.62;
-        if (seen >= 7) weight *= 0.48;
-      }
-
-      weight = Math.max(0.15, weight);
-      effective.push([id, weight]);
-      total += weight;
-    }
-
+    for (const id of list) total += ICONS[id].weight;
     let roll = Math.random() * total;
-    for (const [id, weight] of effective) {
-      roll -= weight;
+    for (const id of list) {
+      roll -= ICONS[id].weight;
       if (roll <= 0) return id;
     }
-    return effective[effective.length - 1][0];
+    return list[list.length - 1];
   }
 
   function createCell(symbolId) {
@@ -107,13 +88,8 @@
   }
 
   function makeBoard() {
-    const counts = Object.create(null);
     return Array.from({ length: ROWS }, () =>
-      Array.from({ length: COLS }, () => {
-        const id = weightedSymbol(true, counts);
-        counts[id] = Number(counts[id] || 0) + 1;
-        return createCell(id);
-      })
+      Array.from({ length: COLS }, () => createCell(weightedSymbol(true)))
     );
   }
 
@@ -230,11 +206,7 @@
 
       let newCount = 0;
       while (wr >= 0) {
-        const typeStats = countTypes(next);
-        const mix = Object.create(null);
-        for (const [k, v] of typeStats.counts.entries()) mix[k] = v;
-        mix.bonus = Number(typeStats.bonusCount || 0);
-        next[wr][c] = createCell(weightedSymbol(allowBonus, mix));
+        next[wr][c] = createCell(weightedSymbol(allowBonus));
         newCount += 1;
         dropMap[wr][c] = newCount + wr + 1;
         wr -= 1;
@@ -273,11 +245,13 @@
       return;
     }
 
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${Math.floor(Math.min(w, h) * 0.72)}px system-ui, Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(meta.emoji, x + w / 2, y + h * 0.52);
+    const rg = ctx.createRadialGradient(x + w / 2, y + h / 2, 4, x + w / 2, y + h / 2, Math.max(w, h) * 0.55);
+    rg.addColorStop(0, meta.color + "bb");
+    rg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.34, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   function injectStyle() {
@@ -679,6 +653,7 @@
       this._resizeCanvas();
       this._updateHud();
       this._render();
+      this._preloadAssets();
     },
 
     async _preloadAssets() {
@@ -688,6 +663,7 @@
         out[key] = await loadImage(ICON_PATHS[key]);
       }));
       this._iconImages = out;
+      if (this._state) this._state.imageReady = true;
       this._render();
     },
 
@@ -713,11 +689,11 @@
         flashUntil: 0,
         shakeUntil: 0,
         spinOffset: 0,
-        spinRevealProgress: 1,
         dropMap: Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0)),
         dropProgress: 1,
         markedRemove: new Set(),
         decisionEndsAt: 0,
+        imageReady: !!this._iconImages,
       };
     },
 
@@ -766,8 +742,19 @@
       const onClose = () => {
         this.stop();
         try {
+          const arena = document.getElementById("arena");
           const wrap = document.getElementById("pvpWrap");
-          if (wrap) wrap.classList.remove("open");
+          const status = document.getElementById("pvpStatus");
+          const opponent = document.getElementById("pvpOpponent");
+          const spinner = document.getElementById("pvpSpinner");
+          if (arena) arena.innerHTML = "";
+          if (wrap) {
+            wrap.classList.remove("open");
+            wrap.style.display = "none";
+          }
+          if (status) status.textContent = "PvP • Hazır";
+          if (opponent) opponent.textContent = "—";
+          if (spinner) spinner.classList.add("hidden");
         } catch (_) {}
       };
 
@@ -970,7 +957,6 @@
       s.markedRemove = new Set();
       s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
       s.dropProgress = 1;
-      s.spinRevealProgress = 1;
       this._updateHud();
       this._render();
 
@@ -982,18 +968,17 @@
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 760;
-      s.spinRevealProgress = 0;
+      const duration = 720;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
           const ease = 1 - Math.pow(1 - t, 3);
-          s.spinRevealProgress = ease;
+          s.spinOffset = (1 - ease) * 38;
           this._render();
           if (t >= 1) {
-            s.spinRevealProgress = 1;
+            s.spinOffset = 0;
             this._render();
             resolve();
             return;
@@ -1274,27 +1259,19 @@
       const gap = Math.max(small ? 3 : 5, Math.floor(Math.min(w / COLS, h / ROWS) * (small ? 0.05 : 0.08)));
       const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
       const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
+      const spinOffset = s.spinOffset || 0;
       const flashPulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.02);
-      const reveal = clamp(Number(s.spinRevealProgress == null ? 1 : s.spinRevealProgress), 0, 1);
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const px = x + c * (cellW + gap);
           const extraRows = s.dropMap?.[r]?.[c] || 0;
           const dropPx = extraRows > 0 ? (1 - s.dropProgress) * extraRows * (cellH + gap) : 0;
-          const rowDelay = r / Math.max(1, ROWS - 1) * 0.26;
-          const rowT = clamp((reveal - rowDelay) / Math.max(0.0001, 1 - rowDelay), 0, 1);
-          const rowEase = 1 - Math.pow(1 - rowT, 3);
-          const revealOffset = (1 - rowEase) * (cellH * 0.85 + gap * 0.6);
-          const revealAlpha = 0.2 + rowEase * 0.8;
-          const py = y + r * (cellH + gap) - dropPx - revealOffset;
+          const py = y + r * (cellH + gap) - dropPx + spinOffset;
           const cell = board[r][c];
           const meta = ICONS[cell?.type] || ICONS.punch;
           const key = `${r}:${c}`;
           const marked = s.markedRemove && s.markedRemove.has(key);
-
-          const prevAlpha = ctx.globalAlpha;
-          ctx.globalAlpha = prevAlpha * revealAlpha;
 
           const panel = ctx.createLinearGradient(px, py, px, py + cellH);
           panel.addColorStop(0, marked ? `rgba(255,255,255,${0.18 + flashPulse * 0.24})` : "rgba(255,255,255,0.10)");
@@ -1318,7 +1295,6 @@
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           drawSymbolArt(ctx, this._iconImages?.[cell?.type], meta, px, py, cellW, cellH);
-          ctx.globalAlpha = prevAlpha;
         }
       }
 
