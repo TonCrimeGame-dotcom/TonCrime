@@ -24,6 +24,15 @@ const DAMAGE = {
 ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
+  const ICON_PATHS = {
+    punch: "./src/assets/punch.png",
+    kick: "./src/assets/kick.png",
+    slap: "./src/assets/slap.png",
+    brain: "./src/assets/brain.png",
+    weed: "./src/assets/weed.png",
+    drink: "./src/assets/drink.png",
+    skull: "./src/assets/skull.png",
+  };
   const BOT_NAMES = [
     "ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven",
     "BlackMamba", "NightHawk", "CrimsonJack", "DarkVenom", "MafiaKing", "BlueViper",
@@ -72,6 +81,43 @@ const DAMAGE = {
       data[i] = (Math.random() * 2 - 1) * (1 - i / len);
     }
     return buffer;
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  function drawIconArt(ctx, img, icon, x, y, w, h) {
+    const pad = Math.max(4, Math.floor(Math.min(w, h) * 0.10));
+    const innerX = x + pad;
+    const innerY = y + pad;
+    const innerW = Math.max(6, w - pad * 2);
+    const innerH = Math.max(6, h - pad * 2);
+
+    if (img && img.complete && (img.naturalWidth || img.width)) {
+      const iw = img.naturalWidth || img.width || 1;
+      const ih = img.naturalHeight || img.height || 1;
+      const scale = Math.min(innerW / iw, innerH / ih);
+      const dw = Math.max(4, iw * scale);
+      const dh = Math.max(4, ih * scale);
+      const dx = innerX + (innerW - dw) * 0.5;
+      const dy = innerY + (innerH - dh) * 0.5;
+      ctx.drawImage(img, dx, dy, dw, dh);
+      return true;
+    }
+
+    ctx.font = `900 ${Math.floor(w * 0.48)}px system-ui, Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.fillText(icon.emoji, x + w * 0.5, y + h * 0.44);
+    return false;
   }
 
   function roundRectPath(ctx, x, y, w, h, r) {
@@ -375,6 +421,7 @@ const DAMAGE = {
     _raf: 0,
     _unbind: null,
     _resizeObserver: null,
+    _iconImages: {},
     _opponent: { username: "ShadowWolf", isBot: true },
 
     init(opts = {}) {
@@ -1031,11 +1078,9 @@ _handleTap(x, y) {
       fillRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.06)");
       strokeRoundRect(ctx, x, y, cur.w, cur.h, 18, "rgba(255,255,255,0.12)", 1.4);
 
-      ctx.font = `900 ${Math.floor(cur.w * 0.48)}px system-ui, Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "#fff";
-      ctx.fillText(cur.emoji, 0, -6);
+      drawIconArt(ctx, this._iconImages?.[cur.id], cur, x, y, cur.w, cur.h);
 
       ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.12))}px system-ui, Arial`;
       ctx.fillStyle = "rgba(255,255,255,0.84)";
