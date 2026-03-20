@@ -833,11 +833,31 @@
             isBot: true,
           });
 
-          if (dom.startBtn) dom.startBtn.style.display = "none";
-          if (dom.stopBtn) dom.stopBtn.style.display = "none";
-          if (dom.resetBtn) dom.resetBtn.style.display = "none";
+          if (dom.startBtn) {
+            dom.startBtn.style.display = "";
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.setOpponent?.({ username: "ShadowWolf", isBot: true });
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Cage start error:", err);
+              }
+            };
+          }
+          if (dom.stopBtn) {
+            dom.stopBtn.style.display = "";
+            dom.stopBtn.onclick = () => { try { window.TonCrimePVP.stop?.(); } catch (_) {} };
+          }
+          if (dom.resetBtn) {
+            dom.resetBtn.style.display = "";
+            dom.resetBtn.onclick = () => { try { window.TonCrimePVP.reset?.(); } catch (_) {} };
+          }
 
-          await new Promise((r) => setTimeout(r, 160));
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.reset?.();
+          await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
           if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
