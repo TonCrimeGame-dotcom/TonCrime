@@ -532,6 +532,12 @@
         }
       }
 
+      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
+        // Mobil bazı cihazlarda release olayı bir frame kaçabiliyor.
+        this.clickCandidate = false;
+        this.pointerUp(px, py);
+      }
+
       const wheel = Number(this.input?.wheelDelta || 0);
       if (wheel) {
         this.scrollY = clamp(this.scrollY + wheel * 0.55, 0, this.maxScroll);
@@ -553,7 +559,9 @@
 
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
-        if (pointInRect(x, y, r.btn) && r.card.open) {
+        const hitButton = r.btn && pointInRect(x, y, r.btn);
+        const hitCard = r.cardRect && pointInRect(x, y, r.cardRect);
+        if ((hitButton || hitCard) && r.card.open) {
           this.startGame(r.card.id);
           return;
         }
@@ -1103,6 +1111,7 @@
 
         this.cardRects.push({
           card,
+          cardRect: { x, y, w: cw, h: cardH },
           btn: { x: btnX, y: btnY, w: btnW, h: btnH },
         });
 
