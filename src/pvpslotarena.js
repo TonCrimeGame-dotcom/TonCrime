@@ -5,7 +5,7 @@
   const BASE_SPINS = 25;
   const BONUS_SPINS = 10;
   const BONUS_TRIGGER = 4;
-  const MIN_CLUSTER = 9;
+  const MIN_CLUSTER = 12;
   const PLAYER_DECISION_MS = 3000;
 
   const ICONS = {
@@ -144,7 +144,7 @@
       if (count < MIN_CLUSTER) continue;
       const meta = ICONS[type];
       const extra = count - MIN_CLUSTER;
-      const hitDamage = meta.base * count + extra * meta.base * 0.7;
+      const hitDamage = meta.base * count * 0.7 + extra * meta.base * 0.35;
       damage += hitDamage;
       hits.push({ type, count, damage: hitDamage });
 
@@ -1041,7 +1041,7 @@
             const drops = getMultiplierDrop();
             s.multipliers = drops;
             const addMulti = drops.reduce((sum, d) => sum + d.value, 0);
-            s.bonusMultiplierBank += addMulti;
+            s.bonusMultiplierBank = Math.min(20, s.bonusMultiplierBank + addMulti);
             s.displayedMultiplier = s.bonusMultiplierBank;
             hitDamage *= Math.max(1, s.bonusMultiplierBank);
             s.info = `${chain}. tumble • x${s.bonusMultiplierBank} çarpan`;
