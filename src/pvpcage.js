@@ -24,6 +24,7 @@ const DAMAGE = {
 ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
+
   const ICON_PATHS = {
     punch: "./src/assets/punch.png",
     kick: "./src/assets/kick.png",
@@ -33,6 +34,16 @@ const DAMAGE = {
     drink: "./src/assets/drink.png",
     skull: "./src/assets/skull.png",
   };
+
+  function loadImage(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
   const BOT_NAMES = [
     "ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven",
     "BlackMamba", "NightHawk", "CrimsonJack", "DarkVenom", "MafiaKing", "BlueViper",
@@ -81,43 +92,6 @@ const DAMAGE = {
       data[i] = (Math.random() * 2 - 1) * (1 - i / len);
     }
     return buffer;
-  }
-
-  function loadImage(src) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.decoding = "async";
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-  }
-
-  function drawIconArt(ctx, img, icon, x, y, w, h) {
-    const pad = Math.max(4, Math.floor(Math.min(w, h) * 0.10));
-    const innerX = x + pad;
-    const innerY = y + pad;
-    const innerW = Math.max(6, w - pad * 2);
-    const innerH = Math.max(6, h - pad * 2);
-
-    if (img && img.complete && (img.naturalWidth || img.width)) {
-      const iw = img.naturalWidth || img.width || 1;
-      const ih = img.naturalHeight || img.height || 1;
-      const scale = Math.min(innerW / iw, innerH / ih);
-      const dw = Math.max(4, iw * scale);
-      const dh = Math.max(4, ih * scale);
-      const dx = innerX + (innerW - dw) * 0.5;
-      const dy = innerY + (innerH - dh) * 0.5;
-      ctx.drawImage(img, dx, dy, dw, dh);
-      return true;
-    }
-
-    ctx.font = `900 ${Math.floor(w * 0.48)}px system-ui, Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.fillText(icon.emoji, x + w * 0.5, y + h * 0.44);
-    return false;
   }
 
   function roundRectPath(ctx, x, y, w, h, r) {
@@ -421,7 +395,6 @@ const DAMAGE = {
     _raf: 0,
     _unbind: null,
     _resizeObserver: null,
-    _iconImages: {},
     _opponent: { username: "ShadowWolf", isBot: true },
 
     init(opts = {}) {
@@ -472,6 +445,16 @@ const DAMAGE = {
       this._resizeCanvas();
       this._render();
       this._updateHud();
+      this._preloadAssets();
+    },
+
+    async _preloadAssets() {
+      const out = {};
+      await Promise.all(Object.keys(ICON_PATHS).map(async (key) => {
+        out[key] = await loadImage(ICON_PATHS[key]);
+      }));
+      this._iconImages = out;
+      this._render();
     },
 
     setOpponent(opp) {
@@ -1080,7 +1063,23 @@ _handleTap(x, y) {
 
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      drawIconArt(ctx, this._iconImages?.[cur.id], cur, x, y, cur.w, cur.h);
+      const img = this._iconImages?.[cur.id];
+      if (img && img.complete && (img.naturalWidth || img.width)) {
+        const iw = img.naturalWidth || img.width || 1;
+        const ih = img.naturalHeight || img.height || 1;
+        const fit = Math.min((cur.w * 0.72) / iw, (cur.h * 0.72) / ih);
+        const dw = Math.max(8, iw * fit);
+        const dh = Math.max(8, ih * fit);
+        ctx.drawImage(img, -dw / 2, -dh / 2 - 4, dw, dh);
+      } else {
+        const rg = ctx.createRadialGradient(0, 0, 6, 0, 0, cur.w * 0.5);
+        rg.addColorStop(0, cur.color + "bb");
+        rg.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = rg;
+        ctx.beginPath();
+        ctx.arc(0, -3, cur.w * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       ctx.font = `900 ${Math.max(10, Math.floor(cur.w * 0.12))}px system-ui, Arial`;
       ctx.fillStyle = "rgba(255,255,255,0.84)";
