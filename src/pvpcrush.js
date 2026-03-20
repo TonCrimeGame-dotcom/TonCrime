@@ -414,17 +414,40 @@
     return best;
   }
 
-  function drawTileIcon(ctx, tileType, x, y, size) {
+  function drawTileIcon(ctx, tileType, x, y, size, selected, animT) {
     const meta = TILE_META[tileType] || TILE_META[TILE.PUNCH];
     const img = ICON_IMAGES[meta.assetKey];
+    const r = Math.max(8, Math.floor(size * 0.18));
 
+    // Renkli tile zemin
+    const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
+    tileGrad.addColorStop(0, meta.color + "22");
+    tileGrad.addColorStop(1, meta.color + "0a");
+    fillRoundRect(ctx, x, y, size, size, r, tileGrad);
+
+    // Seçili tile için parlayan border
+    if (selected) {
+      const pulse = 0.7 + 0.3 * Math.sin((animT || 0) * 0.006);
+      strokeRoundRect(ctx, x, y, size, size, r, meta.color + Math.round(pulse * 255).toString(16).padStart(2, "0"), 2.5);
+    } else {
+      strokeRoundRect(ctx, x, y, size, size, r, meta.color + "33", 1);
+    }
+
+    // Köşe aksanı (küçük renkli nokta sağ üstte)
+    ctx.fillStyle = meta.color + "bb";
+    ctx.beginPath();
+    ctx.arc(x + size - 7, y + 7, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // PNG varsa çiz
     if (img && img.complete && (img.naturalWidth || img.width)) {
-      const pad = Math.max(2, Math.floor(size * 0.08));
+      const pad = Math.max(3, Math.floor(size * 0.1));
       const drawSize = Math.max(8, size - pad * 2);
       ctx.drawImage(img, x + pad, y + pad, drawSize, drawSize);
       return;
     }
 
+    // Fallback — emoji
     ctx.font = `900 ${Math.floor(size * 0.47)}px system-ui, Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1739,15 +1762,30 @@
       this._tileRects = [];
 
       const shell = ctx.createLinearGradient(0, oy - 12, 0, oy + actual + 24);
-      shell.addColorStop(0, "rgba(8,14,28,0.56)");
-      shell.addColorStop(1, "rgba(2,6,16,0.76)");
+      shell.addColorStop(0, "rgba(20,10,38,0.72)");
+      shell.addColorStop(0.5, "rgba(8,14,28,0.68)");
+      shell.addColorStop(1, "rgba(2,6,16,0.82)");
       fillRoundRect(ctx, ox - 14, oy - 14, actual + 28, actual + 28, 22, shell);
-      strokeRoundRect(ctx, ox - 14, oy - 14, actual + 28, actual + 28, 22, "rgba(255,255,255,0.08)", 1.2);
+      strokeRoundRect(ctx, ox - 14, oy - 14, actual + 28, actual + 28, 22, "rgba(255,178,74,0.18)", 1.5);
 
       const inner = ctx.createLinearGradient(0, oy, 0, oy + actual);
-      inner.addColorStop(0, "rgba(16,22,38,0.86)");
-      inner.addColorStop(1, "rgba(10,14,28,0.92)");
+      inner.addColorStop(0, "rgba(22,16,42,0.90)");
+      inner.addColorStop(1, "rgba(10,14,28,0.95)");
       fillRoundRect(ctx, ox - 4, oy - 4, actual + 8, actual + 8, 18, inner);
+
+      // Izgara çizgileri (hafif)
+      ctx.strokeStyle = "rgba(255,255,255,0.04)";
+      ctx.lineWidth = 1;
+      for (let gi = 0; gi <= GRID; gi++) {
+        ctx.beginPath();
+        ctx.moveTo(ox + gi * cell, oy);
+        ctx.lineTo(ox + gi * cell, oy + actual);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ox, oy + gi * cell);
+        ctx.lineTo(ox + actual, oy + gi * cell);
+        ctx.stroke();
+      }
 
       for (let r = 0; r < GRID; r++) {
         for (let c = 0; c < GRID; c++) {
@@ -1757,44 +1795,28 @@
           const selected = this._selected && this._selected.r === r && this._selected.c === c;
           const radius = Math.max(10, Math.floor(cell * 0.18));
 
+          // Zemin (tile rengi drawTileIcon içinde yönetiliyor artık)
           fillRoundRect(
-            ctx,
-            x + 2,
-            y + 2,
-            cell - 4,
-            cell - 4,
-            radius,
-            selected ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.07)"
-          );
-          strokeRoundRect(
-            ctx,
-            x + 2,
-            y + 2,
-            cell - 4,
-            cell - 4,
-            radius,
-            selected ? "rgba(255,181,74,0.96)" : "rgba(255,255,255,0.08)",
-            selected ? 2 : 1
+            ctx, x + 2, y + 2, cell - 4, cell - 4, radius,
+            selected ? "rgba(255,181,74,0.18)" : "rgba(255,255,255,0.05)"
           );
 
           if (tile) {
             const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
-            const glow = ctx.createRadialGradient(
-              x + cell / 2,
-              y + cell / 2,
-              4,
-              x + cell / 2,
-              y + cell / 2,
-              cell * 0.48
-            );
-            glow.addColorStop(0, meta.color + "66");
+
+            // Güçlü glow
+            const glowR = selected ? cell * 0.52 : cell * 0.38;
+            const glow = ctx.createRadialGradient(x + cell / 2, y + cell / 2, 2, x + cell / 2, y + cell / 2, glowR);
+            glow.addColorStop(0, meta.color + (selected ? "88" : "44"));
             glow.addColorStop(1, "rgba(0,0,0,0)");
             ctx.fillStyle = glow;
             ctx.beginPath();
-            ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
+            ctx.arc(x + cell / 2, y + cell / 2, glowR, 0, Math.PI * 2);
             ctx.fill();
 
-            drawTileIcon(ctx, tile.type, x + 2, y + 2, cell - 4);
+            drawTileIcon(ctx, tile.type, x + 2, y + 2, cell - 4, selected, Date.now());
+          } else {
+            strokeRoundRect(ctx, x + 2, y + 2, cell - 4, cell - 4, radius, "rgba(255,255,255,0.06)", 1);
           }
 
           this._tileRects.push({ r, c, x, y, w: cell, h: cell });
