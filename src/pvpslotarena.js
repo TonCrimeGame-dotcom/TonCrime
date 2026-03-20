@@ -15,7 +15,7 @@
     kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
     slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
     punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 12 },
+    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8 },
   };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
@@ -68,16 +68,35 @@
     ctx.stroke();
   }
 
-  function weightedSymbol(includeBonus = true) {
+  function weightedSymbol(includeBonus = true, counts = null) {
     const list = includeBonus ? ALL_SYMBOLS : PAY_SYMBOLS;
+    const effective = [];
     let total = 0;
-    for (const id of list) total += ICONS[id].weight;
-    let roll = Math.random() * total;
+
     for (const id of list) {
-      roll -= ICONS[id].weight;
+      const seen = Number(counts?.[id] || 0);
+      let weight = Number(ICONS[id].weight || 1);
+
+      if (id === "bonus") {
+        if (seen >= 2) weight *= 0.60;
+        if (seen >= 3) weight *= 0.45;
+      } else {
+        if (seen >= 5) weight *= 0.78;
+        if (seen >= 6) weight *= 0.62;
+        if (seen >= 7) weight *= 0.48;
+      }
+
+      weight = Math.max(0.15, weight);
+      effective.push([id, weight]);
+      total += weight;
+    }
+
+    let roll = Math.random() * total;
+    for (const [id, weight] of effective) {
+      roll -= weight;
       if (roll <= 0) return id;
     }
-    return list[list.length - 1];
+    return effective[effective.length - 1][0];
   }
 
   function createCell(symbolId) {
@@ -88,8 +107,13 @@
   }
 
   function makeBoard() {
+    const counts = Object.create(null);
     return Array.from({ length: ROWS }, () =>
-      Array.from({ length: COLS }, () => createCell(weightedSymbol(true)))
+      Array.from({ length: COLS }, () => {
+        const id = weightedSymbol(true, counts);
+        counts[id] = Number(counts[id] || 0) + 1;
+        return createCell(id);
+      })
     );
   }
 
@@ -206,7 +230,11 @@
 
       let newCount = 0;
       while (wr >= 0) {
-        next[wr][c] = createCell(weightedSymbol(allowBonus));
+        const typeStats = countTypes(next);
+        const mix = Object.create(null);
+        for (const [k, v] of typeStats.counts.entries()) mix[k] = v;
+        mix.bonus = Number(typeStats.bonusCount || 0);
+        next[wr][c] = createCell(weightedSymbol(allowBonus, mix));
         newCount += 1;
         dropMap[wr][c] = newCount + wr + 1;
         wr -= 1;
@@ -685,6 +713,7 @@
         flashUntil: 0,
         shakeUntil: 0,
         spinOffset: 0,
+        spinRevealProgress: 1,
         dropMap: Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0)),
         dropProgress: 1,
         markedRemove: new Set(),
@@ -941,6 +970,7 @@
       s.markedRemove = new Set();
       s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
       s.dropProgress = 1;
+      s.spinRevealProgress = 1;
       this._updateHud();
       this._render();
 
@@ -952,17 +982,18 @@
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 720;
+      const duration = 760;
+      s.spinRevealProgress = 0;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
           const ease = 1 - Math.pow(1 - t, 3);
-          s.spinOffset = (1 - ease) * 38;
+          s.spinRevealProgress = ease;
           this._render();
           if (t >= 1) {
-            s.spinOffset = 0;
+            s.spinRevealProgress = 1;
             this._render();
             resolve();
             return;
@@ -1243,19 +1274,27 @@
       const gap = Math.max(small ? 3 : 5, Math.floor(Math.min(w / COLS, h / ROWS) * (small ? 0.05 : 0.08)));
       const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
       const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
-      const spinOffset = s.spinOffset || 0;
       const flashPulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.02);
+      const reveal = clamp(Number(s.spinRevealProgress == null ? 1 : s.spinRevealProgress), 0, 1);
 
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const px = x + c * (cellW + gap);
           const extraRows = s.dropMap?.[r]?.[c] || 0;
           const dropPx = extraRows > 0 ? (1 - s.dropProgress) * extraRows * (cellH + gap) : 0;
-          const py = y + r * (cellH + gap) - dropPx + spinOffset;
+          const rowDelay = r / Math.max(1, ROWS - 1) * 0.26;
+          const rowT = clamp((reveal - rowDelay) / Math.max(0.0001, 1 - rowDelay), 0, 1);
+          const rowEase = 1 - Math.pow(1 - rowT, 3);
+          const revealOffset = (1 - rowEase) * (cellH * 0.85 + gap * 0.6);
+          const revealAlpha = 0.2 + rowEase * 0.8;
+          const py = y + r * (cellH + gap) - dropPx - revealOffset;
           const cell = board[r][c];
           const meta = ICONS[cell?.type] || ICONS.punch;
           const key = `${r}:${c}`;
           const marked = s.markedRemove && s.markedRemove.has(key);
+
+          const prevAlpha = ctx.globalAlpha;
+          ctx.globalAlpha = prevAlpha * revealAlpha;
 
           const panel = ctx.createLinearGradient(px, py, px, py + cellH);
           panel.addColorStop(0, marked ? `rgba(255,255,255,${0.18 + flashPulse * 0.24})` : "rgba(255,255,255,0.10)");
@@ -1279,6 +1318,7 @@
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           drawSymbolArt(ctx, this._iconImages?.[cell?.type], meta, px, py, cellW, cellH);
+          ctx.globalAlpha = prevAlpha;
         }
       }
 
