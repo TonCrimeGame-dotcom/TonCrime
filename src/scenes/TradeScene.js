@@ -69,9 +69,29 @@ function iconForType(type) {
       return "🌿";
     case "brothel":
       return "💋";
-      default:
+    default:
       return "🏪";
   }
+}
+
+function businessImageKey(type) {
+  switch (String(type || "").toLowerCase()) {
+    case "nightclub":
+      return "nightclub";
+    case "coffeeshop":
+      return "coffeeshop";
+    case "brothel":
+      return "xxx";
+    default:
+      return null;
+  }
+}
+
+function itemImageKey(item) {
+  const raw = `${item?.assetKey || ""} ${item?.id || ""} ${item?.itemName || ""} ${item?.name || ""}`.toLowerCase();
+  if (raw.includes("weed") || raw.includes("haze") || raw.includes("widow") || raw.includes("amsterdam")) return "weed";
+  if (raw.includes("drink") || raw.includes("whiskey") || raw.includes("lager") || raw.includes("champagne") || raw.includes("beer") || raw.includes("vodka")) return "drink";
+  return null;
 }
 
 
@@ -363,6 +383,55 @@ export class TradeScene {
     if (error) throw error;
     return data;
   }
+
+  _getAssetImage(key) {
+    return key ? getImgSafe(this.assets, key) : null;
+  }
+
+  _drawRoundedImage(ctx, img, x, y, w, h, r = 12) {
+    if (!img) return false;
+    ctx.save();
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.clip();
+    ctx.drawImage(img, x, y, w, h);
+    ctx.restore();
+    return true;
+  }
+
+  _drawVisualIcon(ctx, { imageKey = null, emoji = "📦" }, x, y, size = 28, radius = 10) {
+    const img = this._getAssetImage(imageKey);
+    if (img) {
+      this._drawRoundedImage(ctx, img, x, y, size, size, radius);
+      return;
+    }
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 ${Math.max(16, Math.floor(size * 0.8))}px system-ui`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(emoji || "📦", x + 2, y + size - 4);
+  }
+
+  async _createMarketListingCompat(params = {}) {
+    try {
+      return await this._rpc("create_market_listing", params);
+    } catch (err) {
+      const msg = String(err?.message || "");
+      const code = String(err?.code || "");
+      const shouldFallback = code === "PGRST202" || msg.includes("Could not find the function") || msg.includes("schema cache");
+      if (!shouldFallback) throw err;
+
+      const fallbackParams = {
+        p_seller_profile_id: params.p_seller_profile_id,
+        p_business_id: params.p_business_id,
+        p_product_key: String(params.p_business_product_id || params.p_inventory_item_id || ""),
+        p_qty: Number(params.p_quantity || 0),
+        p_price: Number(params.p_price_yton || 0),
+      };
+
+      return await this._rpc("create_market_listing", fallbackParams);
+    }
+  }
+
   _ensurePlayerMarketShop() {
     const s = this.store.get();
     const playerName = String(s.player?.username || "Player");
@@ -715,7 +784,7 @@ export class TradeScene {
         throw new Error("Inventory item satışı için blackmarket business kaydı gerekli");
       }
 
-      const result = await this._rpc("create_market_listing", {
+      const result = await this._createMarketListingCompat({
         p_seller_profile_id: profileId,
         p_business_id: marketBusiness.id,
         p_inventory_item_id: invRow.id,
@@ -1044,7 +1113,7 @@ export class TradeScene {
     try {
       const profileId = await this._getProfileId();
 
-      const result = await this._rpc("create_market_listing", {
+      const result = await this._createMarketListingCompat({
         p_seller_profile_id: profileId,
         p_business_id: bizId,
         p_business_product_id: productId,
@@ -1568,7 +1637,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(biz.icon || iconForType(biz.type), x + 14, y + 28);
+      this._drawVisualIcon(ctx, { imageKey: businessImageKey(biz.type), emoji: biz.icon || iconForType(biz.type) }, x + 12, y + 12, 28, 8);
       ctx.font = "900 15px system-ui";
       ctx.fillText(biz.name || "İşletme", x + 48, y + 24);
 
@@ -1614,7 +1683,7 @@ for (const p of products) {
 
   ctx.fillStyle = "#fff";
   ctx.font = "900 18px system-ui";
-  ctx.fillText(p.icon || "📦", x + 22, rowY + 22);
+  this._drawVisualIcon(ctx, { imageKey: itemImageKey(p), emoji: p.icon || "📦" }, x + 22, rowY + 8, 28, 8);
 
   ctx.font = "900 13px system-ui";
   ctx.fillText(p.name || "Ürün", x + 48, rowY + 18);
@@ -1628,13 +1697,13 @@ for (const p of products) {
   ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 110, rowY + 34);
 
   const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
-  const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
+  const sellRect = { x: x + w - 110, y: rowY + 12, w: 92, h: 28 };
 
   this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
   this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
 
   this._drawButton(ctx, useRect, "Kullan", "primary");
-  this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
+  this._drawButton(ctx, sellRect, "Pazara Koy", "gold");
 
   rowY += 62;
 }
@@ -1694,7 +1763,7 @@ for (const p of products) {
       ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(item.icon || "📦", x + 14, y + 28);
+      this._drawVisualIcon(ctx, { imageKey: itemImageKey(item), emoji: item.icon || "📦" }, x + 14, y + 8, 28, 8);
 
       ctx.font = "900 14px system-ui";
       ctx.fillText(item.name || "Item", x + 48, y + 22);
@@ -1719,13 +1788,6 @@ for (const p of products) {
         this.hitButtons.push({ rect, action: "use_item", itemId: item.id });
         this._drawButton(ctx, rect, "Kullan", "primary");
         bx += 82;
-      }
-
-      if (item.sellable) {
-        const rect = { x: bx, y: btnY, w: 60, h: 28 };
-        this.hitButtons.push({ rect, action: "sell_item", itemId: item.id });
-        this._drawButton(ctx, rect, "Sat", "gold");
-        bx += 68;
       }
 
       if (item.marketable) {
@@ -1907,7 +1969,7 @@ for (const p of products) {
       ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(item.icon || "📦", x + 14, y + 28);
+      this._drawVisualIcon(ctx, { imageKey: itemImageKey(item), emoji: item.icon || "📦" }, x + 14, y + 8, 28, 8);
 
       ctx.font = "900 14px system-ui";
       ctx.fillText(item.itemName || "Ürün", x + 48, y + 22);
@@ -1961,7 +2023,7 @@ for (const p of products) {
       ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(b.icon, x + 14, y + 28);
+      this._drawVisualIcon(ctx, { imageKey: businessImageKey(b.type), emoji: b.icon }, x + 14, y + 8, 28, 8);
 
       ctx.font = "900 14px system-ui";
       ctx.fillText(b.name, x + 48, y + 22);
@@ -2047,7 +2109,7 @@ for (const p of products) {
     strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
 
-  this.hitBack = { x: panelX + 12, y: panelY + 10, w: 40, h: 40 };
+  this.hitBack = { x: panelX + panelW - 52, y: panelY + 10, w: 40, h: 40 };
 this._drawButton(ctx, this.hitBack, "✕", "muted");
 
     
