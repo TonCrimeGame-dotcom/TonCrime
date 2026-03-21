@@ -1022,7 +1022,14 @@ if (typeof window.PvpScene === "function") {
   console.warn("[TonCrime] PvpScene bulunamadı, fallback MissionsScene çalıştı.");
   scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
 }
-
+// ✅ MATCH → GAME START FIX
+window.addEventListener("tc:startMatch", (e) => {
+  try {
+    scenes.go("pvp", e.detail || {});
+  } catch (err) {
+    console.warn("PVP start error:", err);
+  }
+});
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 
 scenes.register(
@@ -1042,6 +1049,7 @@ window.addEventListener("tc:openPvp", () => {
     console.warn("[TonCrime] tc:openPvp açılamadı:", err);
   }
 });
+
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
