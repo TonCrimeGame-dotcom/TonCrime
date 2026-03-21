@@ -407,6 +407,7 @@
       this.matchState = "menu";
       this.matchModeId = null;
       this.matchOpponent = null;
+      this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
 
@@ -548,6 +549,24 @@
       };
     }
 
+    _buildMatchContext(match, userId, modeId) {
+      if (!match || !userId) return null;
+      const amIPlayer1 = match.player1_id === userId;
+      return {
+        matchId: match.id,
+        userId,
+        modeId: modeId || this.matchModeId || "grid",
+        sqlMode: match.game_mode || this._mapModeIdToSqlMode(modeId || this.matchModeId),
+        amIPlayer1,
+        isBotMatch: !!match.is_bot_match,
+        player1Id: match.player1_id || null,
+        player2Id: match.player2_id || null,
+        player1Username: match.player1_username || "Player 1",
+        player2Username: match.player2_username || "Player 2",
+        opponentUsername: amIPlayer1 ? (match.player2_username || "Rakip") : (match.player1_username || "Rakip"),
+      };
+    }
+
     _clearRealtime() {
       const sb = this._getSupabase();
       if (this.matchSearchTimer) clearTimeout(this.matchSearchTimer);
@@ -592,6 +611,7 @@
       this.matchState = "menu";
       this.matchModeId = null;
       this.matchOpponent = null;
+      this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
     }
@@ -662,7 +682,10 @@
             (payload) => {
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               this.rtMatchStarted = true;
-              this.onMatchFound(this._buildOpponentFromMatch(payload.new, userId));
+              this.onMatchFound(
+                this._buildOpponentFromMatch(payload.new, userId),
+                this._buildMatchContext(payload.new, userId, id)
+              );
             }
           )
           .on(
@@ -676,7 +699,10 @@
             (payload) => {
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               this.rtMatchStarted = true;
-              this.onMatchFound(this._buildOpponentFromMatch(payload.new, userId));
+              this.onMatchFound(
+                this._buildOpponentFromMatch(payload.new, userId),
+                this._buildMatchContext(payload.new, userId, id)
+              );
             }
           )
           .subscribe();
@@ -714,7 +740,7 @@
       }
     }
 
-    onMatchFound(opponent) {
+    onMatchFound(opponent, matchRecord = null) {
       if (this.matchState !== "searching") return;
 
       if (this.matchSearchTimer) clearTimeout(this.matchSearchTimer);
@@ -723,14 +749,16 @@
       this.matchFallbackTimer = null;
 
       this.matchOpponent = opponent;
+      this.matchRecord = matchRecord || null;
       this.matchState = "found";
       this.matchFoundAt = Date.now();
 
       this.matchLaunchTimer = setTimeout(() => {
         const id = this.matchModeId;
         const opp = this.matchOpponent;
+        const matchCtx = this.matchRecord;
         this.matchLaunchTimer = null;
-        this.startGame(id, opp);
+        this.startGame(id, opp, matchCtx);
       }, 3000);
     }
 
@@ -829,7 +857,7 @@
       }
     }
 
-    async startGame(id, opponentData = null) {
+    async startGame(id, opponentData = null, matchCtx = null) {
       if (this._launchingGame) return;
       this._launchingGame = true;
 
@@ -942,6 +970,7 @@
             meHpTextId: "meHpText",
           });
 
+          window.TonCrimePVP.setMatchContext?.(matchCtx || null);
           window.TonCrimePVP.setOpponent?.({
             username: opponentData?.username || "ShadowWolf",
             isBot: !!(opponentData?.isBot ?? true),
@@ -1010,6 +1039,7 @@
             meHpTextId: "meHpText",
           });
 
+          window.TonCrimePVP.setMatchContext?.(matchCtx || null);
           window.TonCrimePVP.setOpponent?.({
             username: opponentData?.username || "ShadowWolf",
             isBot: !!(opponentData?.isBot ?? true),
@@ -1078,6 +1108,7 @@
             meHpTextId: "meHpText",
           });
 
+          window.TonCrimePVP.setMatchContext?.(matchCtx || null);
           window.TonCrimePVP.setOpponent?.({
             username: opponentData?.username || "ShadowWolf",
             isBot: !!(opponentData?.isBot ?? true),
