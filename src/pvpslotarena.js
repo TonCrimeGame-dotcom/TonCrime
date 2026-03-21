@@ -23,13 +23,13 @@
   const BOT_NAMES = ["ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven"];
   const BONUS_MULTI_VALUES = [2, 3, 5, 8, 10, 12, 15, 20, 25, 50];
   const ICON_PATHS = {
-    weed: "./src/assets/weed.png",
-    brain: "./src/assets/brain.png",
-    drink: "./src/assets/drink.png",
-    kick: "./src/assets/kick.png",
-    slap: "./src/assets/slap.png",
-    punch: "./src/assets/punch.png",
-    bonus: "./src/assets/bonus.png",
+    weed: "./assets/weed.png",
+    brain: "./assets/brain.png",
+    drink: "./assets/drink.png",
+    kick: "./assets/kick.png",
+    slap: "./assets/slap.png",
+    punch: "./assets/punch.png",
+    bonus: "./assets/bonus.png",
   };
 
   function clamp(n, min, max) {
