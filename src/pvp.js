@@ -142,10 +142,6 @@
         const mod = await import("./supabase.js");
         return mod?.supabase || null;
       } catch (_) {}
-      try {
-        const mod = await import("./supabase.js");
-        return mod?.supabase || null;
-      } catch (_) {}
       return null;
     })();
     return _supabasePromise;
