@@ -1080,7 +1080,6 @@
 
       this.reset();
       this._running = true;
-      this._locked = true;
       this._state.matchmaking = false;
       this._state.turn = "me";
       this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
@@ -1088,6 +1087,12 @@
       this._setStatus(`IQ ARENA • ${this._opponent?.username || "Rakip"} hazır`);
       clearTimeout(this._queueTimer);
       this._queueTimer = null;
+
+      // İlk tur oyuncudaysa kilit açık olmalı.
+      // Önceki sürümde burada true verildiği için ilk swipe işlenmiyordu,
+      // süre boşa akıp tur rakibe geçiyordu.
+      this._locked = this._state.turn !== "me";
+
       this._updateHud();
       this._render();
     },
