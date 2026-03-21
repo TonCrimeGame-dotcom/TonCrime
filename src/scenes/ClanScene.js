@@ -56,20 +56,6 @@ function textLine(ctx, text, x, y, maxWidth) {
   while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) t = t.slice(0, -1);
   ctx.fillText(t + "…", x, y);
 }
-function getCanvasCssSize(canvas) {
-  const rect = canvas?.getBoundingClientRect?.();
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-
-  let w = Math.round(rect?.width || 0);
-  let h = Math.round(rect?.height || 0);
-
-  if (!w || !h) {
-    w = Math.round((canvas?.width || window.innerWidth) / dpr);
-    h = Math.round((canvas?.height || window.innerHeight) / dpr);
-  }
-
-  return { w, h };
-}
 
 export class ClanScene {
   constructor({ store, input, i18n, assets, scenes }) {
@@ -128,90 +114,33 @@ export class ClanScene {
   getState() { return this.store?.get ? this.store.get() : {}; }
 
   getLayout(ctx) {
-    const state = this.getState();
-    const size = getCanvasCssSize(ctx?.canvas);
-    const cssW = size.w;
-    const cssH = size.h;
-
-    const safe = state?.ui?.safe || { x: 0, y: 0, w: cssW, h: cssH };
-    const hudReservedTop = Number(state?.ui?.hudReservedTop || 86);
-    const chatReservedBottom = Number(state?.ui?.chatReservedBottom || 58);
-
-    const safeX = Number(safe.x || 0);
-    const safeY = Number(safe.y || 0);
-    const safeW = Math.max(0, Number(safe.w || cssW));
-    const safeH = Math.max(0, Number(safe.h || cssH));
-
-    const mobile = safeW <= 760;
-    const pad = mobile ? 10 : Math.max(14, Math.floor(safeW * 0.035));
+    const rect = typeof ctx?.canvas?.getBoundingClientRect === "function"
+      ? ctx.canvas.getBoundingClientRect()
+      : null;
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const w = Math.round(rect?.width || (ctx.canvas.width / dpr) || window.innerWidth || 0);
+    const h = Math.round(rect?.height || (ctx.canvas.height / dpr) || window.innerHeight || 0);
+    const mobile = w < 760;
+    const pad = mobile ? 10 : Math.max(14, Math.floor(w * 0.035));
     const gap = mobile ? 10 : 16;
-    const top = safeY + Math.max(mobile ? 8 : 10, hudReservedTop);
-    const bottomPad = Math.max(mobile ? 66 : 84, chatReservedBottom + (mobile ? 8 : 12));
+    const top = mobile ? 78 : 94;
+    const bottomPad = mobile ? 74 : 92;
 
     if (mobile) {
-      const leftX = safeX + pad;
-      const leftY = top;
-      const leftW = Math.max(120, safeW - pad * 2);
-      const leftH = Math.min(188, Math.max(160, Math.floor(safeH * 0.28)));
-
-      const rightX = leftX;
-      const rightY = leftY + leftH + gap;
-      const rightW = leftW;
-      const rightH = Math.max(120, safeY + safeH - rightY - bottomPad);
-
-      return {
-        mobile,
-        w: cssW,
-        h: cssH,
-        pad,
-        gap,
-        top,
-        bottomPad,
-        safeX,
-        safeY,
-        safeW,
-        safeH,
-        leftX,
-        leftY,
-        leftW,
-        leftH,
-        rightX,
-        rightY,
-        rightW,
-        rightH,
-      };
+      const leftW = w - pad * 2;
+      const leftH = Math.min(188, Math.max(160, Math.floor(h * 0.28)));
+      const rightX = pad;
+      const rightY = top + leftH + gap;
+      const rightW = w - pad * 2;
+      const rightH = Math.max(120, h - rightY - bottomPad);
+      return { mobile, w, h, pad, gap, top, bottomPad, leftX: pad, leftY: top, leftW, leftH, rightX, rightY, rightW, rightH };
     }
 
-    const leftX = safeX + pad;
-    const leftY = top;
-    const leftW = Math.min(300, safeW * 0.34);
-    const leftH = Math.max(120, safeY + safeH - top - bottomPad);
-    const rightX = leftX + leftW + gap;
-    const rightY = top;
-    const rightW = Math.max(120, safeX + safeW - rightX - pad);
-    const rightH = leftH;
-
-    return {
-      mobile,
-      w: cssW,
-      h: cssH,
-      pad,
-      gap,
-      top,
-      bottomPad,
-      safeX,
-      safeY,
-      safeW,
-      safeH,
-      leftX,
-      leftY,
-      leftW,
-      leftH,
-      rightX,
-      rightY,
-      rightW,
-      rightH,
-    };
+    const leftW = Math.min(300, w * 0.34);
+    const leftH = h - top - bottomPad;
+    const rightX = pad + leftW + gap;
+    const rightW = w - rightX - pad;
+    return { mobile, w, h, pad, gap, top, bottomPad, leftX: pad, leftY: top, leftW, leftH, rightX, rightY: top, rightW, rightH: leftH };
   }
 
   update() {
@@ -553,4 +482,127 @@ export class ClanScene {
     ctx.fillStyle = "#dbe8ff";
     ctx.font = "18px Arial";
     ctx.fillText(`Durum: ${boss?.bossStatus || "idle"} • HP ${fmtNum(boss?.bossHp || 0)} / ${fmtNum(boss?.bossMaxHp || 0)}`, x + 30, y + 444);
-    ctx.fill
+    ctx.fillText(`Kalan spin: ${boss?.spinsLeft || 0} • Enerji / spin ${boss?.energyPerSpin || 0}`, x + 30, y + 472);
+
+    const startBtn = { x: x + w - 244, y: y + 428, w: 200, h: 40, onClick: () => ClanSystem.startBossRaid(this.store) };
+    this.buttons.push(startBtn);
+    fillRR(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, 14, "#6b4adb");
+    ctx.fillStyle = "#fff";
+    ctx.fillText("Boss Sezonu Başlat", startBtn.x + 26, startBtn.y + 25);
+  }
+
+  drawMembersTab(ctx, x, y, w, h, state, clan) {
+    const mobile = !!this.layout?.mobile;
+    let cy = y + 8;
+    const visibleMembers = mobile ? clan.members.slice(0, 4) : clan.members.slice(0, 6);
+    visibleMembers.forEach((m) => {
+      const rowH = mobile ? 70 : 74;
+      fillRR(ctx, x + 10, cy, w - 20, rowH, 18, "#13284a");
+      ctx.fillStyle = "#fff";
+      ctx.font = fitBold(20, mobile, 13);
+      textLine(ctx, m.name, x + 22, cy + 24, w - 180);
+      ctx.fillStyle = "#9fc2ff";
+      ctx.font = fitFont(17, mobile, 10);
+      textLine(ctx, `${getRoleLabel(m.role)} • Lv ${m.level} • Güç ${fmtNum(m.power)}`, x + 22, cy + 44, w - 190);
+      ctx.fillStyle = "#7ce8a4";
+      ctx.fillText(`Pay %${m.rewardShare || 0}`, x + 22, cy + (mobile ? 60 : 52));
+
+      if (m.id !== "player_main") {
+        const promoteBtn = { x: x + w - (mobile ? 150 : 250), y: cy + 14, w: mobile ? 64 : 92, h: mobile ? 28 : 34, onClick: () => ClanSystem.promoteMember(this.store, m.id, "co_leader") };
+        const kickBtn = { x: x + w - (mobile ? 78 : 148), y: cy + 14, w: mobile ? 56 : 92, h: mobile ? 28 : 34, onClick: () => ClanSystem.kickMember(this.store, m.id) };
+        this.buttons.push(promoteBtn, kickBtn);
+        fillRR(ctx, promoteBtn.x, promoteBtn.y, promoteBtn.w, promoteBtn.h, 12, "#2767c8");
+        fillRR(ctx, kickBtn.x, kickBtn.y, kickBtn.w, kickBtn.h, 12, "#6d3542");
+        ctx.fillStyle = "#fff";
+        ctx.font = fitBold(15, mobile, 10);
+        ctx.fillText(mobile ? "Yrd." : "Yardımcı", promoteBtn.x + (mobile ? 12 : 14), promoteBtn.y + (mobile ? 18 : 22));
+        ctx.fillText("Çıkar", kickBtn.x + (mobile ? 10 : 24), kickBtn.y + (mobile ? 18 : 22));
+      }
+      cy += rowH + 8;
+    });
+  }
+
+  drawManageTab(ctx, x, y, w, h, state, clan) {
+    const mobile = !!this.layout?.mobile;
+
+    fillRR(ctx, x + 10, y + 8, w - 20, mobile ? 92 : 108, mobile ? 16 : 20, "#13284a");
+    ctx.fillStyle = "#fff";
+    ctx.font = fitBold(22, mobile, 14);
+    ctx.fillText("Davet Gönder", x + 22, y + 30);
+    ctx.fillStyle = "#9fc2ff";
+    ctx.font = fitFont(17, mobile, 10);
+    if (mobile) {
+      ctx.fillText("Kurucu yardımcısı davet atabilir.", x + 22, y + 48);
+    } else {
+      ctx.fillText("Oyuncu adı yaz ve davet gönder. Kurucu yardımcısı davet atabilir.", x + 28, y + 66);
+    }
+
+    const inputRect = { x: x + 22, y: y + (mobile ? 56 : 78), w: mobile ? w - 124 : w - 210, h: mobile ? 28 : 34, onClick: () => { this.inviteFocused = true; } };
+    const sendBtn = { x: x + w - (mobile ? 94 : 164), y: y + (mobile ? 56 : 78), w: mobile ? 72 : 124, h: mobile ? 28 : 34, onClick: () => { ClanSystem.createInvite(this.store, this.inviteName); this.inviteName = ""; } };
+    this.buttons.push(inputRect, sendBtn);
+    fillRR(ctx, inputRect.x, inputRect.y, inputRect.w, inputRect.h, 12, this.inviteFocused ? "#17376b" : "#102040");
+    fillRR(ctx, sendBtn.x, sendBtn.y, sendBtn.w, sendBtn.h, 12, "#1f8c5e");
+    ctx.fillStyle = "#fff";
+    ctx.font = fitFont(17, mobile, 11);
+    textLine(ctx, this.inviteName || "Oyuncu adı...", inputRect.x + 10, inputRect.y + (mobile ? 19 : 22), inputRect.w - 20);
+    ctx.fillText(mobile ? "Davet" : "Davet At", sendBtn.x + (mobile ? 12 : 25), sendBtn.y + (mobile ? 19 : 22));
+
+    let cy = y + (mobile ? 106 : 136);
+    ctx.fillStyle = "#fff";
+    ctx.font = fitBold(22, mobile, 14);
+    ctx.fillText("Ödül Paylaşımı", x + 22, cy + 6);
+    cy += 14;
+
+    const visibleMembers = mobile ? clan.members.slice(0, 4) : clan.members.slice(0, 5);
+    visibleMembers.forEach((m) => {
+      const rowH = mobile ? 50 : 56;
+      fillRR(ctx, x + 10, cy, w - 20, rowH, 16, "#13284a");
+      ctx.fillStyle = "#fff";
+      ctx.font = fitBold(18, mobile, 11);
+      textLine(ctx, `${m.name} • ${getRoleLabel(m.role)}`, x + 22, cy + 20, w - 120);
+      ctx.fillStyle = "#9fc2ff";
+      ctx.font = fitFont(18, mobile, 10);
+      ctx.fillText(`Pay %${m.rewardShare || 0}`, x + 22, cy + 38);
+
+      const minusBtn = { x: x + w - (mobile ? 88 : 132), y: cy + 10, w: 28, h: 26, onClick: () => ClanSystem.setMemberRewardShare(this.store, m.id, clamp(Number(m.rewardShare || 0) - 1, 0, 25)) };
+      const plusBtn = { x: x + w - (mobile ? 50 : 84), y: cy + 10, w: 28, h: 26, onClick: () => ClanSystem.setMemberRewardShare(this.store, m.id, clamp(Number(m.rewardShare || 0) + 1, 0, 25)) };
+      this.buttons.push(minusBtn, plusBtn);
+      fillRR(ctx, minusBtn.x, minusBtn.y, minusBtn.w, minusBtn.h, 10, "#3e4e74");
+      fillRR(ctx, plusBtn.x, plusBtn.y, plusBtn.w, plusBtn.h, 10, "#2767c8");
+      ctx.fillStyle = "#fff";
+      ctx.font = fitBold(18, mobile, 12);
+      ctx.fillText("-", minusBtn.x + 10, minusBtn.y + 18);
+      ctx.fillText("+", plusBtn.x + 8, plusBtn.y + 18);
+      cy += rowH + 8;
+    });
+
+    const infoY = mobile ? y + h - 74 : y + h - 110;
+    const infoH = mobile ? 58 : 92;
+    fillRR(ctx, x + 10, infoY, w - 20, infoH, mobile ? 16 : 20, "#13284a");
+    ctx.fillStyle = "#dbe8ff";
+    ctx.font = fitFont(18, mobile, 10);
+    if (mobile) {
+      ctx.fillText("Roller ve reward share burada yönetilir.", x + 18, infoY + 22);
+      ctx.fillText("Koruma aktifken binalar saldırıdan korunur.", x + 18, infoY + 40);
+    } else {
+      ctx.fillText("Kurucu yardımcısı ve subay rolleri burada yönetilir. Reward share clan ödüllerinin payını belirler.", x + 28, y + h - 76);
+      ctx.fillText("Clan koruması aktif olduğunda üyelerin binaları saldırıdan korunur.", x + 28, y + h - 48);
+    }
+  }
+
+  drawLogTab(ctx, x, y, w, h, state, clan) {
+    const mobile = !!this.layout?.mobile;
+    const logs = (clan.logs || []).slice(0, mobile ? 5 : 7);
+    let cy = y + 8;
+    logs.forEach((log) => {
+      const rowH = mobile ? 48 : 56;
+      fillRR(ctx, x + 10, cy, w - 20, rowH, 16, "#13284a");
+      ctx.fillStyle = "#fff";
+      ctx.font = fitFont(17, mobile, 10);
+      textLine(ctx, log.text || "-", x + 22, cy + (mobile ? 20 : 24), w - 44);
+      ctx.fillStyle = "#8fb3ff";
+      ctx.fillText(String(log.type || "system").toUpperCase(), x + 22, cy + (mobile ? 38 : 44));
+      cy += rowH + 8;
+    });
+  }
+}
