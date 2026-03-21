@@ -32,12 +32,12 @@
   };
 
   const ICON_PATHS = {
-    punch: "./assets/punch.png",
-    kick: "./assets/kick.png",
-    slap: "./assets/slap.png",
-    brain: "./assets/brain.png",
-    weed: "./assets/weed.png",
-    drink: "./assets/drink.png",
+    punch: "./src/assets/punch.png",
+    kick: "./src/assets/kick.png",
+    slap: "./src/assets/slap.png",
+    brain: "./src/assets/brain.png",
+    weed: "./src/assets/weed.png",
+    drink: "./src/assets/drink.png",
   };
 
   const ICON_IMAGES = {};
@@ -48,29 +48,17 @@
 
     const jobs = Object.entries(ICON_PATHS).map(([key, src]) => {
       return new Promise((resolve) => {
-        const tries = [src];
-        if (typeof src === "string" && src.startsWith("./assets/")) {
-          tries.push(src.replace("./assets/", "./src/assets/"));
-        } else if (typeof src === "string" && src.startsWith("./src/assets/")) {
-          tries.push(src.replace("./src/assets/", "./assets/"));
-        }
-        let i = 0;
-        const next = () => {
-          if (i >= tries.length) {
-            ICON_IMAGES[key] = null;
-            resolve();
-            return;
-          }
-          const img = new Image();
-          img.decoding = "async";
-          img.onload = () => {
-            ICON_IMAGES[key] = img;
-            resolve();
-          };
-          img.onerror = () => next();
-          img.src = tries[i++];
+        const img = new Image();
+        img.decoding = "async";
+        img.onload = () => {
+          ICON_IMAGES[key] = img;
+          resolve();
         };
-        next();
+        img.onerror = () => {
+          ICON_IMAGES[key] = null;
+          resolve();
+        };
+        img.src = src;
       });
     });
 
@@ -767,6 +755,10 @@
     _turnTicker: null,
     _audioCtx: null,
     _shakeUntil: 0,
+    _matchCtx: null,
+    _onlineChannel: null,
+    _onlineReady: false,
+    _resultRecorded: false,
 
 
     _ensureAudio() {
@@ -942,6 +934,138 @@
       this._startTurnTicker();
     },
 
+    setMatchContext(ctx) {
+      this._matchCtx = ctx && ctx.matchId ? { ...ctx } : null;
+    },
+
+    _getSupabase() {
+      return window.supabase || window.tcSupabase || null;
+    },
+
+    _isRealtimeMatch() {
+      return !!(this._matchCtx && this._matchCtx.matchId && !this._matchCtx.isBotMatch);
+    },
+
+    _toNetworkState() {
+      if (!this._state) return null;
+      const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
+      return {
+        board: cloneBoard(this._state.board),
+        player1Hp: amIPlayer1 ? this._state.meHp : this._state.enemyHp,
+        player2Hp: amIPlayer1 ? this._state.enemyHp : this._state.meHp,
+        player1Moves: amIPlayer1 ? this._state.meMoves : this._state.enemyMoves,
+        player2Moves: amIPlayer1 ? this._state.enemyMoves : this._state.meMoves,
+        player1ActionLeft: amIPlayer1 ? this._state.meActionLeft : this._state.enemyActionLeft,
+        player2ActionLeft: amIPlayer1 ? this._state.enemyActionLeft : this._state.meActionLeft,
+        activePlayer: this._state.turn === "me"
+          ? (amIPlayer1 ? "player1" : "player2")
+          : (amIPlayer1 ? "player2" : "player1"),
+        info: this._state.info || "",
+        finished: !!this._state.finished,
+      };
+    },
+
+    _applyNetworkState(netState, meta = {}) {
+      if (!this._state || !netState) return;
+      const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
+
+      this._state.board = cloneBoard(netState.board || this._state.board);
+      this._state.meHp = amIPlayer1 ? Number(netState.player1Hp) : Number(netState.player2Hp);
+      this._state.enemyHp = amIPlayer1 ? Number(netState.player2Hp) : Number(netState.player1Hp);
+      this._state.meMoves = amIPlayer1 ? Number(netState.player1Moves) : Number(netState.player2Moves);
+      this._state.enemyMoves = amIPlayer1 ? Number(netState.player2Moves) : Number(netState.player1Moves);
+      this._state.meActionLeft = amIPlayer1 ? Number(netState.player1ActionLeft) : Number(netState.player2ActionLeft);
+      this._state.enemyActionLeft = amIPlayer1 ? Number(netState.player2ActionLeft) : Number(netState.player1ActionLeft);
+      this._state.turn = (
+        (netState.activePlayer === "player1" && amIPlayer1) ||
+        (netState.activePlayer === "player2" && !amIPlayer1)
+      ) ? "me" : "enemy";
+      this._state.info = netState.info || this._state.info || "";
+      this._state.finished = !!netState.finished;
+      this._state.matchmaking = false;
+      this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+
+      this._locked = this._state.finished ? true : this._state.turn !== "me";
+
+      if (this._state.finished) {
+        const win = this._state.enemyHp <= 0 ||
+          (this._state.meMoves <= 0 && this._state.enemyMoves <= 0 && this._state.meHp >= this._state.enemyHp);
+        this._finishGame(win, this._state.info || (win ? "Kazandın" : "Kaybettin"));
+        return;
+      }
+
+      if (meta.toast) this._toast(meta.toast);
+      this._updateHud();
+      this._render();
+    },
+
+    async _destroyOnlineChannel() {
+      const sb = this._getSupabase();
+      if (this._onlineChannel && sb?.removeChannel) {
+        try { await sb.removeChannel(this._onlineChannel); } catch (_) {}
+      }
+      this._onlineChannel = null;
+      this._onlineReady = false;
+    },
+
+    async _broadcastOnline(event, payload) {
+      if (!this._onlineChannel) return;
+      try {
+        await this._onlineChannel.send({
+          type: "broadcast",
+          event,
+          payload: payload || {},
+        });
+      } catch (_) {}
+    },
+
+    async _setupOnlineRoom() {
+      if (!this._isRealtimeMatch()) return false;
+      const sb = this._getSupabase();
+      if (!sb?.channel) return false;
+
+      await this._destroyOnlineChannel();
+
+      const room = `tc-pvp-room-${this._matchCtx.matchId}`;
+      this._onlineChannel = sb.channel(room, { config: { broadcast: { self: false } } });
+
+      this._onlineChannel
+        .on("broadcast", { event: "init_state" }, ({ payload }) => {
+          if (!payload?.state) return;
+          this._applyNetworkState(payload.state);
+        })
+        .on("broadcast", { event: "state_sync" }, ({ payload }) => {
+          if (!payload?.state) return;
+          this._applyNetworkState(payload.state, { toast: payload.toast || "" });
+        })
+        .on("broadcast", { event: "finish_sync" }, ({ payload }) => {
+          if (!payload?.state) return;
+          this._applyNetworkState(payload.state);
+        })
+        .on("broadcast", { event: "leave_match" }, () => {
+          if (this._state?.finished) return;
+          this._finishGame(true, "Rakip ayrıldı");
+        });
+
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+        try {
+          this._onlineChannel.subscribe(() => finish());
+        } catch (_) {
+          finish();
+        }
+        setTimeout(finish, 1200);
+      });
+
+      this._onlineReady = true;
+      return true;
+    },
+
     setOpponent(opp) {
       if (opp && typeof opp.username === "string") {
         this._opponent = { ...opp };
@@ -956,25 +1080,22 @@
 
       this.reset();
       this._running = true;
-      this._locked = false;
+      this._locked = true;
       this._state.matchmaking = false;
       this._state.turn = "me";
       this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
       this._state.info = `${this._opponent?.username || "Rakip"} hazır`;
       this._setStatus(`IQ ARENA • ${this._opponent?.username || "Rakip"} hazır`);
-
       clearTimeout(this._queueTimer);
       this._queueTimer = null;
-
-      if (this._els?.enemyName) {
-        this._els.enemyName.textContent = this._opponent?.username || "Rakip";
-      }
-
       this._updateHud();
       this._render();
     },
 
-    stop() {
+    async stop() {
+      if (this._isRealtimeMatch() && this._onlineReady && !this._state?.finished) {
+        await this._broadcastOnline("leave_match", { matchId: this._matchCtx?.matchId || null });
+      }
       this._running = false;
       this._locked = false;
       this._selected = null;
@@ -992,6 +1113,7 @@
       }
       this._setStatus("IQ ARENA durdu");
       this._render();
+      await this._destroyOnlineChannel();
     },
 
     reset() {
@@ -1011,6 +1133,7 @@
       this._effects = [];
       this._flashAlpha = 0;
       this._flashColor = "#ffd166";
+      this._resultRecorded = false;
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -1044,7 +1167,7 @@
     },
 
     _spawnBotAfterQueue() {
-      if (this._opponent && !this._state?.matchmaking) return;
+      if (this._isRealtimeMatch()) return;
       const name = choice(BOT_NAMES);
       this._opponent = { username: name, isBot: true };
       this._state.matchmaking = false;
@@ -1460,7 +1583,7 @@
       if (this._els.sub) {
         this._els.sub.textContent = s.matchmaking
           ? "5sn içinde rakip bulunmazsa bot gelir"
-          : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}`;
+          : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}${this._isRealtimeMatch() ? " • ONLINE" : ""}`;
       }
     },
 
@@ -1484,7 +1607,21 @@
       await this._resolveTurn("me");
 
       if (!this._running) return;
-      if (this._checkFinish()) return;
+      if (this._checkFinish()) {
+        if (this._isRealtimeMatch()) {
+          await this._broadcastOnline("finish_sync", { state: this._toNetworkState() });
+        }
+        return;
+      }
+
+      if (this._isRealtimeMatch()) {
+        await this._broadcastOnline("state_sync", {
+          state: this._toNetworkState(),
+          toast: "Rakip oynadı",
+        });
+        this._locked = this._state.turn !== "me";
+        return;
+      }
 
       if (this._state.turn === "enemy") {
         const delay = randInt(700, 1250);
@@ -1495,6 +1632,7 @@
     },
 
     async _enemyPlay() {
+      if (this._isRealtimeMatch()) return;
       if (!this._running || !this._state || this._state.turn !== "enemy" || this._state.matchmaking) return;
       this._locked = true;
 
@@ -1618,6 +1756,8 @@
     },
 
     _recordResult(win) {
+      if (this._resultRecorded) return;
+      this._resultRecorded = true;
       const store = window.tcStore;
       const now = Date.now();
       const REWARD_COINS = 36;
