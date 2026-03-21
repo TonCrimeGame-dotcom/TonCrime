@@ -956,21 +956,22 @@
 
       this.reset();
       this._running = true;
-      this._locked = true;
-      this._state.matchmaking = true;
+      this._locked = false;
+      this._state.matchmaking = false;
       this._state.turn = "me";
       this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
-      this._state.info = "Rakip aranıyor...";
-      this._setStatus("IQ ARENA • rakip aranıyor");
-      this._toast("Rakip aranıyor...");
-      this._updateHud();
-      this._render();
+      this._state.info = `${this._opponent?.username || "Rakip"} hazır`;
+      this._setStatus(`IQ ARENA • ${this._opponent?.username || "Rakip"} hazır`);
 
       clearTimeout(this._queueTimer);
-      this._queueTimer = setTimeout(() => {
-        if (!this._running) return;
-        this._spawnBotAfterQueue();
-      }, 5000);
+      this._queueTimer = null;
+
+      if (this._els?.enemyName) {
+        this._els.enemyName.textContent = this._opponent?.username || "Rakip";
+      }
+
+      this._updateHud();
+      this._render();
     },
 
     stop() {
@@ -1043,6 +1044,7 @@
     },
 
     _spawnBotAfterQueue() {
+      if (this._opponent && !this._state?.matchmaking) return;
       const name = choice(BOT_NAMES);
       this._opponent = { username: name, isBot: true };
       this._state.matchmaking = false;
@@ -1455,11 +1457,11 @@
         }
       }
 
-if (this._els.sub) {
-  this._els.sub.textContent = s.matchmaking
-    ? ""
-    : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}`;
-}
+      if (this._els.sub) {
+        this._els.sub.textContent = s.matchmaking
+          ? "5sn içinde rakip bulunmazsa bot gelir"
+          : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}`;
+      }
     },
 
     async _playerMove(a, b) {
