@@ -1455,11 +1455,11 @@
         }
       }
 
-      if (this._els.sub) {
-        this._els.sub.textContent = s.matchmaking
-          ? "5sn içinde rakip bulunmazsa bot gelir"
-          : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}`;
-      }
+if (this._els.sub) {
+  this._els.sub.textContent = s.matchmaking
+    ? ""
+    : `${s.info || "Grid Heist"} • Sıra: ${s.turn === "me" ? "Sen" : this._opponent.username} • Süre: ${timeLeft}`;
+}
     },
 
     async _playerMove(a, b) {
