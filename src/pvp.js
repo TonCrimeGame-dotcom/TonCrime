@@ -484,6 +484,8 @@
         border: 1px solid rgba(255,255,255,0.12);
         background: rgba(11,16,28,0.42);
         box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+        text-align: center;
+        margin: 0 auto;
       }
 
       .pvpMatchEyebrow {
@@ -538,6 +540,7 @@
         border-radius: 14px;
         background: rgba(255,255,255,0.05);
         border: 1px solid rgba(255,255,255,0.08);
+        text-align: center;
       }
 
       .pvpMiniStat span {
@@ -572,6 +575,7 @@
         border-radius: 16px;
         background: rgba(255,255,255,0.06);
         border: 1px solid rgba(255,255,255,0.10);
+        text-align: center;
       }
 
       .pvpFighter small {
@@ -743,7 +747,7 @@
           <div class="pvpMatchCard">
             <div class="pvpMatchEyebrow">TONCRIME MATCHMAKING</div>
             <div class="pvpMatchTitle" id="pvpMatchTitle">Rakip aranıyor</div>
-            <div class="pvpMatchDesc" id="pvpMatchDesc">Önce gerçek oyuncu aranıyor. Uygun rakip bulunmazsa mücadele hazırlandığında maç açılır.</div>
+            <div class="pvpMatchDesc" id="pvpMatchDesc">Eşleşme hazırlanıyor. Rakip aranıyor.</div>
             <div class="pvpSearchMeter" id="pvpSearchMeter"><i></i></div>
             <div class="pvpMatchStats" id="pvpMatchStats">
               <div class="pvpMiniStat"><span>Mod</span><b id="pvpMatchMode">PvP</b></div>
@@ -993,7 +997,7 @@
       const meta = this._modeMeta(id);
       if (dom.matchLayer) dom.matchLayer.classList.add("open");
       if (dom.matchTitle) dom.matchTitle.textContent = "Rakip aranıyor";
-      if (dom.matchDesc) dom.matchDesc.textContent = "Önce gerçek oyuncu aranıyor. Uygun rakip bulunamazsa maç otomatik hazırlanacak.";
+      if (dom.matchDesc) dom.matchDesc.textContent = "Eşleşme hazırlanıyor. Rakip aranıyor.";
       if (dom.matchMode) dom.matchMode.textContent = meta.label;
       if (dom.matchState) dom.matchState.textContent = "Gerçek oyuncu aranıyor...";
       if (dom.playerName) dom.playerName.textContent = me.username;
@@ -1031,11 +1035,13 @@
 
     async _loadAndStartMode(id, dom, opponent) {
       const meta = this._modeMeta(id);
+      const safeName = sanitizeName(opponent?.username || "Rakip");
+      const safeLevel = Math.max(1, Number(opponent?.level || 1));
       const setOpp = () => {
         try {
-          window.TonCrimePVP.setOpponent?.({
-            username: sanitizeName(opponent?.username || "Rakip"),
-            level: Math.max(1, Number(opponent?.level || 1)),
+          window.TonCrimePVP?.setOpponent?.({
+            username: safeName,
+            level: safeLevel,
             isBot: !!opponent?.isBot,
           });
         } catch (_) {}
@@ -1057,7 +1063,10 @@
         throw new Error("Desteklenmeyen PvP modu");
       }
 
-      window.TonCrimePVP.init?.({
+      const api = window.TonCrimePVP;
+      if (!api) throw new Error("TonCrimePVP bulunamadı");
+
+      api.init?.({
         arenaId: "arena",
         statusId: "pvpStatus",
         enemyFillId: "enemyFill",
@@ -1067,16 +1076,25 @@
       });
 
       setOpp();
-      await sleep(160);
-      window.TonCrimePVP.reset?.();
+      await sleep(80);
+      api.reset?.();
       setOpp();
-      await sleep(180);
-      this._hideQueueOverlay(dom);
-      window.TonCrimePVP.start?.();
+
+      if (dom.matchLayer) {
+        dom.matchLayer.classList.remove("open");
+        dom.matchLayer.style.display = "none";
+        dom.matchLayer.style.pointerEvents = "none";
+      }
+
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      api.start?.();
+      setOpp();
+      await sleep(120);
+      api.start?.();
       setOpp();
 
       if (dom.status) dom.status.textContent = meta.status;
-      if (dom.opponent) dom.opponent.textContent = `${sanitizeName(opponent?.username || "Rakip")} • Lv ${Math.max(1, Number(opponent?.level || 1))}`;
+      if (dom.opponent) dom.opponent.textContent = `${safeName} • Lv ${safeLevel}`;
       if (dom.startBtn) dom.startBtn.style.display = "none";
       if (dom.stopBtn) dom.stopBtn.style.display = "none";
       if (dom.resetBtn) dom.resetBtn.style.display = "none";
@@ -1104,7 +1122,7 @@
       }
       if (!opponent) {
         if (dom.matchState) dom.matchState.textContent = "Rakip hazırlanıyor...";
-        if (dom.matchDesc) dom.matchDesc.textContent = "Uygun rakip hazırlanıyor. Arena bağlantısı kuruluyor.";
+        if (dom.matchDesc) dom.matchDesc.textContent = "Arena bağlantısı kuruluyor.";
         await sleep(450);
         opponent = createFallbackOpponent(this.store);
       }
