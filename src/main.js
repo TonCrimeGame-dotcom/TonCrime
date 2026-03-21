@@ -424,7 +424,8 @@ addImage("clan_bg", "./src/assets/Clan-bg.png");
 addImage("nightclub_bg", "./src/assets/nightclub-bg.png");
 addImage("pvp_bg", "./src/assets/pvp-bg.png");
 addImage("xxx_bg", "./src/assets/xxx-bg.png");
-
+addImage("weed", "./src/weed.png");
+addImage("drink", "./src/drink.png");
 /* BLACK MARKET */
 addImage("blackmarket", "./src/assets/BlackMarket.png");
 addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
