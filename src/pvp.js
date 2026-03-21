@@ -463,13 +463,13 @@
       this.fallbackBg.src = "./assets/pvp-bg.png";
     }
 
-    enter() {
+    onEnter() {
       this.bg =
         getImageFromAssets(this.assets, "pvp_bg") ||
         getImageFromAssets(this.assets, "pvp-bg") ||
         getImageFromAssets(this.assets, "pvp") ||
         this.fallbackBg;
-
+      
       const s = this.store?.get?.() || {};
       this.source = s?.pvp?.source || "general";
       this.scrollY = 0;
@@ -481,7 +481,10 @@
       this._launchingGame = false;
       this._resetMatchmaking();
     }
-
+onExit() {
+  this._resetMatchmaking();
+  this._launchingGame = false;
+}
 
     _resetMatchmaking() {
       if (this.matchSearchTimer) clearTimeout(this.matchSearchTimer);
