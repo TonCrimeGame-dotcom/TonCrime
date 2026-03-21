@@ -24,6 +24,17 @@ function strokeRR(ctx, x, y, w, h, r, color, line = 1) {
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function fmtNum(n) { return Number(n || 0).toLocaleString("tr-TR"); }
 function getPointer(input) { return input?.pointer || input?.p || input?.mouse || input?.state?.pointer || { x: 0, y: 0 }; }
+function canvasCssSize(canvas) {
+  const rect = canvas?.getBoundingClientRect?.();
+  if (rect && rect.width > 0 && rect.height > 0) {
+    return { w: Math.round(rect.width), h: Math.round(rect.height) };
+  }
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  return {
+    w: Math.max(1, Math.round((canvas?.width || 1) / dpr)),
+    h: Math.max(1, Math.round((canvas?.height || 1) / dpr)),
+  };
+}
 function justPressed(input) {
   if (typeof input?.justPressed === "function") return !!input.justPressed();
   if (typeof input?.isJustPressed === "function") return !!input.isJustPressed("pointer") || !!input.isJustPressed("mouseLeft") || !!input.isJustPressed("touch");
@@ -71,6 +82,9 @@ export class ClanScene {
     this.inviteName = "";
     this.tab = "overview";
     this.layout = null;
+    this.scrollY = 0;
+    this.scrollMax = 0;
+    this._dragScroll = null;
   }
 
   onEnter() {
@@ -78,6 +92,9 @@ export class ClanScene {
     const directory = ClanSystem.getDirectory(this.store);
     this.search = directory?.player?.search || "";
     this.inviteName = "";
+    this.scrollY = 0;
+    this.scrollMax = 0;
+    this._dragScroll = null;
   }
   onExit() { this.unbindKeyboard(); }
 
@@ -114,25 +131,25 @@ export class ClanScene {
   getState() { return this.store?.get ? this.store.get() : {}; }
 
   getLayout(ctx) {
-    const rect = typeof ctx?.canvas?.getBoundingClientRect === "function"
-      ? ctx.canvas.getBoundingClientRect()
-      : null;
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = Math.round(rect?.width || (ctx.canvas.width / dpr) || window.innerWidth || 0);
-    const h = Math.round(rect?.height || (ctx.canvas.height / dpr) || window.innerHeight || 0);
+    const size = canvasCssSize(ctx.canvas);
+    const w = size.w;
+    const h = size.h;
     const mobile = w < 760;
     const pad = mobile ? 10 : Math.max(14, Math.floor(w * 0.035));
     const gap = mobile ? 10 : 16;
-    const top = mobile ? 78 : 94;
-    const bottomPad = mobile ? 74 : 92;
+    const safe = this.store?.get?.()?.ui?.safe || { x: 0, y: 0, w, h };
+    const hudTop = Number(this.store?.get?.()?.ui?.hudReservedTop || (mobile ? 84 : 96));
+    const chatBottom = Number(this.store?.get?.()?.ui?.chatReservedBottom || (mobile ? 72 : 88));
+    const top = Math.max(mobile ? 76 : 94, safe.y + hudTop - (mobile ? 8 : 0));
+    const bottomPad = Math.max(mobile ? 74 : 92, Math.max(0, h - (safe.y + safe.h)) + chatBottom);
 
     if (mobile) {
       const leftW = w - pad * 2;
-      const leftH = Math.min(188, Math.max(160, Math.floor(h * 0.28)));
+      const leftH = 238;
       const rightX = pad;
       const rightY = top + leftH + gap;
       const rightW = w - pad * 2;
-      const rightH = Math.max(120, h - rightY - bottomPad);
+      const rightH = Math.max(160, h - rightY - bottomPad);
       return { mobile, w, h, pad, gap, top, bottomPad, leftX: pad, leftY: top, leftW, leftH, rightX, rightY, rightW, rightH };
     }
 
@@ -145,16 +162,83 @@ export class ClanScene {
 
   update() {
     ClanSystem.tickPending(this.store);
-    const pressed = justPressed(this.input);
-    if (!pressed) return;
+
     const p = getPointer(this.input);
     const px = Number(p.x || 0);
     const py = Number(p.y || 0);
+    const isDown = typeof this.input?.isDown === "function" ? !!this.input.isDown() : !!this.input?._pressed;
+    const pressed = justPressed(this.input);
+    const released = typeof this.input?.justReleased === "function" ? !!this.input.justReleased() : !!this.input?._justReleased;
+
+    if (pressed && this.scrollArea && px >= this.scrollArea.x && px <= this.scrollArea.x + this.scrollArea.w && py >= this.scrollArea.y && py <= this.scrollArea.y + this.scrollArea.h) {
+      this._dragScroll = { startY: py, startScrollY: this.scrollY, moved: 0 };
+    }
+
+    if (isDown && this._dragScroll) {
+      const dy = py - this._dragScroll.startY;
+      this._dragScroll.moved = Math.max(this._dragScroll.moved, Math.abs(dy));
+      this.scrollY = clamp(this._dragScroll.startScrollY - dy, 0, this.scrollMax || 0);
+    }
+
+    if (released) {
+      const drag = this._dragScroll;
+      this._dragScroll = null;
+      if (drag && drag.moved > 8) return;
+    }
+
+    if (!pressed) return;
     this.searchFocused = false;
     this.inviteFocused = false;
     for (const btn of this.buttons) {
       if (px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h) { btn.onClick?.(); return; }
     }
+  }
+
+  estimateDiscoveryContentHeight(state, directory, h) {
+    const mobile = !!this.layout?.mobile;
+    if (!mobile) return 0;
+    const clans = ClanSystem.browseClans(this.store, this.search);
+    const inbox = directory?.player?.inbox || [];
+    const visibleCount = Math.max(1, clans.length);
+    let contentH = 132 + visibleCount * 86 + 16;
+    if (inbox.length) contentH += 102;
+    return Math.max(h, contentH);
+  }
+
+  estimateClanTabContentHeight(state, clan, viewportH) {
+    const mobile = !!this.layout?.mobile;
+    if (!mobile) return 0;
+    if (this.tab === "overview") return Math.max(viewportH, 390);
+    if (this.tab === "members") return Math.max(viewportH, 8 + Math.max(1, clan.members.length) * 78 + 12);
+    if (this.tab === "manage") return Math.max(viewportH, 210 + Math.max(1, clan.members.length) * 58 + 84);
+    if (this.tab === "log") return Math.max(viewportH, 8 + Math.max(1, (clan.logs || []).length) * 56 + 12);
+    return viewportH;
+  }
+
+  beginScrollArea(ctx, x, y, w, h, contentH) {
+    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
+    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
+    this.scrollArea = { x, y, w, h };
+    ctx.save();
+    rr(ctx, x, y, w, h, 16);
+    ctx.clip();
+  }
+
+  endScrollArea(ctx) {
+    ctx.restore();
+  }
+
+  drawScrollBar(ctx) {
+    const area = this.scrollArea;
+    if (!area || !(this.scrollMax > 0)) return;
+    const trackX = area.x + area.w - 6;
+    const trackY = area.y + 8;
+    const trackH = area.h - 16;
+    const thumbH = Math.max(28, Math.floor((area.h / (area.h + this.scrollMax)) * trackH));
+    const travel = Math.max(0, trackH - thumbH);
+    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
+    fillRR(ctx, trackX, trackY, 3, trackH, 2, "rgba(255,255,255,0.10)");
+    fillRR(ctx, trackX, thumbY, 3, thumbH, 2, "rgba(255,255,255,0.38)");
   }
 
   render(ctx) {
@@ -267,6 +351,17 @@ export class ClanScene {
     const inbox = directory?.player?.inbox || [];
     const mobile = !!this.layout?.mobile;
 
+    if (mobile) {
+      const viewportY = y + 12;
+      const viewportH = h - 24;
+      this.beginScrollArea(ctx, x + 8, viewportY, w - 16, viewportH, this.estimateDiscoveryContentHeight(state, directory, viewportH));
+      y -= this.scrollY;
+    } else {
+      this.scrollArea = null;
+      this.scrollMax = 0;
+      this.scrollY = 0;
+    }
+
     ctx.fillStyle = "#fff";
     ctx.font = fitBold(30, mobile, 18);
     ctx.fillText("Clan Ara ve Başvur", x + 18, y + (mobile ? 28 : 42));
@@ -347,6 +442,11 @@ export class ClanScene {
       ctx.font = fitBold(20, mobile, 13);
       ctx.fillText("Aramana uygun clan bulunamadı.", x + 32, cy + 42);
     }
+
+    if (mobile) {
+      this.endScrollArea(ctx);
+      this.drawScrollBar(ctx);
+    }
   }
 
   drawClanView(ctx, x, y, w, h, state, clan) {
@@ -372,7 +472,7 @@ export class ClanScene {
     const tabW = mobile ? Math.floor((w - 36 - tabGap * 3) / 4) : 124;
     tabs.forEach((tab) => {
       const active = this.tab === tab.id;
-      const btn = { x: tx, y: tabY, w: tabW, h: mobile ? 34 : 40, onClick: () => { this.tab = tab.id; } };
+      const btn = { x: tx, y: tabY, w: tabW, h: mobile ? 34 : 40, onClick: () => { this.tab = tab.id; this.scrollY = 0; } };
       this.buttons.push(btn);
       fillRR(ctx, btn.x, btn.y, btn.w, btn.h, 14, active ? "#1c5ab5" : "#13284c");
       ctx.fillStyle = "#fff";
@@ -383,6 +483,24 @@ export class ClanScene {
 
     const contentY = tabY + (mobile ? 44 : 58);
     const contentH = h - (contentY - y);
+
+    if (mobile) {
+      const viewportY = contentY;
+      const viewportH = Math.max(80, h - (viewportY - y) - 10);
+      this.beginScrollArea(ctx, x + 8, viewportY, w - 16, viewportH, this.estimateClanTabContentHeight(state, clan, viewportH));
+      const sy = contentY - this.scrollY;
+      if (this.tab === "overview") this.drawOverviewTab(ctx, x, sy, w, contentH, state, clan);
+      if (this.tab === "members") this.drawMembersTab(ctx, x, sy, w, contentH, state, clan);
+      if (this.tab === "manage") this.drawManageTab(ctx, x, sy, w, contentH, state, clan);
+      if (this.tab === "log") this.drawLogTab(ctx, x, sy, w, contentH, state, clan);
+      this.endScrollArea(ctx);
+      this.drawScrollBar(ctx);
+      return;
+    }
+
+    this.scrollArea = null;
+    this.scrollMax = 0;
+    this.scrollY = 0;
     if (this.tab === "overview") this.drawOverviewTab(ctx, x, contentY, w, contentH, state, clan);
     if (this.tab === "members") this.drawMembersTab(ctx, x, contentY, w, contentH, state, clan);
     if (this.tab === "manage") this.drawManageTab(ctx, x, contentY, w, contentH, state, clan);
