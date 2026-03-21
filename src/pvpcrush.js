@@ -48,17 +48,29 @@
 
     const jobs = Object.entries(ICON_PATHS).map(([key, src]) => {
       return new Promise((resolve) => {
-        const img = new Image();
-        img.decoding = "async";
-        img.onload = () => {
-          ICON_IMAGES[key] = img;
-          resolve();
+        const tries = [src];
+        if (typeof src === "string" && src.startsWith("./assets/")) {
+          tries.push(src.replace("./assets/", "./src/assets/"));
+        } else if (typeof src === "string" && src.startsWith("./src/assets/")) {
+          tries.push(src.replace("./src/assets/", "./assets/"));
+        }
+        let i = 0;
+        const next = () => {
+          if (i >= tries.length) {
+            ICON_IMAGES[key] = null;
+            resolve();
+            return;
+          }
+          const img = new Image();
+          img.decoding = "async";
+          img.onload = () => {
+            ICON_IMAGES[key] = img;
+            resolve();
+          };
+          img.onerror = () => next();
+          img.src = tries[i++];
         };
-        img.onerror = () => {
-          ICON_IMAGES[key] = null;
-          resolve();
-        };
-        img.src = src;
+        next();
       });
     });
 
