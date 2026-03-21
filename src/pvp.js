@@ -469,7 +469,7 @@
         getImageFromAssets(this.assets, "pvp-bg") ||
         getImageFromAssets(this.assets, "pvp") ||
         this.fallbackBg;
-      
+
       const s = this.store?.get?.() || {};
       this.source = s?.pvp?.source || "general";
       this.scrollY = 0;
@@ -481,10 +481,12 @@
       this._launchingGame = false;
       this._resetMatchmaking();
     }
-onExit() {
-  this._resetMatchmaking();
-  this._launchingGame = false;
-}
+
+
+    onExit() {
+      this._resetMatchmaking();
+      this._launchingGame = false;
+    }
 
     _resetMatchmaking() {
       if (this.matchSearchTimer) clearTimeout(this.matchSearchTimer);
@@ -525,7 +527,7 @@ onExit() {
       this.matchSearchTimer = setTimeout(() => {
         if (this.matchState !== "searching") return;
         this.onMatchFound(this._makeOpponent());
-      }, 3200);
+      }, 1600);
 
       this.matchFallbackTimer = setTimeout(() => {
         if (this.matchState !== "searching") return;
@@ -1028,7 +1030,7 @@ onExit() {
         ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
         ctx.font = "700 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText(`Gerçek oyuncu aranıyor... ${secs}s`, cx, boxY + 132);
+        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
       }
     }
 
@@ -1163,6 +1165,12 @@ onExit() {
         const cw = panelW - innerPad * 2;
 
         fillRoundRect(ctx, x, y, cw, cardH, 18, "rgba(6,10,18,0.56)");
+
+        const artKey = card.id === "grid" ? "brain" : card.id === "arena" ? "punch" : card.id === "slotarena" ? "bonus" : null;
+        const artImg = artKey ? getImageFromAssets(this.assets, artKey) : null;
+        if (artImg && artImg.complete) {
+          drawCoverImage(ctx, artImg, x + cw - 132, y + 42, 98, 98, 0.95);
+        }
         strokeRoundRect(
           ctx,
           x,
@@ -1263,6 +1271,12 @@ onExit() {
       }
 
       ctx.restore();
+
+      if (this.matchState !== "menu") {
+        ctx.fillStyle = "rgba(0,0,0,0.30)";
+        ctx.fillRect(panelX, panelY, panelW, panelH);
+        this.renderSearchingOverlay(ctx, panelX, panelY, panelW, panelH);
+      }
 
       if (this.maxScroll > 0) {
         const trackW = 4;
