@@ -24,17 +24,6 @@ function strokeRR(ctx, x, y, w, h, r, color, line = 1) {
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function fmtNum(n) { return Number(n || 0).toLocaleString("tr-TR"); }
 function getPointer(input) { return input?.pointer || input?.p || input?.mouse || input?.state?.pointer || { x: 0, y: 0 }; }
-function canvasCssSize(canvas) {
-  const rect = canvas?.getBoundingClientRect?.();
-  if (rect && rect.width > 0 && rect.height > 0) {
-    return { w: Math.round(rect.width), h: Math.round(rect.height) };
-  }
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  return {
-    w: Math.max(1, Math.round((canvas?.width || 1) / dpr)),
-    h: Math.max(1, Math.round((canvas?.height || 1) / dpr)),
-  };
-}
 function justPressed(input) {
   if (typeof input?.justPressed === "function") return !!input.justPressed();
   if (typeof input?.isJustPressed === "function") return !!input.isJustPressed("pointer") || !!input.isJustPressed("mouseLeft") || !!input.isJustPressed("touch");
@@ -68,6 +57,27 @@ function textLine(ctx, text, x, y, maxWidth) {
   ctx.fillText(t + "…", x, y);
 }
 
+function getBg(assets) {
+  if (typeof assets?.getImage === "function") return assets.getImage("clan_bg") || assets.getImage("clan");
+  if (typeof assets?.get === "function") return assets.get("clan_bg") || assets.get("clan");
+  return assets?.images?.clan_bg || assets?.images?.clan || null;
+}
+function drawCover(ctx, img, x, y, w, h) {
+  if (!img) {
+    ctx.fillStyle = "#061124";
+    ctx.fillRect(x, y, w, h);
+    return;
+  }
+  const iw = img.width || 1;
+  const ih = img.height || 1;
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
 export class ClanScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -82,9 +92,6 @@ export class ClanScene {
     this.inviteName = "";
     this.tab = "overview";
     this.layout = null;
-    this.scrollY = 0;
-    this.scrollMax = 0;
-    this._dragScroll = null;
   }
 
   onEnter() {
@@ -92,9 +99,6 @@ export class ClanScene {
     const directory = ClanSystem.getDirectory(this.store);
     this.search = directory?.player?.search || "";
     this.inviteName = "";
-    this.scrollY = 0;
-    this.scrollMax = 0;
-    this._dragScroll = null;
   }
   onExit() { this.unbindKeyboard(); }
 
@@ -131,25 +135,21 @@ export class ClanScene {
   getState() { return this.store?.get ? this.store.get() : {}; }
 
   getLayout(ctx) {
-    const size = canvasCssSize(ctx.canvas);
-    const w = size.w;
-    const h = size.h;
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
     const mobile = w < 760;
     const pad = mobile ? 10 : Math.max(14, Math.floor(w * 0.035));
     const gap = mobile ? 10 : 16;
-    const safe = this.store?.get?.()?.ui?.safe || { x: 0, y: 0, w, h };
-    const hudTop = Number(this.store?.get?.()?.ui?.hudReservedTop || (mobile ? 84 : 96));
-    const chatBottom = Number(this.store?.get?.()?.ui?.chatReservedBottom || (mobile ? 72 : 88));
-    const top = Math.max(mobile ? 76 : 94, safe.y + hudTop - (mobile ? 8 : 0));
-    const bottomPad = Math.max(mobile ? 74 : 92, Math.max(0, h - (safe.y + safe.h)) + chatBottom);
+    const top = mobile ? 78 : 94;
+    const bottomPad = mobile ? 74 : 92;
 
     if (mobile) {
       const leftW = w - pad * 2;
-      const leftH = 260;
+      const leftH = Math.min(188, Math.max(160, Math.floor(h * 0.28)));
       const rightX = pad;
       const rightY = top + leftH + gap;
       const rightW = w - pad * 2;
-      const rightH = Math.max(160, h - rightY - bottomPad);
+      const rightH = Math.max(120, h - rightY - bottomPad);
       return { mobile, w, h, pad, gap, top, bottomPad, leftX: pad, leftY: top, leftW, leftH, rightX, rightY, rightW, rightH };
     }
 
@@ -162,83 +162,16 @@ export class ClanScene {
 
   update() {
     ClanSystem.tickPending(this.store);
-
+    const pressed = justPressed(this.input);
+    if (!pressed) return;
     const p = getPointer(this.input);
     const px = Number(p.x || 0);
     const py = Number(p.y || 0);
-    const isDown = typeof this.input?.isDown === "function" ? !!this.input.isDown() : !!this.input?._pressed;
-    const pressed = justPressed(this.input);
-    const released = typeof this.input?.justReleased === "function" ? !!this.input.justReleased() : !!this.input?._justReleased;
-
-    if (pressed && this.scrollArea && px >= this.scrollArea.x && px <= this.scrollArea.x + this.scrollArea.w && py >= this.scrollArea.y && py <= this.scrollArea.y + this.scrollArea.h) {
-      this._dragScroll = { startY: py, startScrollY: this.scrollY, moved: 0 };
-    }
-
-    if (isDown && this._dragScroll) {
-      const dy = py - this._dragScroll.startY;
-      this._dragScroll.moved = Math.max(this._dragScroll.moved, Math.abs(dy));
-      this.scrollY = clamp(this._dragScroll.startScrollY - dy, 0, this.scrollMax || 0);
-    }
-
-    if (released) {
-      const drag = this._dragScroll;
-      this._dragScroll = null;
-      if (drag && drag.moved > 8) return;
-    }
-
-    if (!pressed) return;
     this.searchFocused = false;
     this.inviteFocused = false;
     for (const btn of this.buttons) {
       if (px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h) { btn.onClick?.(); return; }
     }
-  }
-
-  estimateDiscoveryContentHeight(state, directory, h) {
-    const mobile = !!this.layout?.mobile;
-    if (!mobile) return 0;
-    const clans = ClanSystem.browseClans(this.store, this.search);
-    const inbox = directory?.player?.inbox || [];
-    const visibleCount = Math.max(1, clans.length);
-    let contentH = 132 + visibleCount * 86 + 16;
-    if (inbox.length) contentH += 102;
-    return Math.max(h, contentH);
-  }
-
-  estimateClanTabContentHeight(state, clan, viewportH) {
-    const mobile = !!this.layout?.mobile;
-    if (!mobile) return 0;
-    if (this.tab === "overview") return Math.max(viewportH, 390);
-    if (this.tab === "members") return Math.max(viewportH, 8 + Math.max(1, clan.members.length) * 78 + 12);
-    if (this.tab === "manage") return Math.max(viewportH, 210 + Math.max(1, clan.members.length) * 58 + 84);
-    if (this.tab === "log") return Math.max(viewportH, 8 + Math.max(1, (clan.logs || []).length) * 56 + 12);
-    return viewportH;
-  }
-
-  beginScrollArea(ctx, x, y, w, h, contentH) {
-    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
-    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
-    this.scrollArea = { x, y, w, h };
-    ctx.save();
-    rr(ctx, x, y, w, h, 16);
-    ctx.clip();
-  }
-
-  endScrollArea(ctx) {
-    ctx.restore();
-  }
-
-  drawScrollBar(ctx) {
-    const area = this.scrollArea;
-    if (!area || !(this.scrollMax > 0)) return;
-    const trackX = area.x + area.w - 6;
-    const trackY = area.y + 8;
-    const trackH = area.h - 16;
-    const thumbH = Math.max(28, Math.floor((area.h / (area.h + this.scrollMax)) * trackH));
-    const travel = Math.max(0, trackH - thumbH);
-    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
-    fillRR(ctx, trackX, trackY, 3, trackH, 2, "rgba(255,255,255,0.10)");
-    fillRR(ctx, trackX, thumbY, 3, thumbH, 2, "rgba(255,255,255,0.38)");
   }
 
   render(ctx) {
@@ -247,11 +180,12 @@ export class ClanScene {
     const directory = ClanSystem.getDirectory(this.store);
     const L = this.layout = this.getLayout(ctx);
 
-    ctx.fillStyle = "#061124";
+    drawCover(ctx, getBg(this.assets), 0, 0, L.w, L.h);
+    ctx.fillStyle = "rgba(3, 10, 24, 0.16)";
     ctx.fillRect(0, 0, L.w, L.h);
 
-    fillRR(ctx, L.leftX, L.leftY, L.leftW, L.leftH, L.mobile ? 18 : 26, "#0b1730");
-    fillRR(ctx, L.rightX, L.rightY, L.rightW, L.rightH, L.mobile ? 18 : 26, "#0d1c39");
+    fillRR(ctx, L.leftX, L.leftY, L.leftW, L.leftH, L.mobile ? 18 : 26, "rgba(11, 23, 48, 0.56)");
+    fillRR(ctx, L.rightX, L.rightY, L.rightW, L.rightH, L.mobile ? 18 : 26, "rgba(13, 28, 57, 0.54)");
     strokeRR(ctx, L.leftX, L.leftY, L.leftW, L.leftH, L.mobile ? 18 : 26, "#1f3d6d", 2);
     strokeRR(ctx, L.rightX, L.rightY, L.rightW, L.rightH, L.mobile ? 18 : 26, "#274677", 2);
 
@@ -276,7 +210,7 @@ export class ClanScene {
     ctx.fillText("Tam entegre clan ağı", titleX, y + (mobile ? 50 : 64));
 
     const card1H = mobile ? 88 : 116;
-    fillRR(ctx, x + px, y + (mobile ? 64 : 86), w - px * 2, card1H, mobile ? 16 : 22, "#102346");
+    fillRR(ctx, x + px, y + (mobile ? 64 : 86), w - px * 2, card1H, mobile ? 16 : 22, "rgba(16, 35, 70, 0.72)");
     ctx.fillStyle = "#fff";
     ctx.font = fitBold(22, mobile, 16);
     textLine(ctx, player.username || player.name || "Player", x + px + 16, y + (mobile ? 90 : 122), w - px * 2 - 32);
@@ -287,7 +221,7 @@ export class ClanScene {
 
     const card2Y = y + (mobile ? 162 : 222);
     const card2H = mobile ? 98 : 128;
-    fillRR(ctx, x + px, card2Y, w - px * 2, card2H, mobile ? 16 : 22, clan ? "#123323" : "#1a2442");
+    fillRR(ctx, x + px, card2Y, w - px * 2, card2H, mobile ? 16 : 22, clan ? "rgba(18, 51, 35, 0.7)" : "rgba(26, 36, 66, 0.68)");
     ctx.fillStyle = clan ? "#7cf2a8" : "#dbe8ff";
     ctx.font = fitBold(20, mobile, 15);
     ctx.fillText(clan ? "Clan Avantajları Aktif" : "Clan Avantajları", x + px + 16, card2Y + (mobile ? 24 : 32));
@@ -297,7 +231,7 @@ export class ClanScene {
       : ["• Seviye 10'da clan kur", "• Başvuru gönder", "• Kabulde koruma açılır"];
     lines.forEach((line, i) => ctx.fillText(line, x + px + 16, card2Y + (mobile ? 48 : 62) + i * (mobile ? 16 : 24)));
 
-    let actionBottom = y + h - (mobile ? 44 : 60);
+    let actionBottom = y + h - (mobile ? 52 : 60);
 
     if (pending && !clan && !mobile) {
       fillRR(ctx, x + px, y + 366, w - px * 2, 136, 22, "#33241d");
@@ -315,11 +249,11 @@ export class ClanScene {
       ctx.font = fitBold(18, false, 18);
       ctx.fillText("Başvuruyu İptal Et", cancelBtn.x + 42, cancelBtn.y + 27);
     } else if (pending && !clan && mobile) {
-      const infoY = y + h - 102;
+      const infoY = y + h - 92;
       ctx.fillStyle = "#ffd6a5";
       ctx.font = fitFont(14, true, 11);
       textLine(ctx, `Bekleyen: ${pending.clanName} • ${timeLeftText(pending)}`, x + 16, infoY, w - 32);
-      const cancelBtn = { x: x + 14, y: y + h - 74, w: w - 28, h: 34, onClick: () => ClanSystem.cancelJoinRequest(this.store) };
+      const cancelBtn = { x: x + 14, y: y + h - 70, w: w - 28, h: 32, onClick: () => ClanSystem.cancelJoinRequest(this.store) };
       this.buttons.push(cancelBtn);
       fillRR(ctx, cancelBtn.x, cancelBtn.y, cancelBtn.w, cancelBtn.h, 12, "#70363a");
       ctx.fillStyle = "#fff";
@@ -329,14 +263,14 @@ export class ClanScene {
     }
 
     if (clan) {
-      const leaveBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 36 : 42, onClick: () => ClanSystem.leaveClan(this.store) };
+      const leaveBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 34 : 42, onClick: () => ClanSystem.leaveClan(this.store) };
       this.buttons.push(leaveBtn);
       fillRR(ctx, leaveBtn.x, leaveBtn.y, leaveBtn.w, leaveBtn.h, 14, "#5f2531");
       ctx.fillStyle = "#fff";
       ctx.font = fitBold(18, mobile, 13);
       ctx.fillText("Clandan Ayrıl", leaveBtn.x + 20, leaveBtn.y + (mobile ? 22 : 27));
     } else {
-      const createBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 36 : 42, onClick: () => this.scenes?.go?.("clan_create") };
+      const createBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 34 : 42, onClick: () => this.scenes?.go?.("clan_create") };
       this.buttons.push(createBtn);
       fillRR(ctx, createBtn.x, createBtn.y, createBtn.w, createBtn.h, 14, Number(player.level || 1) >= 10 ? "#1f8c5e" : "#38425d");
       ctx.fillStyle = "#fff";
@@ -350,17 +284,6 @@ export class ClanScene {
     const clans = ClanSystem.browseClans(this.store, this.search);
     const inbox = directory?.player?.inbox || [];
     const mobile = !!this.layout?.mobile;
-
-    if (mobile) {
-      const viewportY = y + 12;
-      const viewportH = h - 24;
-      this.beginScrollArea(ctx, x + 8, viewportY, w - 16, viewportH, this.estimateDiscoveryContentHeight(state, directory, viewportH));
-      y -= this.scrollY;
-    } else {
-      this.scrollArea = null;
-      this.scrollMax = 0;
-      this.scrollY = 0;
-    }
 
     ctx.fillStyle = "#fff";
     ctx.font = fitBold(30, mobile, 18);
@@ -385,7 +308,7 @@ export class ClanScene {
     let cy = y + (mobile ? 132 : 158);
     if (inbox.length) {
       const boxH = mobile ? 92 : 86;
-      fillRR(ctx, x + 18, cy, w - 36, boxH, 18, "#142a4c");
+      fillRR(ctx, x + 18, cy, w - 36, boxH, 18, "rgba(20, 42, 76, 0.68)");
       ctx.fillStyle = "#fff";
       ctx.font = fitBold(20, mobile, 14);
       ctx.fillText("Gelen Davet", x + 32, cy + (mobile ? 22 : 28));
@@ -407,18 +330,18 @@ export class ClanScene {
       cy += boxH + 10;
     }
 
-    const visibleClans = mobile ? clans : clans.slice(0, 5);
-    const rowH = mobile ? 88 : 92;
+    const visibleClans = mobile ? clans.slice(0, 3) : clans.slice(0, 5);
+    const rowH = mobile ? 76 : 92;
     visibleClans.forEach((clan, idx) => {
       const rowY = cy + idx * (rowH + 10);
-      fillRR(ctx, x + 18, rowY, w - 36, rowH, 18, "#122542");
+      fillRR(ctx, x + 18, rowY, w - 36, rowH, 18, "rgba(18, 37, 66, 0.66)");
       strokeRR(ctx, x + 18, rowY, w - 36, rowH, 18, "#264c7c", 1);
 
       const canJoin = Number(player.level || 1) >= Number(clan.minLevel || 1);
       const btnW = mobile ? 82 : 120;
       const btnH = mobile ? 30 : 40;
       const btnX = x + w - btnW - (mobile ? 24 : 48);
-      const btnY = rowY + (mobile ? 48 : 26);
+      const btnY = rowY + (mobile ? 38 : 26);
 
       ctx.fillStyle = "#fff";
       ctx.font = fitBold(22, mobile, 15);
@@ -426,12 +349,7 @@ export class ClanScene {
       ctx.fillStyle = "#9fc2ff";
       ctx.font = fitFont(17, mobile, 11);
       textLine(ctx, `[${clan.tag}] Güç ${fmtNum(clan.power)} Üye ${clan.members}/${clan.memberCap}`, x + 32, rowY + (mobile ? 40 : 56), btnX - (x + 32) - 8);
-      if (mobile) {
-        textLine(ctx, `Giriş ${clan.minLevel}`, x + 32, rowY + 58, btnX - (x + 32) - 8);
-        textLine(ctx, `${clan.description}`, x + 32, rowY + 74, btnX - (x + 32) - 8);
-      } else {
-        textLine(ctx, `Giriş ${clan.minLevel} • ${clan.description}`, x + 32, rowY + 78, w - 36 - 24 - btnW - 30);
-      }
+      textLine(ctx, `Giriş ${clan.minLevel} • ${clan.description}`, x + 32, rowY + (mobile ? 58 : 78), w - 36 - 24 - btnW - 30);
 
       const btn = { x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => ClanSystem.requestJoinClan(this.store, clan.id) };
       this.buttons.push(btn);
@@ -442,15 +360,10 @@ export class ClanScene {
     });
 
     if (!visibleClans.length) {
-      fillRR(ctx, x + 18, cy, w - 36, 72, 18, "#122542");
+      fillRR(ctx, x + 18, cy, w - 36, 72, 18, "rgba(18, 37, 66, 0.66)");
       ctx.fillStyle = "#dbe8ff";
       ctx.font = fitBold(20, mobile, 13);
       ctx.fillText("Aramana uygun clan bulunamadı.", x + 32, cy + 42);
-    }
-
-    if (mobile) {
-      this.endScrollArea(ctx);
-      this.drawScrollBar(ctx);
     }
   }
 
@@ -477,7 +390,7 @@ export class ClanScene {
     const tabW = mobile ? Math.floor((w - 36 - tabGap * 3) / 4) : 124;
     tabs.forEach((tab) => {
       const active = this.tab === tab.id;
-      const btn = { x: tx, y: tabY, w: tabW, h: mobile ? 34 : 40, onClick: () => { this.tab = tab.id; this.scrollY = 0; } };
+      const btn = { x: tx, y: tabY, w: tabW, h: mobile ? 34 : 40, onClick: () => { this.tab = tab.id; } };
       this.buttons.push(btn);
       fillRR(ctx, btn.x, btn.y, btn.w, btn.h, 14, active ? "#1c5ab5" : "#13284c");
       ctx.fillStyle = "#fff";
@@ -488,24 +401,6 @@ export class ClanScene {
 
     const contentY = tabY + (mobile ? 44 : 58);
     const contentH = h - (contentY - y);
-
-    if (mobile) {
-      const viewportY = contentY;
-      const viewportH = Math.max(80, h - (viewportY - y) - 10);
-      this.beginScrollArea(ctx, x + 8, viewportY, w - 16, viewportH, this.estimateClanTabContentHeight(state, clan, viewportH));
-      const sy = contentY - this.scrollY;
-      if (this.tab === "overview") this.drawOverviewTab(ctx, x, sy, w, contentH, state, clan);
-      if (this.tab === "members") this.drawMembersTab(ctx, x, sy, w, contentH, state, clan);
-      if (this.tab === "manage") this.drawManageTab(ctx, x, sy, w, contentH, state, clan);
-      if (this.tab === "log") this.drawLogTab(ctx, x, sy, w, contentH, state, clan);
-      this.endScrollArea(ctx);
-      this.drawScrollBar(ctx);
-      return;
-    }
-
-    this.scrollArea = null;
-    this.scrollMax = 0;
-    this.scrollY = 0;
     if (this.tab === "overview") this.drawOverviewTab(ctx, x, contentY, w, contentH, state, clan);
     if (this.tab === "members") this.drawMembersTab(ctx, x, contentY, w, contentH, state, clan);
     if (this.tab === "manage") this.drawManageTab(ctx, x, contentY, w, contentH, state, clan);
