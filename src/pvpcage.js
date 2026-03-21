@@ -26,13 +26,13 @@ const DAMAGE = {
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
 
   const ICON_PATHS = {
-    punch: "./src/assets/punch.png",
-    kick: "./src/assets/kick.png",
-    slap: "./src/assets/slap.png",
-    brain: "./src/assets/brain.png",
-    weed: "./src/assets/weed.png",
-    drink: "./src/assets/drink.png",
-    skull: "./src/assets/skull.png",
+    punch: "./assets/punch.png",
+    kick: "./assets/kick.png",
+    slap: "./assets/slap.png",
+    brain: "./assets/brain.png",
+    weed: "./assets/weed.png",
+    drink: "./assets/drink.png",
+    skull: "./assets/skull.png",
   };
 
   function loadImage(src) {
