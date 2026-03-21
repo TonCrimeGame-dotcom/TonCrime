@@ -90,6 +90,154 @@
     return { w, h };
   }
 
+  const BOT_NAMES = [
+    "ShadowWolf",
+    "NightViper",
+    "SteelGhost",
+    "Vortex",
+    "BlackMamba",
+    "RoguePrime",
+    "VenomKid",
+    "TurboJack",
+  ];
+
+  function choice(list) {
+    return list[Math.floor(Math.random() * list.length)] || list[0];
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function sanitizeName(name, fallback = "Rakip") {
+    const v = String(name || "").trim().replace(/\s+/g, " ");
+    return (v || fallback).slice(0, 18);
+  }
+
+  function currentPlayerProfile(store) {
+    const s = store?.get?.() || {};
+    const p = s.player || {};
+    return {
+      username: sanitizeName(p.username || p.name || "Player", "Player"),
+      level: Math.max(1, Number(p.level || 1)),
+    };
+  }
+
+  function createFallbackOpponent(store) {
+    const me = currentPlayerProfile(store);
+    const spread = Math.max(2, Math.round(me.level * 0.15));
+    return {
+      username: choice(BOT_NAMES),
+      level: Math.max(1, me.level + Math.floor(Math.random() * (spread * 2 + 1)) - spread),
+      isBot: false,
+      source: "fallback",
+    };
+  }
+
+  let _supabasePromise = null;
+  async function getSupabaseClient() {
+    if (_supabasePromise) return _supabasePromise;
+    _supabasePromise = (async () => {
+      try {
+        const mod = await import("./src/supabase.js");
+        return mod?.supabase || null;
+      } catch (_) {}
+      try {
+        const mod = await import("./supabase.js");
+        return mod?.supabase || null;
+      } catch (_) {}
+      return null;
+    })();
+    return _supabasePromise;
+  }
+
+  async function findRealtimeOpponent({ store, mode, source, timeoutMs = 10000, onStatus }) {
+    const supabase = await getSupabaseClient();
+    if (!supabase?.channel) return null;
+
+    const me = currentPlayerProfile(store);
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const channelName = `toncrime-mm-${String(mode || "mode")}-${String(source || "general")}`;
+    const channel = supabase.channel(channelName, {
+      config: {
+        broadcast: { self: false },
+        presence: { key: requestId },
+      },
+    });
+
+    const seen = new Map();
+    let settled = false;
+    let seekTimer = null;
+    let timeoutHandle = null;
+
+    const cleanup = async () => {
+      if (seekTimer) clearInterval(seekTimer);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      try { await channel.unsubscribe(); } catch (_) {}
+    };
+
+    return new Promise((resolve) => {
+      const finish = async (value) => {
+        if (settled) return;
+        settled = true;
+        await cleanup();
+        resolve(value || null);
+      };
+
+      channel.on("broadcast", { event: "seek" }, ({ payload }) => {
+        const other = payload || {};
+        if (!other.requestId || other.requestId === requestId) return;
+        seen.set(other.requestId, other.player || null);
+        if (settled) return;
+
+        if (String(requestId) > String(other.requestId)) {
+          const playerA = { ...(other.player || {}) };
+          const playerB = { ...me };
+          channel.send({
+            type: "broadcast",
+            event: "match",
+            payload: {
+              a: other.requestId,
+              b: requestId,
+              playerA,
+              playerB,
+              mode,
+              source,
+            },
+          }).catch(() => {});
+          finish({ ...(other.player || {}), isBot: false, source: "realtime" });
+        }
+      });
+
+      channel.on("broadcast", { event: "match" }, ({ payload }) => {
+        const m = payload || {};
+        if (settled) return;
+        if (m.a !== requestId && m.b !== requestId) return;
+        const opp = m.a === requestId ? m.playerB : m.playerA;
+        finish({ ...(opp || {}), isBot: false, source: "realtime" });
+      });
+
+      channel.subscribe(async (status) => {
+        if (status !== "SUBSCRIBED") return;
+        try { await channel.track({ username: me.username, level: me.level, requestId, mode, source }); } catch (_) {}
+        const sendSeek = () => {
+          if (settled) return;
+          try {
+            onStatus?.();
+            channel.send({
+              type: "broadcast",
+              event: "seek",
+              payload: { requestId, mode, source, player: me },
+            }).catch(() => {});
+          } catch (_) {}
+        };
+        sendSeek();
+        seekTimer = setInterval(sendSeek, 1600);
+        timeoutHandle = setTimeout(() => finish(null), timeoutMs);
+      });
+    });
+  }
+
   function loadPvpGameScript(srcList) {
     const list = Array.isArray(srcList) ? srcList : [srcList];
 
@@ -267,16 +415,220 @@
         margin-top: 6px;
       }
 
-      #arena {
+      #pvpStage {
         position: relative;
         flex: 1 1 auto;
         min-height: 280px;
         width: calc(100% - 20px);
         margin: 0 10px 10px;
         border-radius: 14px;
+        overflow: hidden;
+        box-sizing: border-box;
+      }
+
+      #arena {
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
         background: rgba(0,0,0,0.92);
         overflow: hidden;
         box-sizing: border-box;
+      }
+
+      #pvpMatchLayer {
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(255,180,74,0.18), transparent 30%),
+          radial-gradient(circle at 80% 24%, rgba(80,180,255,0.18), transparent 30%),
+          linear-gradient(180deg, rgba(5,8,14,0.74), rgba(4,7,12,0.90));
+        backdrop-filter: blur(6px);
+        overflow: hidden;
+      }
+
+      #pvpMatchLayer.open {
+        display: flex;
+      }
+
+      #pvpMatchLayer::before,
+      #pvpMatchLayer::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.14);
+        animation: tcPulse 2.2s ease-in-out infinite;
+      }
+
+      #pvpMatchLayer::before {
+        width: 180px;
+        height: 180px;
+      }
+
+      #pvpMatchLayer::after {
+        width: 260px;
+        height: 260px;
+        animation-delay: 0.6s;
+      }
+
+      .pvpMatchCard {
+        position: relative;
+        z-index: 2;
+        width: min(100%, 420px);
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(11,16,28,0.42);
+        box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+      }
+
+      .pvpMatchEyebrow {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(255,210,130,0.92);
+        margin-bottom: 8px;
+      }
+
+      .pvpMatchTitle {
+        font-weight: 900;
+        font-size: 24px;
+        color: #fff;
+        margin-bottom: 8px;
+      }
+
+      .pvpMatchDesc {
+        font-size: 14px;
+        line-height: 1.45;
+        color: rgba(255,255,255,0.82);
+        margin-bottom: 14px;
+      }
+
+      .pvpSearchMeter {
+        position: relative;
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.10);
+        border: 1px solid rgba(255,255,255,0.12);
+        margin-bottom: 14px;
+      }
+
+      .pvpSearchMeter > i {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 40%;
+        background: linear-gradient(90deg, rgba(255,180,74,0.0), rgba(255,180,74,0.95), rgba(110,220,255,0.0));
+        animation: tcScan 1.15s linear infinite;
+      }
+
+      .pvpMatchStats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .pvpMiniStat {
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .pvpMiniStat span {
+        display: block;
+        font-size: 11px;
+        color: rgba(255,255,255,0.58);
+        margin-bottom: 4px;
+      }
+
+      .pvpMiniStat b {
+        display: block;
+        color: #fff;
+        font-size: 14px;
+      }
+
+      .pvpVsRow {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 12px;
+      }
+
+      .pvpVsRow.show {
+        display: flex;
+      }
+
+      .pvpFighter {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 12px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.10);
+      }
+
+      .pvpFighter small {
+        display: block;
+        color: rgba(255,255,255,0.56);
+        margin-bottom: 5px;
+      }
+
+      .pvpFighter strong {
+        display: block;
+        color: #fff;
+        font-size: 18px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pvpFighter em {
+        display: block;
+        margin-top: 4px;
+        font-style: normal;
+        color: rgba(255,220,150,0.92);
+      }
+
+      .pvpVsBadge {
+        flex: 0 0 auto;
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(255,180,74,0.18);
+        border: 1px solid rgba(255,180,74,0.34);
+        color: #fff;
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .pvpFoundNote {
+        display: none;
+        margin-top: 12px;
+        color: rgba(255,255,255,0.84);
+        font-size: 13px;
+      }
+
+      .pvpFoundNote.show {
+        display: block;
+      }
+
+      @keyframes tcPulse {
+        0%, 100% { transform: scale(0.9); opacity: 0.34; }
+        50% { transform: scale(1.08); opacity: 0.12; }
+      }
+
+      @keyframes tcScan {
+        from { transform: translateX(-140%); }
+        to { transform: translateX(280%); }
       }
 
       @media (max-width: 640px) {
@@ -306,10 +658,29 @@
           padding: 8px;
         }
 
-        #arena {
+        #pvpStage {
           width: calc(100% - 16px);
           margin: 0 8px 8px;
           min-height: 240px;
+        }
+
+        .pvpMatchCard {
+          padding: 16px;
+          border-radius: 18px;
+        }
+
+        .pvpMatchTitle {
+          font-size: 21px;
+        }
+
+        .pvpMatchDesc {
+          font-size: 13px;
+        }
+
+        .pvpVsBadge {
+          width: 44px;
+          height: 44px;
+          font-size: 15px;
         }
       }
     `;
@@ -366,12 +737,44 @@
         </div>
       </div>
 
-      <div id="arena"></div>
+      <div id="pvpStage">
+        <div id="arena"></div>
+        <div id="pvpMatchLayer">
+          <div class="pvpMatchCard">
+            <div class="pvpMatchEyebrow">TONCRIME MATCHMAKING</div>
+            <div class="pvpMatchTitle" id="pvpMatchTitle">Rakip aranıyor</div>
+            <div class="pvpMatchDesc" id="pvpMatchDesc">Önce gerçek oyuncu aranıyor. Uygun rakip bulunmazsa mücadele hazırlandığında maç açılır.</div>
+            <div class="pvpSearchMeter" id="pvpSearchMeter"><i></i></div>
+            <div class="pvpMatchStats" id="pvpMatchStats">
+              <div class="pvpMiniStat"><span>Mod</span><b id="pvpMatchMode">PvP</b></div>
+              <div class="pvpMiniStat"><span>Durum</span><b id="pvpMatchState">Aranıyor...</b></div>
+            </div>
+            <div class="pvpVsRow" id="pvpVsRow">
+              <div class="pvpFighter"><small>Sen</small><strong id="pvpPlayerName">Sen</strong><em id="pvpPlayerLevel">Lv 1</em></div>
+              <div class="pvpVsBadge">VS</div>
+              <div class="pvpFighter"><small>Rakip</small><strong id="pvpFoundName">Rakip</strong><em id="pvpFoundLevel">Lv 1</em></div>
+            </div>
+            <div class="pvpFoundNote" id="pvpFoundNote">Rakip bulundu. Maç hazırlanıyor...</div>
+          </div>
+        </div>
+      </div>
     `;
 
     return {
       wrap,
       arena: document.getElementById("arena"),
+      matchLayer: document.getElementById("pvpMatchLayer"),
+      matchTitle: document.getElementById("pvpMatchTitle"),
+      matchDesc: document.getElementById("pvpMatchDesc"),
+      matchMode: document.getElementById("pvpMatchMode"),
+      matchState: document.getElementById("pvpMatchState"),
+      searchMeter: document.getElementById("pvpSearchMeter"),
+      vsRow: document.getElementById("pvpVsRow"),
+      playerName: document.getElementById("pvpPlayerName"),
+      playerLevel: document.getElementById("pvpPlayerLevel"),
+      foundName: document.getElementById("pvpFoundName"),
+      foundLevel: document.getElementById("pvpFoundLevel"),
+      foundNote: document.getElementById("pvpFoundNote"),
       status: document.getElementById("pvpStatus"),
       opponent: document.getElementById("pvpOpponent"),
       spinner: document.getElementById("pvpSpinner"),
@@ -455,7 +858,7 @@
       this.fallbackBg.src = "./src/assets/pvp-bg.png";
     }
 
-    enter() {
+    onEnter() {
       this.bg =
         getImageFromAssets(this.assets, "pvp_bg") ||
         getImageFromAssets(this.assets, "pvp-bg") ||
@@ -471,6 +874,16 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
+      this._matchToken = null;
+    }
+
+    enter() {
+      this.onEnter();
+    }
+
+    onExit() {
+      this._launchingGame = false;
+      this._matchToken = null;
     }
 
     _headerText() {
@@ -568,6 +981,140 @@
       }
     }
 
+    _modeMeta(id) {
+      if (id === "grid") return { label: "IQ Arena", status: "PvP • IQ Arena başladı" };
+      if (id === "arena") return { label: "Kafes Dövüşü", status: "PvP • Kafes Dövüşü başladı" };
+      if (id === "slotarena") return { label: "Slot Arena", status: "PvP • Slot Arena başladı" };
+      return { label: "PvP", status: "PvP • Maç başladı" };
+    }
+
+    _showQueueOverlay(dom, id) {
+      const me = currentPlayerProfile(this.store);
+      const meta = this._modeMeta(id);
+      if (dom.matchLayer) dom.matchLayer.classList.add("open");
+      if (dom.matchTitle) dom.matchTitle.textContent = "Rakip aranıyor";
+      if (dom.matchDesc) dom.matchDesc.textContent = "Önce gerçek oyuncu aranıyor. Uygun rakip bulunamazsa maç otomatik hazırlanacak.";
+      if (dom.matchMode) dom.matchMode.textContent = meta.label;
+      if (dom.matchState) dom.matchState.textContent = "Gerçek oyuncu aranıyor...";
+      if (dom.playerName) dom.playerName.textContent = me.username;
+      if (dom.playerLevel) dom.playerLevel.textContent = `Lv ${me.level}`;
+      if (dom.vsRow) dom.vsRow.classList.remove("show");
+      if (dom.foundNote) dom.foundNote.classList.remove("show");
+      if (dom.searchMeter) dom.searchMeter.style.display = "block";
+      if (dom.status) dom.status.textContent = `${meta.label} • Rakip aranıyor...`;
+      if (dom.opponent) dom.opponent.textContent = "Aranıyor...";
+      if (dom.spinner) dom.spinner.classList.remove("hidden");
+      if (dom.startBtn) dom.startBtn.style.display = "none";
+      if (dom.stopBtn) dom.stopBtn.style.display = "none";
+      if (dom.resetBtn) dom.resetBtn.style.display = "none";
+    }
+
+    _showFoundOverlay(dom, id, opponent) {
+      const meta = this._modeMeta(id);
+      if (dom.matchTitle) dom.matchTitle.textContent = "Rakip bulundu";
+      if (dom.matchDesc) dom.matchDesc.textContent = "Eşleşme kilitlendi. Arena hazırlanıyor, maç birazdan başlayacak.";
+      if (dom.matchState) dom.matchState.textContent = "Hazırlanıyor...";
+      if (dom.foundName) dom.foundName.textContent = sanitizeName(opponent?.username || "Rakip");
+      if (dom.foundLevel) dom.foundLevel.textContent = `Lv ${Math.max(1, Number(opponent?.level || 1))}`;
+      if (dom.vsRow) dom.vsRow.classList.add("show");
+      if (dom.foundNote) dom.foundNote.classList.add("show");
+      if (dom.searchMeter) dom.searchMeter.style.display = "none";
+      if (dom.status) dom.status.textContent = `${meta.label} • Rakip bulundu`;
+      if (dom.opponent) dom.opponent.textContent = `${sanitizeName(opponent?.username || "Rakip")} • Lv ${Math.max(1, Number(opponent?.level || 1))}`;
+      if (dom.spinner) dom.spinner.classList.add("hidden");
+    }
+
+    _hideQueueOverlay(dom) {
+      if (dom.matchLayer) dom.matchLayer.classList.remove("open");
+      if (dom.spinner) dom.spinner.classList.add("hidden");
+    }
+
+    async _loadAndStartMode(id, dom, opponent) {
+      const meta = this._modeMeta(id);
+      const setOpp = () => {
+        try {
+          window.TonCrimePVP.setOpponent?.({
+            username: sanitizeName(opponent?.username || "Rakip"),
+            level: Math.max(1, Number(opponent?.level || 1)),
+            isBot: !!opponent?.isBot,
+          });
+        } catch (_) {}
+      };
+
+      if (id === "grid") {
+        await loadPvpGameScript(["./src/pvpcrush.js", "./pvpcrush.js"]);
+        if (!window.TonCrimePVP_CRUSH) throw new Error("TonCrimePVP_CRUSH bulunamadı");
+        window.TonCrimePVP = window.TonCrimePVP_CRUSH;
+      } else if (id === "slotarena") {
+        await loadPvpGameScript(["./src/pvpslotarena.js", "./pvpslotarena.js"]);
+        if (!window.TonCrimePVP_SLOT) throw new Error("TonCrimePVP_SLOT bulunamadı");
+        window.TonCrimePVP = window.TonCrimePVP_SLOT;
+      } else if (id === "arena") {
+        await loadPvpGameScript(["./src/pvpcage.js", "./pvpcage.js"]);
+        if (!window.TonCrimePVP_CAGE) throw new Error("TonCrimePVP_CAGE bulunamadı");
+        window.TonCrimePVP = window.TonCrimePVP_CAGE;
+      } else {
+        throw new Error("Desteklenmeyen PvP modu");
+      }
+
+      window.TonCrimePVP.init?.({
+        arenaId: "arena",
+        statusId: "pvpStatus",
+        enemyFillId: "enemyFill",
+        meFillId: "meFill",
+        enemyHpTextId: "enemyHpText",
+        meHpTextId: "meHpText",
+      });
+
+      setOpp();
+      await sleep(160);
+      window.TonCrimePVP.reset?.();
+      setOpp();
+      await sleep(180);
+      this._hideQueueOverlay(dom);
+      window.TonCrimePVP.start?.();
+      setOpp();
+
+      if (dom.status) dom.status.textContent = meta.status;
+      if (dom.opponent) dom.opponent.textContent = `${sanitizeName(opponent?.username || "Rakip")} • Lv ${Math.max(1, Number(opponent?.level || 1))}`;
+      if (dom.startBtn) dom.startBtn.style.display = "none";
+      if (dom.stopBtn) dom.stopBtn.style.display = "none";
+      if (dom.resetBtn) dom.resetBtn.style.display = "none";
+    }
+
+    async _findOpponent(id, dom) {
+      const started = Date.now();
+      const tickStatus = () => {
+        if (!dom.matchState) return;
+        const sec = Math.min(10, Math.max(0, Math.floor((Date.now() - started) / 1000)));
+        dom.matchState.textContent = `Gerçek oyuncu aranıyor... ${sec}s`;
+      };
+      tickStatus();
+      let opponent = null;
+      try {
+        opponent = await findRealtimeOpponent({
+          store: this.store,
+          mode: id,
+          source: this.source || "general",
+          timeoutMs: 10000,
+          onStatus: tickStatus,
+        });
+      } catch (_) {
+        opponent = null;
+      }
+      if (!opponent) {
+        if (dom.matchState) dom.matchState.textContent = "Rakip hazırlanıyor...";
+        if (dom.matchDesc) dom.matchDesc.textContent = "Uygun rakip hazırlanıyor. Arena bağlantısı kuruluyor.";
+        await sleep(450);
+        opponent = createFallbackOpponent(this.store);
+      }
+      return {
+        username: sanitizeName(opponent?.username || "Rakip"),
+        level: Math.max(1, Number(opponent?.level || 1)),
+        isBot: !!opponent?.isBot,
+      };
+    }
+
     async startGame(id) {
       if (this._launchingGame) return;
       this._launchingGame = true;
@@ -582,7 +1129,6 @@
       const pvp = { ...(s.pvp || {}) };
       const player = { ...(s.player || {}) };
       const economy = ECONOMY[id];
-
       pvp.selectedMode = id;
       pvp.source = this.source || "general";
 
@@ -599,9 +1145,7 @@
         this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: {
-              text: `Yetersiz bakiye • ${economy.energy} enerji + ${economy.coins} yton gerekli`,
-            },
+            detail: { text: `Yetersiz bakiye • ${economy.energy} enerji + ${economy.coins} yton gerekli` },
           }));
         } catch (_) {}
         this._launchingGame = false;
@@ -655,232 +1199,20 @@
       };
 
       try {
-        chargeMatch();
-
         const dom = ensurePvpDom();
-
-        if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
-        if (dom.opponent) dom.opponent.textContent = "ShadowWolf";
-        if (dom.spinner) dom.spinner.classList.remove("hidden");
-
-        if (id === "grid") {
-          await loadPvpGameScript([
-            "./src/pvpcrush.js",
-            "./pvpcrush.js",
-          ]);
-
-          if (!window.TonCrimePVP_CRUSH) {
-            throw new Error("TonCrimePVP_CRUSH bulunamadı");
-          }
-
-          window.TonCrimePVP = window.TonCrimePVP_CRUSH;
-
-          window.TonCrimePVP.init?.({
-            arenaId: "arena",
-            statusId: "pvpStatus",
-            enemyFillId: "enemyFill",
-            meFillId: "meFill",
-            enemyHpTextId: "enemyHpText",
-            meHpTextId: "meHpText",
-          });
-
-          window.TonCrimePVP.setOpponent?.({
-            username: "ShadowWolf",
-            isBot: true,
-          });
-
-          if (dom.startBtn) {
-            dom.startBtn.style.display = "";
-            dom.startBtn.onclick = async () => {
-              try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: "ShadowWolf",
-                  isBot: true,
-                });
-                window.TonCrimePVP.reset?.();
-                await new Promise((r) => setTimeout(r, 120));
-                window.TonCrimePVP.start?.();
-              } catch (err) {
-                console.error("[TonCrime] Start button error:", err);
-              }
-            };
-          }
-
-          if (dom.stopBtn) {
-            dom.stopBtn.style.display = "";
-            dom.stopBtn.onclick = () => {
-              try {
-                window.TonCrimePVP.stop?.();
-              } catch (err) {
-                console.error("[TonCrime] Stop button error:", err);
-              }
-            };
-          }
-
-          if (dom.resetBtn) {
-            dom.resetBtn.style.display = "";
-            dom.resetBtn.onclick = () => {
-              try {
-                window.TonCrimePVP.reset?.();
-              } catch (err) {
-                console.error("[TonCrime] Reset button error:", err);
-              }
-            };
-          }
-
-          await new Promise((r) => setTimeout(r, 180));
-          window.TonCrimePVP.reset?.();
-          await new Promise((r) => setTimeout(r, 180));
-          window.TonCrimePVP.start?.();
-
-          if (dom.status) dom.status.textContent = "PvP • IQ Arena başladı";
-          if (dom.spinner) dom.spinner.classList.add("hidden");
-          this._launchingGame = false;
-          return;
-        }
-
-        if (id === "slotarena") {
-          await loadPvpGameScript([
-            "./src/pvpslotarena.js",
-            "./pvpslotarena.js",
-          ]);
-
-          if (!window.TonCrimePVP_SLOT) {
-            throw new Error("TonCrimePVP_SLOT bulunamadı");
-          }
-
-          window.TonCrimePVP = window.TonCrimePVP_SLOT;
-
-          window.TonCrimePVP.init?.({
-            arenaId: "arena",
-            statusId: "pvpStatus",
-            enemyFillId: "enemyFill",
-            meFillId: "meFill",
-            enemyHpTextId: "enemyHpText",
-            meHpTextId: "meHpText",
-          });
-
-          window.TonCrimePVP.setOpponent?.({
-            username: "ShadowWolf",
-            isBot: true,
-          });
-
-          if (dom.startBtn) {
-            dom.startBtn.style.display = "";
-            dom.startBtn.onclick = async () => {
-              try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: "ShadowWolf",
-                  isBot: true,
-                });
-                window.TonCrimePVP.reset?.();
-                await new Promise((r) => setTimeout(r, 120));
-                window.TonCrimePVP.start?.();
-              } catch (err) {
-                console.error("[TonCrime] Start button error:", err);
-              }
-            };
-          }
-
-          if (dom.stopBtn) {
-            dom.stopBtn.style.display = "";
-            dom.stopBtn.onclick = () => {
-              try {
-                window.TonCrimePVP.stop?.();
-              } catch (err) {
-                console.error("[TonCrime] Stop button error:", err);
-              }
-            };
-          }
-
-          if (dom.resetBtn) {
-            dom.resetBtn.style.display = "";
-            dom.resetBtn.onclick = () => {
-              try {
-                window.TonCrimePVP.reset?.();
-              } catch (err) {
-                console.error("[TonCrime] Reset button error:", err);
-              }
-            };
-          }
-
-          await new Promise((r) => setTimeout(r, 180));
-          window.TonCrimePVP.reset?.();
-          await new Promise((r) => setTimeout(r, 180));
-          window.TonCrimePVP.start?.();
-
-          if (dom.status) dom.status.textContent = "PvP • Slot Arena başladı";
-          if (dom.spinner) dom.spinner.classList.add("hidden");
-          this._launchingGame = false;
-          return;
-        }
-
-        if (id === "arena") {
-          await loadPvpGameScript([
-            "./src/pvpcage.js",
-            "./pvpcage.js",
-          ]);
-
-          if (!window.TonCrimePVP_CAGE) {
-            throw new Error("TonCrimePVP_CAGE bulunamadı");
-          }
-
-          window.TonCrimePVP = window.TonCrimePVP_CAGE;
-
-          window.TonCrimePVP.init?.({
-            arenaId: "arena",
-            statusId: "pvpStatus",
-            enemyFillId: "enemyFill",
-            meFillId: "meFill",
-            enemyHpTextId: "enemyHpText",
-            meHpTextId: "meHpText",
-          });
-
-          window.TonCrimePVP.setOpponent?.({
-            username: "ShadowWolf",
-            isBot: true,
-          });
-
-          if (dom.startBtn) {
-            dom.startBtn.style.display = "";
-            dom.startBtn.onclick = async () => {
-              try {
-                window.TonCrimePVP.setOpponent?.({ username: "ShadowWolf", isBot: true });
-                window.TonCrimePVP.reset?.();
-                await new Promise((r) => setTimeout(r, 120));
-                window.TonCrimePVP.start?.();
-              } catch (err) {
-                console.error("[TonCrime] Cage start error:", err);
-              }
-            };
-          }
-          if (dom.stopBtn) {
-            dom.stopBtn.style.display = "";
-            dom.stopBtn.onclick = () => { try { window.TonCrimePVP.stop?.(); } catch (_) {} };
-          }
-          if (dom.resetBtn) {
-            dom.resetBtn.style.display = "";
-            dom.resetBtn.onclick = () => { try { window.TonCrimePVP.reset?.(); } catch (_) {} };
-          }
-
-          await new Promise((r) => setTimeout(r, 180));
-          window.TonCrimePVP.reset?.();
-          await new Promise((r) => setTimeout(r, 180));
-          window.TonCrimePVP.start?.();
-
-          if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
-          if (dom.spinner) dom.spinner.classList.add("hidden");
-          this._launchingGame = false;
-          return;
-        }
-
-        if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
-        if (dom.spinner) dom.spinner.classList.add("hidden");
+        this._showQueueOverlay(dom, id);
+        const opponent = await this._findOpponent(id, dom);
+        chargeMatch();
+        this._showFoundOverlay(dom, id, opponent);
+        await sleep(3000);
+        await this._loadAndStartMode(id, dom, opponent);
       } catch (err) {
         refundMatch();
         console.error("[TonCrime] startGame fatal:", err);
         const status = document.getElementById("pvpStatus");
         const spinner = document.getElementById("pvpSpinner");
+        const dom = ensurePvpDom();
+        this._hideQueueOverlay(dom);
         if (status) status.textContent = "PvP • Oyun yüklenemedi";
         if (spinner) spinner.classList.add("hidden");
       }
