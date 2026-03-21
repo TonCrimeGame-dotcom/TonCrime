@@ -139,7 +139,7 @@
     if (_supabasePromise) return _supabasePromise;
     _supabasePromise = (async () => {
       try {
-        const mod = await import("./src/supabase.js");
+        const mod = await import("./supabase.js");
         return mod?.supabase || null;
       } catch (_) {}
       try {
