@@ -145,7 +145,7 @@ export class ClanScene {
 
     if (mobile) {
       const leftW = w - pad * 2;
-      const leftH = 238;
+      const leftH = 260;
       const rightX = pad;
       const rightY = top + leftH + gap;
       const rightW = w - pad * 2;
@@ -297,7 +297,7 @@ export class ClanScene {
       : ["• Seviye 10'da clan kur", "• Başvuru gönder", "• Kabulde koruma açılır"];
     lines.forEach((line, i) => ctx.fillText(line, x + px + 16, card2Y + (mobile ? 48 : 62) + i * (mobile ? 16 : 24)));
 
-    let actionBottom = y + h - (mobile ? 52 : 60);
+    let actionBottom = y + h - (mobile ? 44 : 60);
 
     if (pending && !clan && !mobile) {
       fillRR(ctx, x + px, y + 366, w - px * 2, 136, 22, "#33241d");
@@ -315,11 +315,11 @@ export class ClanScene {
       ctx.font = fitBold(18, false, 18);
       ctx.fillText("Başvuruyu İptal Et", cancelBtn.x + 42, cancelBtn.y + 27);
     } else if (pending && !clan && mobile) {
-      const infoY = y + h - 92;
+      const infoY = y + h - 102;
       ctx.fillStyle = "#ffd6a5";
       ctx.font = fitFont(14, true, 11);
       textLine(ctx, `Bekleyen: ${pending.clanName} • ${timeLeftText(pending)}`, x + 16, infoY, w - 32);
-      const cancelBtn = { x: x + 14, y: y + h - 70, w: w - 28, h: 32, onClick: () => ClanSystem.cancelJoinRequest(this.store) };
+      const cancelBtn = { x: x + 14, y: y + h - 74, w: w - 28, h: 34, onClick: () => ClanSystem.cancelJoinRequest(this.store) };
       this.buttons.push(cancelBtn);
       fillRR(ctx, cancelBtn.x, cancelBtn.y, cancelBtn.w, cancelBtn.h, 12, "#70363a");
       ctx.fillStyle = "#fff";
@@ -329,14 +329,14 @@ export class ClanScene {
     }
 
     if (clan) {
-      const leaveBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 34 : 42, onClick: () => ClanSystem.leaveClan(this.store) };
+      const leaveBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 36 : 42, onClick: () => ClanSystem.leaveClan(this.store) };
       this.buttons.push(leaveBtn);
       fillRR(ctx, leaveBtn.x, leaveBtn.y, leaveBtn.w, leaveBtn.h, 14, "#5f2531");
       ctx.fillStyle = "#fff";
       ctx.font = fitBold(18, mobile, 13);
       ctx.fillText("Clandan Ayrıl", leaveBtn.x + 20, leaveBtn.y + (mobile ? 22 : 27));
     } else {
-      const createBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 34 : 42, onClick: () => this.scenes?.go?.("clan_create") };
+      const createBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 36 : 42, onClick: () => this.scenes?.go?.("clan_create") };
       this.buttons.push(createBtn);
       fillRR(ctx, createBtn.x, createBtn.y, createBtn.w, createBtn.h, 14, Number(player.level || 1) >= 10 ? "#1f8c5e" : "#38425d");
       ctx.fillStyle = "#fff";
@@ -407,8 +407,8 @@ export class ClanScene {
       cy += boxH + 10;
     }
 
-    const visibleClans = mobile ? clans.slice(0, 3) : clans.slice(0, 5);
-    const rowH = mobile ? 76 : 92;
+    const visibleClans = mobile ? clans : clans.slice(0, 5);
+    const rowH = mobile ? 88 : 92;
     visibleClans.forEach((clan, idx) => {
       const rowY = cy + idx * (rowH + 10);
       fillRR(ctx, x + 18, rowY, w - 36, rowH, 18, "#122542");
@@ -418,7 +418,7 @@ export class ClanScene {
       const btnW = mobile ? 82 : 120;
       const btnH = mobile ? 30 : 40;
       const btnX = x + w - btnW - (mobile ? 24 : 48);
-      const btnY = rowY + (mobile ? 38 : 26);
+      const btnY = rowY + (mobile ? 48 : 26);
 
       ctx.fillStyle = "#fff";
       ctx.font = fitBold(22, mobile, 15);
@@ -426,7 +426,12 @@ export class ClanScene {
       ctx.fillStyle = "#9fc2ff";
       ctx.font = fitFont(17, mobile, 11);
       textLine(ctx, `[${clan.tag}] Güç ${fmtNum(clan.power)} Üye ${clan.members}/${clan.memberCap}`, x + 32, rowY + (mobile ? 40 : 56), btnX - (x + 32) - 8);
-      textLine(ctx, `Giriş ${clan.minLevel} • ${clan.description}`, x + 32, rowY + (mobile ? 58 : 78), w - 36 - 24 - btnW - 30);
+      if (mobile) {
+        textLine(ctx, `Giriş ${clan.minLevel}`, x + 32, rowY + 58, btnX - (x + 32) - 8);
+        textLine(ctx, `${clan.description}`, x + 32, rowY + 74, btnX - (x + 32) - 8);
+      } else {
+        textLine(ctx, `Giriş ${clan.minLevel} • ${clan.description}`, x + 32, rowY + 78, w - 36 - 24 - btnW - 30);
+      }
 
       const btn = { x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => ClanSystem.requestJoinClan(this.store, clan.id) };
       this.buttons.push(btn);
