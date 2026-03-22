@@ -220,6 +220,10 @@ export class TradeScene {
         selectedMarketSort: trade.selectedMarketSort || "popular",
         selectedShopSort: trade.selectedShopSort || "price_asc",
         selectedMyListingsSort: trade.selectedMyListingsSort || "newest",
+        marketPage: Number(trade.marketPage || 1),
+        shopPage: Number(trade.shopPage || 1),
+        myListingsPage: Number(trade.myListingsPage || 1),
+        salesHistoryPage: Number(trade.salesHistoryPage || 1),
       },
     });
 
@@ -378,6 +382,10 @@ export class TradeScene {
       view: "main",
       selectedShopId: null,
       selectedBusinessId: null,
+      marketPage: 1,
+      shopPage: 1,
+      myListingsPage: 1,
+      salesHistoryPage: 1,
     });
 
     if (tab === "market" || tab === "explore" || tab === "my_listings") {
@@ -391,14 +399,17 @@ export class TradeScene {
     this._setTrade({
       view: "shop",
       selectedShopId: shopId,
+      shopPage: 1,
     });
 
     try {
       await this._runMarketAction(`open_shop_${shopId}`, "Dükkan yükleniyor", async () => {
         await this._loadShopListings(shopId);
+        this._queueTelemetry("shop_open", { shop_id: String(shopId || "") });
       });
     } catch (err) {
       console.error("open_shop load error:", err);
+      this._queueTelemetry("error", { action: "open_shop", shop_id: String(shopId || ""), message: this._humanizeMarketError(err, "Dükkan yüklenemedi") });
       this._showToast(this._humanizeMarketError(err, "Dükkan yüklenemedi"));
     }
   }
@@ -424,8 +435,19 @@ export class TradeScene {
     const trade = this._trade();
     const v = window.prompt("Mekan veya ürün ara:", trade.searchQuery || "");
     if (v === null) return;
-    this._setTrade({ searchQuery: String(v || "").trim() });
+    this._setTrade({
+      searchQuery: String(v || "").trim(),
+      marketPage: 1,
+      shopPage: 1,
+      myListingsPage: 1,
+      salesHistoryPage: 1,
+    });
     this._showToast(v ? `Arama: ${v}` : "Arama temizlendi");
+    this._queueTelemetry("search_used", {
+      query: String(v || "").trim(),
+      view: trade.view || "main",
+      active_tab: trade.activeTab || "explore",
+    });
 
     if (trade.view === "shop" && trade.selectedShopId) {
       void this._loadShopListings(trade.selectedShopId);
@@ -470,6 +492,7 @@ export class TradeScene {
         lastLoadedAt: Number(market.lastLoadedAt || 0),
         busyActions: market.busyActions || {},
         pendingActionLabel: market.pendingActionLabel || "",
+        telemetrySummary: market.telemetrySummary || null,
       },
     });
   }
@@ -482,6 +505,95 @@ export class TradeScene {
         ...patch,
       },
     });
+  }
+
+  _getTradePage(key, fallback = 1) {
+    const trade = this._trade();
+    const value = Number(trade?.[key] || fallback);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+  }
+
+  _setTradePage(key, value) {
+    const next = Math.max(1, Math.floor(Number(value || 1)));
+    this._setTrade({ [key]: next });
+  }
+
+  _paginateItems(items, page, pageSize) {
+    const safeItems = Array.isArray(items) ? items : [];
+    const size = Math.max(1, Math.floor(Number(pageSize || 1)));
+    const totalPages = Math.max(1, Math.ceil(safeItems.length / size));
+    const currentPage = clamp(Math.floor(Number(page || 1)), 1, totalPages);
+    const start = (currentPage - 1) * size;
+    return {
+      items: safeItems.slice(start, start + size),
+      page: currentPage,
+      pageSize: size,
+      totalPages,
+      totalItems: safeItems.length,
+      startIndex: safeItems.length ? start + 1 : 0,
+      endIndex: Math.min(start + size, safeItems.length),
+    };
+  }
+
+  _drawPager(ctx, x, y, w, pageInfo, prevAction, nextAction) {
+    if (!pageInfo || Number(pageInfo.totalPages || 1) <= 1) return y;
+
+    const leftRect = { x, y, w: 84, h: 28 };
+    const rightRect = { x: x + w - 84, y, w: 84, h: 28 };
+    const prevDisabled = Number(pageInfo.page || 1) <= 1;
+    const nextDisabled = Number(pageInfo.page || 1) >= Number(pageInfo.totalPages || 1);
+
+    if (!prevDisabled) this.hitButtons.push({ rect: leftRect, action: prevAction });
+    if (!nextDisabled) this.hitButtons.push({ rect: rightRect, action: nextAction });
+
+    this._drawButton(ctx, leftRect, "← Önceki", prevDisabled ? "disabled" : "muted");
+    this._drawButton(ctx, rightRect, "Sonraki →", nextDisabled ? "disabled" : "muted");
+
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "11px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `Sayfa ${pageInfo.page}/${pageInfo.totalPages} • ${fmtNum(pageInfo.startIndex)}-${fmtNum(pageInfo.endIndex)} / ${fmtNum(pageInfo.totalItems)}`,
+      x + w / 2,
+      y + 14
+    );
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+
+    return y + 40;
+  }
+
+  _normalizeTelemetrySummary(data) {
+    const src = data || {};
+    return {
+      events24h: Number(src.events_24h || 0),
+      shopOpens24h: Number(src.shop_opens_24h || 0),
+      listingsCreated24h: Number(src.listings_created_24h || 0),
+      purchases24h: Number(src.purchases_24h || 0),
+      cancellations24h: Number(src.cancellations_24h || 0),
+      searches24h: Number(src.searches_24h || 0),
+      errors24h: Number(src.errors_24h || 0),
+      uniqueActors24h: Number(src.unique_actors_24h || 0),
+      lastErrorMessage: String(src.last_error_message || ""),
+    };
+  }
+
+  _marketTelemetrySummary() {
+    return this._normalizeTelemetrySummary(this._marketState().telemetrySummary || null);
+  }
+
+  async _queueTelemetry(eventType, payload = {}) {
+    try {
+      const profileId = await this._getProfileId();
+      await this._rpc("log_market_telemetry", {
+        p_profile_id: profileId,
+        p_event_type: String(eventType || "unknown"),
+        p_payload: payload || {},
+      });
+    } catch (_) {
+      // telemetry must never block gameplay
+    }
   }
 
   _marketShops() {
@@ -594,6 +706,115 @@ export class TradeScene {
       theme: row.business_type,
       products: [],
     };
+  }
+
+  _normalizeBusinessProductionRow(row) {
+    const rawRows = (() => {
+      if (Array.isArray(row?.claimable_rows)) return row.claimable_rows;
+      if (typeof row?.claimable_rows === "string") {
+        try {
+          const parsed = JSON.parse(row.claimable_rows);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      return [];
+    })();
+
+    return {
+      businessId: String(row?.business_id || ""),
+      dailyProduction: Number(row?.daily_production || 50),
+      productionStartedAt: row?.cycle_started_at ? new Date(row.cycle_started_at).getTime() : 0,
+      productionExpireAt: row?.cycle_ready_at ? new Date(row.cycle_ready_at).getTime() : 0,
+      claimableTotal: Number(row?.claimable_total || 0),
+      claimableProduction: rawRows
+        .map((item) => ({
+          productId: String(item?.product_id || item?.productId || ""),
+          qty: Number(item?.qty || 0),
+        }))
+        .filter((item) => item.productId && item.qty > 0),
+      lastCollectedAt: row?.last_collected_at ? new Date(row.last_collected_at).getTime() : 0,
+    };
+  }
+
+  _applyBusinessProductionStateRows(rows) {
+    if (!Array.isArray(rows) || !rows.length) return;
+    const byBusinessId = {};
+    for (const raw of rows) {
+      const normalized = this._normalizeBusinessProductionRow(raw);
+      if (!normalized.businessId) continue;
+      byBusinessId[normalized.businessId] = normalized;
+    }
+
+    const s = this.store.get();
+    const owned = (s.businesses?.owned || []).map((biz) => {
+      const patch = byBusinessId[String(biz.id)] || null;
+      if (!patch) return { ...biz, products: (biz.products || []).map((p) => ({ ...p })) };
+      return {
+        ...biz,
+        dailyProduction: Number(patch.dailyProduction || biz.dailyProduction || 50),
+        productionStartedAt: Number(patch.productionStartedAt || biz.productionStartedAt || 0),
+        productionExpireAt: Number(patch.productionExpireAt || biz.productionExpireAt || 0),
+        lastCollectedAt: Number(patch.lastCollectedAt || biz.lastCollectedAt || 0),
+        claimableProduction: (patch.claimableProduction || []).map((item) => ({ ...item })),
+        pendingProduction: [],
+        products: (biz.products || []).map((p) => ({ ...p })),
+      };
+    });
+
+    this.store.set({
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
+      },
+    });
+  }
+
+  async _syncBusinessProductionFromBackend(profileId, { force = false } = {}) {
+    const now = Date.now();
+    if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) {
+      return [];
+    }
+
+    if (this._businessProductionSyncPromise) return this._businessProductionSyncPromise;
+
+    this._businessProductionSyncPromise = (async () => {
+      try {
+        const rows = await this._rpc("sync_business_production_state", {
+          p_owner_profile_id: profileId,
+        });
+        const normalizedRows = Array.isArray(rows) ? rows : [];
+        this._applyBusinessProductionStateRows(normalizedRows);
+        this._businessProductionLastSyncAt = Date.now();
+        return normalizedRows;
+      } catch (err) {
+        console.warn("business production sync skipped:", err);
+        return [];
+      } finally {
+        this._businessProductionSyncPromise = null;
+      }
+    })();
+
+    return this._businessProductionSyncPromise;
+  }
+
+  _maybeKickBusinessProductionSync(force = false) {
+    const now = Date.now();
+    if (this._businessProductionSyncQueued || this._businessProductionSyncPromise) return;
+    if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) return;
+
+    this._businessProductionSyncQueued = true;
+    void (async () => {
+      try {
+        const profileId = await this._getProfileId();
+        await this._syncBusinessProductionFromBackend(profileId, { force: true });
+      } catch (err) {
+        console.warn("business production queued sync failed:", err);
+      } finally {
+        this._businessProductionSyncQueued = false;
+      }
+    })();
   }
 
   async _rpc(name, params = {}) {
@@ -739,6 +960,7 @@ export class TradeScene {
     try {
       const profileId = await this._getProfileId();
       await this._syncOwnedBusinessesToBackend(profileId);
+      await this._syncBusinessProductionFromBackend(profileId, { force: true });
       await this._refreshTradeData(profileId);
     } catch (err) {
       console.error("trade bootstrap error:", err);
@@ -761,7 +983,7 @@ export class TradeScene {
       const viewerId = profileId || await this._getProfileId();
       const market = this._marketState();
       const myStatus = market.myListingStatus || "active";
-      const [overviewRaw, shopsRaw, myListingsRaw, myDashboardRaw, mySalesHistoryRaw] = await Promise.all([
+      const [overviewRaw, shopsRaw, myListingsRaw, myDashboardRaw, mySalesHistoryRaw, telemetryRaw] = await Promise.all([
         this._rpc("get_market_overview", {
           p_viewer_profile_id: viewerId,
         }).catch(() => null),
@@ -779,8 +1001,11 @@ export class TradeScene {
         }).catch(() => null),
         this._rpc("get_my_market_sales_history", {
           p_seller_profile_id: viewerId,
-          p_limit: 12,
+          p_limit: 24,
         }).catch(() => []),
+        this._rpc("get_market_telemetry_summary", {
+          p_profile_id: viewerId,
+        }).catch(() => null),
       ]);
 
       const shops = Array.isArray(shopsRaw) ? shopsRaw.map((row) => this._normalizeMarketShop(row)) : [];
@@ -798,6 +1023,7 @@ export class TradeScene {
         listings: [],
         myListings,
         mySalesHistory,
+        telemetrySummary: this._normalizeTelemetrySummary(telemetryRaw || null),
         loaded: true,
         backendReady: true,
         error: "",
@@ -1168,6 +1394,12 @@ export class TradeScene {
       });
     } catch (err) {
       console.warn("business hydrate skipped:", err);
+    }
+
+    try {
+      await this._syncBusinessProductionFromBackend(profileId, { force: true });
+    } catch (err) {
+      console.warn("business production hydrate skipped:", err);
     }
   }
 
@@ -1636,10 +1868,18 @@ export class TradeScene {
         });
 
         await this._refreshTradeData(profileId);
+        this._queueTelemetry("listing_created", {
+          source_type: "inventory_item",
+          business_id: String(businessId || ""),
+          item_name: item.name || "",
+          qty,
+          price_yton: price,
+        });
         this._showToast(`${qty} adet pazara kondu`);
       });
     } catch (err) {
       console.error("list_inventory_item error:", err);
+      this._queueTelemetry("error", { action: "list_inventory_item", item_id: String(itemId || ""), message: this._humanizeMarketError(err, "İtem pazara konamadı") });
       this._showToast(this._humanizeMarketError(err, "İtem pazara konamadı"));
     }
   }
@@ -1782,19 +2022,6 @@ export class TradeScene {
         biz.productionExpireAt = Number(biz.productionStartedAt) + DAY_MS;
         changed = true;
       }
-
-      const readyTotal = (biz.claimableProduction || []).reduce(
-        (sum, row) => sum + Number(row.qty || 0),
-        0
-      );
-
-      if (now >= Number(biz.productionExpireAt || 0) && readyTotal <= 0) {
-        biz.claimableProduction = this._createClaimableProduction(
-          biz.products,
-          Number(biz.dailyProduction || 50)
-        );
-        changed = true;
-      }
     }
 
     if (changed) {
@@ -1805,59 +2032,35 @@ export class TradeScene {
         },
       });
     }
+
+    this._maybeKickBusinessProductionSync(false);
   }
 
-  _collectBusinessProduction(bizId) {
-    this._refreshBusinessProduction();
-
-    const s = this.store.get();
-    const now = Date.now();
-
-    const owned = (s.businesses?.owned || []).map((biz) => ({
-      ...biz,
-      products: (biz.products || []).map((p) => ({ ...p })),
-      claimableProduction: (biz.claimableProduction || []).map((p) => ({ ...p })),
-      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
-    }));
-
-    const biz = owned.find((b) => b.id === bizId);
+  async _collectBusinessProduction(bizId) {
+    const biz = this._allBusinesses().find((b) => String(b.id) === String(bizId));
     if (!biz) return;
 
-    const readyTotal = (biz.claimableProduction || []).reduce(
-      (sum, row) => sum + Number(row.qty || 0),
-      0
-    );
+    try {
+      const profileId = await this._getProfileId();
+      await this._runMarketAction(`collect_business_${bizId}`, `${biz.name || "İşletme"} üretimi toplanıyor`, async () => {
+        const result = await this._rpc("collect_business_production", {
+          p_owner_profile_id: profileId,
+          p_business_id: String(bizId),
+        });
 
-    if (readyTotal <= 0) {
-      this._showToast("Toplanacak üretim yok");
-      return;
+        const row = Array.isArray(result) ? (result[0] || null) : result;
+        const collectedTotal = Number(row?.collected_total || 0);
+
+        await this._syncOwnedBusinessesToBackend(profileId);
+        await this._syncBusinessProductionFromBackend(profileId, { force: true });
+
+        if (collectedTotal > 0) this._showToast(`${fmtNum(collectedTotal)} ürün toplandı`);
+        else this._showToast("Toplanacak üretim yok");
+      });
+    } catch (err) {
+      console.error("collect_business_production error:", err);
+      this._showToast(err?.message || "Üretim toplanamadı");
     }
-
-    for (const row of biz.claimableProduction || []) {
-      const product = (biz.products || []).find((p) => p.id === row.productId);
-      if (!product) continue;
-      product.qty = Number(product.qty || 0) + Number(row.qty || 0);
-    }
-
-    biz.stock = (biz.products || []).reduce(
-      (sum, p) => sum + Number(p.qty || 0),
-      0
-    );
-
-    biz.claimableProduction = [];
-    biz.pendingProduction = [];
-    biz.productionStartedAt = now;
-    biz.productionExpireAt = now + DAY_MS;
-    biz.lastCollectedAt = now;
-
-    this.store.set({
-      businesses: {
-        ...(s.businesses || {}),
-        owned,
-      },
-    });
-
-    this._showToast(`${fmtNum(readyTotal)} ürün toplandı`);
   }
 
   async _sellBusinessProduct(bizId, productId) {
@@ -1945,10 +2148,18 @@ export class TradeScene {
         });
 
         await this._refreshTradeData(profileId);
+        this._queueTelemetry("listing_created", {
+          source_type: "business_product",
+          business_id: String(backendProduct.business_id || ""),
+          item_name: product.name || "",
+          qty,
+          price_yton: price,
+        });
         this._showToast(`${qty} adet satışa çıkarıldı`);
       });
     } catch (err) {
       console.error("create_market_listing error:", err);
+      this._queueTelemetry("error", { action: "sell_business_product", product_id: String(productId || ""), message: this._humanizeMarketError(err, "İlan oluşturulamadı") });
       this._showToast(this._humanizeMarketError(err, "İlan oluşturulamadı"));
     }
   }
@@ -1991,10 +2202,18 @@ export class TradeScene {
         await this._refreshCoinsFromBackend(profileId, -Number(result?.total_price_yton || totalPrice));
         await this._refreshTradeData(profileId);
         await this._loadShopListings(String(shop.businessId || shop.id), profileId);
+        this._queueTelemetry("purchase_completed", {
+          listing_id: String(itemId || ""),
+          business_id: String(shop.businessId || shop.id || ""),
+          item_name: listing.itemName || "",
+          qty,
+          total_price_yton: Number(result?.total_price_yton || totalPrice || 0),
+        });
         this._showToast(`${qty} adet satın alındı`);
       });
     } catch (err) {
       console.error("buy_market_listing error:", err);
+      this._queueTelemetry("error", { action: "buy_market_item", listing_id: String(itemId || ""), message: this._humanizeMarketError(err, "Satın alma başarısız") });
       this._showToast(this._humanizeMarketError(err, "Satın alma başarısız"));
     }
   }
@@ -2013,10 +2232,15 @@ export class TradeScene {
         });
         await this._syncOwnedBusinessesToBackend(profileId);
         await this._refreshTradeData(profileId);
+        this._queueTelemetry("listing_cancelled", {
+          listing_id: String(listingId || ""),
+          item_name: listing?.itemName || "",
+        });
         this._showToast("İlan iptal edildi");
       });
     } catch (err) {
       console.error("cancel_market_listing error:", err);
+      this._queueTelemetry("error", { action: "cancel_my_listing", listing_id: String(listingId || ""), message: this._humanizeMarketError(err, "İlan iptal edilemedi") });
       this._showToast(this._humanizeMarketError(err, "İlan iptal edilemedi"));
     }
   }
@@ -2081,6 +2305,7 @@ export class TradeScene {
     try {
       const profileId = await this._getProfileId();
       await this._syncOwnedBusinessesToBackend(profileId);
+      await this._syncBusinessProductionFromBackend(profileId, { force: true });
       await this._refreshTradeData(profileId);
     } catch (err) {
       console.warn("post buy business sync failed:", err);
@@ -2177,27 +2402,60 @@ export class TradeScene {
             this.scrollY = 0;
             return;
           case "market_filter":
-            this._setTrade({ selectedMarketFilter: h.value });
+            this._setTrade({ selectedMarketFilter: h.value, marketPage: 1 });
             this.scrollY = 0;
             return;
           case "market_sort":
-            this._setTrade({ selectedMarketSort: h.value });
+            this._setTrade({ selectedMarketSort: h.value, marketPage: 1 });
             this.scrollY = 0;
             void this._refreshTradeData();
             return;
           case "shop_sort":
-            this._setTrade({ selectedShopSort: h.value });
+            this._setTrade({ selectedShopSort: h.value, shopPage: 1 });
             this.scrollY = 0;
             if (this._trade().selectedShopId) void this._loadShopListings(this._trade().selectedShopId);
             return;
           case "my_listings_filter":
             this.scrollY = 0;
+            this._setTrade({ myListingsPage: 1, salesHistoryPage: 1 });
             this._setMarketPatch({ myListingStatus: h.value });
             void this._reloadMyListings(h.value);
             return;
           case "my_listings_sort":
             this.scrollY = 0;
-            this._setTrade({ selectedMyListingsSort: h.value });
+            this._setTrade({ selectedMyListingsSort: h.value, myListingsPage: 1 });
+            return;
+          case "market_prev_page":
+            this.scrollY = 0;
+            this._setTradePage("marketPage", this._getTradePage("marketPage") - 1);
+            return;
+          case "market_next_page":
+            this.scrollY = 0;
+            this._setTradePage("marketPage", this._getTradePage("marketPage") + 1);
+            return;
+          case "shop_prev_page":
+            this.scrollY = 0;
+            this._setTradePage("shopPage", this._getTradePage("shopPage") - 1);
+            return;
+          case "shop_next_page":
+            this.scrollY = 0;
+            this._setTradePage("shopPage", this._getTradePage("shopPage") + 1);
+            return;
+          case "my_prev_page":
+            this.scrollY = 0;
+            this._setTradePage("myListingsPage", this._getTradePage("myListingsPage") - 1);
+            return;
+          case "my_next_page":
+            this.scrollY = 0;
+            this._setTradePage("myListingsPage", this._getTradePage("myListingsPage") + 1);
+            return;
+          case "sales_prev_page":
+            this.scrollY = 0;
+            this._setTradePage("salesHistoryPage", this._getTradePage("salesHistoryPage") - 1);
+            return;
+          case "sales_next_page":
+            this.scrollY = 0;
+            this._setTradePage("salesHistoryPage", this._getTradePage("salesHistoryPage") + 1);
             return;
           case "cancel_my_listing":
             void this._cancelMyListing(h.listingId);
@@ -2537,7 +2795,29 @@ _drawButton(ctx, rect, text, style = "ghost") {
       }
     }
 
-    return by + 8;
+    y = by + 14;
+    const telemetry = this._marketTelemetrySummary();
+    this._drawSectionTitle(ctx, x, y + 14, "Canlı Pazar", "Son 24 saat özeti");
+    y += 34;
+    this._drawCompactStat(ctx, x, y, colW, 58, "İşlem", fmtNum(telemetry.events24h), "blue");
+    this._drawCompactStat(ctx, x + colW + gap, y, colW, 58, "Satın Alma", fmtNum(telemetry.purchases24h), "green");
+    y += 68;
+    this._drawCompactStat(ctx, x, y, colW, 58, "Yeni İlan", fmtNum(telemetry.listingsCreated24h), "gold");
+    this._drawCompactStat(ctx, x + colW + gap, y, colW, 58, "Hata", fmtNum(telemetry.errors24h), "purple");
+    y += 72;
+
+    if (telemetry.lastErrorMessage) {
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      fillRoundRect(ctx, x, y, w, 52, 16);
+      ctx.strokeStyle = "rgba(255,255,255,0.09)";
+      strokeRoundRect(ctx, x, y, w, 52, 16);
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(`Son hata: ${telemetry.lastErrorMessage}`, x + 12, y + 30);
+      y += 64;
+    }
+
+    return y + 8;
   }
 
   _renderBusinesses(ctx, x, y, w) {
@@ -2856,6 +3136,9 @@ for (const p of products) {
       return this._drawEmptyState(ctx, x, y, w, "🏬", "Bu filtrede dükkan yok.");
     }
 
+    const shopPageInfo = this._paginateItems(shops, this._getTradePage("marketPage"), 6);
+    shops = shopPageInfo.items;
+
     for (const shop of shops) {
       const shopListings = this._getListingsByShopId(shop.id);
       const lowest = Number(shop.minPrice || 0) || (shopListings.length
@@ -2889,6 +3172,7 @@ for (const p of products) {
       y += 130;
     }
 
+    y = this._drawPager(ctx, x, y, w, shopPageInfo, "market_prev_page", "market_next_page");
     return y;
   }
 
@@ -2920,11 +3204,13 @@ for (const p of products) {
   }
 
   _renderSalesHistory(ctx, x, y, w) {
-    const rows = this._getFilteredSalesHistory(8);
-    this._drawSectionTitle(ctx, x, y + 14, "Satış Geçmişi", rows.length ? "Son satışlar" : "Henüz satış yok");
+    const filtered = this._getFilteredSalesHistory(200);
+    const pageInfo = this._paginateItems(filtered, this._getTradePage("salesHistoryPage"), 5);
+    const rows = pageInfo.items;
+    this._drawSectionTitle(ctx, x, y + 14, "Satış Geçmişi", filtered.length ? "Son satışlar" : "Henüz satış yok");
     y += 34;
 
-    if (!rows.length) {
+    if (!filtered.length) {
       return this._drawEmptyState(ctx, x, y, w, "💸", "Satış gerçekleştiğinde burada görünecek.");
     }
 
@@ -2949,6 +3235,7 @@ for (const p of products) {
       y += 96;
     }
 
+    y = this._drawPager(ctx, x, y, w, pageInfo, "sales_prev_page", "sales_next_page");
     return y;
   }
 
@@ -2968,6 +3255,11 @@ for (const p of products) {
     y += 68;
     this._drawCompactStat(ctx, x, y, cardW, 58, "Aktif İlan", fmtNum(dashboard.activeCount), "blue");
     this._drawCompactStat(ctx, x + cardW + cardGap, y, cardW, 58, "Kalan Stok", fmtNum(dashboard.activeRemainingQty), "purple");
+    y += 72;
+
+    const telemetry = this._marketTelemetrySummary();
+    this._drawCompactStat(ctx, x, y, cardW, 58, "24s Satın Alma", fmtNum(telemetry.purchases24h), "green");
+    this._drawCompactStat(ctx, x + cardW + cardGap, y, cardW, 58, "24s Hata", fmtNum(telemetry.errors24h), "gold");
     y += 72;
 
     this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
@@ -3004,8 +3296,10 @@ for (const p of products) {
     }
     y += 40;
 
-    const items = this._getSortedMyListings();
-    if (!items.length) {
+    const allItems = this._getSortedMyListings();
+    const pageInfo = this._paginateItems(allItems, this._getTradePage("myListingsPage"), 5);
+    const items = pageInfo.items;
+    if (!allItems.length) {
       y = this._drawEmptyState(ctx, x, y, w, "🧾", "Bu filtrede ilanın yok.");
     } else {
       for (const item of items) {
@@ -3045,6 +3339,7 @@ for (const p of products) {
     }
 
     y += 8;
+    if (allItems.length) y = this._drawPager(ctx, x, y, w, pageInfo, "my_prev_page", "my_next_page");
     return this._renderSalesHistory(ctx, x, y, w);
   }
 
@@ -3088,11 +3383,14 @@ for (const p of products) {
     }
     y += 40;
 
-    const listings = this._getListingsByShopId(shop.id);
+    const allListings = this._getListingsByShopId(shop.id);
 
-    if (!listings.length) {
+    if (!allListings.length) {
       return this._drawEmptyState(ctx, x, y, w, "📭", "Bu dükkanda ürün yok.");
     }
+
+    const pageInfo = this._paginateItems(allListings, this._getTradePage("shopPage"), 6);
+    const listings = pageInfo.items;
 
     for (const item of listings) {
       ctx.fillStyle = "rgba(255,255,255,0.05)";
@@ -3142,6 +3440,7 @@ for (const p of products) {
       y += 146;
     }
 
+    y = this._drawPager(ctx, x, y, w, pageInfo, "shop_prev_page", "shop_next_page");
     return y;
   }
 
