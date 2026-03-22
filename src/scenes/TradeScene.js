@@ -411,70 +411,60 @@ export class TradeScene {
     ctx.fillText(emoji || "📦", x + 2, y + size - 4);
   }
 
-  async _resolveBusinessDbId(localBiz) {
-    if (!localBiz) return null;
-    if (localBiz.dbId && /^[0-9a-f-]{36}$/i.test(String(localBiz.dbId))) return String(localBiz.dbId);
-    if (/^[0-9a-f-]{36}$/i.test(String(localBiz.id || ""))) return String(localBiz.id);
+  async _resolveBusinessDbId(profileId, biz) {
+    const state = this.store.get();
+    const localBizId = String(biz?.id || "");
+    const owned = state.businesses?.owned || [];
+    const localBiz = owned.find((b) => String(b.id) === localBizId);
 
-    const profileId = await this._getProfileId();
-    const businessName = String(localBiz.customName || localBiz.name || "").trim();
-    const businessType = String(localBiz.type || localBiz.business_type || "").trim();
+    if (biz?.dbId) return biz.dbId;
+    if (localBiz?.dbId) return localBiz.dbId;
+
+    const wantedType = String(biz?.type || "");
+    const wantedName = String(biz?.name || "");
 
     let query = supabase
       .from("businesses")
-      .select("id, name, business_type, owner_id, owner_profile_id")
-      .limit(10);
+      .select("id, owner_profile_id, business_type, business_name, name")
+      .eq("owner_profile_id", profileId)
+      .eq("business_type", wantedType);
 
-    if (businessName) query = query.eq("name", businessName);
-    if (businessType) query = query.eq("business_type", businessType);
-
-    let { data, error } = await query;
-    if (error) throw error;
-
-    let rows = Array.isArray(data) ? data : [];
-    let match =
-      rows.find((r) => String(r.owner_id || r.owner_profile_id || "") === String(profileId)) ||
-      rows[0];
-
-    if (!match && businessType) {
-      const fallback = await supabase
-        .from("businesses")
-        .select("id, name, business_type, owner_id, owner_profile_id")
-        .or(`owner_id.eq.${profileId},owner_profile_id.eq.${profileId}`)
-        .eq("business_type", businessType)
-        .limit(1);
-      if (fallback.error) throw fallback.error;
-      match = Array.isArray(fallback.data) ? fallback.data[0] : null;
+    if (wantedName) {
+      query = query.or(`business_name.eq.${wantedName},name.eq.${wantedName}`);
     }
 
-    if (!match) {
+    const { data, error } = await query.limit(1);
+    if (error) throw error;
+
+    const found = Array.isArray(data) ? data[0] : data;
+    if (!found?.id) {
       throw new Error("İşletmenin veritabanı kaydı bulunamadı");
     }
 
-    localBiz.dbId = String(match.id);
-    return localBiz.dbId;
+    const patchedOwned = owned.map((b) =>
+      String(b.id) === localBizId ? { ...b, dbId: found.id } : b
+    );
+
+    this.store.set({
+      businesses: {
+        ...(state.businesses || {}),
+        owned: patchedOwned,
+      },
+    });
+
+    return found.id;
   }
 
-
   async _createMarketListingCompat(params = {}) {
-    try {
-      return await this._rpc("create_market_listing", params);
-    } catch (err) {
-      const msg = String(err?.message || "");
-      const code = String(err?.code || "");
-      const shouldFallback = code === "PGRST202" || msg.includes("Could not find the function") || msg.includes("schema cache");
-      if (!shouldFallback) throw err;
+    const rpcParams = {
+      p_seller_profile_id: params.p_seller_profile_id,
+      p_business_id: params.p_business_id,
+      p_product_key: String(params.p_business_product_id || params.p_inventory_item_id || ""),
+      p_qty: Number(params.p_quantity || params.p_qty || 0),
+      p_price_yton: Number(params.p_price_yton || 0),
+    };
 
-      const fallbackParams = {
-        p_seller_profile_id: params.p_seller_profile_id,
-        p_business_id: params.p_business_id,
-        p_product_key: String(params.p_business_product_id || params.p_inventory_item_id || ""),
-        p_qty: Number(params.p_quantity || 0),
-        p_price: Number(params.p_price_yton || 0),
-      };
-
-      return await this._rpc("create_market_listing", fallbackParams);
-    }
+    return await this._rpc("create_market_listing", rpcParams);
   }
 
   _ensurePlayerMarketShop() {
@@ -1157,12 +1147,11 @@ export class TradeScene {
 
     try {
       const profileId = await this._getProfileId();
-
-      const resolvedBusinessId = await this._resolveBusinessDbId(biz);
+      const dbBusinessId = await this._resolveBusinessDbId(profileId, biz);
 
       const result = await this._createMarketListingCompat({
         p_seller_profile_id: profileId,
-        p_business_id: resolvedBusinessId,
+        p_business_id: dbBusinessId,
         p_business_product_id: productId,
         p_quantity: qty,
         p_price_yton: price,
@@ -1188,7 +1177,7 @@ export class TradeScene {
         biz2.stock = Math.max(0, Number(biz2.stock || 0) - qty);
       }
 
-      const shopId = "shop_from_" + (biz.dbId || bizId);
+      const shopId = "shop_from_" + bizId;
       let shop = shops.find((x) => String(x.id) === shopId);
 
       if (!shop) {
