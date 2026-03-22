@@ -1,5 +1,4 @@
 import { supabase } from "../supabase.js";
-
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
