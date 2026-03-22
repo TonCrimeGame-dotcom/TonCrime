@@ -140,6 +140,19 @@ function getImgSafe(assets, key) {
     return null;
   }
 }
+
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v || "").trim());
+}
+
+function slugifyText(v) {
+  return String(v || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "item";
+}
+
 export class TradeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -163,6 +176,8 @@ export class TradeScene {
 
     this.toastText = "";
     this.toastUntil = 0;
+    this._marketBooting = false;
+    this._marketProfileId = null;
   }
 
   onEnter() {
@@ -174,6 +189,7 @@ export class TradeScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
+    this._ensureMarketState();
 
     this.store.set({
       trade: {
@@ -189,6 +205,8 @@ export class TradeScene {
         searchQuery: trade.searchQuery || "",
       },
     });
+
+    void this._bootstrapTrade();
   }
 
   _trade() {
@@ -233,15 +251,26 @@ export class TradeScene {
       selectedShopId: null,
       selectedBusinessId: null,
     });
+
+    if (tab === "market" || tab === "explore" || tab === "my_listings") {
+      void this._refreshTradeData();
+    }
   }
 
-  _goShop(shopId) {
+  async _openShop(shopId) {
     this.scrollY = 0;
     this.maxScroll = 0;
     this._setTrade({
       view: "shop",
       selectedShopId: shopId,
     });
+
+    try {
+      await this._loadShopListings(shopId);
+    } catch (err) {
+      console.error("open_shop load error:", err);
+      this._showToast(err?.message || "Dükkan yüklenemedi");
+    }
   }
 
   _goBack() {
@@ -267,6 +296,12 @@ export class TradeScene {
     if (v === null) return;
     this._setTrade({ searchQuery: String(v || "").trim() });
     this._showToast(v ? `Arama: ${v}` : "Arama temizlendi");
+
+    if (trade.view === "shop" && trade.selectedShopId) {
+      void this._loadShopListings(trade.selectedShopId);
+    } else {
+      void this._refreshTradeData();
+    }
   }
 
   _allBusinesses() {
@@ -279,31 +314,88 @@ export class TradeScene {
     return s.inventory?.items || [];
   }
 
-  _marketShops() {
+  _marketState() {
+    return this.store.get().market || {};
+  }
+
+  _ensureMarketState() {
     const s = this.store.get();
-    return s.market?.shops || [];
+    const market = s.market || {};
+    this.store.set({
+      market: {
+        ...(market || {}),
+        shops: Array.isArray(market.shops) ? market.shops : [],
+        listings: Array.isArray(market.listings) ? market.listings : [],
+        overview: market.overview || null,
+        myListings: Array.isArray(market.myListings) ? market.myListings : [],
+        myListingStatus: market.myListingStatus || "active",
+        shopListingsByShop: market.shopListingsByShop || {},
+        loading: !!market.loading,
+        loadingShopId: market.loadingShopId || null,
+        loaded: !!market.loaded,
+        backendReady: !!market.backendReady,
+        error: market.error || "",
+        lastLoadedAt: Number(market.lastLoadedAt || 0),
+      },
+    });
+  }
+
+  _setMarketPatch(patch = {}) {
+    const s = this.store.get();
+    this.store.set({
+      market: {
+        ...(s.market || {}),
+        ...patch,
+      },
+    });
+  }
+
+  _marketShops() {
+    return this._marketState().shops || [];
   }
 
   _marketListings() {
-    const s = this.store.get();
-    return s.market?.listings || [];
+    const market = this._marketState();
+    const out = [];
+    const byShop = market.shopListingsByShop || {};
+    for (const val of Object.values(byShop)) {
+      if (Array.isArray(val)) out.push(...val);
+    }
+    if (out.length) return out;
+    return Array.isArray(market.listings) ? market.listings : [];
+  }
+
+  _myMarketListings() {
+    return this._marketState().myListings || [];
   }
 
   _getShopById(shopId) {
-    return this._marketShops().find((x) => x.id === shopId) || null;
+    const id = String(shopId || "");
+    return this._marketShops().find(
+      (x) => String(x.id) === id || String(x.businessId) === id
+    ) || null;
   }
 
   _getListingsByShopId(shopId) {
-    return this._marketListings().filter((x) => x.shopId === shopId);
+    const id = String(shopId || "");
+    const byShop = this._marketState().shopListingsByShop || {};
+    if (Array.isArray(byShop[id])) return byShop[id];
+    return this._marketListings().filter(
+      (x) => String(x.shopId) === id || String(x.businessId) === id
+    );
   }
 
   _findLowestMarketPriceByName(itemName) {
     const listings = this._marketListings().filter(
-      (x) => String(x.itemName || "").toLowerCase() === String(itemName || "").toLowerCase()
+      (x) =>
+        String(x.itemName || "").toLowerCase() === String(itemName || "").toLowerCase() &&
+        Number(x.stock || 0) > 0 &&
+        String(x.status || "active") === "active"
     );
     if (!listings.length) return 0;
     return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
   }
+
   _getTelegramId() {
     const s = this.store.get();
     return String(
@@ -314,6 +406,8 @@ export class TradeScene {
   }
 
   async _getProfileId() {
+    if (this._marketProfileId) return this._marketProfileId;
+
     const telegramId = this._getTelegramId();
     if (!telegramId) {
       throw new Error("telegram_id bulunamadı");
@@ -330,6 +424,7 @@ export class TradeScene {
       throw new Error("Profil bulunamadı");
     }
 
+    this._marketProfileId = data.id;
     return data.id;
   }
 
@@ -339,6 +434,7 @@ export class TradeScene {
     if (t === "nightclub") return "nightclub";
     if (t === "coffeeshop") return "coffeeshop";
     if (t === "brothel") return "brothel";
+    if (t === "blackmarket") return "blackmarket";
 
     return null;
   }
@@ -364,66 +460,622 @@ export class TradeScene {
     return data;
   }
 
-
-  async _safeCreateMarketListing(params = {}) {
-    const payload = {
-      p_seller_profile_id: params.p_seller_profile_id,
-      p_source_type: String(params.p_source_type || (params.p_inventory_item_id ? "inventory_item" : "business_product")),
-      p_source_id: String(params.p_source_id || params.p_business_product_id || params.p_inventory_item_id || ""),
-      p_business_id: params.p_business_id || null,
-      p_quantity: Number(params.p_quantity || params.p_qty || 0),
-      p_price_yton: Number(params.p_price_yton || params.p_price || 0),
-      p_item_name: params.p_item_name || null,
-      p_item_icon: params.p_item_icon || null,
-      p_item_rarity: params.p_item_rarity || null,
-      p_energy_gain: Number(params.p_energy_gain || 0),
-      p_is_usable: !!params.p_is_usable,
-      p_description: params.p_description || null,
+  _normalizeMarketShop(row) {
+    const type = this._normalizeBusinessType(row?.business_type || row?.type) || "nightclub";
+    return {
+      id: String(row?.shop_id || row?.business_id || row?.id || ""),
+      businessId: String(row?.business_id || row?.shop_id || row?.id || ""),
+      type,
+      icon: iconForType(type),
+      name: row?.shop_name || row?.name || typeLabel(type),
+      ownerId: String(row?.owner_profile_id || row?.owner_id || ""),
+      ownerName: String(row?.owner_name || row?.ownerName || "Player"),
+      online: row?.is_online !== false,
+      theme: row?.cover_theme || row?.theme || type,
+      rating: Number(row?.rating || 5),
+      totalListings: Number(row?.total_active_listings || row?.totalListings || 0),
+      minPrice: Number(row?.min_price_yton || row?.minPrice || 0),
+      soldCount: Number(row?.sold_count || row?.soldCount || 0),
     };
-
-    if (!payload.p_seller_profile_id) throw new Error("seller_profile_id gerekli");
-    if (!payload.p_source_id) throw new Error("source_id gerekli");
-    if (!payload.p_source_type) throw new Error("source_type gerekli");
-    if (payload.p_quantity <= 0) throw new Error("quantity geçersiz");
-    if (payload.p_price_yton <= 0) throw new Error("price geçersiz");
-
-    const data = await this._rpc("create_market_listing", payload);
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row?.id) {
-      throw new Error("Market listing oluşturulamadı");
-    }
-    return row;
   }
-  _ensurePlayerMarketShop() {
-    const s = this.store.get();
-    const playerName = String(s.player?.username || "Player");
-    const playerShopId = "shop_player_market";
 
-    let existing = (s.market?.shops || []).find((x) => x.id === playerShopId);
-    if (existing) return existing;
-
-    const shop = {
-      id: playerShopId,
-      businessId: "player_market",
-      name: `${playerName} Market`,
-      ownerId: "player_main",
-      ownerName: playerName,
-      online: true,
-      theme: "dark",
-      rating: 5,
-      totalListings: 0,
+  _normalizeMarketListing(row) {
+    const businessId = String(row?.business_id || row?.shop_id || row?.businessId || "");
+    return {
+      id: String(row?.listing_id || row?.id || ""),
+      shopId: businessId,
+      businessId,
+      icon: row?.item_icon || row?.icon || "📦",
+      itemName: row?.item_name || row?.itemName || "Ürün",
+      rarity: row?.rarity || "common",
+      stock: Number(row?.remaining_qty ?? row?.stock ?? 0),
+      quantity: Number(row?.quantity ?? row?.remaining_qty ?? row?.stock ?? 0),
+      price: Number(row?.price_yton ?? row?.price ?? 0),
+      desc: row?.description || row?.desc || "",
+      canBuy: row?.can_buy !== false,
+      sellerProfileId: String(row?.seller_profile_id || row?.owner_profile_id || ""),
+      sourceType: row?.source_type || null,
+      sourceId: row?.source_id || null,
+      itemKey: row?.item_key || row?.itemKey || null,
+      soldQty: Number(row?.sold_qty || 0),
+      status: row?.status || "active",
+      createdAt: row?.created_at || null,
+      ownerName: row?.owner_name || row?.ownerName || "",
+      shopName: row?.shop_name || row?.shopName || "",
     };
+  }
 
-    const shops = [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))];
+  _normalizeMyListing(row) {
+    return {
+      id: String(row?.listing_id || row?.id || ""),
+      businessId: String(row?.business_id || ""),
+      shopName: row?.shop_name || "İşletme",
+      itemName: row?.item_name || "Ürün",
+      itemIcon: row?.item_icon || "📦",
+      price: Number(row?.price_yton || 0),
+      quantity: Number(row?.quantity || 0),
+      remainingQty: Number(row?.remaining_qty || 0),
+      soldQty: Number(row?.sold_qty || 0),
+      status: String(row?.status || "active"),
+      createdAt: row?.created_at || null,
+      updatedAt: row?.updated_at || null,
+    };
+  }
+
+  async _bootstrapTrade() {
+    if (this._marketBooting) return;
+    this._marketBooting = true;
+
+    try {
+      const profileId = await this._getProfileId();
+      await this._syncOwnedBusinessesToBackend(profileId);
+      await this._refreshTradeData(profileId);
+    } catch (err) {
+      console.error("trade bootstrap error:", err);
+      this._setMarketPatch({
+        loading: false,
+        backendReady: false,
+        error: err?.message || "Trade yüklenemedi",
+      });
+      this._showToast(err?.message || "Trade yüklenemedi");
+    } finally {
+      this._marketBooting = false;
+    }
+  }
+
+  async _refreshTradeData(profileId = null) {
+    this._ensureMarketState();
+    this._setMarketPatch({ loading: true, error: "" });
+
+    try {
+      const viewerId = profileId || await this._getProfileId();
+      const market = this._marketState();
+      const myStatus = market.myListingStatus || "active";
+      const [overviewRaw, shopsRaw, myListingsRaw] = await Promise.all([
+        this._rpc("get_market_overview", {
+          p_viewer_profile_id: viewerId,
+        }).catch(() => null),
+        this._rpc("get_market_shops", {
+          p_viewer_profile_id: viewerId,
+          p_search: this._trade().searchQuery || null,
+          p_sort: "popular",
+        }).catch(() => []),
+        this._rpc("get_my_market_listings", {
+          p_seller_profile_id: viewerId,
+          p_status: myStatus,
+        }).catch(() => []),
+      ]);
+
+      const shops = Array.isArray(shopsRaw) ? shopsRaw.map((row) => this._normalizeMarketShop(row)) : [];
+      const myListings = Array.isArray(myListingsRaw)
+        ? myListingsRaw.map((row) => this._normalizeMyListing(row))
+        : [];
+
+      this._setMarketPatch({
+        overview: overviewRaw || null,
+        shops,
+        listings: [],
+        myListings,
+        loaded: true,
+        backendReady: true,
+        error: "",
+        lastLoadedAt: Date.now(),
+      });
+
+      const selectedShopId = this._trade().selectedShopId;
+      if (selectedShopId) {
+        await this._loadShopListings(selectedShopId, viewerId);
+      }
+    } catch (err) {
+      console.error("refresh trade data error:", err);
+      this._setMarketPatch({
+        backendReady: false,
+        error: err?.message || "Pazar verisi yüklenemedi",
+      });
+      throw err;
+    } finally {
+      this._setMarketPatch({ loading: false });
+    }
+  }
+
+  async _loadShopListings(shopId, profileId = null) {
+    const businessId = String(shopId || "");
+    if (!businessId) return [];
+
+    this._setMarketPatch({ loadingShopId: businessId, error: "" });
+
+    try {
+      const viewerId = profileId || await this._getProfileId();
+      const rows = await this._rpc("get_market_shop_listings", {
+        p_shop_business_id: businessId,
+        p_viewer_profile_id: viewerId,
+        p_search: this._trade().searchQuery || null,
+        p_sort: "price_asc",
+      });
+      const listings = Array.isArray(rows) ? rows.map((row) => this._normalizeMarketListing(row)) : [];
+      const market = this._marketState();
+      const nextByShop = {
+        ...(market.shopListingsByShop || {}),
+        [businessId]: listings,
+      };
+      const shops = this._marketShops().map((shop) => {
+        if (String(shop.businessId) !== businessId && String(shop.id) !== businessId) return shop;
+        const prices = listings.map((item) => Number(item.price || 0)).filter((v) => v > 0);
+        return {
+          ...shop,
+          totalListings: listings.length,
+          minPrice: prices.length ? Math.min(...prices) : 0,
+        };
+      });
+
+      this._setMarketPatch({
+        shopListingsByShop: nextByShop,
+        shops,
+      });
+
+      return listings;
+    } catch (err) {
+      console.error("load shop listings error:", err);
+      this._setMarketPatch({ error: err?.message || "Dükkan ürünleri yüklenemedi" });
+      throw err;
+    } finally {
+      this._setMarketPatch({ loadingShopId: null });
+    }
+  }
+
+  async _reloadMyListings(status = null, profileId = null) {
+    const viewerId = profileId || await this._getProfileId();
+    const nextStatus = status || this._marketState().myListingStatus || "active";
+    this._setMarketPatch({ myListingStatus: nextStatus });
+    const rows = await this._rpc("get_my_market_listings", {
+      p_seller_profile_id: viewerId,
+      p_status: nextStatus,
+    });
+    this._setMarketPatch({
+      myListings: Array.isArray(rows) ? rows.map((row) => this._normalizeMyListing(row)) : [],
+    });
+  }
+
+  async _getPriceHint(itemName, sourceType, fallbackPrice) {
+    try {
+      const data = await this._rpc("get_market_price_hint", {
+        p_item_name: itemName,
+        p_source_type: sourceType,
+      });
+      const activeMin = Number(data?.active_min_price_yton || 0);
+      const lastAvg = Number(data?.last_sale_avg_price_yton || 0);
+      return activeMin > 0 ? activeMin : lastAvg > 0 ? Math.round(lastAvg) : Number(fallbackPrice || 10);
+    } catch (err) {
+      console.warn("price hint error:", err);
+      return Number(fallbackPrice || 10);
+    }
+  }
+
+  async _pushLocalCoinsToBackend(profileId) {
+    try {
+      const localCoins = Number(this.store.get().coins || 0);
+      const { error } = await supabase.from("profiles").update({ coins: localCoins }).eq("id", profileId);
+      if (error) throw error;
+    } catch (err) {
+      console.warn("coins push skipped:", err);
+    }
+  }
+
+  async _refreshCoinsFromBackend(profileId, fallbackDelta = 0) {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("coins")
+        .eq("id", profileId)
+        .maybeSingle();
+      if (error) throw error;
+      if (data && typeof data.coins !== "undefined") {
+        this.store.set({ coins: Number(data.coins || 0) });
+        return Number(data.coins || 0);
+      }
+    } catch (err) {
+      console.warn("coins refresh failed:", err);
+    }
+
+    const s = this.store.get();
+    const nextCoins = Math.max(0, Number(s.coins || 0) + Number(fallbackDelta || 0));
+    this.store.set({ coins: nextCoins });
+    return nextCoins;
+  }
+
+  _replaceLocalBusiness(oldBizId, patch = {}) {
+    const s = this.store.get();
+    const owned = (s.businesses?.owned || []).map((biz) => {
+      if (String(biz.id) !== String(oldBizId)) return { ...biz };
+      return {
+        ...biz,
+        ...patch,
+        products: (patch.products || biz.products || []).map((p) => ({ ...p })),
+      };
+    });
 
     this.store.set({
-      market: {
-        ...(s.market || {}),
-        shops,
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
       },
     });
 
-    return shop;
+    if (String(this._trade().selectedBusinessId || "") === String(oldBizId) && patch.id) {
+      this._setTrade({ selectedBusinessId: String(patch.id) });
+    }
+  }
+
+  async _ensureBackendBusinessForLocalBusiness(biz, profileId) {
+    if (isUuid(biz?.id)) return String(biz.id);
+
+    const { data: existing, error: existingError } = await supabase
+      .from("businesses")
+      .select("id, name, business_type, owner_id")
+      .eq("owner_id", profileId)
+      .eq("business_type", biz.type)
+      .eq("name", biz.name)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    let row = existing?.id ? existing : null;
+    if (!row) {
+      const { data: inserted, error: insertError } = await supabase
+        .from("businesses")
+        .insert({
+          owner_id: profileId,
+          business_type: biz.type,
+          name: biz.name || typeLabel(biz.type),
+          daily_production: Number(biz.dailyProduction || 50),
+          stock_qty: Number(biz.stock || 0),
+        })
+        .select("id, name, business_type, owner_id")
+        .single();
+      if (insertError) throw insertError;
+      row = inserted;
+    }
+
+    if (!row?.id) throw new Error("İşletme backend kaydı oluşturulamadı");
+
+    this._replaceLocalBusiness(biz.id, {
+      id: String(row.id),
+      ownerId: String(profileId),
+      ownerName: String(this.store.get().player?.username || "Player"),
+    });
+
+    return String(row.id);
+  }
+
+  async _ensureBackendBusinessProduct(biz, product, profileId) {
+    const businessId = await this._ensureBackendBusinessForLocalBusiness(biz, profileId);
+    const currentId = String(product?.id || "");
+    let productKey = String(product?.productKey || product?.localProductKey || "").trim();
+    if (!productKey) {
+      productKey = isUuid(currentId) ? slugifyText(product?.name || currentId) : currentId || slugifyText(product?.name);
+    }
+
+    let existingRow = null;
+    if (isUuid(currentId)) {
+      const { data, error } = await supabase
+        .from("business_products")
+        .select("id, business_id, owner_profile_id, product_key, product_name, quantity, item_icon, rarity, description, energy_gain, base_price, meta")
+        .eq("id", currentId)
+        .maybeSingle();
+      if (error) throw error;
+      existingRow = data || null;
+      if (existingRow?.product_key) productKey = existingRow.product_key;
+    }
+
+    if (!existingRow) {
+      const { data, error } = await supabase
+        .from("business_products")
+        .select("id, business_id, owner_profile_id, product_key, product_name, quantity, item_icon, rarity, description, energy_gain, base_price, meta")
+        .eq("business_id", businessId)
+        .eq("owner_profile_id", profileId)
+        .eq("product_key", productKey)
+        .maybeSingle();
+      if (error) throw error;
+      existingRow = data || null;
+    }
+
+    const meta = {
+      ...(existingRow?.meta || {}),
+      icon: product.icon || existingRow?.item_icon || null,
+      rarity: product.rarity || existingRow?.rarity || null,
+      desc: product.desc || existingRow?.description || null,
+    };
+
+    const payload = {
+      business_id: businessId,
+      owner_profile_id: profileId,
+      product_key: productKey,
+      product_name: product.name || existingRow?.product_name || "Product",
+      quantity: !isUuid(currentId)
+        ? Math.max(Number(existingRow?.quantity || 0), Number(product.qty || 0))
+        : Number(existingRow?.quantity || product.qty || 0),
+      item_icon: product.icon || existingRow?.item_icon || null,
+      rarity: product.rarity || existingRow?.rarity || null,
+      description: product.desc || existingRow?.description || null,
+      energy_gain: Number(product.energyGain || existingRow?.energy_gain || 0),
+      base_price: Number(product.price || existingRow?.base_price || 0),
+      meta,
+    };
+
+    let row = existingRow;
+    if (existingRow?.id) {
+      const { data, error } = await supabase
+        .from("business_products")
+        .update(payload)
+        .eq("id", existingRow.id)
+        .select("id, business_id, owner_profile_id, product_key, product_name, quantity, item_icon, rarity, description, energy_gain, base_price, meta")
+        .single();
+      if (error) throw error;
+      row = data;
+    } else {
+      const { data, error } = await supabase
+        .from("business_products")
+        .insert(payload)
+        .select("id, business_id, owner_profile_id, product_key, product_name, quantity, item_icon, rarity, description, energy_gain, base_price, meta")
+        .single();
+      if (error) throw error;
+      row = data;
+    }
+
+    const s = this.store.get();
+    const owned = (s.businesses?.owned || []).map((b) => {
+      if (String(b.id) !== String(biz.id) && String(b.id) !== String(businessId)) return { ...b, products: (b.products || []).map((p) => ({ ...p })) };
+      return {
+        ...b,
+        id: String(businessId),
+        ownerId: String(profileId),
+        ownerName: String(s.player?.username || "Player"),
+        products: (b.products || []).map((p) => {
+          if (String(p.id) !== String(product.id)) return { ...p };
+          return {
+            ...p,
+            id: String(row.id),
+            productKey: row.product_key,
+            qty: Number(row.quantity || 0),
+            price: Number(row.base_price || p.price || 0),
+            energyGain: Number(row.energy_gain || p.energyGain || 0),
+            icon: row.item_icon || p.icon,
+            rarity: row.rarity || p.rarity,
+            desc: row.description || p.desc,
+          };
+        }),
+      };
+    });
+
+    this.store.set({
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
+      },
+    });
+
+    return row;
+  }
+
+  async _syncOwnedBusinessesToBackend(profileId) {
+    const owned = this._allBusinesses();
+    if (!owned.length) return;
+
+    for (const biz of owned) {
+      try {
+        const businessId = await this._ensureBackendBusinessForLocalBusiness(biz, profileId);
+        for (const product of biz.products || []) {
+          await this._ensureBackendBusinessProduct({ ...biz, id: businessId }, product, profileId);
+        }
+      } catch (err) {
+        console.warn("business sync skipped:", biz?.name, err);
+      }
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("business_products")
+        .select("id, business_id, owner_profile_id, product_key, product_name, quantity, item_icon, rarity, description, energy_gain, base_price, meta")
+        .eq("owner_profile_id", profileId);
+      if (error) throw error;
+      const grouped = {};
+      for (const row of data || []) {
+        const key = String(row.business_id || "");
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(row);
+      }
+
+      const s = this.store.get();
+      const ownedPatched = (s.businesses?.owned || []).map((biz) => {
+        const rows = grouped[String(biz.id)] || null;
+        if (!rows) return { ...biz, products: (biz.products || []).map((p) => ({ ...p })) };
+        const existingByKey = {};
+        for (const p of biz.products || []) {
+          const key = String(p.productKey || p.localProductKey || (isUuid(p.id) ? slugifyText(p.name || p.id) : p.id || p.name || "")).trim();
+          if (key) existingByKey[key] = p;
+        }
+        const products = rows.map((row) => {
+          const prev = existingByKey[String(row.product_key || "")] || {};
+          return {
+            ...prev,
+            id: String(row.id),
+            productKey: row.product_key,
+            icon: row.item_icon || prev.icon || "📦",
+            name: row.product_name || prev.name || "Product",
+            rarity: row.rarity || prev.rarity || "common",
+            qty: Number(row.quantity || 0),
+            price: Number(row.base_price || prev.price || 0),
+            energyGain: Number(row.energy_gain || prev.energyGain || 0),
+            desc: row.description || prev.desc || "",
+          };
+        });
+        return {
+          ...biz,
+          ownerId: String(profileId),
+          ownerName: String(s.player?.username || "Player"),
+          stock: products.reduce((sum, p) => sum + Number(p.qty || 0), 0),
+          products,
+        };
+      });
+
+      this.store.set({
+        businesses: {
+          ...(s.businesses || {}),
+          owned: ownedPatched,
+        },
+      });
+    } catch (err) {
+      console.warn("business hydrate skipped:", err);
+    }
+  }
+
+  async _ensureBackendInventoryRow(item, profileId) {
+    const itemKey = String(item?.itemKey || item?.id || slugifyText(item?.name)).trim();
+    const { data, error } = await supabase
+      .from("inventory_items")
+      .select("id, profile_id, item_key, item_name, quantity, meta")
+      .eq("profile_id", profileId)
+      .eq("item_key", itemKey)
+      .maybeSingle();
+    if (error) throw error;
+
+    if (data?.id) return data;
+
+    const payload = {
+      profile_id: profileId,
+      item_key: itemKey,
+      item_name: item?.name || itemKey,
+      quantity: Number(item?.qty || 0),
+      meta: {
+        icon: item?.icon || null,
+        rarity: item?.rarity || null,
+        desc: item?.desc || null,
+        energyGain: Number(item?.energyGain || 0),
+      },
+    };
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("inventory_items")
+      .insert(payload)
+      .select("id, profile_id, item_key, item_name, quantity, meta")
+      .single();
+    if (insertError) throw insertError;
+    return inserted;
+  }
+
+  _mergeInventoryItemLocal(itemPatch) {
+    const s = this.store.get();
+    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+    const itemKey = String(itemPatch?.id || itemPatch?.itemKey || "");
+    const idx = items.findIndex((x) => String(x.id) === itemKey || String(x.itemKey || "") === itemKey);
+    if (idx >= 0) {
+      items[idx] = {
+        ...items[idx],
+        ...itemPatch,
+        qty: Number(itemPatch.qty ?? items[idx].qty ?? 0),
+      };
+      if (Number(items[idx].qty || 0) <= 0) items.splice(idx, 1);
+    } else if (Number(itemPatch?.qty || 0) > 0) {
+      items.unshift({ ...itemPatch });
+    }
+
+    this.store.set({
+      inventory: {
+        ...(s.inventory || {}),
+        items,
+      },
+    });
+  }
+
+  _mergeBoughtItemIntoLocalStore(listing, qty) {
+    const itemKey = String(listing?.itemKey || listing?.id || slugifyText(listing?.itemName));
+    const s = this.store.get();
+    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+    const idx = items.findIndex((x) => String(x.id) === itemKey);
+    const patch = {
+      id: itemKey,
+      itemKey,
+      icon: listing?.icon || "📦",
+      name: listing?.itemName || "Ürün",
+      rarity: listing?.rarity || "common",
+      qty: Number(qty || 0),
+      usable: Number(listing?.energyGain || 0) > 0,
+      sellable: true,
+      marketable: true,
+      sellPrice: Math.max(1, Math.floor(Number(listing?.price || 0) * 0.7)),
+      marketPrice: Number(listing?.price || 0),
+      energyGain: Number(listing?.energyGain || 0),
+      desc: listing?.desc || "Pazardan alınan ürün.",
+    };
+
+    if (idx >= 0) {
+      items[idx] = {
+        ...items[idx],
+        ...patch,
+        qty: Number(items[idx].qty || 0) + Number(qty || 0),
+      };
+    } else {
+      items.unshift(patch);
+    }
+
+    this.store.set({
+      inventory: {
+        ...(s.inventory || {}),
+        items,
+      },
+    });
+  }
+
+  _businessTemplate(type, name, ownerId, ownerName) {
+    const base = {
+      id: `biz_${type}_${Date.now()}`,
+      type,
+      icon: iconForType(type),
+      name,
+      ownerId: String(ownerId || "player_main"),
+      ownerName: String(ownerName || "Player"),
+      dailyProduction: 50,
+      stock: 0,
+      theme: type,
+      products: [],
+    };
+
+    if (type === "nightclub") {
+      base.products = [
+        { id: `prod_${Date.now()}_whiskey`, icon: "🥃", name: "Black Whiskey", rarity: "common", qty: 0, price: 28, energyGain: 8, desc: "Gece kulübü ürünü." },
+        { id: `prod_${Date.now()}_champ`, icon: "🍾", name: "Premium Champagne", rarity: "rare", qty: 0, price: 44, energyGain: 14, desc: "Daha iyi enerji verir." },
+      ];
+    } else if (type === "coffeeshop") {
+      base.products = [
+        { id: `prod_${Date.now()}_weed`, icon: "🍁", name: "White Widow", rarity: "rare", qty: 0, price: 36, energyGain: 12, desc: "Enerji için kullanılabilir." },
+      ];
+    } else if (type === "brothel") {
+      base.products = [
+        { id: `prod_${Date.now()}_vip`, icon: "🌹", name: "VIP Companion", rarity: "epic", qty: 0, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
+      ];
+    }
+
+    return base;
   }
 
   _doFreeSpin() {
@@ -705,122 +1357,58 @@ export class TradeScene {
       return;
     }
 
-    const lowest = this._findLowestMarketPriceByName(item.name);
-    const defaultPrice = lowest > 0 ? lowest : Number(item.marketPrice || item.sellPrice || 10);
-
-    const priceRaw = window.prompt(
-      lowest > 0
-        ? `Birim fiyat gir.\nPazardaki en düşük fiyat: ${lowest} yton`
-        : "Birim satış fiyatını gir.",
-      String(defaultPrice)
+    const defaultPrice = await this._getPriceHint(
+      item.name,
+      "inventory_item",
+      Number(item.marketPrice || item.sellPrice || 10)
     );
+
+    const priceRaw = window.prompt("Birim satış fiyatını gir:", String(defaultPrice));
     if (priceRaw === null) return;
 
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
 
     try {
       const profileId = await this._getProfileId();
+      const ownedBusinesses = this._allBusinesses();
+      const firstBusiness = ownedBusinesses[0];
+      if (!firstBusiness) throw new Error("İlan vermek için en az 1 işletme gerekli");
+      const businessId = await this._ensureBackendBusinessForLocalBusiness(firstBusiness, profileId);
+      const invRow = await this._ensureBackendInventoryRow(item, profileId);
 
-      const { data: invRow, error: invError } = await supabase
-        .from("inventory_items")
-        .select("id, profile_id, item_key, item_name, quantity, meta")
-        .eq("profile_id", profileId)
-        .eq("item_key", String(item.id))
-        .maybeSingle();
-
-      if (invError) throw invError;
-      if (!invRow?.id) {
-        throw new Error("Backend inventory kaydı bulunamadı");
-      }
-
-      const { data: marketBusiness, error: bizError } = await supabase
-        .from("businesses")
-        .select("id, name, business_type, owner_id")
-        .eq("owner_id", profileId)
-        .eq("business_type", "blackmarket")
-        .maybeSingle();
-
-      if (bizError) throw bizError;
-
-      if (!marketBusiness?.id) {
-        throw new Error("Inventory item satışı için blackmarket business kaydı gerekli");
-      }
-
-      const row = await this._safeCreateMarketListing({
+      const result = await this._rpc("create_market_listing", {
         p_seller_profile_id: profileId,
         p_source_type: "inventory_item",
-        p_source_id: String(invRow.id),
-        p_business_id: marketBusiness?.id || null,
+        p_source_id: invRow.id,
+        p_business_id: businessId,
         p_quantity: qty,
         p_price_yton: price,
-        p_item_name: item.name,
-        p_item_icon: item.icon,
-        p_item_rarity: item.rarity,
-        p_energy_gain: Number(item.energyGain || 0),
-        p_is_usable: !!item.usable,
-        p_description: item.desc || "Envanter ürünü",
       });
 
-      const state2 = this.store.get();
-      const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
-      const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
-      const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
-
-      const idx2 = items2.findIndex((x) => String(x.id) === String(itemId));
-      if (idx2 >= 0) {
-        items2[idx2].qty = Math.max(0, Number(items2[idx2].qty || 0) - qty);
-        if (items2[idx2].qty <= 0) items2.splice(idx2, 1);
-      }
-
-      let shop = shops.find((x) => String(x.businessId) === String(marketBusiness.id));
-      if (!shop) {
-        shop = {
-          id: "shop_" + marketBusiness.id,
-          businessId: String(marketBusiness.id),
-          type: "blackmarket",
-          icon: "🕶️",
-          name: marketBusiness.name || "Black Market",
-          ownerId: String(profileId),
-          ownerName: String(state2.player?.username || "Player"),
-          online: true,
-          theme: "dark",
-          rating: 5,
-          totalListings: 0,
-        };
-        shops.unshift(shop);
-      }
-
-      listings.unshift({
-        id: String(row?.id || "listing_" + Date.now()),
-        shopId: shop.id,
-        icon: item.icon || "📦",
-        itemName: item.name,
-        rarity: item.rarity || "common",
-        stock: qty,
-        price,
-        energyGain: Number(item.energyGain || 0),
-        usable: !!item.usable,
-        desc: item.desc || "Envanter ürünü",
-        inventoryItemId: String(invRow.id),
-        businessId: String(marketBusiness.id),
-      });
-
-      for (const sh of shops) {
-        sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
-      }
+      const row = this._normalizeMarketListing(result || {});
+      const nextQty = Math.max(0, Number(item.qty || 0) - qty);
+      items[idx].qty = nextQty;
+      if (nextQty <= 0) items.splice(idx, 1);
 
       this.store.set({
         inventory: {
-          ...(state2.inventory || {}),
-          items: items2,
-        },
-        market: {
-          ...(state2.market || {}),
-          shops,
-          listings,
+          ...(s.inventory || {}),
+          items,
         },
       });
 
+      const current = this._marketState();
+      const shopKey = String(row.businessId || businessId);
+      const shopListings = [...this._getListingsByShopId(shopKey)];
+      shopListings.unshift(row);
+      this._setMarketPatch({
+        shopListingsByShop: {
+          ...(current.shopListingsByShop || {}),
+          [shopKey]: shopListings,
+        },
+      });
+
+      await this._refreshTradeData(profileId);
       this._showToast(`${qty} adet pazara kondu`);
     } catch (err) {
       console.error("list_inventory_item error:", err);
@@ -856,257 +1444,6 @@ export class TradeScene {
     });
 
     return shop;
-  }
-
-  _recountMarketShops(shops = [], listings = []) {
-    const safeListings = (listings || []).map((x) => ({ ...x }));
-    return (shops || []).map((shop) => ({
-      ...shop,
-      totalListings: safeListings.filter((x) => String(x.shopId) === String(shop.id) && Number(x.stock || 0) > 0).length,
-    }));
-  }
-
-  _starterProductsForBusiness(type, bizId) {
-    if (type === "nightclub") {
-      return [
-        {
-          id: `${bizId}_whiskey`,
-          icon: "🥃",
-          name: "Black Whiskey",
-          rarity: "common",
-          qty: 20,
-          price: 28,
-          energyGain: 8,
-          desc: "Gece kulübü ürünü.",
-        },
-        {
-          id: `${bizId}_champagne`,
-          icon: "🍾",
-          name: "Premium Champagne",
-          rarity: "rare",
-          qty: 10,
-          price: 44,
-          energyGain: 14,
-          desc: "Vitrinde iyi gider.",
-        },
-      ];
-    }
-
-    if (type === "coffeeshop") {
-      return [
-        {
-          id: `${bizId}_widow`,
-          icon: "🌿",
-          name: "White Widow",
-          rarity: "rare",
-          qty: 18,
-          price: 36,
-          energyGain: 12,
-          desc: "Coffeeshop ürünü.",
-        },
-        {
-          id: `${bizId}_hash`,
-          icon: "🍁",
-          name: "Premium Hash",
-          rarity: "epic",
-          qty: 8,
-          price: 58,
-          energyGain: 16,
-          desc: "Yüksek kalite vitrin ürünü.",
-        },
-      ];
-    }
-
-    return [
-      {
-        id: `${bizId}_vip`,
-        icon: "🌹",
-        name: "VIP Companion",
-        rarity: "epic",
-        qty: 8,
-        price: 95,
-        energyGain: 22,
-        desc: "Genel ev vitrini için premium ürün.",
-      },
-      {
-        id: `${bizId}_rose`,
-        icon: "💋",
-        name: "Ruby Night",
-        rarity: "rare",
-        qty: 12,
-        price: 62,
-        energyGain: 15,
-        desc: "Yüksek talep gören vitrin ürünü.",
-      },
-    ];
-  }
-
-  _buyBusiness(businessType) {
-    const type = this._normalizeBusinessType(businessType);
-    if (!type) {
-      this._showToast("Geçersiz işletme türü");
-      return;
-    }
-
-    const priceMap = {
-      nightclub: 1000,
-      coffeeshop: 850,
-      brothel: 1200,
-    };
-
-    const s = this.store.get();
-    const cost = Number(priceMap[type] || 0);
-    if (Number(s.coins || 0) < cost) {
-      this._showToast("Yetersiz yton");
-      return;
-    }
-
-    const defaultName = {
-      nightclub: "Velvet Night",
-      coffeeshop: "Amsterdam Dreams",
-      brothel: "Ruby House",
-    }[type] || typeLabel(type);
-
-    const customName = window.prompt("İşletme adı gir:", defaultName);
-    if (customName === null) return;
-
-    const bizId = `${type}_${Date.now()}`;
-    const products = this._starterProductsForBusiness(type, bizId);
-    const owned = (s.businesses?.owned || []).map((b) => ({
-      ...b,
-      products: (b.products || []).map((p) => ({ ...p })),
-    }));
-
-    const biz = {
-      id: bizId,
-      dbId: null,
-      type,
-      icon: iconForType(type),
-      name: String(customName || defaultName).trim() || defaultName,
-      ownerId: String(s.player?.id || "player_main"),
-      ownerName: String(s.player?.username || "Player"),
-      dailyProduction: 50,
-      stock: products.reduce((sum, p) => sum + Number(p.qty || 0), 0),
-      theme: type,
-      products,
-      pendingProduction: this._createPendingProduction(products, 50),
-      productionStartedAt: Date.now(),
-      productionExpireAt: Date.now() + DAY_MS,
-    };
-
-    const shops = this._recountMarketShops([
-      {
-        id: `shop_from_${bizId}`,
-        businessId: bizId,
-        type,
-        icon: biz.icon,
-        name: biz.name,
-        ownerId: biz.ownerId,
-        ownerName: biz.ownerName,
-        online: true,
-        theme: biz.theme,
-        rating: 5,
-        totalListings: 0,
-      },
-      ...((s.market?.shops || []).map((x) => ({ ...x }))),
-    ], s.market?.listings || []);
-
-    this.store.set({
-      coins: Number(s.coins || 0) - cost,
-      businesses: {
-        ...(s.businesses || {}),
-        owned: [biz, ...owned],
-      },
-      market: {
-        ...(s.market || {}),
-        shops,
-      },
-      trade: {
-        ...(s.trade || {}),
-        activeTab: "businesses",
-      },
-    });
-
-    this._showToast(`${biz.name} satın alındı`);
-  }
-
-  async _buyMarketItem(shopId, itemId) {
-    const s = this.store.get();
-    const listings = (s.market?.listings || []).map((x) => ({ ...x }));
-    const shops = (s.market?.shops || []).map((x) => ({ ...x }));
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-
-    const idx = listings.findIndex((x) => String(x.id) === String(itemId) && String(x.shopId) === String(shopId));
-    if (idx < 0) {
-      this._showToast("İlan bulunamadı");
-      return;
-    }
-
-    const listing = listings[idx];
-    if (Number(listing.stock || 0) <= 0) {
-      this._showToast("Stok tükendi");
-      return;
-    }
-
-    const price = Number(listing.price || 0);
-    if (Number(s.coins || 0) < price) {
-      this._showToast("Yetersiz yton");
-      return;
-    }
-
-    try {
-      if (listing.id && /^[0-9a-f-]{36}$/i.test(String(listing.id))) {
-        const profileId = await this._getProfileId();
-        await this._rpc("buy_market_listing", {
-          p_listing_id: listing.id,
-          p_buyer_profile_id: profileId,
-          p_qty: 1,
-        });
-      }
-
-      const invKey = String(listing.inventoryItemId || listing.businessProductId || listing.itemName || listing.id);
-      const existing = items.find((x) => String(x.id) === invKey || String(x.name) === String(listing.itemName));
-      if (existing) {
-        existing.qty = Number(existing.qty || 0) + 1;
-      } else {
-        items.unshift({
-          id: invKey,
-          kind: Number(listing.energyGain || 0) > 0 ? "consumable" : "goods",
-          icon: listing.icon || "📦",
-          name: listing.itemName || "Ürün",
-          rarity: listing.rarity || "common",
-          qty: 1,
-          usable: !!listing.usable,
-          sellable: true,
-          marketable: true,
-          energyGain: Number(listing.energyGain || 0),
-          sellPrice: Math.max(1, Math.floor(price * 0.7)),
-          marketPrice: price,
-          desc: listing.desc || "Pazardan alındı.",
-        });
-      }
-
-      listing.stock = Math.max(0, Number(listing.stock || 0) - 1);
-      if (listing.stock <= 0) listings.splice(idx, 1);
-
-      this.store.set({
-        coins: Number(s.coins || 0) - price,
-        inventory: {
-          ...(s.inventory || {}),
-          items,
-        },
-        market: {
-          ...(s.market || {}),
-          shops: this._recountMarketShops(shops, listings),
-          listings,
-        },
-      });
-
-      this._showToast(`${listing.itemName || "Ürün"} satın alındı`);
-    } catch (err) {
-      console.error("buy_market_item error:", err);
-      this._showToast(err?.message || "Satın alma başarısız");
-    }
   }
 
   _useBusinessProduct(bizId, productId) {
@@ -1315,35 +1652,23 @@ export class TradeScene {
       return;
     }
 
-    const lowest = this._findLowestMarketPriceByName(product.name);
-    const defaultPrice = lowest > 0 ? lowest : Number(product.price || 10);
-
-    const priceRaw = window.prompt(
-      lowest > 0
-        ? `Birim satış fiyatını gir:\nPazardaki en düşük fiyat: ${lowest} yton`
-        : "Birim satış fiyatını gir:",
-      String(defaultPrice)
-    );
+    const defaultPrice = await this._getPriceHint(product.name, "business_product", Number(product.price || 10));
+    const priceRaw = window.prompt("Birim satış fiyatını gir:", String(defaultPrice));
     if (priceRaw === null) return;
 
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
 
     try {
       const profileId = await this._getProfileId();
+      const backendProduct = await this._ensureBackendBusinessProduct(biz, product, profileId);
 
-      const row = await this._safeCreateMarketListing({
+      const result = await this._rpc("create_market_listing", {
         p_seller_profile_id: profileId,
         p_source_type: "business_product",
-        p_source_id: String(productId),
-        p_business_id: biz.dbId || biz.backendId || null,
+        p_source_id: backendProduct.id,
+        p_business_id: backendProduct.business_id,
         p_quantity: qty,
         p_price_yton: price,
-        p_item_name: product.name,
-        p_item_icon: product.icon,
-        p_item_rarity: product.rarity,
-        p_energy_gain: Number(product.energyGain || 0),
-        p_is_usable: Number(product.energyGain || 0) > 0,
-        p_description: product.desc || "İşletme ürünü",
       });
 
       const state2 = this.store.get();
@@ -1352,55 +1677,11 @@ export class TradeScene {
         products: (b.products || []).map((p) => ({ ...p })),
       }));
 
-      const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
-      const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
-
-      const biz2 = businesses2.find((b) => String(b.id) === String(bizId));
+      const biz2 = businesses2.find((b) => String(b.id) === String(backendProduct.business_id));
       if (biz2) {
-        const product2 = (biz2.products || []).find((p) => String(p.id) === String(productId));
-        if (product2) {
-          product2.qty = Math.max(0, Number(product2.qty || 0) - qty);
-        }
-        biz2.stock = Math.max(0, Number(biz2.stock || 0) - qty);
-      }
-
-      const shopId = "shop_from_" + bizId;
-      let shop = shops.find((x) => String(x.id) === shopId);
-
-      if (!shop) {
-        shop = {
-          id: shopId,
-          businessId: bizId,
-          type: biz.type,
-          icon: biz.icon || iconForType(biz.type),
-          name: biz.name,
-          ownerId: String(biz.ownerId || ""),
-          ownerName: String(biz.ownerName || state2.player?.username || "Player"),
-          online: true,
-          theme: biz.theme || biz.type,
-          rating: 5,
-          totalListings: 0,
-        };
-        shops.unshift(shop);
-      }
-
-      listings.unshift({
-        id: String(row?.id || "listing_" + Date.now()),
-        shopId: shop.id,
-        icon: product.icon || "📦",
-        itemName: product.name,
-        rarity: product.rarity || "common",
-        stock: qty,
-        price,
-        energyGain: Number(product.energyGain || 0),
-        usable: Number(product.energyGain || 0) > 0,
-        desc: product.desc || "İşletme ürünü",
-        businessId: bizId,
-        businessProductId: productId,
-      });
-
-      for (const sh of shops) {
-        sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
+        const product2 = (biz2.products || []).find((p) => String(p.id) === String(backendProduct.id));
+        if (product2) product2.qty = Math.max(0, Number(product2.qty || 0) - qty);
+        biz2.stock = (biz2.products || []).reduce((sum, p) => sum + Number(p.qty || 0), 0);
       }
 
       this.store.set({
@@ -1408,17 +1689,148 @@ export class TradeScene {
           ...(state2.businesses || {}),
           owned: businesses2,
         },
-        market: {
-          ...(state2.market || {}),
-          shops,
-          listings,
+      });
+
+      const normalized = this._normalizeMarketListing(result || {});
+      const shopKey = String(normalized.businessId || backendProduct.business_id);
+      const current = this._marketState();
+      const shopListings = [...this._getListingsByShopId(shopKey)];
+      shopListings.unshift(normalized);
+      this._setMarketPatch({
+        shopListingsByShop: {
+          ...(current.shopListingsByShop || {}),
+          [shopKey]: shopListings,
         },
       });
 
+      await this._refreshTradeData(profileId);
       this._showToast(`${qty} adet satışa çıkarıldı`);
     } catch (err) {
+      console.error("create_market_listing error:", err);
       this._showToast(err?.message || "İlan oluşturulamadı");
     }
+  }
+
+  async _buyMarketItem(shopId, itemId) {
+    const shop = this._getShopById(shopId);
+    const listing = this._getListingsByShopId(shopId).find((x) => String(x.id) === String(itemId));
+    if (!shop || !listing) {
+      this._showToast("Ürün bulunamadı");
+      return;
+    }
+
+    const maxQty = Math.max(1, Number(listing.stock || 0));
+    const qtyRaw = window.prompt(`Kaç adet almak istiyorsun? (Max ${maxQty})`, "1");
+    if (qtyRaw === null) return;
+
+    const qty = clamp(parseInt(qtyRaw, 10) || 0, 1, maxQty);
+    if (qty <= 0) {
+      this._showToast("Geçersiz adet");
+      return;
+    }
+
+    try {
+      const profileId = await this._getProfileId();
+      await this._pushLocalCoinsToBackend(profileId);
+      const result = await this._rpc("buy_market_listing", {
+        p_buyer_profile_id: profileId,
+        p_listing_id: itemId,
+        p_quantity: qty,
+      });
+
+      this._mergeBoughtItemIntoLocalStore(listing, qty);
+      await this._refreshCoinsFromBackend(profileId, -Number(result?.total_price_yton || listing.price * qty));
+      await this._refreshTradeData(profileId);
+      await this._loadShopListings(String(shop.businessId || shop.id), profileId);
+      this._showToast(`${qty} adet satın alındı`);
+    } catch (err) {
+      console.error("buy_market_listing error:", err);
+      this._showToast(err?.message || "Satın alma başarısız");
+    }
+  }
+
+  async _cancelMyListing(listingId) {
+    try {
+      const profileId = await this._getProfileId();
+      await this._rpc("cancel_market_listing", {
+        p_seller_profile_id: profileId,
+        p_listing_id: listingId,
+      });
+      await this._syncOwnedBusinessesToBackend(profileId);
+      await this._refreshTradeData(profileId);
+      this._showToast("İlan iptal edildi");
+    } catch (err) {
+      console.error("cancel_market_listing error:", err);
+      this._showToast(err?.message || "İlan iptal edilemedi");
+    }
+  }
+
+  async _buyBusiness(businessType) {
+    const labels = {
+      nightclub: { price: 1000, label: "Nightclub" },
+      coffeeshop: { price: 850, label: "Coffeeshop" },
+      brothel: { price: 1200, label: "Genel Ev" },
+    };
+    const meta = labels[businessType];
+    if (!meta) return;
+
+    const s = this.store.get();
+    if (Number(s.coins || 0) < meta.price) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
+    const name = window.prompt("İşletme adı gir:", `${meta.label} ${Date.now().toString().slice(-4)}`);
+    if (name === null) return;
+
+    const playerName = String(s.player?.username || "Player");
+    let backendId = null;
+
+    try {
+      const profileId = await this._getProfileId();
+      const { data, error } = await supabase
+        .from("businesses")
+        .insert({
+          owner_id: profileId,
+          business_type: businessType,
+          name: String(name || meta.label).trim() || meta.label,
+          daily_production: 50,
+          stock_qty: 0,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      backendId = data?.id || null;
+    } catch (err) {
+      console.warn("buy business backend insert failed:", err);
+    }
+
+    const biz = this._businessTemplate(
+      businessType,
+      String(name || meta.label).trim() || meta.label,
+      backendId || s.player?.id || "player_main",
+      playerName
+    );
+    if (backendId) biz.id = String(backendId);
+
+    const owned = [...(s.businesses?.owned || []).map((b) => ({ ...b, products: (b.products || []).map((p) => ({ ...p })) })), biz];
+    this.store.set({
+      coins: Number(s.coins || 0) - meta.price,
+      businesses: {
+        ...(s.businesses || {}),
+        owned,
+      },
+    });
+
+    try {
+      const profileId = await this._getProfileId();
+      await this._syncOwnedBusinessesToBackend(profileId);
+      await this._refreshTradeData(profileId);
+    } catch (err) {
+      console.warn("post buy business sync failed:", err);
+    }
+
+    this._showToast(`${biz.name} satın alındı`);
   }
 
   update() {
@@ -1466,7 +1878,7 @@ export class TradeScene {
             this._promptSearch();
             return;
           case "open_shop":
-            this._goShop(h.shopId);
+            void this._openShop(h.shopId);
             return;
           case "use_item":
             this._useInventoryItem(h.itemId);
@@ -1511,6 +1923,14 @@ export class TradeScene {
           case "market_filter":
             this._setTrade({ selectedMarketFilter: h.value });
             this.scrollY = 0;
+            return;
+          case "my_listings_filter":
+            this.scrollY = 0;
+            this._setMarketPatch({ myListingStatus: h.value });
+            void this._reloadMyListings(h.value);
+            return;
+          case "cancel_my_listing":
+            void this._cancelMyListing(h.listingId);
             return;
           default:
             return;
@@ -1706,25 +2126,35 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
   _renderExplore(ctx, x, y, w) {
     const trade = this._trade();
+    const market = this._marketState();
     const shops = this._marketShops();
     const listings = this._marketListings();
+    const overview = market.overview || {};
 
-    const cheapestShop = shops
-      .map((shop) => {
-        const shopListings = listings.filter((l) => l.shopId === shop.id);
-        const lowest = shopListings.length
-          ? shopListings.reduce((m, l) => Math.min(m, Number(l.price || 0)), Number.MAX_SAFE_INTEGER)
-          : 0;
-        return { shop, lowest };
-      })
-      .filter((x) => x.lowest > 0)
-      .sort((a, b) => a.lowest - b.lowest)[0];
+    const cheapestOverview = overview?.cheapest_shop || null;
+    const popularOverview = overview?.popular_shop || null;
 
-    const popularShop = [...shops].sort(
-      (a, b) => Number(b.rating || 0) - Number(a.rating || 0) || Number(b.totalListings || 0) - Number(a.totalListings || 0)
-    )[0];
+    const cheapestShop = cheapestOverview
+      ? {
+          shop: this._normalizeMarketShop(cheapestOverview),
+          lowest: Number(cheapestOverview?.min_price_yton || 0),
+        }
+      : shops
+          .map((shop) => ({
+            shop,
+            lowest: Number(shop.minPrice || 0),
+          }))
+          .filter((x) => x.lowest > 0)
+          .sort((a, b) => a.lowest - b.lowest)[0];
 
-    const deal = [...listings].sort((a, b) => Number(a.price || 0) - Number(b.price || 0))[0];
+    const popularShop = popularOverview
+      ? this._normalizeMarketShop(popularOverview)
+      : [...shops].sort(
+          (a, b) => Number(b.soldCount || b.rating || 0) - Number(a.soldCount || a.rating || 0) || Number(b.totalListings || 0) - Number(a.totalListings || 0)
+        )[0];
+
+    const deal = [...listings].sort((a, b) => Number(a.price || 0) - Number(b.price || 0))[0] ||
+      (cheapestShop ? { itemName: cheapestShop.shop.name, price: cheapestShop.lowest, icon: cheapestShop.shop.icon } : null);
 
     this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
     y += 58;
@@ -1770,7 +2200,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       rect2.w,
       rect2.h,
       "En Popüler Mekanlar",
-      popularShop ? `${popularShop.name} • ${popularShop.rating || 0} puan` : "Henüz veri yok",
+      popularShop ? `${popularShop.name} • ${popularShop.rating || popularShop.soldCount || 0}` : "Henüz veri yok",
       popularShop?.icon || "🔥",
       "#ffcc66"
     );
@@ -1804,24 +2234,26 @@ _drawButton(ctx, rect, text, style = "ghost") {
       { text: "İşletmelerim", value: "businesses", style: "primary" },
       { text: "Envanter", value: "inventory", style: "muted" },
       { text: "Sandık & Çark", value: "loot", style: "gold" },
+      { text: "İlanlarım", value: "my_listings", style: "muted" },
       { text: "Satın Al", value: "buy", style: "muted" },
     ];
 
     let bx = x;
     let by = y;
-    for (const btn of buttons) {
-      const rect = { x: bx, y: by, w: 110, h: 36 };
+    const bw = Math.floor((w - 10) / 2);
+    for (let i = 0; i < buttons.length; i++) {
+      const btn = buttons[i];
+      const rect = { x: bx, y: by, w: bw, h: 40 };
       this.hitButtons.push({ rect, action: "go_tab", value: btn.value });
       this._drawButton(ctx, rect, btn.text, btn.style);
-      bx += 118;
-      if (bx + 110 > x + w) {
+      if (i % 2 === 0) bx = x + bw + 10;
+      else {
         bx = x;
-        by += 44;
+        by += 50;
       }
     }
 
-    y = by + 48;
-    return y;
+    return by + 8;
   }
 
   _renderBusinesses(ctx, x, y, w) {
@@ -2117,7 +2549,7 @@ for (const p of products) {
       shops = shops.filter(
         (x) =>
           String(x.name || "").toLowerCase().includes(q) ||
-          this._getListingsByShopId(x.id).some((l) => String(l.itemName || "").toLowerCase().includes(q))
+          String(x.ownerName || "").toLowerCase().includes(q)
       );
     }
 
@@ -2127,9 +2559,9 @@ for (const p of products) {
 
     for (const shop of shops) {
       const shopListings = this._getListingsByShopId(shop.id);
-      const lowest = shopListings.length
+      const lowest = Number(shop.minPrice || 0) || (shopListings.length
         ? shopListings.reduce((m, l) => Math.min(m, Number(l.price || 0)), Number.MAX_SAFE_INTEGER)
-        : 0;
+        : 0);
 
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, 102, 18);
@@ -2155,6 +2587,68 @@ for (const p of products) {
       this._drawButton(ctx, enterRect, "Dükkana Gir", "primary");
 
       y += 114;
+    }
+
+    return y;
+  }
+
+
+  _renderMyListings(ctx, x, y, w) {
+    const market = this._marketState();
+    const status = market.myListingStatus || "active";
+
+    this._drawSectionTitle(ctx, x, y + 14, "İlanlarım", "Aktif • satılan • iptal edilen ilanlar");
+    y += 34;
+
+    const filters = [
+      { key: "active", label: "Aktif" },
+      { key: "sold_out", label: "Satılan" },
+      { key: "cancelled", label: "İptal" },
+      { key: "all", label: "Tümü" },
+    ];
+
+    let fx = x;
+    for (const f of filters) {
+      const rect = { x: fx, y, w: 72, h: 30 };
+      this.hitButtons.push({ rect, action: "my_listings_filter", value: f.key });
+      this._drawButton(ctx, rect, f.label, status === f.key ? "primary" : "muted");
+      fx += 78;
+    }
+    y += 44;
+
+    const items = this._myMarketListings();
+    if (!items.length) {
+      return this._drawEmptyState(ctx, x, y, w, "🧾", "Bu filtrede ilanın yok.");
+    }
+
+    for (const item of items) {
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      fillRoundRect(ctx, x, y, w, 112, 18);
+      ctx.strokeStyle = "rgba(255,255,255,0.09)";
+      strokeRoundRect(ctx, x, y, w, 112, 18);
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 22px system-ui";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(item.itemIcon || "📦", x + 14, y + 28);
+
+      ctx.font = "900 14px system-ui";
+      ctx.fillText(item.itemName || "Ürün", x + 48, y + 22);
+
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(`${item.shopName || "İşletme"} • ${fmtNum(item.price)} yton`, x + 48, y + 42);
+      ctx.fillText(`Toplam ${fmtNum(item.quantity)} • Kalan ${fmtNum(item.remainingQty)} • Satılan ${fmtNum(item.soldQty)}`, x + 14, y + 64);
+      ctx.fillText(`Durum ${String(item.status || "active").toUpperCase()}`, x + 14, y + 82);
+
+      if (item.status === "active" && Number(item.remainingQty || 0) > 0) {
+        const cancelRect = { x: x + w - 104, y: y + 74, w: 90, h: 28 };
+        this.hitButtons.push({ rect: cancelRect, action: "cancel_my_listing", listingId: item.id });
+        this._drawButton(ctx, cancelRect, "İptal Et", "gold");
+      }
+
+      y += 124;
     }
 
     return y;
@@ -2212,8 +2706,10 @@ for (const p of products) {
       ctx.fillText(`Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`, x + 14, y + 64);
 
       const buyRect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
-      this.hitButtons.push({ rect: buyRect, action: "buy_market_item", itemId: item.id, shopId: shop.id });
-      this._drawButton(ctx, buyRect, "Satın Al", "gold");
+      if (item.canBuy !== false) {
+        this.hitButtons.push({ rect: buyRect, action: "buy_market_item", itemId: item.id, shopId: shop.id });
+      }
+      this._drawButton(ctx, buyRect, item.canBuy === false ? "Senin İlanın" : "Satın Al", item.canBuy === false ? "muted" : "gold");
 
       y += 114;
     }
@@ -2352,6 +2848,7 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
         { key: "inventory", label: "Envanter" },
         { key: "loot", label: "Sandık & Çark" },
         { key: "market", label: "Açık Pazar" },
+        { key: "my_listings", label: "İlanlarım" },
         { key: "buy", label: "Satın Al" },
       ];
 
@@ -2410,6 +2907,7 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
       else if (trade.activeTab === "inventory") endY = this._renderInventory(ctx, x, y, w2);
       else if (trade.activeTab === "loot") endY = this._renderLoot(ctx, x, y, w2);
       else if (trade.activeTab === "market") endY = this._renderMarket(ctx, x, y, w2);
+      else if (trade.activeTab === "my_listings") endY = this._renderMyListings(ctx, x, y, w2);
       else endY = this._renderBuy(ctx, x, y, w2);
     }
 
