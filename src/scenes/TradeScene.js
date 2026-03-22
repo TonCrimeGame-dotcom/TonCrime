@@ -1,4 +1,5 @@
 import { supabase } from "../supabase.js";
+
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
@@ -30,6 +31,13 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
 
 function fmtNum(n) {
   return Number(n || 0).toLocaleString("tr-TR");
+}
+
+function fmtDateTime(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function rarityColor(r) {
@@ -202,6 +210,9 @@ export class TradeScene {
         view: trade.view || "main",
         lastFreeSpinDay: trade.lastFreeSpinDay || "",
         searchQuery: trade.searchQuery || "",
+        selectedMarketSort: trade.selectedMarketSort || "popular",
+        selectedShopSort: trade.selectedShopSort || "price_asc",
+        selectedMyListingsSort: trade.selectedMyListingsSort || "newest",
       },
     });
 
@@ -326,7 +337,9 @@ export class TradeScene {
         shops: Array.isArray(market.shops) ? market.shops : [],
         listings: Array.isArray(market.listings) ? market.listings : [],
         overview: market.overview || null,
+        myDashboard: market.myDashboard || null,
         myListings: Array.isArray(market.myListings) ? market.myListings : [],
+        mySalesHistory: Array.isArray(market.mySalesHistory) ? market.mySalesHistory : [],
         myListingStatus: market.myListingStatus || "active",
         shopListingsByShop: market.shopListingsByShop || {},
         loading: !!market.loading,
@@ -366,6 +379,14 @@ export class TradeScene {
 
   _myMarketListings() {
     return this._marketState().myListings || [];
+  }
+
+  _myMarketDashboard() {
+    return this._marketState().myDashboard || null;
+  }
+
+  _mySalesHistory() {
+    return this._marketState().mySalesHistory || [];
   }
 
   _getShopById(shopId) {
@@ -521,6 +542,74 @@ export class TradeScene {
     };
   }
 
+  _normalizeMyDashboard(data) {
+    const src = data || {};
+    return {
+      activeCount: Number(src.active_count || 0),
+      soldOutCount: Number(src.sold_out_count || 0),
+      cancelledCount: Number(src.cancelled_count || 0),
+      totalSalesRevenue: Number(src.total_sales_revenue || 0),
+      totalSoldUnits: Number(src.total_sold_units || 0),
+      activeRemainingQty: Number(src.active_remaining_qty || 0),
+      activeListingValue: Number(src.active_listing_value || 0),
+      recentSalesCount: Number(src.recent_sales_count || 0),
+    };
+  }
+
+  _normalizeSaleHistory(row) {
+    return {
+      id: String(row?.order_id || row?.id || ""),
+      listingId: String(row?.listing_id || ""),
+      businessId: String(row?.business_id || ""),
+      shopName: row?.shop_name || "İşletme",
+      itemName: row?.item_name || "Ürün",
+      itemIcon: row?.item_icon || "📦",
+      qty: Number(row?.qty || 0),
+      unitPrice: Number(row?.unit_price_yton || 0),
+      totalPrice: Number(row?.total_price_yton || 0),
+      soldAt: row?.sold_at || row?.created_at || null,
+    };
+  }
+
+  _getSortedMyListings() {
+    const trade = this._trade();
+    const market = this._marketState();
+    const q = String(trade.searchQuery || "").trim().toLowerCase();
+    let items = [...this._myMarketListings()];
+
+    if (q) {
+      items = items.filter((item) =>
+        String(item.itemName || "").toLowerCase().includes(q) ||
+        String(item.shopName || "").toLowerCase().includes(q)
+      );
+    }
+
+    const sort = String(trade.selectedMyListingsSort || "newest");
+    items.sort((a, b) => {
+      if (sort === "oldest") return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      if (sort === "price_desc") return Number(b.price || 0) - Number(a.price || 0);
+      if (sort === "price_asc") return Number(a.price || 0) - Number(b.price || 0);
+      if (sort === "sold_desc") return Number(b.soldQty || 0) - Number(a.soldQty || 0);
+      if (sort === "stock_desc") return Number(b.remainingQty || 0) - Number(a.remainingQty || 0);
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+
+    return items;
+  }
+
+  _getFilteredSalesHistory(limit = 8) {
+    const q = String(this._trade().searchQuery || "").trim().toLowerCase();
+    let items = [...this._mySalesHistory()];
+    if (q) {
+      items = items.filter((item) =>
+        String(item.itemName || "").toLowerCase().includes(q) ||
+        String(item.shopName || "").toLowerCase().includes(q)
+      );
+    }
+    items.sort((a, b) => new Date(b.soldAt || 0) - new Date(a.soldAt || 0));
+    return items.slice(0, limit);
+  }
+
   async _bootstrapTrade() {
     if (this._marketBooting) return;
     this._marketBooting = true;
@@ -550,18 +639,25 @@ export class TradeScene {
       const viewerId = profileId || await this._getProfileId();
       const market = this._marketState();
       const myStatus = market.myListingStatus || "active";
-      const [overviewRaw, shopsRaw, myListingsRaw] = await Promise.all([
+      const [overviewRaw, shopsRaw, myListingsRaw, myDashboardRaw, mySalesHistoryRaw] = await Promise.all([
         this._rpc("get_market_overview", {
           p_viewer_profile_id: viewerId,
         }).catch(() => null),
         this._rpc("get_market_shops", {
           p_viewer_profile_id: viewerId,
           p_search: this._trade().searchQuery || null,
-          p_sort: "popular",
+          p_sort: this._trade().selectedMarketSort || "popular",
         }).catch(() => []),
         this._rpc("get_my_market_listings", {
           p_seller_profile_id: viewerId,
           p_status: myStatus,
+        }).catch(() => []),
+        this._rpc("get_my_market_dashboard", {
+          p_seller_profile_id: viewerId,
+        }).catch(() => null),
+        this._rpc("get_my_market_sales_history", {
+          p_seller_profile_id: viewerId,
+          p_limit: 12,
         }).catch(() => []),
       ]);
 
@@ -569,12 +665,17 @@ export class TradeScene {
       const myListings = Array.isArray(myListingsRaw)
         ? myListingsRaw.map((row) => this._normalizeMyListing(row))
         : [];
+      const mySalesHistory = Array.isArray(mySalesHistoryRaw)
+        ? mySalesHistoryRaw.map((row) => this._normalizeSaleHistory(row))
+        : [];
 
       this._setMarketPatch({
         overview: overviewRaw || null,
+        myDashboard: this._normalizeMyDashboard(myDashboardRaw || null),
         shops,
         listings: [],
         myListings,
+        mySalesHistory,
         loaded: true,
         backendReady: true,
         error: "",
@@ -609,7 +710,7 @@ export class TradeScene {
         p_shop_business_id: businessId,
         p_viewer_profile_id: viewerId,
         p_search: this._trade().searchQuery || null,
-        p_sort: "price_asc",
+        p_sort: this._trade().selectedShopSort || "price_asc",
       });
       const listings = Array.isArray(rows) ? rows.map((row) => this._normalizeMarketListing(row)) : [];
       const market = this._marketState();
@@ -1923,10 +2024,24 @@ export class TradeScene {
             this._setTrade({ selectedMarketFilter: h.value });
             this.scrollY = 0;
             return;
+          case "market_sort":
+            this._setTrade({ selectedMarketSort: h.value });
+            this.scrollY = 0;
+            void this._refreshTradeData();
+            return;
+          case "shop_sort":
+            this._setTrade({ selectedShopSort: h.value });
+            this.scrollY = 0;
+            if (this._trade().selectedShopId) void this._loadShopListings(this._trade().selectedShopId);
+            return;
           case "my_listings_filter":
             this.scrollY = 0;
             this._setMarketPatch({ myListingStatus: h.value });
             void this._reloadMyListings(h.value);
+            return;
+          case "my_listings_sort":
+            this.scrollY = 0;
+            this._setTrade({ selectedMyListingsSort: h.value });
             return;
           case "cancel_my_listing":
             void this._cancelMyListing(h.listingId);
@@ -2538,6 +2653,21 @@ for (const p of products) {
     }
     y += 42;
 
+    const sorters = [
+      { key: "popular", label: "Popüler" },
+      { key: "price_asc", label: "Ucuz" },
+      { key: "price_desc", label: "Pahalı" },
+      { key: "newest", label: "Yeni" },
+    ];
+    fx = x;
+    for (const s of sorters) {
+      const rect = { x: fx, y, w: 76, h: 28 };
+      this.hitButtons.push({ rect, action: "market_sort", value: s.key });
+      this._drawButton(ctx, rect, s.label, trade.selectedMarketSort === s.key ? "gold" : "muted");
+      fx += 82;
+    }
+    y += 40;
+
     let shops = this._marketShops();
     if (trade.selectedMarketFilter !== "all") {
       shops = shops.filter((x) => x.type === trade.selectedMarketFilter);
@@ -2592,12 +2722,85 @@ for (const p of products) {
   }
 
 
+
+  _drawCompactStat(ctx, x, y, w, h, title, value, tone = "blue") {
+    const tones = {
+      blue: ["rgba(48,108,230,0.28)", "rgba(23,53,120,0.34)", "rgba(112,162,255,0.30)"],
+      gold: ["rgba(160,112,28,0.28)", "rgba(96,64,12,0.34)", "rgba(255,214,120,0.26)"],
+      green: ["rgba(40,126,84,0.28)", "rgba(20,82,54,0.34)", "rgba(94,241,170,0.24)"],
+      purple: ["rgba(108,62,175,0.28)", "rgba(58,28,96,0.34)", "rgba(199,125,255,0.24)"],
+    };
+    const [c1, c2, border] = tones[tone] || tones.blue;
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    ctx.fillStyle = g;
+    fillRoundRect(ctx, x, y, w, h, 18);
+    ctx.strokeStyle = border;
+    strokeRoundRect(ctx, x, y, w, h, 18);
+
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = "10px system-ui";
+    ctx.fillText(title, x + 12, y + 18);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 16px system-ui";
+    ctx.fillText(value, x + 12, y + 42);
+  }
+
+  _renderSalesHistory(ctx, x, y, w) {
+    const rows = this._getFilteredSalesHistory(8);
+    this._drawSectionTitle(ctx, x, y + 14, "Satış Geçmişi", rows.length ? "Son satışlar" : "Henüz satış yok");
+    y += 34;
+
+    if (!rows.length) {
+      return this._drawEmptyState(ctx, x, y, w, "💸", "Satış gerçekleştiğinde burada görünecek.");
+    }
+
+    for (const row of rows) {
+      ctx.fillStyle = "rgba(255,255,255,0.045)";
+      fillRoundRect(ctx, x, y, w, 86, 16);
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      strokeRoundRect(ctx, x, y, w, 86, 16);
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 18px system-ui";
+      ctx.fillText(row.itemIcon || "📦", x + 12, y + 24);
+      ctx.font = "900 13px system-ui";
+      ctx.fillText(row.itemName || "Ürün", x + 42, y + 20);
+
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(`${row.shopName || "İşletme"} • ${fmtNum(row.qty)} adet`, x + 42, y + 40);
+      ctx.fillText(`${fmtNum(row.unitPrice)} yton/adet • Toplam ${fmtNum(row.totalPrice)} yton`, x + 12, y + 60);
+      ctx.fillText(fmtDateTime(row.soldAt), x + w - 110, y + 60);
+
+      y += 96;
+    }
+
+    return y;
+  }
+
   _renderMyListings(ctx, x, y, w) {
     const market = this._marketState();
+    const trade = this._trade();
     const status = market.myListingStatus || "active";
+    const dashboard = this._myMarketDashboard() || this._normalizeMyDashboard(null);
 
-    this._drawSectionTitle(ctx, x, y + 14, "İlanlarım", "Aktif • satılan • iptal edilen ilanlar");
+    this._drawSectionTitle(ctx, x, y + 14, "İlanlarım", "Özet • filtre • satış geçmişi");
     y += 34;
+
+    const cardGap = 10;
+    const cardW = Math.floor((w - cardGap) / 2);
+    this._drawCompactStat(ctx, x, y, cardW, 58, "Toplam Satış", `${fmtNum(dashboard.totalSalesRevenue)} yton`, "gold");
+    this._drawCompactStat(ctx, x + cardW + cardGap, y, cardW, 58, "Satılan Adet", fmtNum(dashboard.totalSoldUnits), "green");
+    y += 68;
+    this._drawCompactStat(ctx, x, y, cardW, 58, "Aktif İlan", fmtNum(dashboard.activeCount), "blue");
+    this._drawCompactStat(ctx, x + cardW + cardGap, y, cardW, 58, "Kalan Stok", fmtNum(dashboard.activeRemainingQty), "purple");
+    y += 72;
+
+    this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
+    y += 58;
 
     const filters = [
       { key: "active", label: "Aktif" },
@@ -2613,44 +2816,64 @@ for (const p of products) {
       this._drawButton(ctx, rect, f.label, status === f.key ? "primary" : "muted");
       fx += 78;
     }
-    y += 44;
+    y += 42;
 
-    const items = this._myMarketListings();
+    const sorters = [
+      { key: "newest", label: "Yeni" },
+      { key: "oldest", label: "Eski" },
+      { key: "price_desc", label: "Fiyat ↓" },
+      { key: "sold_desc", label: "Satış ↓" },
+    ];
+    fx = x;
+    for (const s of sorters) {
+      const rect = { x: fx, y, w: 82, h: 28 };
+      this.hitButtons.push({ rect, action: "my_listings_sort", value: s.key });
+      this._drawButton(ctx, rect, s.label, trade.selectedMyListingsSort === s.key ? "gold" : "muted");
+      fx += 88;
+    }
+    y += 40;
+
+    const items = this._getSortedMyListings();
     if (!items.length) {
-      return this._drawEmptyState(ctx, x, y, w, "🧾", "Bu filtrede ilanın yok.");
-    }
+      y = this._drawEmptyState(ctx, x, y, w, "🧾", "Bu filtrede ilanın yok.");
+    } else {
+      for (const item of items) {
+        ctx.fillStyle = "rgba(255,255,255,0.05)";
+        fillRoundRect(ctx, x, y, w, 122, 18);
+        ctx.strokeStyle = "rgba(255,255,255,0.09)";
+        strokeRoundRect(ctx, x, y, w, 122, 18);
 
-    for (const item of items) {
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
-      fillRoundRect(ctx, x, y, w, 112, 18);
-      ctx.strokeStyle = "rgba(255,255,255,0.09)";
-      strokeRoundRect(ctx, x, y, w, 112, 18);
+        ctx.fillStyle = "#fff";
+        ctx.font = "900 22px system-ui";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(item.itemIcon || "📦", x + 14, y + 28);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      ctx.fillText(item.itemIcon || "📦", x + 14, y + 28);
+        ctx.font = "900 14px system-ui";
+        ctx.fillText(item.itemName || "Ürün", x + 48, y + 22);
 
-      ctx.font = "900 14px system-ui";
-      ctx.fillText(item.itemName || "Ürün", x + 48, y + 22);
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.font = "11px system-ui";
+        ctx.fillText(`${item.shopName || "İşletme"} • ${fmtNum(item.price)} yton`, x + 48, y + 42);
+        ctx.fillText(`Toplam ${fmtNum(item.quantity)} • Kalan ${fmtNum(item.remainingQty)} • Satılan ${fmtNum(item.soldQty)}`, x + 14, y + 64);
+        ctx.fillText(`Durum ${String(item.status || "active").toUpperCase()} • ${fmtDateTime(item.createdAt)}`, x + 14, y + 84);
 
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "11px system-ui";
-      ctx.fillText(`${item.shopName || "İşletme"} • ${fmtNum(item.price)} yton`, x + 48, y + 42);
-      ctx.fillText(`Toplam ${fmtNum(item.quantity)} • Kalan ${fmtNum(item.remainingQty)} • Satılan ${fmtNum(item.soldQty)}`, x + 14, y + 64);
-      ctx.fillText(`Durum ${String(item.status || "active").toUpperCase()}`, x + 14, y + 82);
+        const badgeTone = item.status === "sold_out" ? "gold" : item.status === "cancelled" ? "muted" : "primary";
+        const badgeRect = { x: x + w - 98, y: y + 14, w: 84, h: 26 };
+        this._drawButton(ctx, badgeRect, item.status === "active" ? "AKTİF" : item.status === "sold_out" ? "SATILDI" : "İPTAL", badgeTone);
 
-      if (item.status === "active" && Number(item.remainingQty || 0) > 0) {
-        const cancelRect = { x: x + w - 104, y: y + 74, w: 90, h: 28 };
-        this.hitButtons.push({ rect: cancelRect, action: "cancel_my_listing", listingId: item.id });
-        this._drawButton(ctx, cancelRect, "İptal Et", "gold");
+        if (item.status === "active" && Number(item.remainingQty || 0) > 0) {
+          const cancelRect = { x: x + w - 104, y: y + 82, w: 90, h: 28 };
+          this.hitButtons.push({ rect: cancelRect, action: "cancel_my_listing", listingId: item.id });
+          this._drawButton(ctx, cancelRect, "İptal Et", "gold");
+        }
+
+        y += 134;
       }
-
-      y += 124;
     }
 
-    return y;
+    y += 8;
+    return this._renderSalesHistory(ctx, x, y, w);
   }
 
   _renderShopView(ctx, x, y, w) {
@@ -2675,6 +2898,24 @@ for (const p of products) {
     );
     y += 120;
 
+    this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
+    y += 58;
+
+    const sorters = [
+      { key: "price_asc", label: "Ucuz" },
+      { key: "price_desc", label: "Pahalı" },
+      { key: "newest", label: "Yeni" },
+      { key: "stock_desc", label: "Stok" },
+    ];
+    let fx = x;
+    for (const s of sorters) {
+      const rect = { x: fx, y, w: 76, h: 28 };
+      this.hitButtons.push({ rect, action: "shop_sort", value: s.key });
+      this._drawButton(ctx, rect, s.label, trade.selectedShopSort === s.key ? "gold" : "muted");
+      fx += 82;
+    }
+    y += 40;
+
     const listings = this._getListingsByShopId(shop.id);
 
     if (!listings.length) {
@@ -2683,9 +2924,9 @@ for (const p of products) {
 
     for (const item of listings) {
       ctx.fillStyle = "rgba(255,255,255,0.05)";
-      fillRoundRect(ctx, x, y, w, 102, 18);
+      fillRoundRect(ctx, x, y, w, 112, 18);
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
-      strokeRoundRect(ctx, x, y, w, 102, 18);
+      strokeRoundRect(ctx, x, y, w, 112, 18);
 
       ctx.fillStyle = "#fff";
       ctx.font = "900 22px system-ui";
@@ -2703,14 +2944,15 @@ for (const p of products) {
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
       ctx.fillText(`Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`, x + 14, y + 64);
+      if (item.desc) ctx.fillText(item.desc, x + 14, y + 82);
 
-      const buyRect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
+      const buyRect = { x: x + w - 94, y: y + 74, w: 80, h: 28 };
       if (item.canBuy !== false) {
         this.hitButtons.push({ rect: buyRect, action: "buy_market_item", itemId: item.id, shopId: shop.id });
       }
       this._drawButton(ctx, buyRect, item.canBuy === false ? "Senin İlanın" : "Satın Al", item.canBuy === false ? "muted" : "gold");
 
-      y += 114;
+      y += 124;
     }
 
     return y;
