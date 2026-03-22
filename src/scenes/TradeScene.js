@@ -3,7 +3,7 @@ import { supabase } from "../supabase.js";
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
-
+ 
 function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
