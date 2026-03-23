@@ -900,10 +900,14 @@ async _getProfileId(options = {}) {
     this._businessProductionSyncQueued = true;
     void (async () => {
       try {
-        const profileId = await this._getProfileId();
+        const profileId = await this._getProfileId({ allowMissingAuth: true });
+        if (!profileId) return;
         await this._syncBusinessProductionFromBackend(profileId, { force: true });
       } catch (err) {
-        console.warn("business production queued sync failed:", err);
+        const msg = String(err?.message || err || "");
+        if (!msg.includes("oturum hazır değil") && !msg.includes("auth user yok")) {
+          console.warn("business production queued sync failed:", err);
+        }
       } finally {
         this._businessProductionSyncQueued = false;
       }
