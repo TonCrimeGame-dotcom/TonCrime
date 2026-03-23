@@ -291,6 +291,73 @@ app.post('/wallet/validate', async (req, res) => {
   }
 });
 
+
+const publicRateBuckets = new Map();
+const PUBLIC_RATE_LIMIT_WINDOW_MS = Number(process.env.PUBLIC_RATE_LIMIT_WINDOW_MS || 60_000);
+const PUBLIC_PROFILE_SYNC_MAX = Number(process.env.PUBLIC_PROFILE_SYNC_MAX || 30);
+
+function publicRateLimit(key) {
+  const now = Date.now();
+  const bucketKey = String(key || 'unknown');
+  const bucket = publicRateBuckets.get(bucketKey) || { count: 0, resetAt: now + PUBLIC_RATE_LIMIT_WINDOW_MS };
+
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + PUBLIC_RATE_LIMIT_WINDOW_MS;
+  }
+
+  bucket.count += 1;
+  publicRateBuckets.set(bucketKey, bucket);
+
+  return bucket.count <= PUBLIC_PROFILE_SYNC_MAX;
+}
+
+app.post('/public/profile-sync', async (req, res) => {
+  try {
+    const telegramId = String(req.body?.telegram_id || '').trim().slice(0, 120);
+    const username = String(req.body?.username || 'Player').trim().slice(0, 24) || 'Player';
+    const ageRaw = req.body?.age;
+    const age = ageRaw === null || ageRaw === undefined || ageRaw === '' ? null : Math.max(18, Math.min(120, asNumber(ageRaw, 18)));
+    const level = Math.max(1, Math.min(9999, asNumber(req.body?.level, 1)));
+    const coins = Math.max(0, Math.min(1_000_000_000, asNumber(req.body?.coins, 0)));
+    const energyMax = Math.max(1, Math.min(500, asNumber(req.body?.energy_max, 50)));
+    const energy = Math.max(0, Math.min(energyMax, asNumber(req.body?.energy, energyMax)));
+    const updatedAt = String(req.body?.updated_at || new Date().toISOString());
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: 'telegram_id_required' });
+    }
+
+    const rateKey = `${getClientIp(req)}:${telegramId}`;
+    if (!publicRateLimit(rateKey)) {
+      return res.status(429).json({ ok: false, error: 'rate_limited' });
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert({
+        telegram_id: telegramId,
+        username,
+        age,
+        level,
+        coins,
+        energy,
+        energy_max: energyMax,
+        updated_at: updatedAt,
+      }, { onConflict: 'telegram_id' })
+      .select('id, telegram_id, username, level, coins, energy, energy_max, updated_at')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({ ok: true, item: data });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'profile_sync_failed' });
+  }
+});
+
 /* =========================
    ADMIN ROUTES
 ========================= */
