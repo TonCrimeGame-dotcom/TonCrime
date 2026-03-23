@@ -696,7 +696,6 @@
 
         const latest = this.store?.get?.() || {};
         this.store?.set?.({
-          yton: Math.max(0, Number(latest.yton ?? latest.coins ?? 0) - stake),
           pvp: {
             ...(latest.pvp || {}),
             betStake: stake,
@@ -752,6 +751,9 @@
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
             await tryBetMatch(sb, userId, mode);
+          } catch (_) {}
+          try {
+            await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
           } catch (_) {}
         }, 1000);
       } catch (err) {
@@ -1225,6 +1227,58 @@
       } catch (err) {
         console.error("[TonCrime] _finishBetMatchIfNeeded fatal:", err);
       }
+    }
+
+
+    async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
+      try {
+        const { data: queueRow } = await sb
+          .from("pvp_match_queue")
+          .select("match_id, status")
+          .eq("user_id", userId)
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (queueRow?.match_id) {
+          const { data: matchRow } = await sb
+            .from("pvp_matches")
+            .select("*")
+            .eq("id", queueRow.match_id)
+            .maybeSingle();
+
+          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
+            this.rtMatchStarted = true;
+            this.onMatchFound(
+              this._buildOpponentFromMatch(matchRow, userId),
+              this._buildMatchContext(matchRow, userId, sceneModeId)
+            );
+            return true;
+          }
+        }
+
+        const { data: directMatch } = await sb
+          .from("pvp_matches")
+          .select("*")
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
+          this.rtMatchStarted = true;
+          this.onMatchFound(
+            this._buildOpponentFromMatch(directMatch, userId),
+            this._buildMatchContext(directMatch, userId, sceneModeId)
+          );
+          return true;
+        }
+      } catch (_) {}
+      return false;
     }
 
     renderSearchingOverlay(ctx, panelX, panelY, panelW, panelH) {
