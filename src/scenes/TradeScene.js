@@ -192,6 +192,11 @@ export class TradeScene {
     this.toastUntil = 0;
     this._marketBooting = false;
     this._marketProfileId = null;
+    this._businessProductionLastSyncAt = 0;
+    this._businessProductionSyncPromise = null;
+    this._businessProductionSyncQueued = false;
+    this._businessProductionSyncDisabled = false;
+    this._businessProductionSyncDisableReason = "";
   }
 
   onEnter() {
@@ -738,6 +743,29 @@ export class TradeScene {
     };
   }
 
+  _isMissingRpcError(err, rpcName) {
+    const code = String(err?.code || "").toUpperCase();
+    const message = String(err?.message || "").toLowerCase();
+    const details = String(err?.details || "").toLowerCase();
+    const hint = String(err?.hint || "").toLowerCase();
+    const rpc = String(rpcName || "").toLowerCase();
+
+    return (
+      code === "PGRST202" ||
+      code === "42883" ||
+      message.includes(`function public.${rpc}`) ||
+      message.includes(`rpc/${rpc}`) ||
+      details.includes(`function public.${rpc}`) ||
+      hint.includes(`call the function public.`)
+    );
+  }
+
+  _disableBusinessProductionSync(reason = "") {
+    this._businessProductionSyncDisabled = true;
+    this._businessProductionSyncDisableReason = String(reason || "");
+    this._businessProductionLastSyncAt = Date.now();
+  }
+
   _applyBusinessProductionStateRows(rows) {
     if (!Array.isArray(rows) || !rows.length) return;
     const byBusinessId = {};
@@ -772,6 +800,8 @@ export class TradeScene {
   }
 
   async _syncBusinessProductionFromBackend(profileId, { force = false } = {}) {
+    if (this._businessProductionSyncDisabled) return [];
+
     const now = Date.now();
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) {
       return [];
@@ -789,6 +819,14 @@ export class TradeScene {
         this._businessProductionLastSyncAt = Date.now();
         return normalizedRows;
       } catch (err) {
+        this._businessProductionLastSyncAt = Date.now();
+
+        if (this._isMissingRpcError(err, "sync_business_production_state")) {
+          this._disableBusinessProductionSync(err?.message || err?.details || "missing rpc");
+          console.warn("business production sync disabled: missing sync_business_production_state rpc", err);
+          return [];
+        }
+
         console.warn("business production sync skipped:", err);
         return [];
       } finally {
@@ -800,6 +838,8 @@ export class TradeScene {
   }
 
   _maybeKickBusinessProductionSync(force = false) {
+    if (this._businessProductionSyncDisabled) return;
+
     const now = Date.now();
     if (this._businessProductionSyncQueued || this._businessProductionSyncPromise) return;
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) return;
