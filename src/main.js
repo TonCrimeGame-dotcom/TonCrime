@@ -293,20 +293,54 @@ bootstrapTelegramUser();
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
+let _profileSyncDisabled = false;
+let _profileSyncWarned = false;
+let _profileSyncBackoffUntil = 0;
+let _profileSyncAuthUserId = "";
+
+function isProfileSyncPermissionError(error) {
+  const code = String(error?.code || "").trim();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "42501" ||
+    message.includes("row-level security") ||
+    message.includes("permission denied")
+  );
+}
+
+async function getProfileSyncAuthUserId() {
+  if (_profileSyncAuthUserId) return _profileSyncAuthUserId;
+
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    const uid = String(data?.user?.id || "").trim();
+    if (uid) _profileSyncAuthUserId = uid;
+    return uid;
+  } catch (_) {
+    return "";
+  }
+}
 
 async function syncProfileToSupabase() {
-  if (_profileSyncBusy) return;
+  if (_profileSyncBusy || _profileSyncDisabled) return;
+  if (Date.now() < _profileSyncBackoffUntil) return;
 
   const s = store.get();
   const p = s.player || {};
   const telegramId = String(
     p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  );
+  ).trim();
 
   if (!telegramId) return;
   if (!s?.intro?.profileCompleted) return;
 
-  const payload = {
+  const authUserId = await getProfileSyncAuthUserId();
+  if (!authUserId) return;
+
+  const stablePayload = {
+    id: authUserId,
+    auth_user_id: authUserId,
     telegram_id: telegramId,
     username: String(p.username || "Player"),
     age: p.age ?? null,
@@ -314,27 +348,43 @@ async function syncProfileToSupabase() {
     coins: Number(s.coins || 0),
     energy: Number(p.energy || 10),
     energy_max: Number(p.energyMax || 10),
-    updated_at: new Date().toISOString(),
   };
 
-  const payloadKey = JSON.stringify(payload);
+  const payloadKey = JSON.stringify(stablePayload);
   if (payloadKey === _lastProfilePayload) return;
 
   _profileSyncBusy = true;
 
   try {
+    const payload = {
+      ...stablePayload,
+      updated_at: new Date().toISOString(),
+    };
+
     const { error } = await supabase
       .from("profiles")
       .upsert(payload, { onConflict: "telegram_id" });
 
     if (error) {
+      if (isProfileSyncPermissionError(error)) {
+        _profileSyncDisabled = true;
+        if (!_profileSyncWarned) {
+          _profileSyncWarned = true;
+          console.warn("Supabase profile sync disabled: profiles RLS rejected upsert", error);
+        }
+        return;
+      }
+
+      _profileSyncBackoffUntil = Date.now() + 10000;
       console.error("Supabase profile sync error:", error);
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
+    _profileSyncBackoffUntil = 0;
   } catch (err) {
+    _profileSyncBackoffUntil = Date.now() + 10000;
     console.error("Supabase profile sync fatal:", err);
   } finally {
     _profileSyncBusy = false;
@@ -342,9 +392,11 @@ async function syncProfileToSupabase() {
 }
 
 (function profileSyncLoop() {
-  const now = Date.now();
-  if (now - _lastProfileSyncAt > 1500) {
-    syncProfileToSupabase();
+  if (!_profileSyncDisabled) {
+    const now = Date.now();
+    if (now - _lastProfileSyncAt > 1500) {
+      syncProfileToSupabase();
+    }
   }
   setTimeout(profileSyncLoop, 1500);
 })();
@@ -424,8 +476,7 @@ addImage("clan_bg", "./src/assets/Clan-bg.png");
 addImage("nightclub_bg", "./src/assets/nightclub-bg.png");
 addImage("pvp_bg", "./src/assets/pvp-bg.png");
 addImage("xxx_bg", "./src/assets/xxx-bg.png");
-addImage("weed", "./src/weed.png");
-addImage("drink", "./src/drink.png");
+
 /* BLACK MARKET */
 addImage("blackmarket", "./src/assets/BlackMarket.png");
 addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
@@ -1023,14 +1074,7 @@ if (typeof window.PvpScene === "function") {
   console.warn("[TonCrime] PvpScene bulunamadı, fallback MissionsScene çalıştı.");
   scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
 }
-// ✅ MATCH → GAME START FIX
-window.addEventListener("tc:startMatch", (e) => {
-  try {
-    scenes.go("pvp", e.detail || {});
-  } catch (err) {
-    console.warn("PVP start error:", err);
-  }
-});
+
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 
 scenes.register(
@@ -1050,7 +1094,6 @@ window.addEventListener("tc:openPvp", () => {
     console.warn("[TonCrime] tc:openPvp açılamadı:", err);
   }
 });
-
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
