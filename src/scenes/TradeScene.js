@@ -1,5 +1,36 @@
 import { supabase } from "../supabase.js";
-import { getRuntimeProfileKey } from "../utils/profileKey.js";
+
+const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
+function safeGetLocalStorage(key) {
+  try { return localStorage.getItem(key) || ""; } catch { return ""; }
+}
+function safeSetLocalStorage(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+function randomProfilePart() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID().replaceAll("-", "");
+    }
+  } catch {}
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+function getTelegramWebAppUser() {
+  try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
+}
+function getRuntimeProfileKey(store = null) {
+  const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
+  if (fromStore) return fromStore;
+  const tgUser = getTelegramWebAppUser();
+  const tgId = String(tgUser?.id || "").trim();
+  if (tgId) return tgId;
+  let guestKey = safeGetLocalStorage(PROFILE_KEY_STORAGE).trim();
+  if (!guestKey) {
+    guestKey = `guest_${randomProfilePart()}`;
+    safeSetLocalStorage(PROFILE_KEY_STORAGE, guestKey);
+  }
+  return guestKey;
+}
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
