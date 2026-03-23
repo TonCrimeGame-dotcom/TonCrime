@@ -1,4 +1,5 @@
 import { supabase } from "../supabase.js";
+import { getRuntimeProfileKey } from "../utils/profileKey.js";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -165,7 +166,7 @@ export class TradeScene {
     this.toastUntil = 0;
   }
 
-  onEnter(data = {}) {
+  onEnter() {
     const s = this.store.get();
     const trade = s.trade || {};
 
@@ -178,7 +179,7 @@ export class TradeScene {
     this.store.set({
       trade: {
         ...trade,
-        activeTab: data.tab || trade.activeTab || "explore",
+        activeTab: trade.activeTab || "explore",
         selectedBusinessId: trade.selectedBusinessId || null,
         selectedInventoryCategory: trade.selectedInventoryCategory || "all",
         selectedMarketFilter: trade.selectedMarketFilter || "all",
@@ -305,12 +306,7 @@ export class TradeScene {
     return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
   }
   _getTelegramId() {
-    const s = this.store.get();
-    return String(
-      s?.player?.telegramId ||
-      window.Telegram?.WebApp?.initDataUnsafe?.user?.id ||
-      ""
-    ).trim();
+    return String(getRuntimeProfileKey(this.store) || "").trim();
   }
 
   async _getProfileId() {
@@ -1202,13 +1198,13 @@ export class TradeScene {
             this._collectBusinessProduction(h.bizId);
             return; 
           case "free_spin":
-            this.scenes.go("loot", { mode: "free_wheel" });
+            this._doFreeSpin();
             return;
           case "premium_spin":
-            this.scenes.go("loot", { mode: "premium_wheel" });
+            this._doPremiumSpin();
             return;
           case "buy_crate":
-            this.scenes.go("loot", { mode: h.value === "legendary" ? "buy_open_legendary" : "buy_open_mystery" });
+            this._buyCrate(h.value);
             return;
           case "go_tab":
             this._changeTab(h.value);
@@ -1788,7 +1784,7 @@ for (const p of products) {
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
     ctx.fillText("💰 YTON   ⚡ Enerji   📦 Mystery Crate   👑 Golden Pass", x + 14, y + 54);
-    ctx.fillText("Butonlar artık ayrı loot sayfasını açar: gerçek çark + slot sandık animasyonu.", x + 14, y + 74);
+    ctx.fillText("Sonraki aşamada burada animasyonlu loot ekranı olacak.", x + 14, y + 74);
 
     y += 108;
     return y;
