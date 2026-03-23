@@ -14,7 +14,6 @@ import { HomeScene } from "./scenes/HomeScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
-import { LootScene } from "./scenes/LootScene.js";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -294,20 +293,65 @@ bootstrapTelegramUser();
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
+let _profileSyncDisabled = false;
+let _profileSyncBackoffUntil = 0;
+let _profileSyncWarnedNoAuth = false;
+
+async function getSupabaseAuthUserId() {
+  try {
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (!userErr && userData?.user?.id) return String(userData.user.id);
+  } catch (_) {}
+
+  try {
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    const sessionUserId = sessionData?.session?.user?.id;
+    if (!sessionErr && sessionUserId) return String(sessionUserId);
+  } catch (_) {}
+
+  return "";
+}
+
+function isProfileSyncPolicyError(error) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "42501" ||
+    code === "401" ||
+    message.includes("row-level security") ||
+    message.includes("violates row-level security policy") ||
+    message.includes("unauthorized")
+  );
+}
 
 async function syncProfileToSupabase() {
-  if (_profileSyncBusy) return;
+  if (_profileSyncBusy || _profileSyncDisabled) return;
+  if (Date.now() < _profileSyncBackoffUntil) return;
 
   const s = store.get();
   const p = s.player || {};
   const telegramId = String(
     p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  );
+  ).trim();
 
   if (!telegramId) return;
   if (!s?.intro?.profileCompleted) return;
 
+  const authUserId = await getSupabaseAuthUserId();
+  if (!authUserId) {
+    if (!_profileSyncWarnedNoAuth) {
+      console.warn("[TonCrime] profile sync skipped: Supabase auth oturumu hazır değil.");
+      _profileSyncWarnedNoAuth = true;
+    }
+    _profileSyncBackoffUntil = Date.now() + 10000;
+    _lastProfileSyncAt = Date.now();
+    return;
+  }
+  _profileSyncWarnedNoAuth = false;
+
   const payload = {
+    id: authUserId,
+    auth_user_id: authUserId,
     telegram_id: telegramId,
     username: String(p.username || "Player"),
     age: p.age ?? null,
@@ -318,8 +362,21 @@ async function syncProfileToSupabase() {
     updated_at: new Date().toISOString(),
   };
 
-  const payloadKey = JSON.stringify(payload);
-  if (payloadKey === _lastProfilePayload) return;
+  const payloadKey = JSON.stringify({
+    id: payload.id,
+    auth_user_id: payload.auth_user_id,
+    telegram_id: payload.telegram_id,
+    username: payload.username,
+    age: payload.age,
+    level: payload.level,
+    coins: payload.coins,
+    energy: payload.energy,
+    energy_max: payload.energy_max,
+  });
+  if (payloadKey === _lastProfilePayload) {
+    _lastProfileSyncAt = Date.now();
+    return;
+  }
 
   _profileSyncBusy = true;
 
@@ -329,13 +386,22 @@ async function syncProfileToSupabase() {
       .upsert(payload, { onConflict: "telegram_id" });
 
     if (error) {
+      if (isProfileSyncPolicyError(error)) {
+        _profileSyncDisabled = true;
+        console.warn("[TonCrime] profile sync disabled:", error);
+        return;
+      }
+
+      _profileSyncBackoffUntil = Date.now() + 15000;
       console.error("Supabase profile sync error:", error);
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
+    _profileSyncBackoffUntil = 0;
   } catch (err) {
+    _profileSyncBackoffUntil = Date.now() + 15000;
     console.error("Supabase profile sync fatal:", err);
   } finally {
     _profileSyncBusy = false;
@@ -344,8 +410,11 @@ async function syncProfileToSupabase() {
 
 (function profileSyncLoop() {
   const now = Date.now();
-  if (now - _lastProfileSyncAt > 1500) {
-    syncProfileToSupabase();
+  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 1500) {
+    syncProfileToSupabase().catch((err) => {
+      _profileSyncBackoffUntil = Date.now() + 15000;
+      console.error("Supabase profile sync loop fatal:", err);
+    });
   }
   setTimeout(profileSyncLoop, 1500);
 })();
@@ -991,7 +1060,6 @@ scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("missions", new MissionsScene({ store, input, assets, scenes }));
 scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
-scenes.register("loot", new LootScene({ store, input, assets, scenes }));
 
 scenes.register(
   "coffeeshop",
