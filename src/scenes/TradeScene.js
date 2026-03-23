@@ -204,6 +204,13 @@ export class TradeScene {
     this.moved = 0;
     this.clickCandidate = false;
     this._ensureMarketState();
+    this._setMarketPatch({
+      loading: false,
+      loadingShopId: null,
+      busyActions: {},
+      pendingActionLabel: "",
+      error: "",
+    });
 
     this.store.set({
       trade: {
@@ -277,7 +284,15 @@ export class TradeScene {
   }
 
   _isActionBusy(key) {
-    return !!this._busyActions()[String(key || "")];
+    const normalizedKey = String(key || "");
+    if (!normalizedKey) return false;
+    const startedAt = Number(this._busyActions()[normalizedKey] || 0);
+    if (!startedAt) return false;
+    if (Date.now() - startedAt > 20000) {
+      this._setActionBusy(normalizedKey, false);
+      return false;
+    }
+    return true;
   }
 
   _setActionBusy(key, busy, label = "") {
