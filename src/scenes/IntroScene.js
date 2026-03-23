@@ -1,4 +1,5 @@
 import { supabase } from "../supabase.js";
+import { getRuntimeProfileKey, getTelegramWebAppUser } from "../utils/profileKey.js";
 
 function getImageSafe(assets, key) {
   if (!assets) return null;
@@ -61,8 +62,8 @@ export class IntroScene {
       return;
     }
 
-    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    const telegramId = String(tgUser?.id || "test_user");
+    const tgUser = getTelegramWebAppUser();
+    const telegramId = getRuntimeProfileKey(this.store);
 
     let username = tgUser?.username || window.prompt("Kullanıcı adı gir:", "Player") || "Player";
     username = String(username).trim().slice(0, 24) || "Player";
@@ -73,7 +74,7 @@ export class IntroScene {
     const startEnergy = Math.max(50, Math.min(startEnergyMax, Number(prevPlayer.energy || startEnergyMax)));
 
     try {
-      await supabase.from("profiles").upsert({
+      const { error } = await supabase.from("profiles").upsert({
         telegram_id: telegramId,
         username,
         age,
@@ -82,6 +83,10 @@ export class IntroScene {
         energy: startEnergy,
         energy_max: startEnergyMax,
       }, { onConflict: "telegram_id" });
+
+      if (error) {
+        console.error("Supabase kayıt hatası", error);
+      }
     } catch (err) {
       console.log("Supabase kayıt hatası", err);
     }
