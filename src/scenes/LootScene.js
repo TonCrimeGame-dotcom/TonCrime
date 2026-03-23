@@ -45,14 +45,14 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
+function easeOutQuint(t) {
+  return 1 - Math.pow(1 - t, 5);
+}
+
 function easeInOutCubic(t) {
   return t < 0.5
     ? 4 * t * t * t
     : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-function easeOutExpo(t) {
-  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
 }
 
 function fmtNum(n) {
@@ -62,13 +62,13 @@ function fmtNum(n) {
 function rarityColor(r) {
   switch (String(r || "").toLowerCase()) {
     case "common":
-      return "#a0aec0";
+      return "#a8b4c7";
     case "rare":
-      return "#61a8ff";
+      return "#69b4ff";
     case "epic":
-      return "#ca78ff";
+      return "#c97cff";
     case "legendary":
-      return "#ffcc66";
+      return "#ffd166";
     default:
       return "#9ca3af";
   }
@@ -76,6 +76,10 @@ function rarityColor(r) {
 
 function crateName(kind) {
   return kind === "legendary" ? "Legendary Crate" : "Mystery Crate";
+}
+
+function glowForReward(reward, fallback = "#69b4ff") {
+  return reward?.glow || rarityColor(reward?.item?.rarity) || fallback;
 }
 
 function pushParticle(list, p) {
@@ -95,20 +99,21 @@ function pushParticle(list, p) {
   });
 }
 
-function spawnBurst(list, cx, cy, color, count = 18) {
+function spawnBurst(list, cx, cy, color, count = 18, power = 1) {
   for (let i = 0; i < count; i += 1) {
-    const a = (Math.PI * 2 * i) / count + Math.random() * 0.15;
-    const speed = 1.2 + Math.random() * 3.2;
+    const a = (Math.PI * 2 * i) / count + Math.random() * 0.2;
+    const speed = (1.2 + Math.random() * 3.6) * power;
     pushParticle(list, {
       x: cx,
       y: cy,
       vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed - 0.8,
+      vy: Math.sin(a) * speed - 0.4,
       size: 2 + Math.random() * 4,
-      life: 650 + Math.random() * 550,
+      life: 650 + Math.random() * 650,
       color,
-      shape: Math.random() > 0.5 ? "dot" : "spark",
-      spin: (Math.random() - 0.5) * 0.2,
+      shape: Math.random() > 0.65 ? "spark" : "dot",
+      spin: (Math.random() - 0.5) * 0.24,
+      alpha: 0.95,
     });
   }
 }
@@ -146,6 +151,15 @@ function justReleased(input) {
   return !!input?._justReleased || !!input?.mouseReleased;
 }
 
+function drawLabel(ctx, x, y, text, align = "left", font = "13px system-ui", alpha = 0.72) {
+  ctx.save();
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.font = font;
+  ctx.textAlign = align;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
 export class LootScene {
   constructor({ store, input, assets, scenes }) {
     this.store = store;
@@ -154,6 +168,7 @@ export class LootScene {
     this.scenes = scenes;
     this.hitButtons = [];
     this.toast = { text: "", until: 0 };
+    this.audioCtx = null;
     this.state = this._makeState();
   }
 
@@ -161,8 +176,8 @@ export class LootScene {
     return {
       screen: "lobby",
       introPulse: 0,
-      particles: [],
       shimmer: 0,
+      particles: [],
 
       wheelKind: "free",
       wheelRewards: [],
@@ -172,33 +187,34 @@ export class LootScene {
       wheelStartAngle: 0,
       wheelEndAngle: 0,
       wheelAngle: 0,
-      wheelVelocity: 0,
       wheelRewardGranted: false,
       wheelResult: null,
-      pointerKick: 0,
       wheelFlash: 0,
+      wheelKick: 0,
+      wheelPrevTickIndex: -1,
 
       crateKind: "mystery",
       cratePhase: "closed",
       crateStartAt: 0,
       crateDuration: 0,
       crateReward: null,
-      crateResultGranted: false,
       crateReelItems: [],
       crateReelOffset: 0,
       crateReelFrom: 0,
       crateReelTo: 0,
+      crateResultGranted: false,
       crateGlow: 0,
-      crateLidOpen: 0,
-      crateShake: 0,
       crateFlash: 0,
+      crateBlast: 0,
+      revealScale: 0.8,
     };
   }
 
   onEnter(data = {}) {
     this.hitButtons = [];
+    this.toast = { text: "", until: 0 };
     this.state = this._makeState();
-    this._entry = data || {};
+    this._lastTick = 0;
     const mode = data.mode || "lobby";
 
     if (mode === "free_wheel") this._enterWheel("free");
@@ -207,6 +223,55 @@ export class LootScene {
     else if (mode === "buy_open_legendary") this._buyAndOpenCrate("legendary");
     else if (mode === "open_mystery") this._openInventoryCrate("mystery");
     else if (mode === "open_legendary") this._openInventoryCrate("legendary");
+  }
+
+  _ensureAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!this.audioCtx) this.audioCtx = new AC();
+      if (this.audioCtx.state === "suspended") this.audioCtx.resume().catch(() => {});
+      return this.audioCtx;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _playTick(strength = 1) {
+    const ac = this._ensureAudio();
+    if (!ac) return;
+    const now = ac.currentTime;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(1200 + strength * 200, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.035 * strength, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+    osc.connect(gain);
+    gain.connect(ac.destination);
+    osc.start(now);
+    osc.stop(now + 0.055);
+  }
+
+  _playWin(kind = "normal") {
+    const ac = this._ensureAudio();
+    if (!ac) return;
+    const now = ac.currentTime;
+    const notes = kind === "legendary" ? [540, 810, 1080] : [620, 880];
+    notes.forEach((f, i) => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = kind === "legendary" ? "sawtooth" : "sine";
+      osc.frequency.setValueAtTime(f, now + i * 0.05);
+      gain.gain.setValueAtTime(0.0001, now + i * 0.05);
+      gain.gain.exponentialRampToValueAtTime(kind === "legendary" ? 0.05 : 0.03, now + i * 0.05 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.05 + 0.22);
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.start(now + i * 0.05);
+      osc.stop(now + i * 0.05 + 0.24);
+    });
   }
 
   _showToast(text, ms = 1700) {
@@ -245,35 +310,34 @@ export class LootScene {
     this._startCrateFlow(kind);
   }
 
-  _startCrateFlow(kind) {
-    const reward = rollCrateReward(kind);
-    const reelItems = this._buildCrateReel(reward, kind);
-    this.state.screen = "crate";
-    this.state.crateKind = kind;
-    this.state.cratePhase = "closed";
-    this.state.crateStartAt = Date.now();
-    this.state.crateDuration = 0;
-    this.state.crateResultGranted = false;
-    this.state.crateReward = reward;
-    this.state.crateReelItems = reelItems;
-    this.state.crateReelOffset = 0;
-    this.state.crateReelFrom = 0;
-    this.state.crateReelTo = 0;
-    this.state.crateGlow = 0;
-    this.state.crateLidOpen = 0;
-    this.state.crateShake = 0;
-    this.state.crateFlash = 0;
-  }
-
   _buildCrateReel(targetReward, kind) {
     const items = [];
-    const targetSlot = 26;
-    for (let i = 0; i < 40; i += 1) {
+    const targetSlot = 30;
+    for (let i = 0; i < 44; i += 1) {
       const rw = i === targetSlot ? targetReward : rollCrateReward(kind);
       items.push({ ...rw, item: rw.item ? { ...rw.item } : undefined });
     }
     items.targetSlot = targetSlot;
     return items;
+  }
+
+  _startCrateFlow(kind) {
+    const reward = rollCrateReward(kind);
+    this.state.screen = "crate";
+    this.state.crateKind = kind;
+    this.state.cratePhase = "charged";
+    this.state.crateStartAt = Date.now();
+    this.state.crateDuration = 950;
+    this.state.crateReward = reward;
+    this.state.crateReelItems = this._buildCrateReel(reward, kind);
+    this.state.crateReelOffset = 0;
+    this.state.crateReelFrom = 0;
+    this.state.crateReelTo = 0;
+    this.state.crateResultGranted = false;
+    this.state.crateGlow = 0;
+    this.state.crateFlash = 0;
+    this.state.crateBlast = 0;
+    this.state.revealScale = 0.8;
   }
 
   _enterWheel(kind) {
@@ -283,7 +347,6 @@ export class LootScene {
       this.state.screen = "lobby";
       return;
     }
-
     if (kind === "premium") {
       const cost = 90;
       if (Number(s.coins || 0) < cost) {
@@ -307,15 +370,15 @@ export class LootScene {
     this.state.wheelRewards = rewards;
     this.state.wheelSelectedIndex = index;
     this.state.wheelStartAt = Date.now();
-    this.state.wheelDuration = kind === "premium" ? 5200 : 3900;
+    this.state.wheelDuration = kind === "premium" ? 6200 : 4600;
     this.state.wheelStartAngle = 0;
     this.state.wheelEndAngle = endAngle;
     this.state.wheelAngle = 0;
-    this.state.wheelVelocity = 0;
     this.state.wheelRewardGranted = false;
     this.state.wheelResult = rewards[index];
-    this.state.pointerKick = 0;
     this.state.wheelFlash = 0;
+    this.state.wheelKick = 0;
+    this.state.wheelPrevTickIndex = -1;
   }
 
   _grantWheelReward() {
@@ -325,9 +388,10 @@ export class LootScene {
     });
     this.state.wheelRewardGranted = true;
     this.state.wheelFlash = 1;
-    const glow = this.state.wheelResult?.glow || rarityColor(this.state.wheelResult?.item?.rarity);
-    spawnBurst(this.state.particles, 280, 250, glow, 24);
-    this._showToast(`Kazandın: ${formatRewardText(this.state.wheelResult)}`, 2300);
+    const glow = glowForReward(this.state.wheelResult, "#69b4ff");
+    spawnBurst(this.state.particles, 280, 240, glow, 28, 1.25);
+    this._playWin(this.state.wheelResult?.item?.rarity === "legendary" ? "legendary" : "normal");
+    this._showToast(`Kazandın: ${formatRewardText(this.state.wheelResult)}`, 2400);
   }
 
   _grantCrateReward() {
@@ -335,9 +399,12 @@ export class LootScene {
     applyLootReward(this.store, this.state.crateReward);
     this.state.crateResultGranted = true;
     this.state.crateFlash = 1;
-    const glow = this.state.crateReward?.glow || rarityColor(this.state.crateReward?.item?.rarity);
-    spawnBurst(this.state.particles, 280, 340, glow, 28);
-    this._showToast(`Sandık ödülü: ${formatRewardText(this.state.crateReward)}`, 2300);
+    const legendary = this.state.crateKind === "legendary" || this.state.crateReward?.item?.rarity === "legendary";
+    const glow = glowForReward(this.state.crateReward, legendary ? "#ffd166" : "#69b4ff");
+    spawnBurst(this.state.particles, 280, 300, glow, legendary ? 44 : 30, legendary ? 1.8 : 1.2);
+    this.state.crateBlast = legendary ? 1 : 0.55;
+    this._playWin(legendary ? "legendary" : "normal");
+    this._showToast(`Sandık ödülü: ${formatRewardText(this.state.crateReward)}`, 2400);
   }
 
   _tickParticles(dt) {
@@ -347,7 +414,7 @@ export class LootScene {
       p.life -= dt;
       p.x += p.vx * (dt / 16.666);
       p.y += p.vy * (dt / 16.666);
-      p.vy += 0.035 * (dt / 16.666);
+      p.vy += 0.028 * (dt / 16.666);
       p.rot += p.spin * (dt / 16.666);
       if (p.life <= 0) list.splice(i, 1);
     }
@@ -359,54 +426,67 @@ export class LootScene {
     this._lastTick = now;
     const s = this.state;
 
-    s.introPulse = (Math.sin(now / 260) + 1) * 0.5;
-    s.shimmer = (Math.sin(now / 520) + 1) * 0.5;
-    s.pointerKick *= 0.9;
+    s.introPulse = (Math.sin(now / 300) + 1) * 0.5;
+    s.shimmer = (Math.sin(now / 620) + 1) * 0.5;
+    s.wheelKick *= 0.88;
     s.wheelFlash *= 0.93;
     s.crateFlash *= 0.93;
-    s.crateGlow = lerp(s.crateGlow, s.cratePhase === "reveal" ? 1 : (s.cratePhase === "opening" ? 0.72 : 0.28), 0.08);
+    s.crateBlast *= 0.92;
+    s.crateGlow = lerp(s.crateGlow, s.screen === "crate" ? 1 : 0, 0.08);
+    s.revealScale = lerp(s.revealScale, s.cratePhase === "reveal" ? 1 : 0.8, 0.12);
     this._tickParticles(dt);
 
     if (s.screen === "wheel" && s.wheelStartAt > 0) {
       const t = clamp((now - s.wheelStartAt) / Math.max(1, s.wheelDuration), 0, 1);
-      const eased = easeOutExpo(t);
+      const eased = easeOutQuint(t);
       const prev = s.wheelAngle;
       s.wheelAngle = s.wheelStartAngle + (s.wheelEndAngle - s.wheelStartAngle) * eased;
-      s.wheelVelocity = s.wheelAngle - prev;
-      if (Math.floor(prev / 0.32) !== Math.floor(s.wheelAngle / 0.32)) {
-        s.pointerKick = 1;
+      const tickStep = 0.22;
+      const prevIndex = Math.floor(prev / tickStep);
+      const nextIndex = Math.floor(s.wheelAngle / tickStep);
+      if (nextIndex !== prevIndex) {
+        s.wheelKick = 1;
+        this._playTick(Math.max(0.45, 1 - t * 0.45));
       }
-      if (t >= 1 && !s.wheelRewardGranted) {
-        this._grantWheelReward();
-      }
+      if (t >= 1 && !s.wheelRewardGranted) this._grantWheelReward();
     }
 
-    if (s.screen === "crate" && s.cratePhase === "opening") {
-      const t = clamp((now - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
-      s.crateLidOpen = easeOutCubic(t);
-      s.crateShake = (1 - t) * (s.crateKind === "legendary" ? 8 : 5);
-      if (t >= 1) {
-        s.cratePhase = "reel";
-        s.crateStartAt = now;
-        s.crateDuration = s.crateKind === "legendary" ? 4300 : 3600;
-        const slotW = 104;
-        const target = s.crateReelItems.targetSlot || 26;
-        const visibleCenterShift = 2.5;
-        s.crateReelFrom = 0;
-        s.crateReelTo = target * slotW - slotW * visibleCenterShift;
-        spawnBurst(this.state.particles, 280, 250, s.crateKind === "legendary" ? "#ffcc66" : "#61a8ff", 20);
-      }
-    }
-
-    if (s.screen === "crate" && s.cratePhase === "reel") {
-      const t = clamp((now - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
-      const eased = easeOutCubic(t);
-      s.crateReelOffset = s.crateReelFrom + (s.crateReelTo - s.crateReelFrom) * eased;
-      s.crateShake = (1 - t) * 2;
-      if (t >= 1) {
-        s.cratePhase = "reveal";
-        s.crateShake = 0;
-        this._grantCrateReward();
+    if (s.screen === "crate") {
+      if (s.cratePhase === "charged") {
+        const t = clamp((now - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
+        if (t >= 1) {
+          s.cratePhase = "burst";
+          s.crateStartAt = now;
+          s.crateDuration = s.crateKind === "legendary" ? 820 : 620;
+          spawnBurst(s.particles, 280, 255, s.crateKind === "legendary" ? "#ffd166" : "#69b4ff", s.crateKind === "legendary" ? 36 : 24, 1.5);
+          this._playTick(1.2);
+        }
+      } else if (s.cratePhase === "burst") {
+        const t = clamp((now - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
+        s.crateBlast = Math.max(s.crateBlast, 1 - t);
+        if (t >= 1) {
+          s.cratePhase = "reel";
+          s.crateStartAt = now;
+          s.crateDuration = s.crateKind === "legendary" ? 4300 : 3600;
+          const slotW = 104;
+          const target = s.crateReelItems.targetSlot || 30;
+          const visibleCenterShift = 2.5;
+          s.crateReelFrom = 0;
+          s.crateReelTo = target * slotW - slotW * visibleCenterShift;
+        }
+      } else if (s.cratePhase === "reel") {
+        const t = clamp((now - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
+        const eased = easeOutCubic(t);
+        const prev = s.crateReelOffset;
+        s.crateReelOffset = s.crateReelFrom + (s.crateReelTo - s.crateReelFrom) * eased;
+        const tickStep = 28;
+        if (Math.floor(prev / tickStep) !== Math.floor(s.crateReelOffset / tickStep)) {
+          this._playTick(Math.max(0.45, 1 - t * 0.35));
+        }
+        if (t >= 1) {
+          s.cratePhase = "reveal";
+          this._grantCrateReward();
+        }
       }
     }
   }
@@ -415,6 +495,7 @@ export class LootScene {
     this._tickAnimations();
     if (!justReleased(this.input)) return;
     const ptr = getPointer(this.input);
+    this._ensureAudio();
 
     for (let i = this.hitButtons.length - 1; i >= 0; i -= 1) {
       const h = this.hitButtons[i];
@@ -439,13 +520,6 @@ export class LootScene {
         case "confirm_crate":
           this.state.screen = "lobby";
           return;
-        case "tap_chest":
-          if (this.state.cratePhase === "closed") {
-            this.state.cratePhase = "opening";
-            this.state.crateStartAt = Date.now();
-            this.state.crateDuration = this.state.crateKind === "legendary" ? 1200 : 950;
-          }
-          return;
         default:
           return;
       }
@@ -453,32 +527,30 @@ export class LootScene {
   }
 
   _drawButton(ctx, rect, text, style = "ghost") {
-    let fill = "rgba(255,255,255,0.06)";
+    let fill = "rgba(255,255,255,0.04)";
     let stroke = "rgba(255,255,255,0.12)";
-    let txt = "rgba(255,255,255,0.92)";
-
+    let txt = "rgba(255,255,255,0.95)";
     if (style === "primary") {
       const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(78,129,255,0.96)");
-      g.addColorStop(1, "rgba(48,86,210,0.96)");
+      g.addColorStop(0, "rgba(78,129,255,0.95)");
+      g.addColorStop(1, "rgba(48,86,210,0.95)");
       fill = g;
-      stroke = "rgba(255,255,255,0.28)";
+      stroke = "rgba(145,189,255,0.42)";
     } else if (style === "gold") {
       const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-      g.addColorStop(0, "rgba(255,210,120,0.96)");
-      g.addColorStop(1, "rgba(196,122,22,0.96)");
+      g.addColorStop(0, "rgba(255,214,124,0.95)");
+      g.addColorStop(1, "rgba(201,126,25,0.95)");
       fill = g;
-      txt = "#201305";
-      stroke = "rgba(255,255,255,0.25)";
+      stroke = "rgba(255,238,190,0.36)";
+      txt = "#1f1103";
     }
-
     ctx.fillStyle = fill;
-    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, Math.min(18, rect.h / 2));
     ctx.strokeStyle = stroke;
     ctx.lineWidth = 1.2;
-    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, Math.min(18, rect.h / 2));
     ctx.fillStyle = txt;
-    ctx.font = "800 13px system-ui";
+    ctx.font = `800 ${Math.max(12, Math.floor(rect.h * 0.34))}px system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2 + 0.5);
@@ -486,388 +558,351 @@ export class LootScene {
     ctx.textBaseline = "alphabetic";
   }
 
-  _drawHeader(ctx, panelX, panelY, panelW) {
-    const back = { x: panelX + 12, y: panelY + 12, w: 44, h: 36 };
+  _drawGlassPanel(ctx, x, y, w, h, r = 28) {
+    ctx.save();
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, "rgba(255,255,255,0.03)");
+    g.addColorStop(1, "rgba(255,255,255,0.015)");
+    ctx.fillStyle = g;
+    fillRoundRect(ctx, x, y, w, h, r);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1.1;
+    strokeRoundRect(ctx, x, y, w, h, r);
+    ctx.restore();
+  }
+
+  _drawHeader(ctx, panelX, panelY, panelW, compact) {
+    const back = { x: panelX + 12, y: panelY + 12, w: compact ? 42 : 46, h: 34 };
     this.hitButtons.push({ rect: back, action: "back" });
     this._drawButton(ctx, back, "←", "ghost");
 
     ctx.fillStyle = "#fff";
-    ctx.font = "900 24px system-ui";
-    ctx.fillText("Sandık & Çark", panelX + 72, panelY + 38);
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "13px system-ui";
-    ctx.fillText("Gerçek çember çark • açılan kasa • slot akışı", panelX + 72, panelY + 58);
+    ctx.font = `900 ${compact ? 18 : 22}px system-ui`;
+    ctx.fillText("Sandık & Çark", panelX + 66, panelY + (compact ? 33 : 36));
+    drawLabel(ctx, panelX + 66, panelY + (compact ? 52 : 56), "Şeffaf panel • gerçek spin • dikey mobil uyum", "left", `${compact ? 11 : 12}px system-ui`, 0.68);
 
     const s = this.store.get();
     ctx.textAlign = "right";
     ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "800 14px system-ui";
-    ctx.fillText(`${fmtNum(s.coins || 0)} YTON`, panelX + panelW - 18, panelY + 38);
-    ctx.fillStyle = "rgba(255,255,255,0.62)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(`Enerji ${fmtNum(s.player?.energy || 0)}/${fmtNum(s.player?.energyMax || 0)}`, panelX + panelW - 18, panelY + 56);
+    ctx.font = `800 ${compact ? 12 : 14}px system-ui`;
+    ctx.fillText(`${fmtNum(s.coins || 0)} YTON`, panelX + panelW - 16, panelY + (compact ? 32 : 36));
     ctx.textAlign = "left";
   }
 
-  _drawLobby(ctx, x, y, w) {
+  _drawLobby(ctx, x, y, w, h, compact) {
     const freeReady = isFreeSpinReady(this.store);
     const mysteryCount = getInventoryCount(this.store, "Mystery Crate");
     const legendaryCount = getInventoryCount(this.store, "Legendary Crate");
 
-    const heroH = 126;
-    const hg = ctx.createLinearGradient(x, y, x + w, y + heroH);
-    hg.addColorStop(0, "rgba(87,45,140,0.92)");
-    hg.addColorStop(1, "rgba(18,12,36,0.92)");
-    ctx.fillStyle = hg;
-    fillRoundRect(ctx, x, y, w, heroH, 24);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, x, y, w, heroH, 24);
-
+    const heroH = compact ? 112 : 124;
+    this._drawGlassPanel(ctx, x, y, w, heroH, 24);
     ctx.fillStyle = "#fff";
-    ctx.font = "900 22px system-ui";
-    ctx.fillText("Canlı Loot Odası", x + 18, y + 34);
-    ctx.fillStyle = "rgba(255,255,255,0.76)";
-    ctx.font = "13px system-ui";
-    ctx.fillText("Premium çark artık gerçek bir daire olarak döner ve okun gösterdiği ödül düşer.", x + 18, y + 56);
-    ctx.fillText("Kasa tıkla-aç akışı, slot bandı ve final ödül kartı ayrı animasyonla çalışır.", x + 18, y + 76);
+    ctx.font = `900 ${compact ? 20 : 24}px system-ui`;
+    ctx.fillText("Canlı Loot Odası", x + 16, y + 30);
+    drawLabel(ctx, x + 16, y + 52, "Premium çarkta gerçek kumarhane tarzı dönüş, pointer tick ve rarity glow var.", "left", `${compact ? 11 : 12}px system-ui`, 0.72);
+    drawLabel(ctx, x + 16, y + 70, "Sandık açılışı artık minimal enerji patlaması + slot bandı olarak çalışıyor.", "left", `${compact ? 11 : 12}px system-ui`, 0.72);
 
-    const freeBtn = { x: x + 18, y: y + 88, w: 140, h: 28 };
-    const premiumBtn = { x: x + 166, y: y + 88, w: 164, h: 28 };
+    const gap = 10;
+    const btnY = y + heroH - 38;
+    const btnW = Math.floor((w - gap - 32) / 2);
+    const freeBtn = { x: x + 16, y: btnY, w: btnW, h: 28 };
+    const premiumBtn = { x: x + 16 + btnW + gap, y: btnY, w: btnW, h: 28 };
     this.hitButtons.push({ rect: freeBtn, action: "enter_free_wheel" });
     this.hitButtons.push({ rect: premiumBtn, action: "enter_premium_wheel" });
     this._drawButton(ctx, freeBtn, freeReady ? "Ücretsiz Çark" : "Yarın Hazır", freeReady ? "primary" : "ghost");
     this._drawButton(ctx, premiumBtn, "Premium Çark • 90", "gold");
 
-    y += heroH + 14;
-
-    const gap = 10;
-    const cw = Math.floor((w - gap) / 2);
+    y += heroH + 12;
+    const cardGap = 10;
+    const cardW = Math.floor((w - cardGap) / 2);
+    const cardH = compact ? 160 : 176;
     const cards = [
-      { x, y, w: cw, h: 184, kind: "mystery", icon: "📦", title: "Mystery Crate", subtitle: `${mysteryCount} adet envanterde`, cost: 65, primary: "primary" },
-      { x: x + cw + gap, y, w: cw, h: 184, kind: "legendary", icon: "👑", title: "Legendary Crate", subtitle: `${legendaryCount} adet envanterde`, cost: 140, primary: "gold" },
+      { x, y, w: cardW, h: cardH, kind: "mystery", title: "Mystery Crate", icon: "📦", count: mysteryCount, cost: 65, style: "primary" },
+      { x: x + cardW + cardGap, y, w: cardW, h: cardH, kind: "legendary", title: "Legendary Crate", icon: "👑", count: legendaryCount, cost: 140, style: "gold" },
     ];
 
     for (const card of cards) {
-      const g = ctx.createLinearGradient(card.x, card.y, card.x + card.w, card.y + card.h);
-      g.addColorStop(0, card.kind === "legendary" ? "rgba(112,74,12,0.90)" : "rgba(18,42,82,0.90)");
-      g.addColorStop(1, "rgba(10,12,20,0.94)");
-      ctx.fillStyle = g;
-      fillRoundRect(ctx, card.x, card.y, card.w, card.h, 22);
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, card.x, card.y, card.w, card.h, 22);
-
-      ctx.save();
+      this._drawGlassPanel(ctx, card.x, card.y, card.w, card.h, 24);
+      ctx.fillStyle = glowForReward({ item: { rarity: card.kind === "legendary" ? "legendary" : "rare" } }, "#69b4ff");
       ctx.globalAlpha = 0.12 + this.state.shimmer * 0.08;
-      ctx.fillStyle = card.kind === "legendary" ? "#ffcc66" : "#61a8ff";
-      fillRoundRect(ctx, card.x + card.w - 74, card.y + 16, 48, 48, 18);
-      ctx.restore();
+      fillRoundRect(ctx, card.x + card.w - 66, card.y + 14, 44, 44, 16);
+      ctx.globalAlpha = 1;
 
       ctx.fillStyle = "#fff";
-      ctx.font = "900 26px system-ui";
-      ctx.fillText(card.icon, card.x + 16, card.y + 34);
-      ctx.font = "900 18px system-ui";
-      ctx.fillText(card.title, card.x + 16, card.y + 66);
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "13px system-ui";
-      ctx.fillText(card.subtitle, card.x + 16, card.y + 90);
-      ctx.fillText(`Satın al & aç: ${card.cost} YTON`, card.x + 16, card.y + 112);
-      ctx.fillText("Tıklayınca kasa görünür, kapak açılır, slot akar.", card.x + 16, card.y + 132);
+      ctx.font = `900 ${compact ? 24 : 28}px system-ui`;
+      ctx.fillText(card.icon, card.x + 14, card.y + 34);
+      ctx.font = `900 ${compact ? 16 : 18}px system-ui`;
+      ctx.fillText(card.title, card.x + 14, card.y + 66);
+      drawLabel(ctx, card.x + 14, card.y + 88, `${card.count} adet envanterde`, "left", `${compact ? 11 : 12}px system-ui`, 0.72);
+      drawLabel(ctx, card.x + 14, card.y + 106, `Satın al & aç: ${card.cost} YTON`, "left", `${compact ? 11 : 12}px system-ui`, 0.72);
+      drawLabel(ctx, card.x + 14, card.y + 124, "Animasyon: enerji kırılması + slot bandı + final glow", "left", `${compact ? 10 : 11}px system-ui`, 0.64);
 
-      const b1 = { x: card.x + 14, y: card.y + 146, w: card.w - 28, h: 22 };
-      this.hitButtons.push({ rect: b1, action: "buy_open_crate", kind: card.kind });
-      this._drawButton(ctx, b1, "Satın Al & Aç", card.primary);
+      const btn = { x: card.x + 12, y: card.y + card.h - 32, w: card.w - 24, h: 24 };
+      this.hitButtons.push({ rect: btn, action: "buy_open_crate", kind: card.kind });
+      this._drawButton(ctx, btn, "Satın Al & Aç", card.style);
     }
   }
 
-  _drawWheel(ctx, x, y, w, h) {
+  _drawRewardGlow(ctx, cx, cy, radius, color, strength = 1) {
+    const g = ctx.createRadialGradient(cx, cy, radius * 0.1, cx, cy, radius);
+    g.addColorStop(0, `rgba(255,255,255,${0.14 * strength})`);
+    const rgb = color === "#ffd166" ? "255,209,102" : color === "#c97cff" ? "201,124,255" : "105,180,255";
+    g.addColorStop(0.45, `rgba(${rgb},${0.18 * strength})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _drawWheel(ctx, x, y, w, h, compact) {
     const s = this.state;
-    const cx = x + w * 0.5;
-    const cy = y + h * 0.42;
-    const radius = Math.min(w, h) * 0.29;
+    const premium = s.wheelKind === "premium";
     const rewards = s.wheelRewards;
     const seg = (Math.PI * 2) / Math.max(1, rewards.length);
-    const premium = s.wheelKind === "premium";
+    const radius = Math.min(w * 0.46, h * 0.35, compact ? 170 : 190);
+    const cx = x + w * 0.5;
+    const cy = y + radius + (compact ? 48 : 58);
 
-    const outerGlow = premium ? "#ffcc66" : "#61a8ff";
-    const haloR = radius + 24 + s.introPulse * 10 + s.wheelFlash * 10;
-    const halo = ctx.createRadialGradient(cx, cy, radius * 0.35, cx, cy, haloR);
-    halo.addColorStop(0, `rgba(255,255,255,${0.10 + s.wheelFlash * 0.10})`);
-    halo.addColorStop(0.6, premium ? `rgba(255,204,102,${0.16 + s.introPulse * 0.08})` : `rgba(97,168,255,${0.14 + s.introPulse * 0.08})`);
-    halo.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 ${compact ? 19 : 23}px system-ui`;
+    ctx.fillText(premium ? "Premium çark" : "Ücretsiz çark", x + 8, y + 24);
+    drawLabel(ctx, x + 8, y + 44, premium ? "Gerçek spin physics • pointer tick • rarity glow" : "Okun ince ucu durduğu dilimi kazandırır.", "left", `${compact ? 11 : 12}px system-ui`, 0.74);
+
+    this._drawRewardGlow(ctx, cx, cy, radius + 34 + s.wheelFlash * 18, premium ? "#ffd166" : "#69b4ff", 1 + s.wheelFlash * 0.8);
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(s.wheelAngle);
-
     for (let i = 0; i < rewards.length; i += 1) {
+      const reward = rewards[i];
       const a0 = -Math.PI / 2 + i * seg;
       const a1 = a0 + seg;
-      const reward = rewards[i];
-      const glow = reward.glow || (reward.type === "item" ? rarityColor(reward.item?.rarity) : outerGlow);
-      const grad = ctx.createLinearGradient(Math.cos(a0) * radius, Math.sin(a0) * radius, Math.cos(a1) * radius, Math.sin(a1) * radius);
-      grad.addColorStop(0, i % 2 === 0 ? "rgba(27,31,46,0.98)" : "rgba(55,27,84,0.98)");
-      grad.addColorStop(1, i % 2 === 0 ? "rgba(49,18,62,0.98)" : "rgba(16,24,44,0.98)");
-
+      const glow = glowForReward(reward, premium ? "#ffd166" : "#69b4ff");
+      const fill = ctx.createLinearGradient(Math.cos(a0) * radius, Math.sin(a0) * radius, Math.cos(a1) * radius, Math.sin(a1) * radius);
+      fill.addColorStop(0, i % 2 === 0 ? "rgba(18,18,38,0.88)" : "rgba(40,24,70,0.88)");
+      fill.addColorStop(1, i % 2 === 0 ? "rgba(31,20,57,0.88)" : "rgba(12,20,38,0.88)");
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, a0, a1);
       ctx.closePath();
-      ctx.fillStyle = grad;
+      ctx.fillStyle = fill;
       ctx.fill();
-      ctx.lineWidth = 2.3;
       ctx.strokeStyle = glow;
+      ctx.lineWidth = 2.1;
       ctx.stroke();
 
       const mid = a0 + seg / 2;
       ctx.save();
       ctx.rotate(mid);
-      ctx.translate(radius * 0.67, 0);
+      ctx.translate(radius * 0.66, 0);
       ctx.rotate(Math.PI / 2);
-      ctx.fillStyle = "#fff";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = premium ? "900 28px system-ui" : "900 24px system-ui";
-      ctx.fillText(reward.icon || "🎁", 0, -6);
-      ctx.font = "800 10px system-ui";
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.fillStyle = "#fff";
+      ctx.font = `900 ${compact ? 18 : 22}px system-ui`;
+      ctx.fillText(reward.icon || "🎁", 0, -8);
+      ctx.font = `800 ${compact ? 8 : 9}px system-ui`;
       const label = formatRewardText(reward);
-      ctx.fillText(label.length > 13 ? `${label.slice(0, 12)}…` : label, 0, 18);
+      ctx.fillText(label.length > 14 ? `${label.slice(0, 13)}…` : label, 0, 13);
       ctx.restore();
     }
-
     ctx.restore();
 
-    ctx.save();
-    ctx.strokeStyle = premium ? "rgba(255,220,120,0.92)" : "rgba(140,198,255,0.88)";
-    ctx.lineWidth = 8;
+    ctx.strokeStyle = premium ? "rgba(255,214,124,0.96)" : "rgba(105,180,255,0.96)";
+    ctx.lineWidth = compact ? 7 : 8;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius + 6, 0, Math.PI * 2);
+    ctx.arc(cx, cy, radius + 5, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.restore();
 
+    ctx.fillStyle = "rgba(10,10,18,0.96)";
     ctx.beginPath();
-    ctx.arc(cx, cy, radius * 0.18, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(16,18,24,0.96)";
+    ctx.arc(cx, cy, radius * 0.17, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = premium ? "rgba(255,216,125,0.92)" : "rgba(97,168,255,0.90)";
+    ctx.strokeStyle = premium ? "rgba(255,214,124,0.88)" : "rgba(105,180,255,0.88)";
+    ctx.lineWidth = 3.5;
     ctx.stroke();
 
+    // inverted triangle pointer with sharp tip touching reward
+    const pointerLen = compact ? 26 : 30;
+    const baseW = compact ? 24 : 28;
+    const pointerY = cy - radius - 3 + s.wheelKick * 4;
     ctx.save();
-    ctx.translate(cx, cy - radius - 24 + s.pointerKick * 6);
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(-18, 28);
-    ctx.lineTo(18, 28);
+    ctx.moveTo(cx, pointerY); // sharp tip
+    ctx.lineTo(cx - baseW / 2, pointerY - pointerLen);
+    ctx.lineTo(cx + baseW / 2, pointerY - pointerLen);
     ctx.closePath();
-    ctx.fillStyle = premium ? "#ffd166" : "#8bc8ff";
+    ctx.fillStyle = premium ? "#ffd166" : "#8fd1ff";
     ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.restore();
 
+    const cardY = cy + radius + 22;
+    const cardH = compact ? 86 : 92;
+    this._drawGlassPanel(ctx, x + 10, cardY, w - 20, cardH, 24);
+    const done = s.wheelRewardGranted;
+    const resultGlow = glowForReward(s.wheelResult, premium ? "#ffd166" : "#69b4ff");
+    if (done) {
+      ctx.strokeStyle = resultGlow;
+      ctx.lineWidth = 1.5;
+      strokeRoundRect(ctx, x + 10, cardY, w - 20, cardH, 24);
+    }
     ctx.fillStyle = "#fff";
-    ctx.font = "900 22px system-ui";
-    ctx.fillText(premium ? "Premium çark" : "Ücretsiz çark", x + 12, y + 24);
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "13px system-ui";
-    ctx.fillText(s.wheelRewardGranted ? `Kazanç: ${formatRewardText(s.wheelResult)}` : "Okun durduğu dilim direkt kazanılır.", x + 12, y + 46);
+    ctx.font = `900 ${compact ? 22 : 26}px system-ui`;
+    ctx.fillText(done ? (s.wheelResult.icon || "🎁") : "🎰", x + 24, cardY + 36);
+    ctx.font = `900 ${compact ? 18 : 20}px system-ui`;
+    ctx.fillText(done ? formatRewardText(s.wheelResult) : "Çark dönüyor...", x + 66, cardY + 32);
+    drawLabel(ctx, x + 66, cardY + 54, done ? "Ödül hesabına işlendi." : "Durduğu dilim anında kazanılır.", "left", `${compact ? 11 : 12}px system-ui`, 0.72);
 
-    const card = { x: x + 18, y: y + h - 118, w: w - 36, h: 92 };
-    ctx.fillStyle = "rgba(8,12,20,0.76)";
-    fillRoundRect(ctx, card.x, card.y, card.w, card.h, 22);
-    ctx.strokeStyle = s.wheelRewardGranted ? (s.wheelResult.glow || rarityColor(s.wheelResult.item?.rarity)) : "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, card.x, card.y, card.w, card.h, 22);
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 30px system-ui";
-    ctx.fillText(s.wheelRewardGranted ? (s.wheelResult.icon || "🎁") : "🎯", card.x + 16, card.y + 42);
-    ctx.font = "900 19px system-ui";
-    ctx.fillText(s.wheelRewardGranted ? formatRewardText(s.wheelResult) : "Çark dönüyor...", card.x + 68, card.y + 36);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "13px system-ui";
-    ctx.fillText(s.wheelRewardGranted ? "Ödül hesabına işlendi." : "Spin bitince ödül otomatik yazılır.", card.x + 68, card.y + 58);
-
-    if (s.wheelRewardGranted) {
-      const btn = { x: x + w - 150, y: y + 10, w: 132, h: 34 };
+    if (done) {
+      const btn = { x: x + w - 142, y: y + 6, w: 126, h: 32 };
       this.hitButtons.push({ rect: btn, action: "confirm_wheel" });
       this._drawButton(ctx, btn, "Tamam", premium ? "gold" : "primary");
     }
   }
 
-  _drawChest(ctx, cx, cy, scale, openT, rare = false, shake = 0) {
+  _drawCrateRevealCore(ctx, cx, cy, t, legendary) {
+    const glow = legendary ? "#ffd166" : "#69b4ff";
+    this._drawRewardGlow(ctx, cx, cy, 86 + t * 30, glow, 1.1 + t * 0.3);
     ctx.save();
-    ctx.translate(cx + (Math.random() - 0.5) * shake, cy + (Math.random() - 0.5) * shake);
-    ctx.scale(scale, scale);
-
-    const glow = ctx.createRadialGradient(0, 10, 18, 0, 10, 110);
-    glow.addColorStop(0, rare ? "rgba(255,210,120,0.34)" : "rgba(109,173,255,0.28)");
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(0, 12, 110, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = rare ? "#8a5713" : "#23457d";
-    fillRoundRect(ctx, -88, -4, 176, 92, 18);
-    ctx.strokeStyle = "rgba(255,236,194,0.50)";
-    ctx.lineWidth = 4;
-    strokeRoundRect(ctx, -88, -4, 176, 92, 18);
-
-    ctx.fillStyle = rare ? "#d39a31" : "#4b7ed0";
-    fillRoundRect(ctx, -12, 12, 24, 30, 8);
-
-    ctx.save();
-    ctx.translate(0, -8);
-    ctx.rotate(-1.18 * openT);
-    ctx.fillStyle = rare ? "#b67b23" : "#345d9c";
-    fillRoundRect(ctx, -92, -56, 184, 56, 16);
-    ctx.strokeStyle = "rgba(255,245,210,0.5)";
-    strokeRoundRect(ctx, -92, -56, 184, 56, 16);
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    fillRoundRect(ctx, -72, -44, 144, 14, 8);
-    ctx.restore();
-
-    if (openT > 0) {
-      ctx.save();
-      ctx.globalAlpha = 0.25 * openT;
-      ctx.fillStyle = rare ? "#ffdb8b" : "#8bc8ff";
-      for (let i = 0; i < 6; i += 1) {
-        const a = -0.8 + i * 0.32;
-        ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(Math.cos(a) * 74, -Math.sin(a) * 90);
-        ctx.lineTo(Math.cos(a) * 42, -Math.sin(a) * 58);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.sin(Date.now() / 220) * 0.06);
+    const size = 62 + t * 10;
+    ctx.fillStyle = "rgba(255,255,255,0.04)";
+    fillRoundRect(ctx, -size, -size, size * 2, size * 2, 24);
+    ctx.strokeStyle = legendary ? "rgba(255,214,124,0.9)" : "rgba(105,180,255,0.85)";
+    ctx.lineWidth = 2;
+    strokeRoundRect(ctx, -size, -size, size * 2, size * 2, 24);
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 ${Math.round(40 + t * 8)}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(legendary ? "👑" : "📦", 0, 4);
     ctx.restore();
   }
 
-  _drawCrate(ctx, x, y, w, h) {
+  _drawCrate(ctx, x, y, w, h, compact) {
     const s = this.state;
-    const title = s.crateKind === "legendary" ? "Legendary Crate" : "Mystery Crate";
-    const premium = s.crateKind === "legendary";
-    const accent = premium ? "#ffcc66" : "#61a8ff";
+    const legendary = s.crateKind === "legendary";
+    const title = legendary ? "Legendary Crate" : "Mystery Crate";
+    const sub = legendary
+      ? "Legendary açılış: sinematik patlama + ağır slot bandı + glow reveal"
+      : "Sandık açılışı: enerji kırılması + sağdan sola slot akışı + final reward";
 
     ctx.fillStyle = "#fff";
-    ctx.font = "900 22px system-ui";
-    ctx.fillText(title, x + 12, y + 24);
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "13px system-ui";
-    ctx.fillText("Sandığa dokun. Kapak açılsın. Sonra ödül bandı slot gibi sağdan sola aksın.", x + 12, y + 46);
+    ctx.font = `900 ${compact ? 19 : 23}px system-ui`;
+    ctx.fillText(title, x + 8, y + 24);
+    drawLabel(ctx, x + 8, y + 44, sub, "left", `${compact ? 11 : 12}px system-ui`, 0.74);
 
     const cx = x + w / 2;
-    const cy = y + 146;
-    this._drawChest(ctx, cx, cy, 1.02, s.crateLidOpen, premium, s.crateShake);
+    const coreY = y + (compact ? 132 : 148);
 
-    if (s.cratePhase === "closed") {
-      const tap = { x: cx - 104, y: cy - 96, w: 208, h: 184 };
-      this.hitButtons.push({ rect: tap, action: "tap_chest" });
-      ctx.fillStyle = "rgba(255,255,255,0.90)";
-      ctx.font = "900 16px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("Sandığa dokun", cx, cy + 116);
-      ctx.fillStyle = "rgba(255,255,255,0.62)";
-      ctx.font = "13px system-ui";
-      ctx.fillText("Açılınca slot bandı dönüp ortadaki ödülde duracak.", cx, cy + 138);
-      ctx.textAlign = "left";
-      return;
+    if (s.cratePhase === "charged") {
+      const t = clamp((Date.now() - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
+      this._drawCrateRevealCore(ctx, cx, coreY, easeInOutCubic(t), legendary);
+      drawLabel(ctx, cx, coreY + 102, "Açılış yükleniyor...", "center", `${compact ? 12 : 13}px system-ui`, 0.8);
+    } else if (s.cratePhase === "burst") {
+      const t = clamp((Date.now() - s.crateStartAt) / Math.max(1, s.crateDuration), 0, 1);
+      const radius = 54 + easeOutQuint(t) * (legendary ? 140 : 100);
+      this._drawRewardGlow(ctx, cx, coreY, radius, legendary ? "#ffd166" : "#69b4ff", 1.3);
+      ctx.strokeStyle = legendary ? `rgba(255,214,124,${0.9 - t * 0.65})` : `rgba(105,180,255,${0.9 - t * 0.65})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, coreY, radius * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+      if (legendary) {
+        ctx.globalAlpha = 0.25 + (1 - t) * 0.3;
+        for (let i = 0; i < 6; i += 1) {
+          const a = (Math.PI * 2 * i) / 6 + Date.now() / 900;
+          ctx.beginPath();
+          ctx.moveTo(cx, coreY);
+          ctx.lineTo(cx + Math.cos(a) * radius, coreY + Math.sin(a) * radius);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
     }
 
-    const reelX = x + 18;
-    const reelY = y + 266;
-    const reelW = w - 36;
-    const reelH = 104;
-
-    const rg = ctx.createLinearGradient(reelX, reelY, reelX, reelY + reelH);
-    rg.addColorStop(0, "rgba(10,14,22,0.84)");
-    rg.addColorStop(1, "rgba(8,12,20,0.92)");
-    ctx.fillStyle = rg;
-    fillRoundRect(ctx, reelX, reelY, reelW, reelH, 20);
-    ctx.strokeStyle = `rgba(${premium ? "255,215,120" : "97,168,255"},0.45)`;
-    strokeRoundRect(ctx, reelX, reelY, reelW, reelH, 20);
+    const reelW = w - 18;
+    const reelX = x + 9;
+    const reelY = y + (compact ? 224 : 254);
+    const reelH = compact ? 84 : 92;
+    this._drawGlassPanel(ctx, reelX, reelY, reelW, reelH, 24);
 
     const centerX = reelX + reelW / 2;
-    ctx.save();
-    ctx.globalAlpha = 0.18 + s.crateGlow * 0.14;
-    ctx.fillStyle = accent;
-    fillRoundRect(ctx, centerX - 56, reelY + 6, 112, reelH - 12, 16);
-    ctx.restore();
-    ctx.strokeStyle = accent;
+    ctx.fillStyle = `rgba(255,255,255,${0.03 + s.introPulse * 0.04})`;
+    fillRoundRect(ctx, centerX - 48, reelY + 6, 96, reelH - 12, 18);
+    ctx.strokeStyle = legendary ? "rgba(255,214,124,0.82)" : "rgba(105,180,255,0.82)";
     ctx.lineWidth = 2;
-    strokeRoundRect(ctx, centerX - 56, reelY + 6, 112, reelH - 12, 16);
+    strokeRoundRect(ctx, centerX - 48, reelY + 6, 96, reelH - 12, 18);
 
     ctx.save();
-    roundRectPath(ctx, reelX + 8, reelY + 8, reelW - 16, reelH - 16, 14);
+    roundRectPath(ctx, reelX + 8, reelY + 8, reelW - 16, reelH - 16, 16);
     ctx.clip();
-    const itemW = 104;
-    const itemGap = 8;
+    const itemW = compact ? 92 : 100;
+    const gap = 8;
     for (let i = 0; i < s.crateReelItems.length; i += 1) {
       const reward = s.crateReelItems[i];
       const cellX = reelX + 24 + i * itemW - s.crateReelOffset;
       if (cellX < reelX - itemW || cellX > reelX + reelW + itemW) continue;
-      const glow = reward.glow || rarityColor(reward.item?.rarity);
-      ctx.fillStyle = "rgba(24,30,42,0.96)";
-      fillRoundRect(ctx, cellX, reelY + 14, itemW - itemGap, reelH - 28, 16);
+      const glow = glowForReward(reward, legendary ? "#ffd166" : "#69b4ff");
+      ctx.fillStyle = "rgba(10,14,22,0.76)";
+      fillRoundRect(ctx, cellX, reelY + 12, itemW - gap, reelH - 24, 18);
       ctx.strokeStyle = glow;
-      ctx.lineWidth = 1.6;
-      strokeRoundRect(ctx, cellX, reelY + 14, itemW - itemGap, reelH - 28, 16);
-      ctx.fillStyle = "#fff";
+      ctx.lineWidth = 1.35;
+      strokeRoundRect(ctx, cellX, reelY + 12, itemW - gap, reelH - 24, 18);
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = "900 24px system-ui";
-      ctx.fillText(reward.icon || "🎁", cellX + (itemW - itemGap) / 2, reelY + 42);
-      ctx.font = "800 10px system-ui";
+      ctx.fillStyle = "#fff";
+      ctx.font = `900 ${compact ? 20 : 22}px system-ui`;
+      ctx.fillText(reward.icon || "🎁", cellX + (itemW - gap) / 2, reelY + 38);
+      ctx.font = `800 ${compact ? 9 : 10}px system-ui`;
       const label = formatRewardText(reward);
-      ctx.fillText(label.length > 14 ? `${label.slice(0, 13)}…` : label, cellX + (itemW - itemGap) / 2, reelY + 69);
+      ctx.fillText(label.length > 16 ? `${label.slice(0, 15)}…` : label, cellX + (itemW - gap) / 2, reelY + 63);
       ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
     }
     ctx.restore();
 
-    ctx.fillStyle = accent;
-    fillRoundRect(ctx, centerX - 4, reelY + 3, 8, reelH - 6, 4);
+    // narrow center pointer for reel
+    ctx.fillStyle = legendary ? "#ffd166" : "#69b4ff";
+    fillRoundRect(ctx, centerX - 3, reelY + 4, 6, reelH - 8, 3);
 
     if (s.cratePhase === "reveal") {
       const rw = s.crateReward;
-      const glow = rw.glow || rarityColor(rw.item?.rarity);
-      const card = { x: x + 18, y: y + h - 112, w: w - 36, h: 88 };
-      ctx.fillStyle = "rgba(10,12,20,0.90)";
-      fillRoundRect(ctx, card.x, card.y, card.w, card.h, 22);
+      const glow = glowForReward(rw, legendary ? "#ffd166" : "#69b4ff");
+      const cardH = compact ? 90 : 100;
+      const cardY = y + h - cardH - 12;
+      this._drawRewardGlow(ctx, x + w / 2, cardY + cardH / 2, 110 + s.crateFlash * 36, glow, 1 + s.crateFlash * 0.8);
+      this._drawGlassPanel(ctx, x + 8, cardY, w - 16, cardH, 24);
       ctx.strokeStyle = glow;
-      ctx.lineWidth = 2;
-      strokeRoundRect(ctx, card.x, card.y, card.w, card.h, 22);
+      ctx.lineWidth = 1.6;
+      strokeRoundRect(ctx, x + 8, cardY, w - 16, cardH, 24);
+      ctx.save();
+      ctx.translate(x + 26, cardY + cardH / 2);
+      ctx.scale(s.revealScale, s.revealScale);
       ctx.fillStyle = "#fff";
-      ctx.font = "900 28px system-ui";
-      ctx.fillText(rw.icon || "🎁", card.x + 16, card.y + 42);
-      ctx.font = "900 20px system-ui";
-      ctx.fillText(formatRewardText(rw), card.x + 66, card.y + 34);
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "13px system-ui";
-      ctx.fillText("Ödül otomatik hesabına işlendi.", card.x + 66, card.y + 56);
-      const ok = { x: x + w - 150, y: y + 10, w: 132, h: 34 };
+      ctx.font = `900 ${compact ? 22 : 26}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(rw.icon || "🎁", 0, 0);
+      ctx.restore();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#fff";
+      ctx.font = `900 ${compact ? 18 : 22}px system-ui`;
+      ctx.fillText(formatRewardText(rw), x + 62, cardY + 34);
+      drawLabel(ctx, x + 62, cardY + 56, legendary ? "Legendary sinematik ödül işlendi." : "Ödül otomatik hesabına işlendi.", "left", `${compact ? 11 : 12}px system-ui`, 0.74);
+      const ok = { x: x + w - 142, y: y + 6, w: 126, h: 32 };
       this.hitButtons.push({ rect: ok, action: "confirm_crate" });
-      this._drawButton(ctx, ok, "Tamam", premium ? "gold" : "primary");
+      this._drawButton(ctx, ok, "Tamam", legendary ? "gold" : "primary");
     }
   }
 
   render(ctx, w, h) {
     this.hitButtons = [];
-
-    const bg =
-      (typeof this.assets?.getImage === "function" && this.assets.getImage("trade")) ||
-      (typeof this.assets?.get === "function" && this.assets.get("trade")) ||
-      (typeof this.assets?.getImage === "function" && this.assets.getImage("background")) ||
-      (typeof this.assets?.get === "function" && this.assets.get("background")) ||
-      null;
+    const bg = (typeof this.assets?.getImage === "function" ? this.assets.getImage("background") : null)
+      || (typeof this.assets?.get === "function" ? this.assets.get("background") : null);
 
     if (bg) {
       const iw = bg.width || 1;
@@ -882,51 +917,45 @@ export class LootScene {
     }
 
     const og = ctx.createLinearGradient(0, 0, 0, h);
-    og.addColorStop(0, "rgba(4,6,12,0.76)");
-    og.addColorStop(1, "rgba(10,12,20,0.90)");
+    og.addColorStop(0, "rgba(2,4,9,0.38)");
+    og.addColorStop(1, "rgba(4,6,12,0.52)");
     ctx.fillStyle = og;
     ctx.fillRect(0, 0, w, h);
 
-    const panelW = Math.min(w - 20, 560);
-    const panelH = Math.min(h - 24, 760);
-    const panelX = (w - panelW) / 2;
-    const panelY = 12;
+    const compact = w <= 600 || h <= 900;
+    const panelMargin = compact ? 10 : 12;
+    const panelX = panelMargin;
+    const panelY = 10;
+    const panelW = w - panelMargin * 2;
+    const panelH = h - (compact ? 20 : 22);
 
-    const pg = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
-    pg.addColorStop(0, "rgba(16,18,28,0.80)");
-    pg.addColorStop(1, "rgba(8,10,18,0.92)");
-    ctx.fillStyle = pg;
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1.2;
-    strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
+    // transparent, colorless panel
+    this._drawGlassPanel(ctx, panelX, panelY, panelW, panelH, compact ? 24 : 28);
+    this._drawHeader(ctx, panelX, panelY, panelW, compact);
 
-    this._drawHeader(ctx, panelX, panelY, panelW);
+    const innerX = panelX + 12;
+    const innerY = panelY + (compact ? 64 : 72);
+    const innerW = panelW - 24;
+    const innerH = panelH - (compact ? 76 : 86);
 
-    const innerX = panelX + 14;
-    const innerY = panelY + 76;
-    const innerW = panelW - 28;
-    const innerH = panelH - 90;
-
-    if (this.state.screen === "wheel") this._drawWheel(ctx, innerX, innerY, innerW, innerH);
-    else if (this.state.screen === "crate") this._drawCrate(ctx, innerX, innerY, innerW, innerH);
-    else this._drawLobby(ctx, innerX, innerY, innerW);
+    if (this.state.screen === "wheel") this._drawWheel(ctx, innerX, innerY, innerW, innerH, compact);
+    else if (this.state.screen === "crate") this._drawCrate(ctx, innerX, innerY, innerW, innerH, compact);
+    else this._drawLobby(ctx, innerX, innerY, innerW, innerH, compact);
 
     drawParticles(ctx, this.state.particles);
 
     if (this.toast.text && this.toast.until > Date.now()) {
-      const tw = Math.min(panelW - 80, 340);
+      const tw = Math.min(panelW - 36, compact ? 300 : 360);
       const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - 50;
-      ctx.fillStyle = "rgba(10,12,20,0.92)";
-      fillRoundRect(ctx, tx, ty, tw, 34, 17);
-      ctx.strokeStyle = "rgba(255,215,120,0.35)";
-      strokeRoundRect(ctx, tx, ty, tw, 34, 17);
+      const ty = panelY + panelH - (compact ? 56 : 58);
+      this._drawGlassPanel(ctx, tx, ty, tw, 36, 18);
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      strokeRoundRect(ctx, tx, ty, tw, 36, 18);
       ctx.fillStyle = "#fff";
       ctx.font = "800 13px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(this.toast.text, tx + tw / 2, ty + 17);
+      ctx.fillText(this.toast.text, tx + tw / 2, ty + 18);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
     }
