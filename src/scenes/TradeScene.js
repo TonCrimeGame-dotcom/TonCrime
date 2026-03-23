@@ -130,11 +130,6 @@ const MARKET_LIMITS = {
   FRESH_MS: 12 * 60 * 60 * 1000,
 };
 
-const OPTIONAL_RPCS_DISABLED_BY_DEFAULT = new Set([
-  "sync_business_production_state",
-  "get_market_telemetry_summary",
-]);
-
 function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -197,11 +192,6 @@ export class TradeScene {
     this.toastUntil = 0;
     this._marketBooting = false;
     this._marketProfileId = null;
-    this._businessProductionLastSyncAt = 0;
-    this._businessProductionSyncPromise = null;
-    this._businessProductionSyncQueued = false;
-    this._optionalRpcDisabled = new Set(OPTIONAL_RPCS_DISABLED_BY_DEFAULT);
-    this._optionalRpcWarned = new Set();
   }
 
   onEnter() {
@@ -669,28 +659,104 @@ export class TradeScene {
     ).trim();
   }
 
-  async _getProfileId() {
-    if (this._marketProfileId) return this._marketProfileId;
 
-    const telegramId = this._getTelegramId();
-    if (!telegramId) {
-      throw new Error("telegram_id bulunamadı");
-    }
+async _getProfileId() {
+  if (this._marketProfileId) return this._marketProfileId;
 
-    const { data, error } = await supabase
+  const s = this.store.get();
+  const p = s.player || {};
+  const telegramId = this._getTelegramId();
+
+  let authUserId = "";
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    authUserId = String(authData?.user?.id || "").trim();
+  } catch (_) {}
+
+  let data = null;
+  let error = null;
+
+  if (authUserId) {
+    ({ data, error } = await supabase
       .from("profiles")
-      .select("id")
-      .eq("telegram_id", telegramId)
-      .maybeSingle();
-
+      .select("id, auth_user_id, telegram_id")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle());
     if (error) throw error;
-    if (!data?.id) {
-      throw new Error("Profil bulunamadı");
+    if (data?.id) {
+      this._marketProfileId = data.id;
+      return data.id;
     }
 
-    this._marketProfileId = data.id;
-    return data.id;
+    ({ data, error } = await supabase
+      .from("profiles")
+      .select("id, auth_user_id, telegram_id")
+      .eq("id", authUserId)
+      .maybeSingle());
+    if (error) throw error;
+    if (data?.id) {
+      this._marketProfileId = data.id;
+      return data.id;
+    }
   }
+
+  if (telegramId) {
+    ({ data, error } = await supabase
+      .from("profiles")
+      .select("id, auth_user_id, telegram_id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle());
+    if (error) throw error;
+    if (data?.id) {
+      this._marketProfileId = data.id;
+      return data.id;
+    }
+  }
+
+  if (!authUserId) {
+    throw new Error("Profil bulunamadı: auth user yok");
+  }
+
+  const insertPayload = {
+    id: authUserId,
+    auth_user_id: authUserId,
+    telegram_id: telegramId || null,
+    username: String(p.username || "Player"),
+    age: p.age ?? null,
+    level: Number(p.level || 1),
+    coins: Number(s.coins || 0),
+    energy: Number(p.energy || 10),
+    energy_max: Number(p.energyMax || 10),
+    premium: !!s.premium,
+    updated_at: new Date().toISOString(),
+  };
+
+  ({ data, error } = await supabase
+    .from("profiles")
+    .insert(insertPayload)
+    .select("id")
+    .single());
+
+  if (error) {
+    const duplicateLike = String(error?.code || "") === "23505"
+      || /duplicate|unique/i.test(String(error?.message || ""));
+    if (!duplicateLike) throw error;
+
+    ({ data, error } = await supabase
+      .from("profiles")
+      .select("id, auth_user_id, telegram_id")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle());
+    if (error) throw error;
+  }
+
+  if (!data?.id) {
+    throw new Error("Profil bulunamadı");
+  }
+
+  this._marketProfileId = data.id;
+  return data.id;
+}
 
   _normalizeBusinessType(type) {
     const t = String(type || "").toLowerCase().trim();
@@ -781,41 +847,7 @@ export class TradeScene {
     });
   }
 
-  _isMissingRpcError(err, name = "") {
-    const message = String(err?.message || "");
-    const details = String(err?.details || "");
-    const combined = `${message} ${details}`;
-    return err?.code === "PGRST202" || combined.includes(`function public.${name}`) || combined.includes(`Could not find the function public.${name}`);
-  }
-
-  _warnOptionalRpcDisabled(name, err = null) {
-    if (this._optionalRpcWarned?.has(name)) return;
-    this._optionalRpcWarned?.add(name);
-    if (err) console.warn(`${name} disabled: missing optional rpc`, err);
-    else console.warn(`${name} disabled: optional rpc is turned off in frontend fallback mode`);
-  }
-
-  async _rpcOptional(name, params = {}, fallbackValue = null) {
-    if (this._optionalRpcDisabled?.has(name)) {
-      this._warnOptionalRpcDisabled(name, null);
-      return Array.isArray(fallbackValue) ? [...fallbackValue] : fallbackValue;
-    }
-
-    try {
-      return await this._rpc(name, params);
-    } catch (err) {
-      if (this._isMissingRpcError(err, name)) {
-        this._optionalRpcDisabled?.add(name);
-        this._warnOptionalRpcDisabled(name, err);
-        return Array.isArray(fallbackValue) ? [...fallbackValue] : fallbackValue;
-      }
-      throw err;
-    }
-  }
-
   async _syncBusinessProductionFromBackend(profileId, { force = false } = {}) {
-    if (this._optionalRpcDisabled?.has("sync_business_production_state")) return [];
-
     const now = Date.now();
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) {
       return [];
@@ -825,9 +857,9 @@ export class TradeScene {
 
     this._businessProductionSyncPromise = (async () => {
       try {
-        const rows = await this._rpcOptional("sync_business_production_state", {
+        const rows = await this._rpc("sync_business_production_state", {
           p_owner_profile_id: profileId,
-        }, []);
+        });
         const normalizedRows = Array.isArray(rows) ? rows : [];
         this._applyBusinessProductionStateRows(normalizedRows);
         this._businessProductionLastSyncAt = Date.now();
@@ -844,8 +876,6 @@ export class TradeScene {
   }
 
   _maybeKickBusinessProductionSync(force = false) {
-    if (this._optionalRpcDisabled?.has("sync_business_production_state")) return;
-
     const now = Date.now();
     if (this._businessProductionSyncQueued || this._businessProductionSyncPromise) return;
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) return;
@@ -1049,9 +1079,9 @@ export class TradeScene {
           p_seller_profile_id: viewerId,
           p_limit: 24,
         }).catch(() => []),
-        this._rpcOptional("get_market_telemetry_summary", {
+        this._rpc("get_market_telemetry_summary", {
           p_profile_id: viewerId,
-        }, null),
+        }).catch(() => null),
       ]);
 
       const shops = Array.isArray(shopsRaw) ? shopsRaw.map((row) => this._normalizeMarketShop(row)) : [];
