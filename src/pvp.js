@@ -98,7 +98,7 @@
 
       const tryNext = () => {
         if (i >= list.length) {
-          reject(new Error("PvP oyun dosyasÄ± yÃ¼klenemedi: " + list.join(" | ")));
+          reject(new Error("PvP oyun dosyası yüklenemedi: " + list.join(" | ")));
           return;
         }
 
@@ -135,6 +135,38 @@
       };
 
       tryNext();
+    });
+  }
+
+
+  const BET_STAKES = {
+    grid: 100,
+    arena: 75,
+    slotarena: 150,
+  };
+
+  function getStakeForMode(modeId) {
+    return Number(BET_STAKES[modeId] || 0);
+  }
+
+  async function enqueueBetPvp(supabase, mode, stake) {
+    return await supabase.rpc("enqueue_ranked_pvp", {
+      p_mode: mode,
+      p_stake_yton: stake,
+    });
+  }
+
+  async function cancelBetPvp(supabase, mode, stake) {
+    return await supabase.rpc("cancel_ranked_pvp", {
+      p_mode: mode,
+      p_stake_yton: stake,
+    });
+  }
+
+  async function tryBetMatch(supabase, userId, mode) {
+    return await supabase.rpc("try_ranked_pvp_match", {
+      p_user_id: userId,
+      p_mode: mode,
     });
   }
 
@@ -341,24 +373,24 @@
     wrap.innerHTML = `
       <div id="pvpHeader">
         <div id="pvpLeftHead">
-          <div id="pvpStatus">PvP â€¢ HazÄ±r</div>
+          <div id="pvpStatus">PvP • Hazır</div>
           <div id="pvpOpponentRow">
             <span id="pvpSpinner" class="hidden"></span>
-            Rakip: <b id="pvpOpponent">â€”</b>
+            Rakip: <b id="pvpOpponent">—</b>
           </div>
         </div>
 
         <div class="pvpBtns">
-          <button class="pvpBtn" id="pvpStart" type="button">BaÅŸlat</button>
+          <button class="pvpBtn" id="pvpStart" type="button">Başlat</button>
           <button class="pvpBtn" id="pvpStop" type="button">Durdur</button>
-          <button class="pvpBtn" id="pvpReset" type="button">SÄ±fÄ±rla</button>
+          <button class="pvpBtn" id="pvpReset" type="button">Sıfırla</button>
         </div>
       </div>
 
       <div id="pvpBars">
         <div>
           <div class="pvpBar"><div class="pvpFill" id="enemyFill"></div></div>
-          <div class="pvpBarLabel"><span>DÃ¼ÅŸman</span><span id="enemyHpText">100</span></div>
+          <div class="pvpBarLabel"><span>Düşman</span><span id="enemyHpText">100</span></div>
         </div>
         <div>
           <div class="pvpBar"><div class="pvpFill" id="meFill"></div></div>
@@ -430,36 +462,36 @@
         {
           id: "grid",
           title: "IQ Arena",
-          subtitle: "Zeka Ã‡atÄ±ÅŸmasÄ±",
-          desc: "SÄ±ra tabanlÄ± grid PvP. Kombolar ile rakibi indir.",
-          tags: ["Tekme", "Tokat", "ÅifalÄ± Bitki", "Beyin", "Yumruk", "KuruKafa"],
+          subtitle: "Zeka Çatışması",
+          desc: "Sıra tabanlı grid PvP. Kombolar ile rakibi indir.",
+          tags: ["Tekme", "Tokat", "Şifalı Bitki", "Beyin", "Yumruk", "KuruKafa"],
           open: true,
           accent: "#ffb24a",
         },
         {
           id: "arena",
-          title: "Kafes DÃ¶vÃ¼ÅŸÃ¼",
-          subtitle: "1v1 Kafes DÃ¶vÃ¼ÅŸÃ¼",
-          desc: "Daha hÄ±zlÄ± PvP modu. Kritik saldÄ±rÄ±lar, kÄ±sa maÃ§lar ve direkt Ã¶dÃ¼l.",
-          tags: ["HÄ±zlÄ±", "yTon", "DÃ¼ello", "XP"],
+          title: "Kafes Dövüşü",
+          subtitle: "1v1 Kafes Dövüşü",
+          desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
+          tags: ["Hızlı", "yTon", "Düello", "XP"],
           open: true,
           accent: "#ff9340",
         },
         {
           id: "slotarena",
           title: "Slot Arena",
-          subtitle: "Slot TadÄ±nda PvP",
+          subtitle: "Slot Tadında PvP",
           desc: "6x6 tumble slot PvP.",
-          tags: ["Slot", "Tumble", "Bonus", "Ã‡arpan", "PvP"],
+          tags: ["Slot", "Tumble", "Bonus", "Çarpan", "PvP"],
           open: true,
           accent: "#ff5ea8",
         },
         {
           id: "tournament",
-          title: "Kartel TurnuvasÄ±",
+          title: "Kartel Turnuvası",
           subtitle: "Sezonluk PvP",
-          desc: "Sezon puanÄ± ve lig mantÄ±ÄŸÄ±. Åimdilik yakÄ±nda.",
-          tags: ["Sezon", "Lig", "Ã–dÃ¼l"],
+          desc: "Sezon puanı ve lig mantığı. Şimdilik yakında.",
+          tags: ["Sezon", "Lig", "Ödül"],
           open: false,
           accent: "#7f7f86",
         },
@@ -569,7 +601,7 @@
 
     _clearRealtime() {
       const sb = this._getSupabase();
-      if (this.matchSearchTimer) clearTimeout(this.matchSearchTimer);
+      if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
       if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
       if (this.matchLaunchTimer) clearTimeout(this.matchLaunchTimer);
 
@@ -586,23 +618,15 @@
 
     async _cancelRealtimeQueue() {
       const sb = this._getSupabase();
-      const userId = await this._getAuthUserId();
       const mode = this._mapModeIdToSqlMode(this.matchModeId);
+      const stake = getStakeForMode(this.matchModeId);
 
       this._clearRealtime();
 
-      if (!sb || !userId || !mode) return;
+      if (!sb || !mode || !stake) return;
 
       try {
-        await sb
-          .from("pvp_match_queue")
-          .update({
-            status: "cancelled",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", userId)
-          .eq("game_mode", mode)
-          .eq("status", "searching");
+        await cancelBetPvp(sb, mode, stake);
       } catch (_) {}
     }
 
@@ -634,39 +658,52 @@
       const sb = this._getSupabase();
       const userId = await this._getAuthUserId();
       const mode = this._mapModeIdToSqlMode(id);
+      const stake = getStakeForMode(id);
       const player = this._getPlayerMeta();
+      const s = this.store?.get?.() || {};
+      const playerState = { ...(s.player || {}) };
+      const currentEnergy = Number(playerState.energy || 0);
+      const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
+      const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
-      if (!sb || !userId || !mode) {
-        this.matchSearchTimer = setTimeout(() => {
-          if (this.matchState !== "searching") return;
-          this.onMatchFound(this._makeOpponent());
-        }, 1400);
+      if (!sb || !userId || !mode || !stake) {
+        return;
+      }
 
-        this.matchFallbackTimer = setTimeout(() => {
-          if (this.matchState !== "searching") return;
-          this.onMatchFound(this._makeOpponent());
-        }, this.rtFallbackMs);
+      if (currentEnergy < energyCost) {
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
+          }));
+        } catch (_) {}
+        this.matchState = "menu";
+        return;
+      }
+
+      if (ytonBalance < stake) {
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: `Yetersiz YTON • ${stake} gerekli` },
+          }));
+        } catch (_) {}
+        this.matchState = "menu";
         return;
       }
 
       try {
-        await sb
-          .from("pvp_match_queue")
-          .upsert(
-            {
-              user_id: userId,
-              username: player.username,
-              level: player.level,
-              rank: player.rank,
-              game_mode: mode,
-              status: "searching",
-              is_bot: false,
-              matched_with: null,
-              match_id: null,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id,game_mode" }
-          );
+        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
+        if (queueError) throw queueError;
+
+        const latest = this.store?.get?.() || {};
+        this.store?.set?.({
+          yton: Math.max(0, Number(latest.yton ?? latest.coins ?? 0) - stake),
+          pvp: {
+            ...(latest.pvp || {}),
+            betStake: stake,
+            betMode: mode,
+            queueStatus: queueData?.status || "searching",
+          },
+        });
 
         const channelName = `pvp-match-${userId}-${mode}-${Date.now()}`;
         this.rtChannel = sb
@@ -681,6 +718,8 @@
             },
             (payload) => {
               if (this.rtMatchStarted || this.matchState !== "searching") return;
+              if (String(payload.new?.game_mode || "") !== String(mode)) return;
+              if (Number(payload.new?.stake_yton || 0) !== Number(stake)) return;
               this.rtMatchStarted = true;
               this.onMatchFound(
                 this._buildOpponentFromMatch(payload.new, userId),
@@ -698,6 +737,8 @@
             },
             (payload) => {
               if (this.rtMatchStarted || this.matchState !== "searching") return;
+              if (String(payload.new?.game_mode || "") !== String(mode)) return;
+              if (Number(payload.new?.stake_yton || 0) !== Number(stake)) return;
               this.rtMatchStarted = true;
               this.onMatchFound(
                 this._buildOpponentFromMatch(payload.new, userId),
@@ -707,43 +748,27 @@
           )
           .subscribe();
 
-        try {
-          await sb.rpc("try_ranked_pvp_match", {
-            p_user_id: userId,
-            p_mode: mode,
-          });
-        } catch (_) {}
-
-        this.matchFallbackTimer = setTimeout(async () => {
+        this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
-            await sb.rpc("create_bot_pvp_match", {
-              p_user_id: userId,
-              p_mode: mode,
-            });
-          } catch (_) {
-            if (this.matchState === "searching") {
-              this.onMatchFound(this._makeOpponent());
-            }
-          }
-        }, this.rtFallbackMs);
-      } catch (_) {
-        this.matchSearchTimer = setTimeout(() => {
-          if (this.matchState !== "searching") return;
-          this.onMatchFound(this._makeOpponent());
-        }, 1400);
-
-        this.matchFallbackTimer = setTimeout(() => {
-          if (this.matchState !== "searching") return;
-          this.onMatchFound(this._makeOpponent());
-        }, this.rtFallbackMs);
+            await tryBetMatch(sb, userId, mode);
+          } catch (_) {}
+        }, 1000);
+      } catch (err) {
+        console.error("[TonCrime] betting matchmaking error:", err);
+        this.matchState = "menu";
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: "Bahisli PvP kuyruğu başlatılamadı" },
+          }));
+        } catch (_) {}
       }
     }
 
     onMatchFound(opponent, matchRecord = null) {
       if (this.matchState !== "searching") return;
 
-      if (this.matchSearchTimer) clearTimeout(this.matchSearchTimer);
+      if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
       if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
       this.matchSearchTimer = null;
       this.matchFallbackTimer = null;
@@ -763,8 +788,8 @@
     }
 
     _headerText() {
-      if (this.source === "nightclub") return "Rakip Havuzu: Nightclub iÃ§i";
-      if (this.source === "coffeeshop") return "Rakip Havuzu: Coffeeshop iÃ§i";
+      if (this.source === "nightclub") return "Rakip Havuzu: Nightclub içi";
+      if (this.source === "coffeeshop") return "Rakip Havuzu: Coffeeshop içi";
       return "Rakip Havuzu: Genel";
     }
 
@@ -862,9 +887,9 @@
       this._launchingGame = true;
 
       const ECONOMY = {
-        grid: { energy: 10, coins: 20, reward: 36, fee: 4, modeKey: "iq_arena" },
-        arena: { energy: 5, coins: 10, reward: 16, fee: 4, modeKey: "cage_fight" },
-        slotarena: { energy: 15, coins: 30, reward: 56, fee: 4, modeKey: "slot_arena" },
+        grid: { energy: 10, stake: getStakeForMode("grid"), modeKey: "iq_arena" },
+        arena: { energy: 5, stake: getStakeForMode("arena"), modeKey: "cage_fight" },
+        slotarena: { energy: 15, stake: getStakeForMode("slotarena"), modeKey: "slot_arena" },
       };
 
       const s = this.store?.get?.() || {};
@@ -882,14 +907,14 @@
       }
 
       const currentEnergy = Number(player.energy || 0);
-      const currentCoins = Number(s.coins || 0);
+      const currentYton = Number(s.yton ?? s.coins ?? 0);
 
-      if (currentEnergy < economy.energy || currentCoins < economy.coins) {
+      if (currentEnergy < economy.energy) {
         this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: {
-              text: `Yetersiz bakiye â€¢ ${economy.energy} enerji + ${economy.coins} yton gerekli`,
+              text: `Yetersiz enerji • ${economy.energy} gerekli`,
             },
           }));
         } catch (_) {}
@@ -902,7 +927,6 @@
         if (charged) return;
         charged = true;
         this.store?.set?.({
-          coins: Math.max(0, currentCoins - economy.coins),
           player: {
             ...player,
             energy: Math.max(0, currentEnergy - economy.energy),
@@ -913,9 +937,9 @@
             source: this.source || "general",
             entryPaid: true,
             entryEnergy: economy.energy,
-            entryCoins: economy.coins,
-            rewardCoins: economy.reward,
-            serverFee: economy.fee,
+            entryStake: economy.stake,
+            rewardCoins: 0,
+            serverFee: 0,
             payoutDone: false,
             matchStartedAt: Date.now(),
             modeKey: economy.modeKey,
@@ -929,7 +953,6 @@
         const latest = this.store?.get?.() || {};
         const latestPlayer = { ...(latest.player || player) };
         this.store?.set?.({
-          coins: Number(latest.coins || 0) + economy.coins,
           player: {
             ...latestPlayer,
             energy: Number(latestPlayer.energy || 0) + economy.energy,
@@ -948,7 +971,7 @@
 
         const dom = ensurePvpDom();
 
-        if (dom.status) dom.status.textContent = "PvP â€¢ YÃ¼kleniyor...";
+        if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
         if (dom.opponent) dom.opponent.textContent = (opponentData?.username || "ShadowWolf");
         if (dom.spinner) dom.spinner.classList.remove("hidden");
 
@@ -956,7 +979,7 @@
           await loadPvpGameScript(["./src/pvpcrush.js", "./pvpcrush.js"]);
 
           if (!window.TonCrimePVP_CRUSH) {
-            throw new Error("TonCrimePVP_CRUSH bulunamadÄ±");
+            throw new Error("TonCrimePVP_CRUSH bulunamadı");
           }
 
           window.TonCrimePVP = window.TonCrimePVP_CRUSH;
@@ -976,6 +999,9 @@
             isBot: !!(opponentData?.isBot ?? true),
             level: opponentData?.level || 1,
           });
+          try {
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+          } catch (_) {}
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
@@ -1014,7 +1040,7 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP â€¢ IQ Arena baÅŸladÄ±";
+          if (dom.status) dom.status.textContent = "PvP • IQ Arena başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           this._resetMatchmaking();
@@ -1025,7 +1051,7 @@
           await loadPvpGameScript(["./src/pvpslotarena.js", "./pvpslotarena.js"]);
 
           if (!window.TonCrimePVP_SLOT) {
-            throw new Error("TonCrimePVP_SLOT bulunamadÄ±");
+            throw new Error("TonCrimePVP_SLOT bulunamadı");
           }
 
           window.TonCrimePVP = window.TonCrimePVP_SLOT;
@@ -1045,6 +1071,9 @@
             isBot: !!(opponentData?.isBot ?? true),
             level: opponentData?.level || 1,
           });
+          try {
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+          } catch (_) {}
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
@@ -1083,7 +1112,7 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP â€¢ Slot Arena baÅŸladÄ±";
+          if (dom.status) dom.status.textContent = "PvP • Slot Arena başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           this._resetMatchmaking();
@@ -1094,7 +1123,7 @@
           await loadPvpGameScript(["./src/pvpcage.js", "./pvpcage.js"]);
 
           if (!window.TonCrimePVP_CAGE) {
-            throw new Error("TonCrimePVP_CAGE bulunamadÄ±");
+            throw new Error("TonCrimePVP_CAGE bulunamadı");
           }
 
           window.TonCrimePVP = window.TonCrimePVP_CAGE;
@@ -1114,6 +1143,9 @@
             isBot: !!(opponentData?.isBot ?? true),
             level: opponentData?.level || 1,
           });
+          try {
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+          } catch (_) {}
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
@@ -1148,25 +1180,51 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP â€¢ Kafes DÃ¶vÃ¼ÅŸÃ¼ baÅŸladÄ±";
+          if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           this._resetMatchmaking();
           return;
         }
 
-        if (dom.status) dom.status.textContent = "PvP â€¢ Mod bulunamadÄ±";
+        if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
         if (dom.spinner) dom.spinner.classList.add("hidden");
       } catch (err) {
         refundMatch();
         console.error("[TonCrime] startGame fatal:", err);
         const status = document.getElementById("pvpStatus");
         const spinner = document.getElementById("pvpSpinner");
-        if (status) status.textContent = "PvP â€¢ Oyun yÃ¼klenemedi";
+        if (status) status.textContent = "PvP • Oyun yüklenemedi";
         if (spinner) spinner.classList.add("hidden");
       }
 
       this._launchingGame = false;
+    }
+
+
+    async _finishBetMatchIfNeeded(matchCtx, opponentData, didWin) {
+      try {
+        if (!matchCtx?.matchId) return;
+        const sb = this._getSupabase();
+        const userId = await this._getAuthUserId();
+        if (!sb || !userId) return;
+        const winnerId = didWin ? userId : (matchCtx.isBotMatch ? userId : (opponentData?.id || matchCtx.player2Id || matchCtx.player1Id));
+        const { data, error } = await sb.rpc("finish_pvp_match", {
+          p_match_id: matchCtx.matchId,
+          p_winner_user_id: winnerId,
+          p_reason: didWin ? "win" : "loss",
+        });
+        if (error) {
+          console.error("[TonCrime] finish_pvp_match error:", error);
+          return;
+        }
+        if (didWin && data?.prize_yton != null) {
+          const latest = this.store?.get?.() || {};
+          this.store?.set?.({ yton: Number(latest.yton ?? latest.coins ?? 0) + Number(data.prize_yton || 0) });
+        }
+      } catch (err) {
+        console.error("[TonCrime] _finishBetMatchIfNeeded fatal:", err);
+      }
     }
 
     renderSearchingOverlay(ctx, panelX, panelY, panelW, panelH) {
@@ -1202,7 +1260,7 @@
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "900 20px system-ui, Arial";
-      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranÄ±yor", cx, boxY + 46);
+      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranıyor", cx, boxY + 46);
 
       if (this.matchState === "found" && this.matchOpponent) {
         ctx.font = "900 28px system-ui, Arial";
@@ -1214,14 +1272,14 @@
         const left = Math.max(0, 3000 - (Date.now() - this.matchFoundAt));
         ctx.font = "500 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.fillText(`MaÃ§ ${Math.max(1, Math.ceil(left / 1000))} sn iÃ§inde baÅŸlÄ±yor`, cx, boxY + 178);
+        ctx.fillText(`Maç ${Math.max(1, Math.ceil(left / 1000))} sn içinde başlıyor`, cx, boxY + 178);
       } else {
         ctx.font = "500 15px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText("EÅŸleÅŸme hazÄ±rlanÄ±yor", cx, boxY + 104);
+        ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
         ctx.font = "700 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText("Oyuncular taranÄ±yor...", cx, boxY + 132);
+        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
       }
     }
 
@@ -1276,7 +1334,7 @@
       ctx.font = `700 ${titleSize}px system-ui, Arial`;
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText("PvP â€¢ Oyun SeÃ§", panelX + innerPad, panelY + 16);
+      ctx.fillText("PvP • Oyun Seç", panelX + innerPad, panelY + 16);
 
       ctx.fillStyle = "rgba(255,255,255,0.78)";
       ctx.font = `500 ${subtitleSize}px system-ui, Arial`;
@@ -1305,10 +1363,10 @@
           id: this.source,
           label:
             this.source === "nightclub"
-              ? "Nightclub iÃ§i havuz"
+              ? "Nightclub içi havuz"
               : this.source === "coffeeshop"
-              ? "Coffeeshop iÃ§i havuz"
-              : "En temiz komboyu yapan parayÄ± toplar.",
+              ? "Coffeeshop içi havuz"
+              : "En temiz komboyu yapan parayı toplar.",
         },
       ];
 
@@ -1418,7 +1476,7 @@
         ctx.font = `700 ${clamp(Math.round(btnH * 0.34), 11, 14)}px system-ui, Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(card.open ? "AÃ§Ä±k" : "Kilitli", btnX + btnW / 2, btnY + btnH / 2);
+        ctx.fillText(card.open ? "Açık" : "Kilitli", btnX + btnW / 2, btnY + btnH / 2);
 
         const descX = x + 18;
         const descY = y + 14 + cardTitleSize + 5 + cardSubSize + 12;
