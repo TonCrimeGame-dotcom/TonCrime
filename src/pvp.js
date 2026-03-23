@@ -170,6 +170,56 @@
     });
   }
 
+  let __tcPvpSupabasePromise = null;
+
+  function bindPvpSupabaseClient(sb) {
+    if (!sb?.auth?.getUser) return null;
+    try { window.supabase = window.supabase || sb; } catch (_) {}
+    try { window.tcSupabase = window.tcSupabase || sb; } catch (_) {}
+    try { window.__tcSupabase = window.__tcSupabase || sb; } catch (_) {}
+    return sb;
+  }
+
+  async function resolvePvpSupabaseClient() {
+    const existing = bindPvpSupabaseClient(
+      window.supabase || window.tcSupabase || window.__tcSupabase || window.__supabase || null
+    );
+    if (existing) return existing;
+
+    if (__tcPvpSupabasePromise) {
+      try {
+        const cached = await __tcPvpSupabasePromise;
+        if (cached) return bindPvpSupabaseClient(cached);
+      } catch (_) {}
+    }
+
+    const candidates = [
+      "./src/supabase.js",
+      "/src/supabase.js",
+      "./supabase.js",
+      "/supabase.js",
+    ];
+
+    __tcPvpSupabasePromise = (async () => {
+      for (const spec of candidates) {
+        try {
+          const mod = await import(spec);
+          const sb = bindPvpSupabaseClient(mod?.supabase || mod?.default?.supabase || mod?.default || null);
+          if (sb) return sb;
+        } catch (_) {}
+      }
+      return null;
+    })();
+
+    try {
+      const loaded = await __tcPvpSupabasePromise;
+      if (loaded) return bindPvpSupabaseClient(loaded);
+    } catch (_) {}
+
+    __tcPvpSupabasePromise = null;
+    return null;
+  }
+
   function ensurePvpShellStyle() {
     if (document.getElementById("tc-pvp-shell-style")) return;
 
@@ -519,6 +569,7 @@
       this._wasPointerDown = false;
       this._launchingGame = false;
       this._resetMatchmaking();
+      this._getSupabaseAsync().catch(() => null);
     }
 
     onExit() {
@@ -527,11 +578,17 @@
     }
 
     _getSupabase() {
-      return window.supabase || window.tcSupabase || null;
+      return window.supabase || window.tcSupabase || window.__tcSupabase || window.__supabase || null;
     }
 
-    async _getAuthUserId() {
-      const sb = this._getSupabase();
+    async _getSupabaseAsync() {
+      const existing = this._getSupabase();
+      if (existing?.auth?.getUser) return existing;
+      return await resolvePvpSupabaseClient();
+    }
+
+    async _getAuthUserId(sbOverride = null) {
+      const sb = sbOverride || await this._getSupabaseAsync();
       if (!sb?.auth?.getUser) return null;
 
       try {
@@ -583,7 +640,7 @@
 
     _buildMatchContext(match, userId, modeId) {
       if (!match || !userId) return null;
-      const amIPlayer1 = String(match.player1_id || "") === String(userId);
+      const amIPlayer1 = match.player1_id === userId;
       return {
         matchId: match.id,
         userId,
@@ -597,155 +654,6 @@
         player2Username: match.player2_username || "Player 2",
         opponentUsername: amIPlayer1 ? (match.player2_username || "Rakip") : (match.player1_username || "Rakip"),
       };
-    }
-
-    _normalizeRpcPayload(payload) {
-      if (Array.isArray(payload)) return payload[0] || null;
-      return payload || null;
-    }
-
-    _isMatchOwnedByUser(match, userId) {
-      if (!match || !userId) return false;
-      return String(match.player1_id || "") === String(userId) || String(match.player2_id || "") === String(userId);
-    }
-
-    _isUsableMatch(match, userId, mode, stake) {
-      if (!match?.id || !this._isMatchOwnedByUser(match, userId)) return false;
-      if (mode && match.game_mode != null && String(match.game_mode) !== String(mode)) return false;
-      if (stake != null && match.stake_yton != null && Number(match.stake_yton) !== Number(stake)) return false;
-      return true;
-    }
-
-    async _fetchMatchById(sb, matchId) {
-      if (!sb || !matchId) return null;
-      try {
-        const { data } = await sb
-          .from("pvp_matches")
-          .select("*")
-          .eq("id", matchId)
-          .maybeSingle();
-        return data || null;
-      } catch (_) {
-        return null;
-      }
-    }
-
-    _buildFallbackOpponentFromRpc(payload, userId) {
-      const rpc = this._normalizeRpcPayload(payload);
-      if (!rpc) return null;
-
-      const amIPlayer1 = String(rpc.player1_id || rpc.player1Id || "") === String(userId);
-      const username =
-        rpc.opponent_username ||
-        rpc.opponentUsername ||
-        (amIPlayer1
-          ? (rpc.player2_username || rpc.player2Username)
-          : (rpc.player1_username || rpc.player1Username)) ||
-        "Rakip";
-
-      const levelRaw =
-        rpc.opponent_level ??
-        rpc.opponentLevel ??
-        (amIPlayer1
-          ? (rpc.player2_level ?? rpc.player2Level)
-          : (rpc.player1_level ?? rpc.player1Level));
-
-      const rankRaw =
-        rpc.opponent_rank ??
-        rpc.opponentRank ??
-        (amIPlayer1
-          ? (rpc.player2_rank ?? rpc.player2Rank)
-          : (rpc.player1_rank ?? rpc.player1Rank));
-
-      return {
-        username,
-        level: Math.max(1, Number(levelRaw || 1)),
-        rank: Math.max(100, Number(rankRaw || this._getPlayerMeta().rank || 1000)),
-        isBot: !!(rpc.is_bot_match ?? rpc.isBotMatch),
-      };
-    }
-
-    _buildFallbackMatchContextFromRpc(payload, userId, modeId) {
-      const rpc = this._normalizeRpcPayload(payload);
-      if (!rpc || !userId) return null;
-
-      const matchId = rpc.match_id || rpc.matchId || rpc.id || null;
-      if (!matchId) return null;
-
-      const player1Id = rpc.player1_id || rpc.player1Id || null;
-      const player2Id = rpc.player2_id || rpc.player2Id || null;
-      const amIPlayer1 = player1Id ? String(player1Id) === String(userId) : false;
-
-      return {
-        matchId,
-        userId,
-        modeId: modeId || this.matchModeId || "grid",
-        sqlMode: rpc.game_mode || rpc.gameMode || this._mapModeIdToSqlMode(modeId || this.matchModeId),
-        amIPlayer1,
-        isBotMatch: !!(rpc.is_bot_match ?? rpc.isBotMatch),
-        player1Id,
-        player2Id,
-        player1Username: rpc.player1_username || rpc.player1Username || "Player 1",
-        player2Username: rpc.player2_username || rpc.player2Username || "Player 2",
-        opponentUsername:
-          rpc.opponent_username ||
-          rpc.opponentUsername ||
-          (amIPlayer1
-            ? (rpc.player2_username || rpc.player2Username || "Rakip")
-            : (rpc.player1_username || rpc.player1Username || "Rakip")),
-      };
-    }
-
-    _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
-      const match = payload?.new || payload || null;
-      if (this.rtMatchStarted || this.matchState !== "searching") return false;
-      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
-
-      this.rtMatchStarted = true;
-      this.onMatchFound(
-        this._buildOpponentFromMatch(match, userId),
-        this._buildMatchContext(match, userId, sceneModeId)
-      );
-      return true;
-    }
-
-    async _resolveRpcMatchResult(sb, payload, userId, mode, stake, sceneModeId) {
-      const rpc = this._normalizeRpcPayload(payload);
-      if (!rpc || this.rtMatchStarted || this.matchState !== "searching") return false;
-
-      const hasMatchSignal =
-        rpc.ok === true ||
-        rpc.status === "matched" ||
-        !!(rpc.match_id || rpc.matchId || rpc.id || rpc.match || rpc.match_row || rpc.matchRecord);
-
-      if (!hasMatchSignal) return false;
-
-      let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
-      if (!this._isUsableMatch(match, userId, mode, stake)) {
-        const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
-        if (matchId) {
-          match = await this._fetchMatchById(sb, matchId);
-        }
-      }
-
-      if (this._isUsableMatch(match, userId, mode, stake)) {
-        this.rtMatchStarted = true;
-        this.onMatchFound(
-          this._buildOpponentFromMatch(match, userId),
-          this._buildMatchContext(match, userId, sceneModeId)
-        );
-        return true;
-      }
-
-      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
-      if (!fallbackCtx?.matchId) return false;
-
-      this.rtMatchStarted = true;
-      this.onMatchFound(
-        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
-        fallbackCtx
-      );
-      return true;
     }
 
     _clearRealtime() {
@@ -766,7 +674,7 @@
     }
 
     async _cancelRealtimeQueue() {
-      const sb = this._getSupabase();
+      const sb = await this._getSupabaseAsync();
       const mode = this._mapModeIdToSqlMode(this.matchModeId);
       const stake = getStakeForMode(this.matchModeId);
 
@@ -796,26 +704,67 @@
       return null;
     }
 
+    async _resolveRpcMatchResult(sb, result, userId, sceneModeId, mode, stake) {
+      try {
+        const payload = result?.match || result || null;
+        const matchId = payload?.match_id || payload?.id || null;
+        if (!matchId) return false;
+
+        const { data: matchRow } = await sb
+          .from("pvp_matches")
+          .select("*")
+          .eq("id", matchId)
+          .maybeSingle();
+
+        const finalRow = matchRow || (payload?.player1_id ? payload : null);
+        if (!finalRow || this.rtMatchStarted || this.matchState !== "searching") return false;
+        if (String(finalRow.game_mode || mode || "") !== String(mode || "")) return false;
+        if (Number(finalRow.stake_yton || stake || 0) !== Number(stake || 0)) return false;
+
+        this.rtMatchStarted = true;
+        this.onMatchFound(
+          this._buildOpponentFromMatch(finalRow, userId),
+          this._buildMatchContext(finalRow, userId, sceneModeId)
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
     async startMatchmaking(id) {
       if (this._launchingGame) return;
 
       this._resetMatchmaking();
-      this.matchState = "searching";
       this.matchModeId = id;
-      this.matchStartedAt = Date.now();
 
-      const sb = this._getSupabase();
-      const userId = await this._getAuthUserId();
       const mode = this._mapModeIdToSqlMode(id);
       const stake = getStakeForMode(id);
-      const player = this._getPlayerMeta();
       const s = this.store?.get?.() || {};
       const playerState = { ...(s.player || {}) };
       const currentEnergy = Number(playerState.energy || 0);
       const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
       const ytonBalance = Number(s.yton ?? s.coins ?? 0);
+      const sb = await this._getSupabaseAsync();
+      const userId = await this._getAuthUserId(sb);
 
-      if (!sb || !userId || !mode || !stake) {
+      if (!sb || !mode || !stake) {
+        this.matchState = "menu";
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: "PvP bağlantısı yüklenemedi" },
+          }));
+        } catch (_) {}
+        return;
+      }
+
+      if (!userId) {
+        this.matchState = "menu";
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: "PvP için giriş gerekli" },
+          }));
+        } catch (_) {}
         return;
       }
 
@@ -839,6 +788,9 @@
         return;
       }
 
+      this.matchState = "searching";
+      this.matchStartedAt = Date.now();
+
       try {
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
@@ -853,9 +805,17 @@
           },
         });
 
-        if (await this._resolveRpcMatchResult(sb, queueData, userId, mode, stake, id)) {
-          return;
-        }
+        const handleMatchPayload = async (row) => {
+          if (this.rtMatchStarted || this.matchState !== "searching") return;
+          if (!row) return;
+          if (String(row.game_mode || "") !== String(mode)) return;
+          if (Number(row.stake_yton || 0) !== Number(stake)) return;
+          this.rtMatchStarted = true;
+          this.onMatchFound(
+            this._buildOpponentFromMatch(row, userId),
+            this._buildMatchContext(row, userId, id)
+          );
+        };
 
         const channelName = `pvp-match-${userId}-${mode}-${Date.now()}`;
         this.rtChannel = sb
@@ -868,9 +828,7 @@
               table: "pvp_matches",
               filter: `player1_id=eq.${userId}`,
             },
-            (payload) => {
-              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
-            }
+            (payload) => { handleMatchPayload(payload?.new); }
           )
           .on(
             "postgres_changes",
@@ -880,9 +838,7 @@
               table: "pvp_matches",
               filter: `player1_id=eq.${userId}`,
             },
-            (payload) => {
-              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
-            }
+            (payload) => { handleMatchPayload(payload?.new); }
           )
           .on(
             "postgres_changes",
@@ -892,9 +848,7 @@
               table: "pvp_matches",
               filter: `player2_id=eq.${userId}`,
             },
-            (payload) => {
-              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
-            }
+            (payload) => { handleMatchPayload(payload?.new); }
           )
           .on(
             "postgres_changes",
@@ -904,34 +858,21 @@
               table: "pvp_matches",
               filter: `player2_id=eq.${userId}`,
             },
-            (payload) => {
-              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
-            }
-          )
-          .on(
-            "postgres_changes",
-            {
-              event: "UPDATE",
-              schema: "public",
-              table: "pvp_match_queue",
-              filter: `user_id=eq.${userId}`,
-            },
-            async () => {
-              if (this.rtMatchStarted || this.matchState !== "searching") return;
-              try {
-                await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-              } catch (_) {}
-            }
+            (payload) => { handleMatchPayload(payload?.new); }
           )
           .subscribe();
+
+        try {
+          const { data: matchResult } = await tryBetMatch(sb, userId, mode);
+          await this._resolveRpcMatchResult(sb, matchResult, userId, id, mode, stake);
+        } catch (_) {}
 
         this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
-            const { data: tryData, error: tryError } = await tryBetMatch(sb, userId, mode);
-            if (tryError) throw tryError;
-            const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
-            if (matchedFromRpc) return;
+            const { data: matchResult } = await tryBetMatch(sb, userId, mode);
+            const matched = await this._resolveRpcMatchResult(sb, matchResult, userId, id, mode, stake);
+            if (matched) return;
           } catch (_) {}
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
@@ -955,12 +896,6 @@
       if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
       this.matchSearchTimer = null;
       this.matchFallbackTimer = null;
-
-      const sb = this._getSupabase();
-      if (this.rtChannel && sb?.removeChannel) {
-        try { sb.removeChannel(this.rtChannel); } catch (_) {}
-      }
-      this.rtChannel = null;
 
       this.matchOpponent = opponent;
       this.matchRecord = matchRecord || null;
@@ -1394,14 +1329,10 @@
     async _finishBetMatchIfNeeded(matchCtx, opponentData, didWin) {
       try {
         if (!matchCtx?.matchId) return;
-        const sb = this._getSupabase();
-        const userId = await this._getAuthUserId();
+        const sb = await this._getSupabaseAsync();
+        const userId = await this._getAuthUserId(sb);
         if (!sb || !userId) return;
-        const opponentId = String(matchCtx.player1Id || "") === String(userId)
-          ? (matchCtx.player2Id || null)
-          : (matchCtx.player1Id || null);
-        const winnerId = didWin ? userId : (opponentData?.id || opponentId || null);
-        if (!winnerId) return;
+        const winnerId = didWin ? userId : (matchCtx.isBotMatch ? userId : (opponentData?.id || matchCtx.player2Id || matchCtx.player1Id));
         const { data, error } = await sb.rpc("finish_pvp_match", {
           p_match_id: matchCtx.matchId,
           p_winner_user_id: winnerId,
