@@ -289,42 +289,17 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
+
 /* ===== SUPABASE PROFILE SYNC ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
 let _profileSyncDisabled = false;
-let _profileSyncWarned = false;
-let _profileSyncBackoffUntil = 0;
-let _profileSyncAuthUserId = "";
-
-function isProfileSyncPermissionError(error) {
-  const code = String(error?.code || "").trim();
-  const message = String(error?.message || "").toLowerCase();
-  return (
-    code === "42501" ||
-    message.includes("row-level security") ||
-    message.includes("permission denied")
-  );
-}
-
-async function getProfileSyncAuthUserId() {
-  if (_profileSyncAuthUserId) return _profileSyncAuthUserId;
-
-  try {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    const uid = String(data?.user?.id || "").trim();
-    if (uid) _profileSyncAuthUserId = uid;
-    return uid;
-  } catch (_) {
-    return "";
-  }
-}
+let _profileSyncRetryAfter = 0;
 
 async function syncProfileToSupabase() {
   if (_profileSyncBusy || _profileSyncDisabled) return;
-  if (Date.now() < _profileSyncBackoffUntil) return;
+  if (Date.now() < _profileSyncRetryAfter) return;
 
   const s = store.get();
   const p = s.player || {};
@@ -335,10 +310,22 @@ async function syncProfileToSupabase() {
   if (!telegramId) return;
   if (!s?.intro?.profileCompleted) return;
 
-  const authUserId = await getProfileSyncAuthUserId();
-  if (!authUserId) return;
+  let authUserId = "";
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    authUserId = String(authData?.user?.id || "").trim();
+  } catch (err) {
+    console.warn("[TonCrime] auth.getUser failed:", err);
+    _profileSyncRetryAfter = Date.now() + 5000;
+    return;
+  }
 
-  const stablePayload = {
+  if (!authUserId) {
+    _profileSyncRetryAfter = Date.now() + 5000;
+    return;
+  }
+
+  const syncPayload = {
     id: authUserId,
     auth_user_id: authUserId,
     telegram_id: telegramId,
@@ -348,58 +335,102 @@ async function syncProfileToSupabase() {
     coins: Number(s.coins || 0),
     energy: Number(p.energy || 10),
     energy_max: Number(p.energyMax || 10),
+    premium: !!s.premium,
   };
 
-  const payloadKey = JSON.stringify(stablePayload);
+  const payloadKey = JSON.stringify(syncPayload);
   if (payloadKey === _lastProfilePayload) return;
 
   _profileSyncBusy = true;
 
   try {
-    const payload = {
-      ...stablePayload,
+    let existing = null;
+    let lookup = await supabase
+      .from("profiles")
+      .select("id, auth_user_id, telegram_id")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle();
+
+    if (lookup.error) throw lookup.error;
+    existing = lookup.data || null;
+
+    if (!existing) {
+      lookup = await supabase
+        .from("profiles")
+        .select("id, auth_user_id, telegram_id")
+        .eq("id", authUserId)
+        .maybeSingle();
+      if (lookup.error) throw lookup.error;
+      existing = lookup.data || null;
+    }
+
+    if (!existing && telegramId) {
+      lookup = await supabase
+        .from("profiles")
+        .select("id, auth_user_id, telegram_id")
+        .eq("telegram_id", telegramId)
+        .maybeSingle();
+      if (lookup.error) throw lookup.error;
+      existing = lookup.data || null;
+    }
+
+    const dbPayload = {
+      ...syncPayload,
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(payload, { onConflict: "telegram_id" });
+    let writeError = null;
 
-    if (error) {
-      if (isProfileSyncPermissionError(error)) {
+    if (existing?.id) {
+      const { error } = await supabase
+        .from("profiles")
+        .update(dbPayload)
+        .eq("id", existing.id);
+      writeError = error || null;
+    } else {
+      const { error } = await supabase
+        .from("profiles")
+        .insert(dbPayload);
+      writeError = error || null;
+    }
+
+    if (writeError) {
+      const code = String(writeError?.code || "");
+      if (code === "42501") {
         _profileSyncDisabled = true;
-        if (!_profileSyncWarned) {
-          _profileSyncWarned = true;
-          console.warn("Supabase profile sync disabled: profiles RLS rejected upsert", error);
-        }
+        console.warn("[TonCrime] profile sync disabled by RLS:", writeError);
         return;
       }
-
-      _profileSyncBackoffUntil = Date.now() + 10000;
-      console.error("Supabase profile sync error:", error);
+      console.error("Supabase profile sync error:", writeError);
+      _profileSyncRetryAfter = Date.now() + 5000;
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
-    _profileSyncBackoffUntil = 0;
+    _profileSyncRetryAfter = 0;
   } catch (err) {
-    _profileSyncBackoffUntil = Date.now() + 10000;
+    const code = String(err?.code || "");
+    if (code === "42501") {
+      _profileSyncDisabled = true;
+      console.warn("[TonCrime] profile sync disabled by RLS:", err);
+      return;
+    }
     console.error("Supabase profile sync fatal:", err);
+    _profileSyncRetryAfter = Date.now() + 5000;
   } finally {
     _profileSyncBusy = false;
   }
 }
 
 (function profileSyncLoop() {
-  if (!_profileSyncDisabled) {
-    const now = Date.now();
-    if (now - _lastProfileSyncAt > 1500) {
-      syncProfileToSupabase();
-    }
+  const now = Date.now();
+  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 1500) {
+    syncProfileToSupabase();
   }
   setTimeout(profileSyncLoop, 1500);
 })();
+
 
 /* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
