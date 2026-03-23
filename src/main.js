@@ -329,60 +329,116 @@ bootstrapTelegramUser();
   });
 })();
 
-/* ===== SUPABASE PROFILE SYNC ===== */
+/* ===== PROFILE SYNC ===== */
+const DEFAULT_BACKEND_URLS = [
+  typeof window !== "undefined" ? window.TONCRIME_BACKEND_URL : "",
+  safeGetLocalStorage("toncrime_backend_url"),
+  "https://toncrime.onrender.com",
+  "http://localhost:8787",
+].filter(Boolean);
+
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
+let _profileSyncRetryAt = 0;
+let _profileSyncFailureCount = 0;
+let _profileSyncErrorKey = "";
 
-async function syncProfileToSupabase() {
-  if (_profileSyncBusy) return;
+function getBackendBaseUrl() {
+  const raw = DEFAULT_BACKEND_URLS.find(Boolean) || "";
+  return String(raw || "").trim().replace(/\/$/, "");
+}
 
+function buildProfileSyncPayload() {
   const s = store.get();
   const p = s.player || {};
   const telegramId = getRuntimeProfileKey(store);
 
-  if (!telegramId) return;
-  if (!s?.intro?.profileCompleted) return;
+  if (!telegramId) return null;
+  if (!s?.intro?.profileCompleted) return null;
 
-  const payload = {
+  return {
     telegram_id: telegramId,
-    username: String(p.username || "Player"),
-    age: p.age ?? null,
-    level: Number(p.level || 1),
-    coins: Number(s.coins || 0),
-    energy: Number(p.energy || 10),
-    energy_max: Number(p.energyMax || 10),
+    username: String(p.username || "Player").trim().slice(0, 24) || "Player",
+    age: Number.isFinite(Number(p.age)) ? Number(p.age) : null,
+    level: Math.max(1, Number(p.level || 1)),
+    coins: Math.max(0, Number(s.coins || 0)),
+    energy: Math.max(0, Number(p.energy || 10)),
+    energy_max: Math.max(1, Number(p.energyMax || 10)),
     updated_at: new Date().toISOString(),
   };
+}
+
+function scheduleProfileSyncRetry(delayMs, reason = "") {
+  _profileSyncFailureCount += 1;
+  _profileSyncRetryAt = Date.now() + Math.max(1500, delayMs || 1500);
+  const errKey = `${reason}|${_profileSyncFailureCount}`;
+  if (errKey !== _profileSyncErrorKey) {
+    _profileSyncErrorKey = errKey;
+    console.warn("[PROFILE_SYNC] retry scheduled:", reason || "unknown", "next in", Math.round((_profileSyncRetryAt - Date.now()) / 1000), "s");
+  }
+}
+
+async function syncProfileToBackend() {
+  if (_profileSyncBusy) return;
+  if (Date.now() < _profileSyncRetryAt) return;
+
+  const payload = buildProfileSyncPayload();
+  if (!payload) return;
 
   const payloadKey = JSON.stringify(payload);
   if (payloadKey === _lastProfilePayload) return;
 
+  const backendBaseUrl = getBackendBaseUrl();
+  if (!backendBaseUrl) {
+    scheduleProfileSyncRetry(60_000, "backend_url_missing");
+    return;
+  }
+
   _profileSyncBusy = true;
 
   try {
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(payload, { onConflict: "telegram_id" });
+    const res = await fetch(`${backendBaseUrl}/public/profile-sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-    if (error) {
-      console.error("Supabase profile sync error:", error);
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+
+    if (!res.ok || body?.ok === false) {
+      const reason = body?.error || `http_${res.status}`;
+      scheduleProfileSyncRetry(res.status >= 500 ? 15_000 : 60_000, reason);
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
+    _profileSyncRetryAt = 0;
+    _profileSyncFailureCount = 0;
+    _profileSyncErrorKey = "";
   } catch (err) {
-    console.error("Supabase profile sync fatal:", err);
+    scheduleProfileSyncRetry(15_000, err?.message || "network_error");
   } finally {
     _profileSyncBusy = false;
   }
 }
 
+window.addEventListener("tc:profile-sync-now", () => {
+  _lastProfileSyncAt = 0;
+  _profileSyncRetryAt = 0;
+  syncProfileToBackend();
+});
+
 (function profileSyncLoop() {
   const now = Date.now();
-  if (now - _lastProfileSyncAt > 1500) {
-    syncProfileToSupabase();
+  if (now >= _profileSyncRetryAt && now - _lastProfileSyncAt > 1500) {
+    syncProfileToBackend();
   }
   setTimeout(profileSyncLoop, 1500);
 })();
