@@ -26,6 +26,7 @@ import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
+import LootScene from "./scenes/LootScene.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 
@@ -1060,7 +1061,7 @@ scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("missions", new MissionsScene({ store, input, assets, scenes }));
 scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
-
+sceneManager.register("loot", LootScene);
 scenes.register(
   "coffeeshop",
   new CoffeeShopScene({ store, input, i18n, assets, scenes })
