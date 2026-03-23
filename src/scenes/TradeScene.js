@@ -130,6 +130,11 @@ const MARKET_LIMITS = {
   FRESH_MS: 12 * 60 * 60 * 1000,
 };
 
+const OPTIONAL_RPCS_DISABLED_BY_DEFAULT = new Set([
+  "sync_business_production_state",
+  "get_market_telemetry_summary",
+]);
+
 function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -195,8 +200,8 @@ export class TradeScene {
     this._businessProductionLastSyncAt = 0;
     this._businessProductionSyncPromise = null;
     this._businessProductionSyncQueued = false;
-    this._businessProductionSyncDisabled = false;
-    this._businessProductionSyncDisableReason = "";
+    this._optionalRpcDisabled = new Set(OPTIONAL_RPCS_DISABLED_BY_DEFAULT);
+    this._optionalRpcWarned = new Set();
   }
 
   onEnter() {
@@ -743,29 +748,6 @@ export class TradeScene {
     };
   }
 
-  _isMissingRpcError(err, rpcName) {
-    const code = String(err?.code || "").toUpperCase();
-    const message = String(err?.message || "").toLowerCase();
-    const details = String(err?.details || "").toLowerCase();
-    const hint = String(err?.hint || "").toLowerCase();
-    const rpc = String(rpcName || "").toLowerCase();
-
-    return (
-      code === "PGRST202" ||
-      code === "42883" ||
-      message.includes(`function public.${rpc}`) ||
-      message.includes(`rpc/${rpc}`) ||
-      details.includes(`function public.${rpc}`) ||
-      hint.includes(`call the function public.`)
-    );
-  }
-
-  _disableBusinessProductionSync(reason = "") {
-    this._businessProductionSyncDisabled = true;
-    this._businessProductionSyncDisableReason = String(reason || "");
-    this._businessProductionLastSyncAt = Date.now();
-  }
-
   _applyBusinessProductionStateRows(rows) {
     if (!Array.isArray(rows) || !rows.length) return;
     const byBusinessId = {};
@@ -799,8 +781,40 @@ export class TradeScene {
     });
   }
 
+  _isMissingRpcError(err, name = "") {
+    const message = String(err?.message || "");
+    const details = String(err?.details || "");
+    const combined = `${message} ${details}`;
+    return err?.code === "PGRST202" || combined.includes(`function public.${name}`) || combined.includes(`Could not find the function public.${name}`);
+  }
+
+  _warnOptionalRpcDisabled(name, err = null) {
+    if (this._optionalRpcWarned?.has(name)) return;
+    this._optionalRpcWarned?.add(name);
+    if (err) console.warn(`${name} disabled: missing optional rpc`, err);
+    else console.warn(`${name} disabled: optional rpc is turned off in frontend fallback mode`);
+  }
+
+  async _rpcOptional(name, params = {}, fallbackValue = null) {
+    if (this._optionalRpcDisabled?.has(name)) {
+      this._warnOptionalRpcDisabled(name, null);
+      return Array.isArray(fallbackValue) ? [...fallbackValue] : fallbackValue;
+    }
+
+    try {
+      return await this._rpc(name, params);
+    } catch (err) {
+      if (this._isMissingRpcError(err, name)) {
+        this._optionalRpcDisabled?.add(name);
+        this._warnOptionalRpcDisabled(name, err);
+        return Array.isArray(fallbackValue) ? [...fallbackValue] : fallbackValue;
+      }
+      throw err;
+    }
+  }
+
   async _syncBusinessProductionFromBackend(profileId, { force = false } = {}) {
-    if (this._businessProductionSyncDisabled) return [];
+    if (this._optionalRpcDisabled?.has("sync_business_production_state")) return [];
 
     const now = Date.now();
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) {
@@ -811,22 +825,14 @@ export class TradeScene {
 
     this._businessProductionSyncPromise = (async () => {
       try {
-        const rows = await this._rpc("sync_business_production_state", {
+        const rows = await this._rpcOptional("sync_business_production_state", {
           p_owner_profile_id: profileId,
-        });
+        }, []);
         const normalizedRows = Array.isArray(rows) ? rows : [];
         this._applyBusinessProductionStateRows(normalizedRows);
         this._businessProductionLastSyncAt = Date.now();
         return normalizedRows;
       } catch (err) {
-        this._businessProductionLastSyncAt = Date.now();
-
-        if (this._isMissingRpcError(err, "sync_business_production_state")) {
-          this._disableBusinessProductionSync(err?.message || err?.details || "missing rpc");
-          console.warn("business production sync disabled: missing sync_business_production_state rpc", err);
-          return [];
-        }
-
         console.warn("business production sync skipped:", err);
         return [];
       } finally {
@@ -838,7 +844,7 @@ export class TradeScene {
   }
 
   _maybeKickBusinessProductionSync(force = false) {
-    if (this._businessProductionSyncDisabled) return;
+    if (this._optionalRpcDisabled?.has("sync_business_production_state")) return;
 
     const now = Date.now();
     if (this._businessProductionSyncQueued || this._businessProductionSyncPromise) return;
@@ -1043,9 +1049,9 @@ export class TradeScene {
           p_seller_profile_id: viewerId,
           p_limit: 24,
         }).catch(() => []),
-        this._rpc("get_market_telemetry_summary", {
+        this._rpcOptional("get_market_telemetry_summary", {
           p_profile_id: viewerId,
-        }).catch(() => null),
+        }, null),
       ]);
 
       const shops = Array.isArray(shopsRaw) ? shopsRaw.map((row) => this._normalizeMarketShop(row)) : [];
