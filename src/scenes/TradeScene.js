@@ -660,18 +660,34 @@ export class TradeScene {
   }
 
 
-async _getProfileId() {
+async _getAuthUserId(waitMs = 1800) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= waitMs) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const authUserId = String(authData?.user?.id || "").trim();
+      if (authUserId) return authUserId;
+    } catch (_) {}
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const authUserId = String(sessionData?.session?.user?.id || "").trim();
+      if (authUserId) return authUserId;
+    } catch (_) {}
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return "";
+}
+
+async _getProfileId(options = {}) {
+  const allowMissingAuth = !!options?.allowMissingAuth;
   if (this._marketProfileId) return this._marketProfileId;
 
   const s = this.store.get();
   const p = s.player || {};
   const telegramId = this._getTelegramId();
-
-  let authUserId = "";
-  try {
-    const { data: authData } = await supabase.auth.getUser();
-    authUserId = String(authData?.user?.id || "").trim();
-  } catch (_) {}
+  const authUserId = await this._getAuthUserId(allowMissingAuth ? 900 : 1800);
 
   let data = null;
   let error = null;
@@ -714,7 +730,8 @@ async _getProfileId() {
   }
 
   if (!authUserId) {
-    throw new Error("Profil bulunamadı: auth user yok");
+    if (allowMissingAuth) return null;
+    throw new Error("Profil bulunamadı: oturum hazır değil");
   }
 
   const insertPayload = {
@@ -1034,11 +1051,29 @@ async _getProfileId() {
     this._marketBooting = true;
 
     try {
-      const profileId = await this._getProfileId();
+      const profileId = await this._getProfileId({ allowMissingAuth: true });
+      if (!profileId) {
+        this._setMarketPatch({
+          loading: false,
+          backendReady: false,
+          error: "",
+        });
+        return;
+      }
       await this._syncOwnedBusinessesToBackend(profileId);
       await this._syncBusinessProductionFromBackend(profileId, { force: true });
       await this._refreshTradeData(profileId);
     } catch (err) {
+      const msg = String(err?.message || "");
+      if (/oturum hazır değil|auth user yok/i.test(msg)) {
+        console.warn("trade bootstrap skipped:", err);
+        this._setMarketPatch({
+          loading: false,
+          backendReady: false,
+          error: "",
+        });
+        return;
+      }
       console.error("trade bootstrap error:", err);
       this._setMarketPatch({
         loading: false,
