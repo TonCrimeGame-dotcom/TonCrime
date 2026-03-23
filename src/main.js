@@ -26,7 +26,7 @@ import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
-import { ... } from "../loot/LootTable.js";
+import { LootScene } from "./scenes/LootScene.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 
