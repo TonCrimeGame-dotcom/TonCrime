@@ -263,6 +263,11 @@ export class TradeScene {
     this.toastUntil = Date.now() + ms;
   }
 
+  _isAuthProfilePendingError(err) {
+    const msg = String(err?.message || err || "");
+    return /oturum hazır değil|auth user yok|profil bulunamadı/i.test(msg);
+  }
+
   _busyActions() {
     return this._marketState().busyActions || {};
   }
@@ -389,7 +394,7 @@ export class TradeScene {
     });
 
     if (tab === "market" || tab === "explore" || tab === "my_listings") {
-      void this._refreshTradeData();
+      void this._refreshTradeData().catch(() => {});
     }
   }
 
@@ -452,7 +457,7 @@ export class TradeScene {
     if (trade.view === "shop" && trade.selectedShopId) {
       void this._loadShopListings(trade.selectedShopId);
     } else {
-      void this._refreshTradeData();
+      void this._refreshTradeData().catch(() => {});
     }
   }
 
@@ -1095,7 +1100,14 @@ async _getProfileId(options = {}) {
     this._setMarketPatch({ loading: true, error: "" });
 
     try {
-      const viewerId = profileId || await this._getProfileId();
+      const viewerId = profileId || await this._getProfileId({ allowMissingAuth: true });
+      if (!viewerId) {
+        this._setMarketPatch({
+          backendReady: false,
+          error: "",
+        });
+        return null;
+      }
       const market = this._marketState();
       const myStatus = market.myListingStatus || "active";
       const [overviewRaw, shopsRaw, myListingsRaw, myDashboardRaw, mySalesHistoryRaw, telemetryRaw] = await Promise.all([
@@ -1150,6 +1162,13 @@ async _getProfileId(options = {}) {
         await this._loadShopListings(selectedShopId, viewerId);
       }
     } catch (err) {
+      if (this._isAuthProfilePendingError(err)) {
+        this._setMarketPatch({
+          backendReady: false,
+          error: "",
+        });
+        return null;
+      }
       console.error("refresh trade data error:", err);
       this._setMarketPatch({
         backendReady: false,
@@ -1168,7 +1187,11 @@ async _getProfileId(options = {}) {
     this._setMarketPatch({ loadingShopId: businessId, error: "" });
 
     try {
-      const viewerId = profileId || await this._getProfileId();
+      const viewerId = profileId || await this._getProfileId({ allowMissingAuth: true });
+      if (!viewerId) {
+        this._setMarketPatch({ error: "" });
+        return [];
+      }
       const rows = await this._rpc("get_market_shop_listings", {
         p_shop_business_id: businessId,
         p_viewer_profile_id: viewerId,
@@ -1198,6 +1221,10 @@ async _getProfileId(options = {}) {
 
       return listings;
     } catch (err) {
+      if (this._isAuthProfilePendingError(err)) {
+        this._setMarketPatch({ error: "" });
+        return [];
+      }
       console.error("load shop listings error:", err);
       this._setMarketPatch({ error: err?.message || "Dükkan ürünleri yüklenemedi" });
       throw err;
@@ -1207,7 +1234,8 @@ async _getProfileId(options = {}) {
   }
 
   async _reloadMyListings(status = null, profileId = null) {
-    const viewerId = profileId || await this._getProfileId();
+    const viewerId = profileId || await this._getProfileId({ allowMissingAuth: true });
+    if (!viewerId) return [];
     const nextStatus = status || this._marketState().myListingStatus || "active";
     this._setMarketPatch({ myListingStatus: nextStatus });
     const rows = await this._rpc("get_my_market_listings", {
@@ -2523,7 +2551,7 @@ async _getProfileId(options = {}) {
           case "market_sort":
             this._setTrade({ selectedMarketSort: h.value, marketPage: 1 });
             this.scrollY = 0;
-            void this._refreshTradeData();
+            void this._refreshTradeData().catch(() => {});
             return;
           case "shop_sort":
             this._setTrade({ selectedShopSort: h.value, shopPage: 1 });
