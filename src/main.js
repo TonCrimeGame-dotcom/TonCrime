@@ -14,6 +14,7 @@ import { HomeScene } from "./scenes/HomeScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
+import { LootScene } from "./scenes/LootScene.js";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -289,45 +290,24 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-
 /* ===== SUPABASE PROFILE SYNC ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
-let _profileSyncDisabled = false;
-let _profileSyncRetryAfter = 0;
 
 async function syncProfileToSupabase() {
-  if (_profileSyncBusy || _profileSyncDisabled) return;
-  if (Date.now() < _profileSyncRetryAfter) return;
+  if (_profileSyncBusy) return;
 
   const s = store.get();
   const p = s.player || {};
   const telegramId = String(
     p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  ).trim();
+  );
 
   if (!telegramId) return;
   if (!s?.intro?.profileCompleted) return;
 
-  let authUserId = "";
-  try {
-    const { data: authData } = await supabase.auth.getUser();
-    authUserId = String(authData?.user?.id || "").trim();
-  } catch (err) {
-    console.warn("[TonCrime] auth.getUser failed:", err);
-    _profileSyncRetryAfter = Date.now() + 5000;
-    return;
-  }
-
-  if (!authUserId) {
-    _profileSyncRetryAfter = Date.now() + 5000;
-    return;
-  }
-
-  const syncPayload = {
-    id: authUserId,
-    auth_user_id: authUserId,
+  const payload = {
     telegram_id: telegramId,
     username: String(p.username || "Player"),
     age: p.age ?? null,
@@ -335,89 +315,28 @@ async function syncProfileToSupabase() {
     coins: Number(s.coins || 0),
     energy: Number(p.energy || 10),
     energy_max: Number(p.energyMax || 10),
-    premium: !!s.premium,
+    updated_at: new Date().toISOString(),
   };
 
-  const payloadKey = JSON.stringify(syncPayload);
+  const payloadKey = JSON.stringify(payload);
   if (payloadKey === _lastProfilePayload) return;
 
   _profileSyncBusy = true;
 
   try {
-    let existing = null;
-    let lookup = await supabase
+    const { error } = await supabase
       .from("profiles")
-      .select("id, auth_user_id, telegram_id")
-      .eq("auth_user_id", authUserId)
-      .maybeSingle();
+      .upsert(payload, { onConflict: "telegram_id" });
 
-    if (lookup.error) throw lookup.error;
-    existing = lookup.data || null;
-
-    if (!existing) {
-      lookup = await supabase
-        .from("profiles")
-        .select("id, auth_user_id, telegram_id")
-        .eq("id", authUserId)
-        .maybeSingle();
-      if (lookup.error) throw lookup.error;
-      existing = lookup.data || null;
-    }
-
-    if (!existing && telegramId) {
-      lookup = await supabase
-        .from("profiles")
-        .select("id, auth_user_id, telegram_id")
-        .eq("telegram_id", telegramId)
-        .maybeSingle();
-      if (lookup.error) throw lookup.error;
-      existing = lookup.data || null;
-    }
-
-    const dbPayload = {
-      ...syncPayload,
-      updated_at: new Date().toISOString(),
-    };
-
-    let writeError = null;
-
-    if (existing?.id) {
-      const { error } = await supabase
-        .from("profiles")
-        .update(dbPayload)
-        .eq("id", existing.id);
-      writeError = error || null;
-    } else {
-      const { error } = await supabase
-        .from("profiles")
-        .insert(dbPayload);
-      writeError = error || null;
-    }
-
-    if (writeError) {
-      const code = String(writeError?.code || "");
-      if (code === "42501") {
-        _profileSyncDisabled = true;
-        console.warn("[TonCrime] profile sync disabled by RLS:", writeError);
-        return;
-      }
-      console.error("Supabase profile sync error:", writeError);
-      _profileSyncRetryAfter = Date.now() + 5000;
+    if (error) {
+      console.error("Supabase profile sync error:", error);
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
-    _profileSyncRetryAfter = 0;
   } catch (err) {
-    const code = String(err?.code || "");
-    if (code === "42501") {
-      _profileSyncDisabled = true;
-      console.warn("[TonCrime] profile sync disabled by RLS:", err);
-      return;
-    }
     console.error("Supabase profile sync fatal:", err);
-    _profileSyncRetryAfter = Date.now() + 5000;
   } finally {
     _profileSyncBusy = false;
   }
@@ -425,12 +344,11 @@ async function syncProfileToSupabase() {
 
 (function profileSyncLoop() {
   const now = Date.now();
-  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 1500) {
+  if (now - _lastProfileSyncAt > 1500) {
     syncProfileToSupabase();
   }
   setTimeout(profileSyncLoop, 1500);
 })();
-
 
 /* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
@@ -1073,6 +991,7 @@ scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("missions", new MissionsScene({ store, input, assets, scenes }));
 scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
+scenes.register("loot", new LootScene({ store, input, assets, scenes }));
 
 scenes.register(
   "coffeeshop",
