@@ -1,5 +1,3 @@
-import { supabase } from "../supabase.js";
-
 const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
 function safeGetLocalStorage(key) {
   try { return localStorage.getItem(key) || ""; } catch { return ""; }
@@ -54,6 +52,9 @@ export class IntroScene {
     const s = this.store.get();
 
     if (s?.intro?.profileCompleted && s?.player?.username) {
+      try {
+        window.dispatchEvent(new CustomEvent("tc:profile-sync-now"));
+      } catch {}
       this.scenes.go("home");
       return;
     }
@@ -104,24 +105,6 @@ export class IntroScene {
     const startEnergyMax = Math.max(50, Number(prevPlayer.energyMax || 50));
     const startEnergy = Math.max(50, Math.min(startEnergyMax, Number(prevPlayer.energy || startEnergyMax)));
 
-    try {
-      const { error } = await supabase.from("profiles").upsert({
-        telegram_id: telegramId,
-        username,
-        age,
-        level: 1,
-        coins: 0,
-        energy: startEnergy,
-        energy_max: startEnergyMax,
-      }, { onConflict: "telegram_id" });
-
-      if (error) {
-        console.error("Supabase kayıt hatası", error);
-      }
-    } catch (err) {
-      console.log("Supabase kayıt hatası", err);
-    }
-
     this.store.set({
       intro: {
         ...(state.intro || {}),
@@ -140,6 +123,10 @@ export class IntroScene {
         lastEnergyAt: Date.now(),
       },
     });
+
+    try {
+      window.dispatchEvent(new CustomEvent("tc:profile-sync-now"));
+    } catch {}
 
     this.scenes.go("home");
   }
