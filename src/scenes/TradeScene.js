@@ -187,14 +187,12 @@ export class TradeScene {
     this.hitBack = null;
     this.hitTabs = [];
     this.hitButtons = [];
+
     this.toastText = "";
     this.toastUntil = 0;
     this._marketBooting = false;
     this._marketProfileId = null;
-    this._businessProductionSyncUnsupported = false;
-    this._businessProductionSyncWarned = false;
   }
-
 
   onEnter() {
     const s = this.store.get();
@@ -772,12 +770,13 @@ export class TradeScene {
       },
     });
   }
+
   async _syncBusinessProductionFromBackend(profileId, { force = false } = {}) {
     const now = Date.now();
-    if (this._businessProductionSyncUnsupported) return [];
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) {
       return [];
     }
+
     if (this._businessProductionSyncPromise) return this._businessProductionSyncPromise;
 
     this._businessProductionSyncPromise = (async () => {
@@ -786,39 +785,22 @@ export class TradeScene {
           p_owner_profile_id: profileId,
         });
         const normalizedRows = Array.isArray(rows) ? rows : [];
-
-    })();
         this._applyBusinessProductionStateRows(normalizedRows);
         this._businessProductionLastSyncAt = Date.now();
         return normalizedRows;
       } catch (err) {
-        const missingRpc =
-          err?.code === "PGRST202" ||
-          err?.status === 404 ||
-          /sync_business_production_state/i.test(String(err?.message || "")) ||
-          /sync_business_production_state/i.test(String(err?.details || ""));
-
-        if (missingRpc) {
-          this._businessProductionSyncUnsupported = true;
-          this._businessProductionLastSyncAt = Date.now();
-          if (!this._businessProductionSyncWarned) {
-            this._businessProductionSyncWarned = true;
-            console.warn(
-              "business production sync skipped: missing sync_business_production_state RPC, using local state only.",
-              err
-            );
-          }
-        } else {
-          console.warn("business production sync skipped:", err);
-        }
+        console.warn("business production sync skipped:", err);
         return [];
       } finally {
         this._businessProductionSyncPromise = null;
       }
+    })();
+
+    return this._businessProductionSyncPromise;
+  }
 
   _maybeKickBusinessProductionSync(force = false) {
     const now = Date.now();
-    if (this._businessProductionSyncUnsupported) return;
     if (this._businessProductionSyncQueued || this._businessProductionSyncPromise) return;
     if (!force && this._businessProductionLastSyncAt && now - this._businessProductionLastSyncAt < 15000) return;
 
