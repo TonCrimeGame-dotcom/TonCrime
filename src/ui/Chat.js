@@ -1,4 +1,5 @@
 import { supabase } from "../supabase.js";
+import { getRuntimeProfileKey } from "../utils/profileKey.js";
 
 export function startChat(store) {
   const drawer = document.getElementById("chatDrawer");
@@ -32,7 +33,7 @@ export function startChat(store) {
   ensureProfileModal();
 
   const username = () => String(store.get()?.player?.username || "Player").trim() || "Player";
-  const telegramId = () => String(store.get()?.player?.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "").trim();
+  const telegramId = () => String(getRuntimeProfileKey(store) || "").trim();
   const playerMeta = () => {
     const s = store.get() || {};
     const p = s.player || {};
