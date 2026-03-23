@@ -162,4 +162,4 @@ export function formatRewardText(reward) {
   if (reward.type === "energy") return `+${Number(reward.amount || 0)} Enerji`;
   if (reward.type === "item") return reward.item?.name || reward.label || "Item";
   return "Ödül";
-}
+} 
