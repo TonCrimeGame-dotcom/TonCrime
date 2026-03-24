@@ -227,7 +227,8 @@ export function startChat(store) {
     };
 
     try {
-      await ensureAuthSession().catch(() => null);
+      const user = await ensureChatAuthOnce();
+      if (!user) throw new Error("auth unavailable");
       const { data, error } = await supabase
         .from("chat_messages")
         .insert(payload)
@@ -248,7 +249,6 @@ export function startChat(store) {
 
   async function loadHistory() {
     try {
-      await ensureAuthSession().catch(() => null);
       const { data, error } = await supabase
         .from("chat_messages")
         .select("*")
@@ -451,7 +451,7 @@ export function startChat(store) {
   });
   window.addEventListener("pagehide", () => setOpen(false));
 
-  ensureAuthSession().catch(() => null);
+  ensureChatAuthOnce().catch(() => null);
   loadHistory();
   subscribeRealtime();
   setInterval(() => { loadHistory().catch?.(() => {}); }, 5000);
