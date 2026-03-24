@@ -116,6 +116,9 @@ export function startChat(store) {
     messageMap: new Map(),
     profileModal: null,
     onlineTextEl: null,
+    backendDisabled: false,
+    backendWarned: false,
+    supabaseHistoryOnly: false,
   };
 
   ensureChatStyle();
@@ -170,6 +173,14 @@ export function startChat(store) {
     const d = value ? new Date(value) : new Date();
     if (Number.isNaN(d.getTime())) return "--:--";
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function markBackendUnavailable(reason) {
+    state.backendDisabled = true;
+    if (!state.backendWarned) {
+      state.backendWarned = true;
+      console.warn("[CHAT] backend disabled, supabase/local mode:", reason || "unavailable");
+    }
   }
 
   function normalizeMessage(row) {
@@ -317,13 +328,18 @@ export function startChat(store) {
       telegram_id: telegramId(),
     };
 
-    try {
-      const res = await sendChatMessageToBackend(payload);
-      const row = res?.item || res?.data || payload;
-      addMessage(row);
-      return;
-    } catch (backendErr) {
-      console.warn("[CHAT] backend send failed, supabase fallback:", backendErr?.message || backendErr);
+    if (!state.backendDisabled) {
+      try {
+        const res = await sendChatMessageToBackend(payload);
+        const row = res?.item || res?.data || payload;
+        addMessage(row);
+        return;
+      } catch (backendErr) {
+        const status = Number(backendErr?.status || 0);
+        if (status === 401 || status === 403 || status === 404) {
+          markBackendUnavailable(backendErr?.message || backendErr);
+        }
+      }
     }
 
     try {
@@ -346,13 +362,18 @@ export function startChat(store) {
   }
 
   async function loadHistory() {
-    try {
-      const res = await loadChatHistoryFromBackend(MAX_MESSAGES);
-      const items = Array.isArray(res?.items) ? res.items : [];
-      applyMessages(items);
-      return;
-    } catch (backendErr) {
-      console.warn("[CHAT] backend history failed, supabase fallback:", backendErr?.message || backendErr);
+    if (!state.backendDisabled) {
+      try {
+        const res = await loadChatHistoryFromBackend(MAX_MESSAGES);
+        const items = Array.isArray(res?.items) ? res.items : [];
+        applyMessages(items);
+        return;
+      } catch (backendErr) {
+        const status = Number(backendErr?.status || 0);
+        if (status === 401 || status === 403 || status === 404) {
+          markBackendUnavailable(backendErr?.message || backendErr);
+        }
+      }
     }
 
     try {
@@ -379,7 +400,7 @@ export function startChat(store) {
 
     state.historyPollTimer = setInterval(() => {
       if (!document.hidden) loadHistory();
-    }, 2500);
+    }, state.backendDisabled ? 8000 : 2500);
 
     state.channel = supabase
       .channel("toncrime-chat-room")
