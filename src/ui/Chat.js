@@ -1,93 +1,4 @@
-import { supabase } from "../supabase.js";
-
-const DEFAULT_BACKEND_URL = "https://toncrime.onrender.com";
-
-function trimSlash(value) {
-  return String(value || "").replace(/\/+$/, "");
-}
-
-export function getBackendBaseUrl() {
-  try {
-    const inline = trimSlash(window.__TONCRIME_BACKEND_URL || "");
-    if (inline) return inline;
-  } catch (_) {}
-
-  try {
-    const saved = trimSlash(localStorage.getItem("toncrime_backend_url") || "");
-    if (saved) return saved;
-  } catch (_) {}
-
-  return DEFAULT_BACKEND_URL;
-}
-
-export function getBackendUrl(path = "") {
-  const base = getBackendBaseUrl();
-  if (!path) return base;
-  return `${base}${String(path).startsWith("/") ? "" : "/"}${path}`;
-}
-
-async function readJsonSafe(res) {
-  const text = await res.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { ok: false, error: text };
-  }
-}
-
-export async function backendFetch(path, options = {}) {
-  const controller = new AbortController();
-  const timeoutMs = Math.max(2000, Number(options.timeoutMs || 12000));
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(getBackendUrl(path), {
-      method: options.method || "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-      body: options.body,
-      signal: controller.signal,
-    });
-
-    const json = await readJsonSafe(res);
-    if (!res.ok) {
-      const err = new Error(json?.error || res.statusText || "Request failed");
-      err.status = res.status;
-      err.payload = json;
-      throw err;
-    }
-
-    return json;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function syncProfileToBackend(payload) {
-  return backendFetch("/public/profile-sync", {
-    method: "POST",
-    body: JSON.stringify(payload || {}),
-    timeoutMs: 10000,
-  });
-}
-
-export async function loadChatHistoryFromBackend(limit = 120) {
-  return backendFetch(`/public/chat/history?limit=${encodeURIComponent(Math.max(10, Math.min(200, Number(limit || 120))))}`, {
-    timeoutMs: 10000,
-  });
-}
-
-export async function sendChatMessageToBackend(payload) {
-  return backendFetch("/public/chat/send", {
-    method: "POST",
-    body: JSON.stringify(payload || {}),
-    timeoutMs: 10000,
-  });
-}
-
+import { supabase, ensureAuthSession, backendFetchJson, getIdentityKey } from "../supabase.js";
 
 export function startChat(store) {
   const drawer = document.getElementById("chatDrawer");
@@ -110,15 +21,12 @@ export function startChat(store) {
   const MAX_MESSAGES = 180;
   const state = {
     channel: null,
-    historyPollTimer: null,
     botProfileMap: new Map(),
     botStatusMap: new Map(),
     messageMap: new Map(),
     profileModal: null,
     onlineTextEl: null,
-    backendDisabled: false,
-    backendWarned: false,
-    supabaseHistoryOnly: false,
+    historyPoll: null,
   };
 
   ensureChatStyle();
@@ -173,14 +81,6 @@ export function startChat(store) {
     const d = value ? new Date(value) : new Date();
     if (Number.isNaN(d.getTime())) return "--:--";
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
-
-  function markBackendUnavailable(reason) {
-    state.backendDisabled = true;
-    if (!state.backendWarned) {
-      state.backendWarned = true;
-      console.warn("[CHAT] backend disabled, supabase/local mode:", reason || "unavailable");
-    }
   }
 
   function normalizeMessage(row) {
@@ -324,28 +224,32 @@ export function startChat(store) {
     const payload = {
       username: username(),
       text,
+      identity_key: getIdentityKey(),
       player_meta: playerMeta(),
-      telegram_id: telegramId(),
     };
 
-    if (!state.backendDisabled) {
-      try {
-        const res = await sendChatMessageToBackend(payload);
-        const row = res?.item || res?.data || payload;
-        addMessage(row);
+    try {
+      const result = await backendFetchJson(`/public/chat/send`, {
+        method: "POST",
+        body: payload,
+      });
+      if (result?.item) {
+        addMessage(result.item);
         return;
-      } catch (backendErr) {
-        const status = Number(backendErr?.status || 0);
-        if (status === 401 || status === 403 || status === 404) {
-          markBackendUnavailable(backendErr?.message || backendErr);
-        }
       }
+    } catch (err) {
+      console.warn("[CHAT] backend send failed, supabase fallback:", err?.message || err);
     }
 
     try {
+      await ensureAuthSession();
       const { data, error } = await supabase
         .from("chat_messages")
-        .insert(payload)
+        .insert({
+          username: payload.username,
+          text: payload.text,
+          player_meta: payload.player_meta,
+        })
         .select("*")
         .single();
       if (error) throw error;
@@ -353,8 +257,9 @@ export function startChat(store) {
     } catch (err) {
       console.error("[CHAT] send failed:", err);
       addMessage({
-        ...payload,
+        username: payload.username,
         text,
+        player_meta: payload.player_meta,
         id: `local_${Date.now()}`,
         created_at: new Date().toISOString(),
       });
@@ -362,21 +267,18 @@ export function startChat(store) {
   }
 
   async function loadHistory() {
-    if (!state.backendDisabled) {
-      try {
-        const res = await loadChatHistoryFromBackend(MAX_MESSAGES);
-        const items = Array.isArray(res?.items) ? res.items : [];
-        applyMessages(items);
+    try {
+      const result = await backendFetchJson(`/public/chat/history?limit=${MAX_MESSAGES}`);
+      if (Array.isArray(result?.items)) {
+        applyMessages(result.items);
         return;
-      } catch (backendErr) {
-        const status = Number(backendErr?.status || 0);
-        if (status === 401 || status === 403 || status === 404) {
-          markBackendUnavailable(backendErr?.message || backendErr);
-        }
       }
+    } catch (err) {
+      console.warn("[CHAT] backend history failed, supabase fallback:", err?.message || err);
     }
 
     try {
+      await ensureAuthSession();
       const { data, error } = await supabase
         .from("chat_messages")
         .select("*")
@@ -390,17 +292,14 @@ export function startChat(store) {
     }
   }
 
-  function subscribeRealtime() {
+  async function subscribeRealtime() {
     try {
       state.channel?.unsubscribe?.();
     } catch (_) {}
-    try {
-      if (state.historyPollTimer) clearInterval(state.historyPollTimer);
-    } catch (_) {}
 
-    state.historyPollTimer = setInterval(() => {
-      if (!document.hidden) loadHistory();
-    }, state.backendDisabled ? 8000 : 2500);
+    try {
+      await ensureAuthSession();
+    } catch (_) {}
 
     state.channel = supabase
       .channel("toncrime-chat-room")
@@ -588,6 +487,9 @@ export function startChat(store) {
 
   loadHistory();
   subscribeRealtime();
+  state.historyPoll = setInterval(() => {
+    if (!document.hidden) loadHistory();
+  }, 5000);
   setOpen(getOpen());
   visLoop();
 
