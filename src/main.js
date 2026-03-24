@@ -289,13 +289,10 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-/* ===== SUPABASE PROFILE SYNC ===== */
-let _lastProfileSyncAt = 0;
-let _profileSyncBusy = false;
-let _lastProfilePayload = "";
 
+/* ===== SUPABASE PROFILE SYNC ===== */
 async function syncProfileToSupabase() {
-  if (_profileSyncBusy) return;
+  if (_profileSyncDisabled || _profileSyncBusy) return;
 
   const s = store.get();
   const p = s.player || {};
@@ -328,7 +325,15 @@ async function syncProfileToSupabase() {
       .upsert(payload, { onConflict: "telegram_id" });
 
     if (error) {
+      const msg = String(error?.message || "");
+      const code = String(error?.code || "");
+      if (code === "42501" || /row-level security|Unauthorized/i.test(msg)) {
+        _profileSyncDisabled = true;
+        console.warn("[PROFILE_SYNC] disabled on client because profiles RLS blocks anon writes");
+        return;
+      }
       console.error("Supabase profile sync error:", error);
+      _lastProfileSyncAt = Date.now() + 15000;
       return;
     }
 
@@ -336,6 +341,7 @@ async function syncProfileToSupabase() {
     _lastProfileSyncAt = Date.now();
   } catch (err) {
     console.error("Supabase profile sync fatal:", err);
+    _lastProfileSyncAt = Date.now() + 15000;
   } finally {
     _profileSyncBusy = false;
   }
@@ -343,13 +349,14 @@ async function syncProfileToSupabase() {
 
 (function profileSyncLoop() {
   const now = Date.now();
-  if (now - _lastProfileSyncAt > 1500) {
+  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 1500) {
     syncProfileToSupabase();
   }
-  setTimeout(profileSyncLoop, 1500);
+  setTimeout(profileSyncLoop, _profileSyncDisabled ? 10000 : 1500);
 })();
 
 /* ===== AUTOSAVE ===== */
+
 let _lastSaveAt = 0;
 (function autosaveLoop() {
   const now = Date.now();
