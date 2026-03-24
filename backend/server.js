@@ -239,6 +239,46 @@ async function sendTon({ toAddress, tonAmount }) {
   };
 }
 
+
+function sanitizeIdentityKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '_')
+    .slice(0, 48);
+}
+
+function buildIdentityEmail(identityKey) {
+  return `${sanitizeIdentityKey(identityKey) || 'guest_unknown'}@toncrime.local`;
+}
+
+function buildIdentityPassword(identityKey) {
+  const safe = sanitizeIdentityKey(identityKey) || 'guest_unknown';
+  return `TonCrime_${safe}_Auth!2026`.slice(0, 64);
+}
+
+async function ensureIdentityAuthUser(identityKey, username = 'Player') {
+  const email = buildIdentityEmail(identityKey);
+  const password = buildIdentityPassword(identityKey);
+
+  const { error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      identity_key: sanitizeIdentityKey(identityKey),
+      username: String(username || 'Player').trim().slice(0, 24) || 'Player',
+    },
+  });
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const duplicate = msg.includes('already') || msg.includes('exists') || msg.includes('registered') || msg.includes('duplicate');
+    if (!duplicate) throw error;
+  }
+
+  return { email, password };
+}
 async function getWithdrawById(id) {
   const { data, error } = await supabase
     .from('withdraw_requests')
@@ -292,59 +332,64 @@ app.post('/wallet/validate', async (req, res) => {
 });
 
 
-function sanitizePlayerMeta(meta = {}, fallbackUsername = 'Player') {
-  const username = String(meta?.username || fallbackUsername || 'Player').trim().slice(0, 32) || 'Player';
-  return {
-    username,
-    telegramId: String(meta?.telegramId || '').trim().slice(0, 80),
-    level: Math.max(1, Math.min(9999, asNumber(meta?.level, 1))),
-    premium: !!meta?.premium,
-    clan: String(meta?.clan || '').trim().slice(0, 32),
-    rating: Math.max(0, Math.min(999999, asNumber(meta?.rating, 1000))),
-    wins: Math.max(0, Math.min(999999, asNumber(meta?.wins, 0))),
-    losses: Math.max(0, Math.min(999999, asNumber(meta?.losses, 0))),
-    online: meta?.online !== false,
-    isBot: !!meta?.isBot,
-  };
-}
+app.post('/public/ensure-auth-user', async (req, res) => {
+  try {
+    const identityKey = sanitizeIdentityKey(req.body?.identity_key);
+    const username = String(req.body?.username || 'Player').trim().slice(0, 24) || 'Player';
+
+    if (!identityKey) {
+      return res.status(400).json({ ok: false, error: 'identity_key is required' });
+    }
+
+    const result = await ensureIdentityAuthUser(identityKey, username);
+    return res.json({ ok: true, email: result.email, password: result.password });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'ensure-auth-user failed' });
+  }
+});
 
 app.post('/public/profile-sync', async (req, res) => {
   try {
-    const telegram_id = String(req.body?.telegram_id || '').trim().slice(0, 80);
-    const username = String(req.body?.username || 'Player').trim().slice(0, 32) || 'Player';
+    const identityKey = String(req.body?.identity_key || '').trim();
+    const username = String(req.body?.username || 'Player').trim().slice(0, 24) || 'Player';
+    const level = Math.max(1, asNumber(req.body?.level, 1));
+    const coins = Math.max(0, asNumber(req.body?.coins, 0));
+    const energy = Math.max(0, asNumber(req.body?.energy, 0));
+    const energyMax = Math.max(1, asNumber(req.body?.energy_max, energy || 1));
+    const age = req.body?.age == null ? null : asNumber(req.body?.age, null);
 
-    if (!telegram_id) {
-      return res.status(400).json({ ok: false, error: 'telegram_id is required' });
+    if (!identityKey) {
+      return res.status(400).json({ ok: false, error: 'identity_key is required' });
     }
 
     const payload = {
-      telegram_id,
+      telegram_id: identityKey,
       username,
-      age: req.body?.age == null ? null : Math.max(18, Math.min(120, asNumber(req.body?.age, 18))),
-      level: Math.max(1, Math.min(9999, asNumber(req.body?.level, 1))),
-      coins: Math.max(0, asNumber(req.body?.coins, 0)),
-      energy: Math.max(0, asNumber(req.body?.energy, 0)),
-      energy_max: Math.max(0, asNumber(req.body?.energy_max, req.body?.energy || 0)),
+      age,
+      level,
+      coins,
+      energy,
+      energy_max: energyMax,
       updated_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase
       .from('profiles')
       .upsert(payload, { onConflict: 'telegram_id' })
-      .select('id, telegram_id, username, level, coins, energy, energy_max, updated_at')
+      .select('*')
       .single();
 
     if (error) throw error;
 
     return res.json({ ok: true, item: data });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message || 'profile sync failed' });
+    return res.status(500).json({ ok: false, error: err.message || 'profile-sync failed' });
   }
 });
 
 app.get('/public/chat/history', async (req, res) => {
   try {
-    const limit = Math.max(10, Math.min(200, asNumber(req.query.limit, 120)));
+    const limit = Math.max(1, Math.min(300, asNumber(req.query.limit, 180)));
     const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
@@ -361,23 +406,17 @@ app.get('/public/chat/history', async (req, res) => {
 
 app.post('/public/chat/send', async (req, res) => {
   try {
-    const username = String(req.body?.username || 'Player').trim().slice(0, 32) || 'Player';
-    const text = String(req.body?.text || '').trim().slice(0, 300);
+    const username = String(req.body?.username || 'Player').trim().slice(0, 24) || 'Player';
+    const text = String(req.body?.text || '').trim().slice(0, 500);
+    const player_meta = req.body?.player_meta && typeof req.body.player_meta === 'object' ? req.body.player_meta : {};
+
     if (!text) {
       return res.status(400).json({ ok: false, error: 'text is required' });
     }
 
-    const payload = {
-      username,
-      text,
-      telegram_id: String(req.body?.telegram_id || '').trim().slice(0, 80) || null,
-      player_meta: sanitizePlayerMeta(req.body?.player_meta || {}, username),
-      created_at: new Date().toISOString(),
-    };
-
     const { data, error } = await supabase
       .from('chat_messages')
-      .insert(payload)
+      .insert({ username, text, player_meta })
       .select('*')
       .single();
 
