@@ -289,16 +289,20 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-try { ensureAuthSession().catch(() => {}); } catch (_) {}
-
 /* ===== SUPABASE PROFILE SYNC ===== */
-let _profileSyncDisabled = true;
+let _profileSyncWarned = false;
 async function syncProfileToSupabase() {
-  return null;
+  if (_profileSyncWarned) return;
+  _profileSyncWarned = true;
+  console.warn("[PROFILE_SYNC] client-side profiles upsert disabled to avoid RLS error loop.");
 }
+
 (function profileSyncLoop() {
-  return;
+  // no-op: profile sync intentionally disabled on client
 })();
+
+/* ===== AUTH WARMUP ===== */
+setTimeout(() => { ensureAuthSession().catch(() => null); }, 1200);
 
 /* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
