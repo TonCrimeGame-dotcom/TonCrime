@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { ensureAuthSession } from "./supabase.js";
+import { supabase } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -26,95 +26,6 @@ import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
-
-const DEFAULT_BACKEND_URL = "https://toncrime.onrender.com";
-
-function trimSlash(value) {
-  return String(value || "").replace(/\/+$/, "");
-}
-
-export function getBackendBaseUrl() {
-  try {
-    const inline = trimSlash(window.__TONCRIME_BACKEND_URL || "");
-    if (inline) return inline;
-  } catch (_) {}
-
-  try {
-    const saved = trimSlash(localStorage.getItem("toncrime_backend_url") || "");
-    if (saved) return saved;
-  } catch (_) {}
-
-  return DEFAULT_BACKEND_URL;
-}
-
-export function getBackendUrl(path = "") {
-  const base = getBackendBaseUrl();
-  if (!path) return base;
-  return `${base}${String(path).startsWith("/") ? "" : "/"}${path}`;
-}
-
-async function readJsonSafe(res) {
-  const text = await res.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { ok: false, error: text };
-  }
-}
-
-export async function backendFetch(path, options = {}) {
-  const controller = new AbortController();
-  const timeoutMs = Math.max(2000, Number(options.timeoutMs || 12000));
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(getBackendUrl(path), {
-      method: options.method || "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-      body: options.body,
-      signal: controller.signal,
-    });
-
-    const json = await readJsonSafe(res);
-    if (!res.ok) {
-      const err = new Error(json?.error || res.statusText || "Request failed");
-      err.status = res.status;
-      err.payload = json;
-      throw err;
-    }
-
-    return json;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export async function syncProfileToBackend(payload) {
-  return backendFetch("/public/profile-sync", {
-    method: "POST",
-    body: JSON.stringify(payload || {}),
-    timeoutMs: 10000,
-  });
-}
-
-export async function loadChatHistoryFromBackend(limit = 120) {
-  return backendFetch(`/public/chat/history?limit=${encodeURIComponent(Math.max(10, Math.min(200, Number(limit || 120))))}`, {
-    timeoutMs: 10000,
-  });
-}
-
-export async function sendChatMessageToBackend(payload) {
-  return backendFetch("/public/chat/send", {
-    method: "POST",
-    body: JSON.stringify(payload || {}),
-    timeoutMs: 10000,
-  });
-}
-
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 
@@ -210,7 +121,6 @@ try {
 } catch (_) {}
 
 fitCanvas();
-ensureAuthSession().catch(() => null);
 
 /* ===== STORE ===== */
 const STORE_KEY = "toncrime_store_v1";
@@ -379,44 +289,26 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-function getLocalGuestId() {
-  try {
-    const key = "toncrime_guest_profile_id_v1";
-    let value = localStorage.getItem(key);
-    if (!value) {
-      value = `guest_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
-      localStorage.setItem(key, value);
-    }
-    return String(value || "");
-  } catch {
-    return `guest_${Date.now().toString(36)}`;
-  }
-}
-
-/* ===== PROFILE SYNC (BACKEND) ===== */
+/* ===== SUPABASE PROFILE SYNC ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
-let _profileSyncBackoffMs = 5000;
-let _profileSyncDisabled = false;
 
-async function syncProfileToServer() {
-  if (_profileSyncBusy || _profileSyncDisabled) return;
+async function syncProfileToSupabase() {
+  if (_profileSyncBusy) return;
 
   const s = store.get();
   const p = s.player || {};
   const telegramId = String(
     p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  ).trim();
+  );
 
-  const profileKey = telegramId || getLocalGuestId();
-
-  if (!profileKey) return;
+  if (!telegramId) return;
   if (!s?.intro?.profileCompleted) return;
 
   const payload = {
-    telegram_id: profileKey,
-    username: String(p.username || "Player").slice(0, 32),
+    telegram_id: telegramId,
+    username: String(p.username || "Player"),
     age: p.age ?? null,
     level: Number(p.level || 1),
     coins: Number(s.coins || 0),
@@ -431,22 +323,19 @@ async function syncProfileToServer() {
   _profileSyncBusy = true;
 
   try {
-    await syncProfileToBackend(payload);
-    _lastProfilePayload = payloadKey;
-    _lastProfileSyncAt = Date.now();
-    _profileSyncBackoffMs = 5000;
-  } catch (err) {
-    const status = Number(err?.status || 0);
-    const message = err?.message || "profile sync failed";
-    console.warn("[PROFILE_SYNC]", message, status ? `(HTTP ${status})` : "");
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(payload, { onConflict: "telegram_id" });
 
-    if (status === 401 || status === 403 || status === 404) {
-      _profileSyncDisabled = true;
+    if (error) {
+      console.error("Supabase profile sync error:", error);
       return;
     }
 
-    _lastProfileSyncAt = Date.now() - 60000 + Math.min(60000, _profileSyncBackoffMs);
-    _profileSyncBackoffMs = Math.min(60000, Math.round(_profileSyncBackoffMs * 1.7));
+    _lastProfilePayload = payloadKey;
+    _lastProfileSyncAt = Date.now();
+  } catch (err) {
+    console.error("Supabase profile sync fatal:", err);
   } finally {
     _profileSyncBusy = false;
   }
@@ -454,8 +343,8 @@ async function syncProfileToServer() {
 
 (function profileSyncLoop() {
   const now = Date.now();
-  if (!_profileSyncDisabled && now - _lastProfileSyncAt > _profileSyncBackoffMs) {
-    syncProfileToServer();
+  if (now - _lastProfileSyncAt > 1500) {
+    syncProfileToSupabase();
   }
   setTimeout(profileSyncLoop, 1500);
 })();
@@ -520,26 +409,26 @@ function addImage(key, url) {
   console.warn("[ASSETS] image ekleme fonksiyonu yok:", key, url);
 }
 
-addImage("background", "./assets/pvp-bg.png");
-addImage("missions", "./assets/missions.jpg");
-addImage("pvp", "./assets/pvp.jpg");
-addImage("weapons", "./assets/weapons.jpg");
-addImage("nightclub", "./assets/nightclub.jpg");
-addImage("coffeeshop", "./assets/coffeeshop.jpg");
-addImage("xxx", "./assets/xxx.jpg");
-addImage("tata", "./assets/tata.png");
-addImage("background_alt", "./assets/nightclub-bg.png");
-addImage("home_bg", "./assets/pvp-bg.png");
-addImage("clan", "./assets/Clan-bg.png");
-addImage("clan_bg", "./assets/Clan-bg.png");
-addImage("nightclub_bg", "./assets/nightclub-bg.png");
-addImage("pvp_bg", "./assets/pvp-bg.png");
-addImage("xxx_bg", "./assets/xxx-bg.png");
+addImage("background", "./src/assets/pvp-bg.png");
+addImage("missions", "./src/assets/missions.jpg");
+addImage("pvp", "./src/assets/pvp.jpg");
+addImage("weapons", "./src/assets/weapons.jpg");
+addImage("nightclub", "./src/assets/nightclub.jpg");
+addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
+addImage("xxx", "./src/assets/xxx.jpg");
+addImage("tata", "./src/assets/tata.png");
+addImage("background_alt", "./src/assets/nightclub-bg.png");
+addImage("home_bg", "./src/assets/pvp-bg.png");
+addImage("clan", "./src/assets/Clan-bg.png");
+addImage("clan_bg", "./src/assets/Clan-bg.png");
+addImage("nightclub_bg", "./src/assets/nightclub-bg.png");
+addImage("pvp_bg", "./src/assets/pvp-bg.png");
+addImage("xxx_bg", "./src/assets/xxx-bg.png");
 
 /* BLACK MARKET */
-addImage("blackmarket", "./assets/BlackMarket.png");
-addImage("blackmarket_bg", "./assets/BlackMarket.png");
-addImage("trade", "./assets/BlackMarket.png");
+addImage("blackmarket", "./src/assets/BlackMarket.png");
+addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
+addImage("trade", "./src/assets/BlackMarket.png");
 
 /* ===== HELPERS ===== */
 function pointInRect(px, py, r) {
