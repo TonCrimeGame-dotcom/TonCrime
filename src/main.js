@@ -289,10 +289,24 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-
 /* ===== SUPABASE PROFILE SYNC ===== */
+let _lastProfileSyncAt = 0;
+let _profileSyncBusy = false;
+let _lastProfilePayload = "";
+let _profileSyncDisabled = false;
+let _profileSyncWarned = false;
+
+function disableProfileSync(reason, detail) {
+  _profileSyncDisabled = true;
+  _profileSyncBusy = false;
+  if (_profileSyncWarned) return;
+  _profileSyncWarned = true;
+  console.warn("[PROFILE_SYNC] disabled:", reason, detail || "");
+}
+
 async function syncProfileToSupabase() {
-  if (_profileSyncDisabled || _profileSyncBusy) return;
+  if (_profileSyncDisabled) return;
+  if (_profileSyncBusy) return;
 
   const s = store.get();
   const p = s.player || {};
@@ -325,38 +339,40 @@ async function syncProfileToSupabase() {
       .upsert(payload, { onConflict: "telegram_id" });
 
     if (error) {
-      const msg = String(error?.message || "");
-      const code = String(error?.code || "");
-      if (code === "42501" || /row-level security|Unauthorized/i.test(msg)) {
-        _profileSyncDisabled = true;
-        console.warn("[PROFILE_SYNC] disabled on client because profiles RLS blocks anon writes");
+      const code = String(error.code || "");
+      const msg = String(error.message || "");
+      if (code === "42501" || /row-level security|Unauthorized|JWT|permission/i.test(msg)) {
+        disableProfileSync(code || "auth", msg);
         return;
       }
       console.error("Supabase profile sync error:", error);
-      _lastProfileSyncAt = Date.now() + 15000;
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
   } catch (err) {
-    console.error("Supabase profile sync fatal:", err);
-    _lastProfileSyncAt = Date.now() + 15000;
+    const msg = String(err?.message || err || "");
+    if (/Unauthorized|JWT|permission|row-level security/i.test(msg)) {
+      disableProfileSync("fatal", msg);
+    } else {
+      console.error("Supabase profile sync fatal:", err);
+    }
   } finally {
     _profileSyncBusy = false;
   }
 }
 
 (function profileSyncLoop() {
+  if (_profileSyncDisabled) return;
   const now = Date.now();
-  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 1500) {
+  if (now - _lastProfileSyncAt > 1500) {
     syncProfileToSupabase();
   }
-  setTimeout(profileSyncLoop, _profileSyncDisabled ? 10000 : 1500);
+  setTimeout(profileSyncLoop, 1500);
 })();
 
 /* ===== AUTOSAVE ===== */
-
 let _lastSaveAt = 0;
 (function autosaveLoop() {
   const now = Date.now();
@@ -416,26 +432,26 @@ function addImage(key, url) {
   console.warn("[ASSETS] image ekleme fonksiyonu yok:", key, url);
 }
 
-addImage("background", "./src/assets/pvp-bg.png");
-addImage("missions", "./src/assets/missions.jpg");
-addImage("pvp", "./src/assets/pvp.jpg");
-addImage("weapons", "./src/assets/weapons.jpg");
-addImage("nightclub", "./src/assets/nightclub.jpg");
-addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
-addImage("xxx", "./src/assets/xxx.jpg");
-addImage("tata", "./src/assets/tata.png");
-addImage("background_alt", "./src/assets/nightclub-bg.png");
-addImage("home_bg", "./src/assets/pvp-bg.png");
-addImage("clan", "./src/assets/Clan-bg.png");
-addImage("clan_bg", "./src/assets/Clan-bg.png");
-addImage("nightclub_bg", "./src/assets/nightclub-bg.png");
-addImage("pvp_bg", "./src/assets/pvp-bg.png");
-addImage("xxx_bg", "./src/assets/xxx-bg.png");
+addImage("background", "./assets/pvp-bg.png");
+addImage("missions", "./assets/missions.jpg");
+addImage("pvp", "./assets/pvp.jpg");
+addImage("weapons", "./assets/weapons.jpg");
+addImage("nightclub", "./assets/nightclub.jpg");
+addImage("coffeeshop", "./assets/coffeeshop.jpg");
+addImage("xxx", "./assets/xxx.jpg");
+addImage("tata", "./assets/tata.png");
+addImage("background_alt", "./assets/nightclub-bg.png");
+addImage("home_bg", "./assets/pvp-bg.png");
+addImage("clan", "./assets/Clan-bg.png");
+addImage("clan_bg", "./assets/Clan-bg.png");
+addImage("nightclub_bg", "./assets/nightclub-bg.png");
+addImage("pvp_bg", "./assets/pvp-bg.png");
+addImage("xxx_bg", "./assets/xxx-bg.png");
 
 /* BLACK MARKET */
-addImage("blackmarket", "./src/assets/BlackMarket.png");
-addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
-addImage("trade", "./src/assets/BlackMarket.png");
+addImage("blackmarket", "./assets/BlackMarket.png");
+addImage("blackmarket_bg", "./assets/BlackMarket.png");
+addImage("trade", "./assets/BlackMarket.png");
 
 /* ===== HELPERS ===== */
 function pointInRect(px, py, r) {
