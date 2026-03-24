@@ -5,7 +5,6 @@ import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
 import { ensureAuthSession } from "./supabase.js";
-import { syncProfileToBackend } from "./online/Backend.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -27,6 +26,95 @@ import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
+
+const DEFAULT_BACKEND_URL = "https://toncrime.onrender.com";
+
+function trimSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+export function getBackendBaseUrl() {
+  try {
+    const inline = trimSlash(window.__TONCRIME_BACKEND_URL || "");
+    if (inline) return inline;
+  } catch (_) {}
+
+  try {
+    const saved = trimSlash(localStorage.getItem("toncrime_backend_url") || "");
+    if (saved) return saved;
+  } catch (_) {}
+
+  return DEFAULT_BACKEND_URL;
+}
+
+export function getBackendUrl(path = "") {
+  const base = getBackendBaseUrl();
+  if (!path) return base;
+  return `${base}${String(path).startsWith("/") ? "" : "/"}${path}`;
+}
+
+async function readJsonSafe(res) {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, error: text };
+  }
+}
+
+export async function backendFetch(path, options = {}) {
+  const controller = new AbortController();
+  const timeoutMs = Math.max(2000, Number(options.timeoutMs || 12000));
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(getBackendUrl(path), {
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      body: options.body,
+      signal: controller.signal,
+    });
+
+    const json = await readJsonSafe(res);
+    if (!res.ok) {
+      const err = new Error(json?.error || res.statusText || "Request failed");
+      err.status = res.status;
+      err.payload = json;
+      throw err;
+    }
+
+    return json;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function syncProfileToBackend(payload) {
+  return backendFetch("/public/profile-sync", {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+    timeoutMs: 10000,
+  });
+}
+
+export async function loadChatHistoryFromBackend(limit = 120) {
+  return backendFetch(`/public/chat/history?limit=${encodeURIComponent(Math.max(10, Math.min(200, Number(limit || 120))))}`, {
+    timeoutMs: 10000,
+  });
+}
+
+export async function sendChatMessageToBackend(payload) {
+  return backendFetch("/public/chat/send", {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+    timeoutMs: 10000,
+  });
+}
+
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 
