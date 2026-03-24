@@ -251,6 +251,9 @@ export function startChat(store) {
     };
 
     try {
+      const authUser = await ensureChatAuthOnce().catch(() => null);
+      if (!authUser) throw new Error("auth unavailable");
+
       const { data, error } = await supabase
         .from("chat_messages")
         .insert(payload)
@@ -260,12 +263,10 @@ export function startChat(store) {
       addMessage(data);
     } catch (err) {
       console.error("[CHAT] send failed:", err);
-      addMessage({
-        ...payload,
-        text,
-        id: `local_${Date.now()}`,
-        created_at: new Date().toISOString(),
-      });
+      input.value = text;
+      try {
+        window.alert("Mesaj gönderilemedi. Oturum veya bağlantı sorunu olabilir.");
+      } catch {}
     }
   }
 
