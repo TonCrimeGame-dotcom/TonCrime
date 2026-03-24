@@ -403,6 +403,8 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
+      this._onlineSearch = null;
+      this._currentOpponent = { username: "ShadowWolf", isBot: true };
 
       this.panelRect = { x: 0, y: 0, w: 0, h: 0 };
       this.closeRect = null;
@@ -471,6 +473,8 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
+      this._onlineSearch = null;
+      this._currentOpponent = { username: "ShadowWolf", isBot: true };
     }
 
     _headerText() {
@@ -553,7 +557,11 @@
 
     pointerUp(x, y) {
       if (this.closeRect && pointInRect(x, y, this.closeRect)) {
-        this.scenes.go("home");
+        if (this._onlineSearch) {
+          this._cancelOnlineSearch().finally(() => this.scenes.go("home"));
+        } else {
+          this.scenes.go("home");
+        }
         return;
       }
 
@@ -562,9 +570,127 @@
         const hitButton = r.btn && pointInRect(x, y, r.btn);
         const hitCard = r.cardRect && pointInRect(x, y, r.cardRect);
         if ((hitButton || hitCard) && r.card.open) {
-          this.startGame(r.card.id);
+          this.beginMatchFlow(r.card.id);
           return;
         }
+      }
+    }
+
+    _getStakeForMode(id) {
+      if (id === "grid") return 100;
+      if (id === "arena") return 75;
+      if (id === "slotarena") return 150;
+      return 0;
+    }
+
+    async _ensureOnlineHelper() {
+      await loadPvpGameScript([
+        "./src/pvp_online.js",
+        "./pvp_online.js",
+      ]);
+      return window.TonCrimePvPOnline || null;
+    }
+
+    _extractMatchOpponent(match) {
+      const fallback = { username: "ShadowWolf", isBot: true };
+      if (!match || typeof match !== "object") return fallback;
+      if (match.opponent && typeof match.opponent.username === "string") {
+        return {
+          username: String(match.opponent.username || "Rakip"),
+          isBot: !!match.opponent.isBot,
+        };
+      }
+      const s = this.store?.get?.() || {};
+      const me = String(s?.player?.username || "").trim();
+      const p1Name = String(match.player1_username || match.player1Username || "").trim();
+      const p2Name = String(match.player2_username || match.player2Username || "").trim();
+      if (p1Name && p1Name !== me) return { username: p1Name, isBot: !!match.is_bot_match };
+      if (p2Name && p2Name !== me) return { username: p2Name, isBot: !!match.is_bot_match };
+      return fallback;
+    }
+
+    async _cancelOnlineSearch() {
+      const active = this._onlineSearch;
+      this._onlineSearch = null;
+      if (!active) return;
+
+      try {
+        await active.helper?.cancelMatchmaking?.(active.id, active.stake);
+      } catch (_) {}
+
+      const dom = ensurePvpDom();
+      if (dom.status) dom.status.textContent = "PvP • Arama iptal";
+      if (dom.opponent) dom.opponent.textContent = "—";
+      if (dom.spinner) dom.spinner.classList.add("hidden");
+      if (dom.startBtn) {
+        dom.startBtn.style.display = "";
+        dom.startBtn.textContent = "Başlat";
+        dom.startBtn.onclick = () => this.startGame(active.id);
+      }
+      if (dom.stopBtn) {
+        dom.stopBtn.style.display = "";
+        dom.stopBtn.textContent = "Durdur";
+        dom.stopBtn.onclick = null;
+      }
+      if (dom.resetBtn) {
+        dom.resetBtn.style.display = "";
+        dom.resetBtn.textContent = "Sıfırla";
+      }
+    }
+
+    async beginMatchFlow(id) {
+      if (this._launchingGame || this._onlineSearch) return;
+
+      const stake = this._getStakeForMode(id);
+      if (!stake) {
+        this._currentOpponent = { username: "ShadowWolf", isBot: true };
+        await this.startGame(id);
+        return;
+      }
+
+      const dom = ensurePvpDom();
+      if (dom.status) dom.status.textContent = "PvP • Gerçek rakip aranıyor...";
+      if (dom.opponent) dom.opponent.textContent = "Aranıyor";
+      if (dom.spinner) dom.spinner.classList.remove("hidden");
+      if (dom.startBtn) {
+        dom.startBtn.style.display = "none";
+        dom.startBtn.onclick = null;
+      }
+      if (dom.resetBtn) {
+        dom.resetBtn.style.display = "none";
+        dom.resetBtn.onclick = null;
+      }
+      if (dom.stopBtn) {
+        dom.stopBtn.style.display = "";
+        dom.stopBtn.textContent = "İptal";
+      }
+
+      try {
+        const helper = await this._ensureOnlineHelper();
+        if (!helper) throw new Error("online helper yüklenemedi");
+
+        this._onlineSearch = { id, stake, helper };
+        if (dom.stopBtn) {
+          dom.stopBtn.onclick = () => this._cancelOnlineSearch();
+        }
+
+        await helper.startMatchmaking(id, stake, async (match) => {
+          if (!this._onlineSearch || this._onlineSearch.id !== id) return;
+          this._onlineSearch = null;
+          this._currentOpponent = this._extractMatchOpponent(match);
+          if (dom.status) dom.status.textContent = "PvP • Rakip bulundu";
+          if (dom.opponent) dom.opponent.textContent = this._currentOpponent.username;
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          await this.startGame(id);
+        });
+      } catch (err) {
+        console.warn("[TonCrime] online matchmaking unavailable, bot fallback:", err?.message || err);
+        this._onlineSearch = null;
+        this._currentOpponent = { username: "ShadowWolf", isBot: true };
+        if (dom.status) dom.status.textContent = "PvP • Online eşleşme yok, bot maçı başlıyor";
+        if (dom.opponent) dom.opponent.textContent = this._currentOpponent.username;
+        if (dom.spinner) dom.spinner.classList.add("hidden");
+        await this.startGame(id);
       }
     }
 
@@ -594,6 +720,7 @@
 
       const currentEnergy = Number(player.energy || 0);
       const currentCoins = Number(s.coins || 0);
+      const opponent = this._currentOpponent || { username: "ShadowWolf", isBot: true };
 
       if (currentEnergy < economy.energy || currentCoins < economy.coins) {
         this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
@@ -660,13 +787,12 @@
         const dom = ensurePvpDom();
 
         if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
-        if (dom.opponent) dom.opponent.textContent = "ShadowWolf";
+        if (dom.opponent) dom.opponent.textContent = opponent.username;
         if (dom.spinner) dom.spinner.classList.remove("hidden");
 
         if (id === "grid") {
           await loadPvpGameScript([
             "./src/pvpcrush.js",
-            "/src/pvpcrush.js",
             "./pvpcrush.js",
           ]);
 
@@ -685,19 +811,13 @@
             meHpTextId: "meHpText",
           });
 
-          window.TonCrimePVP.setOpponent?.({
-            username: "ShadowWolf",
-            isBot: true,
-          });
+          window.TonCrimePVP.setOpponent?.(opponent);
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: "ShadowWolf",
-                  isBot: true,
-                });
+                window.TonCrimePVP.setOpponent?.(opponent);
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
                 window.TonCrimePVP.start?.();
@@ -743,7 +863,6 @@
         if (id === "slotarena") {
           await loadPvpGameScript([
             "./src/pvpslotarena.js",
-            "/src/pvpslotarena.js",
             "./pvpslotarena.js",
           ]);
 
@@ -762,19 +881,13 @@
             meHpTextId: "meHpText",
           });
 
-          window.TonCrimePVP.setOpponent?.({
-            username: "ShadowWolf",
-            isBot: true,
-          });
+          window.TonCrimePVP.setOpponent?.(opponent);
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: "ShadowWolf",
-                  isBot: true,
-                });
+                window.TonCrimePVP.setOpponent?.(opponent);
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
                 window.TonCrimePVP.start?.();
@@ -820,7 +933,6 @@
         if (id === "arena") {
           await loadPvpGameScript([
             "./src/pvpcage.js",
-            "/src/pvpcage.js",
             "./pvpcage.js",
           ]);
 
@@ -839,16 +951,13 @@
             meHpTextId: "meHpText",
           });
 
-          window.TonCrimePVP.setOpponent?.({
-            username: "ShadowWolf",
-            isBot: true,
-          });
+          window.TonCrimePVP.setOpponent?.(opponent);
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
-                window.TonCrimePVP.setOpponent?.({ username: "ShadowWolf", isBot: true });
+                window.TonCrimePVP.setOpponent?.(opponent);
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
                 window.TonCrimePVP.start?.();
