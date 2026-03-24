@@ -1,36 +1,5 @@
 import { supabase } from "../supabase.js";
-
-const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
-function safeGetLocalStorage(key) {
-  try { return localStorage.getItem(key) || ""; } catch { return ""; }
-}
-function safeSetLocalStorage(key, value) {
-  try { localStorage.setItem(key, value); } catch {}
-}
-function randomProfilePart() {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID().replaceAll("-", "");
-    }
-  } catch {}
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
-}
-function getTelegramWebAppUser() {
-  try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
-}
-function getRuntimeProfileKey(store = null) {
-  const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
-  if (fromStore) return fromStore;
-  const tgUser = getTelegramWebAppUser();
-  const tgId = String(tgUser?.id || "").trim();
-  if (tgId) return tgId;
-  let guestKey = safeGetLocalStorage(PROFILE_KEY_STORAGE).trim();
-  if (!guestKey) {
-    guestKey = `guest_${randomProfilePart()}`;
-    safeSetLocalStorage(PROFILE_KEY_STORAGE, guestKey);
-  }
-  return guestKey;
-}
+import { loadChatHistoryFromBackend, sendChatMessageToBackend } from "../online/Backend.js";
 
 export function startChat(store) {
   const drawer = document.getElementById("chatDrawer");
@@ -53,6 +22,7 @@ export function startChat(store) {
   const MAX_MESSAGES = 180;
   const state = {
     channel: null,
+    historyPollTimer: null,
     botProfileMap: new Map(),
     botStatusMap: new Map(),
     messageMap: new Map(),
@@ -64,7 +34,7 @@ export function startChat(store) {
   ensureProfileModal();
 
   const username = () => String(store.get()?.player?.username || "Player").trim() || "Player";
-  const telegramId = () => String(getRuntimeProfileKey(store) || "").trim();
+  const telegramId = () => String(store.get()?.player?.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "").trim();
   const playerMeta = () => {
     const s = store.get() || {};
     const p = s.player || {};
@@ -254,9 +224,19 @@ export function startChat(store) {
 
     const payload = {
       username: username(),
-      text: text,
+      text,
       player_meta: playerMeta(),
+      telegram_id: telegramId(),
     };
+
+    try {
+      const res = await sendChatMessageToBackend(payload);
+      const row = res?.item || res?.data || payload;
+      addMessage(row);
+      return;
+    } catch (backendErr) {
+      console.warn("[CHAT] backend send failed, supabase fallback:", backendErr?.message || backendErr);
+    }
 
     try {
       const { data, error } = await supabase
@@ -279,6 +259,15 @@ export function startChat(store) {
 
   async function loadHistory() {
     try {
+      const res = await loadChatHistoryFromBackend(MAX_MESSAGES);
+      const items = Array.isArray(res?.items) ? res.items : [];
+      applyMessages(items);
+      return;
+    } catch (backendErr) {
+      console.warn("[CHAT] backend history failed, supabase fallback:", backendErr?.message || backendErr);
+    }
+
+    try {
       const { data, error } = await supabase
         .from("chat_messages")
         .select("*")
@@ -296,6 +285,13 @@ export function startChat(store) {
     try {
       state.channel?.unsubscribe?.();
     } catch (_) {}
+    try {
+      if (state.historyPollTimer) clearInterval(state.historyPollTimer);
+    } catch (_) {}
+
+    state.historyPollTimer = setInterval(() => {
+      if (!document.hidden) loadHistory();
+    }, 2500);
 
     state.channel = supabase
       .channel("toncrime-chat-room")
