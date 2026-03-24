@@ -1,4 +1,4 @@
-import { supabase, ensureAuthSession, backendFetchJson, getIdentityKey } from "../supabase.js";
+import { supabase, ensureAuthSession } from "../supabase.js";
 
 export function startChat(store) {
   const drawer = document.getElementById("chatDrawer");
@@ -26,7 +26,6 @@ export function startChat(store) {
     messageMap: new Map(),
     profileModal: null,
     onlineTextEl: null,
-    historyPoll: null,
   };
 
   ensureChatStyle();
@@ -223,33 +222,15 @@ export function startChat(store) {
 
     const payload = {
       username: username(),
-      text,
-      identity_key: getIdentityKey(),
+      text: text,
       player_meta: playerMeta(),
     };
 
     try {
-      const result = await backendFetchJson(`/public/chat/send`, {
-        method: "POST",
-        body: payload,
-      });
-      if (result?.item) {
-        addMessage(result.item);
-        return;
-      }
-    } catch (err) {
-      console.warn("[CHAT] backend send failed, supabase fallback:", err?.message || err);
-    }
-
-    try {
-      await ensureAuthSession();
+      await ensureAuthSession().catch(() => null);
       const { data, error } = await supabase
         .from("chat_messages")
-        .insert({
-          username: payload.username,
-          text: payload.text,
-          player_meta: payload.player_meta,
-        })
+        .insert(payload)
         .select("*")
         .single();
       if (error) throw error;
@@ -257,9 +238,8 @@ export function startChat(store) {
     } catch (err) {
       console.error("[CHAT] send failed:", err);
       addMessage({
-        username: payload.username,
+        ...payload,
         text,
-        player_meta: payload.player_meta,
         id: `local_${Date.now()}`,
         created_at: new Date().toISOString(),
       });
@@ -268,17 +248,7 @@ export function startChat(store) {
 
   async function loadHistory() {
     try {
-      const result = await backendFetchJson(`/public/chat/history?limit=${MAX_MESSAGES}`);
-      if (Array.isArray(result?.items)) {
-        applyMessages(result.items);
-        return;
-      }
-    } catch (err) {
-      console.warn("[CHAT] backend history failed, supabase fallback:", err?.message || err);
-    }
-
-    try {
-      await ensureAuthSession();
+      await ensureAuthSession().catch(() => null);
       const { data, error } = await supabase
         .from("chat_messages")
         .select("*")
@@ -292,13 +262,9 @@ export function startChat(store) {
     }
   }
 
-  async function subscribeRealtime() {
+  function subscribeRealtime() {
     try {
       state.channel?.unsubscribe?.();
-    } catch (_) {}
-
-    try {
-      await ensureAuthSession();
     } catch (_) {}
 
     state.channel = supabase
@@ -485,11 +451,10 @@ export function startChat(store) {
   });
   window.addEventListener("pagehide", () => setOpen(false));
 
+  ensureAuthSession().catch(() => null);
   loadHistory();
   subscribeRealtime();
-  state.historyPoll = setInterval(() => {
-    if (!document.hidden) loadHistory();
-  }, 5000);
+  setInterval(() => { loadHistory().catch?.(() => {}); }, 5000);
   setOpen(getOpen());
   visLoop();
 
