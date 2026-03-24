@@ -4,39 +4,8 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { supabase } from "./supabase.js";
-
-const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
-function safeGetLocalStorage(key) {
-  try { return localStorage.getItem(key) || ""; } catch { return ""; }
-}
-function safeSetLocalStorage(key, value) {
-  try { localStorage.setItem(key, value); } catch {}
-}
-function randomProfilePart() {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID().replaceAll("-", "");
-    }
-  } catch {}
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
-}
-function getTelegramWebAppUser() {
-  try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
-}
-function getRuntimeProfileKey(store = null) {
-  const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
-  if (fromStore) return fromStore;
-  const tgUser = getTelegramWebAppUser();
-  const tgId = String(tgUser?.id || "").trim();
-  if (tgId) return tgId;
-  let guestKey = safeGetLocalStorage(PROFILE_KEY_STORAGE).trim();
-  if (!guestKey) {
-    guestKey = `guest_${randomProfilePart()}`;
-    safeSetLocalStorage(PROFILE_KEY_STORAGE, guestKey);
-  }
-  return guestKey;
-}
+import { ensureAuthSession } from "./supabase.js";
+import { syncProfileToBackend } from "./online/Backend.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -153,6 +122,7 @@ try {
 } catch (_) {}
 
 fitCanvas();
+ensureAuthSession().catch(() => null);
 
 /* ===== STORE ===== */
 const STORE_KEY = "toncrime_store_v1";
@@ -292,7 +262,11 @@ ensureDailyMissionReset();
 
 /* ===== TELEGRAM USER INIT ===== */
 function getTelegramUser() {
-  return getTelegramWebAppUser();
+  try {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+  } catch {
+    return null;
+  }
 }
 
 function bootstrapTelegramUser() {
@@ -317,128 +291,83 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-(function ensureProfileKeyOnStore() {
-  const s = store.get();
-  const p = s.player || {};
-  if (String(p.telegramId || "").trim()) return;
-  store.set({
-    player: {
-      ...p,
-      telegramId: getRuntimeProfileKey(store),
-    },
-  });
-})();
-
-/* ===== PROFILE SYNC ===== */
-const DEFAULT_BACKEND_URLS = [
-  typeof window !== "undefined" ? window.TONCRIME_BACKEND_URL : "",
-  safeGetLocalStorage("toncrime_backend_url"),
-  "https://toncrime.onrender.com",
-  "http://localhost:8787",
-].filter(Boolean);
-
-let _lastProfileSyncAt = 0;
-let _profileSyncBusy = false;
-let _lastProfilePayload = "";
-let _profileSyncRetryAt = 0;
-let _profileSyncFailureCount = 0;
-let _profileSyncErrorKey = "";
-
-function getBackendBaseUrl() {
-  const raw = DEFAULT_BACKEND_URLS.find(Boolean) || "";
-  return String(raw || "").trim().replace(/\/$/, "");
-}
-
-function buildProfileSyncPayload() {
-  const s = store.get();
-  const p = s.player || {};
-  const telegramId = getRuntimeProfileKey(store);
-
-  if (!telegramId) return null;
-  if (!s?.intro?.profileCompleted) return null;
-
-  return {
-    telegram_id: telegramId,
-    username: String(p.username || "Player").trim().slice(0, 24) || "Player",
-    age: Number.isFinite(Number(p.age)) ? Number(p.age) : null,
-    level: Math.max(1, Number(p.level || 1)),
-    coins: Math.max(0, Number(s.coins || 0)),
-    energy: Math.max(0, Number(p.energy || 10)),
-    energy_max: Math.max(1, Number(p.energyMax || 10)),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function scheduleProfileSyncRetry(delayMs, reason = "") {
-  _profileSyncFailureCount += 1;
-  _profileSyncRetryAt = Date.now() + Math.max(1500, delayMs || 1500);
-  const errKey = `${reason}|${_profileSyncFailureCount}`;
-  if (errKey !== _profileSyncErrorKey) {
-    _profileSyncErrorKey = errKey;
-    console.warn("[PROFILE_SYNC] retry scheduled:", reason || "unknown", "next in", Math.round((_profileSyncRetryAt - Date.now()) / 1000), "s");
+function getLocalGuestId() {
+  try {
+    const key = "toncrime_guest_profile_id_v1";
+    let value = localStorage.getItem(key);
+    if (!value) {
+      value = `guest_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+      localStorage.setItem(key, value);
+    }
+    return String(value || "");
+  } catch {
+    return `guest_${Date.now().toString(36)}`;
   }
 }
 
-async function syncProfileToBackend() {
-  if (_profileSyncBusy) return;
-  if (Date.now() < _profileSyncRetryAt) return;
+/* ===== PROFILE SYNC (BACKEND) ===== */
+let _lastProfileSyncAt = 0;
+let _profileSyncBusy = false;
+let _lastProfilePayload = "";
+let _profileSyncBackoffMs = 5000;
+let _profileSyncDisabled = false;
 
-  const payload = buildProfileSyncPayload();
-  if (!payload) return;
+async function syncProfileToServer() {
+  if (_profileSyncBusy || _profileSyncDisabled) return;
+
+  const s = store.get();
+  const p = s.player || {};
+  const telegramId = String(
+    p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
+  ).trim();
+
+  const profileKey = telegramId || getLocalGuestId();
+
+  if (!profileKey) return;
+  if (!s?.intro?.profileCompleted) return;
+
+  const payload = {
+    telegram_id: profileKey,
+    username: String(p.username || "Player").slice(0, 32),
+    age: p.age ?? null,
+    level: Number(p.level || 1),
+    coins: Number(s.coins || 0),
+    energy: Number(p.energy || 10),
+    energy_max: Number(p.energyMax || 10),
+    updated_at: new Date().toISOString(),
+  };
 
   const payloadKey = JSON.stringify(payload);
   if (payloadKey === _lastProfilePayload) return;
 
-  const backendBaseUrl = getBackendBaseUrl();
-  if (!backendBaseUrl) {
-    scheduleProfileSyncRetry(60_000, "backend_url_missing");
-    return;
-  }
-
   _profileSyncBusy = true;
 
   try {
-    const res = await fetch(`${backendBaseUrl}/public/profile-sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    await syncProfileToBackend(payload);
+    _lastProfilePayload = payloadKey;
+    _lastProfileSyncAt = Date.now();
+    _profileSyncBackoffMs = 5000;
+  } catch (err) {
+    const status = Number(err?.status || 0);
+    const message = err?.message || "profile sync failed";
+    console.warn("[PROFILE_SYNC]", message, status ? `(HTTP ${status})` : "");
 
-    let body = null;
-    try {
-      body = await res.json();
-    } catch {
-      body = null;
-    }
-
-    if (!res.ok || body?.ok === false) {
-      const reason = body?.error || `http_${res.status}`;
-      scheduleProfileSyncRetry(res.status >= 500 ? 15_000 : 60_000, reason);
+    if (status === 401 || status === 403 || status === 404) {
+      _profileSyncDisabled = true;
       return;
     }
 
-    _lastProfilePayload = payloadKey;
-    _lastProfileSyncAt = Date.now();
-    _profileSyncRetryAt = 0;
-    _profileSyncFailureCount = 0;
-    _profileSyncErrorKey = "";
-  } catch (err) {
-    scheduleProfileSyncRetry(15_000, err?.message || "network_error");
+    _lastProfileSyncAt = Date.now() - 60000 + Math.min(60000, _profileSyncBackoffMs);
+    _profileSyncBackoffMs = Math.min(60000, Math.round(_profileSyncBackoffMs * 1.7));
   } finally {
     _profileSyncBusy = false;
   }
 }
 
-window.addEventListener("tc:profile-sync-now", () => {
-  _lastProfileSyncAt = 0;
-  _profileSyncRetryAt = 0;
-  syncProfileToBackend();
-});
-
 (function profileSyncLoop() {
   const now = Date.now();
-  if (now >= _profileSyncRetryAt && now - _lastProfileSyncAt > 1500) {
-    syncProfileToBackend();
+  if (!_profileSyncDisabled && now - _lastProfileSyncAt > _profileSyncBackoffMs) {
+    syncProfileToServer();
   }
   setTimeout(profileSyncLoop, 1500);
 })();
