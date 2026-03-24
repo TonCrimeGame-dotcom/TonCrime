@@ -28,6 +28,30 @@ export function startChat(store) {
     onlineTextEl: null,
   };
 
+  let chatAuthPromise = null;
+  let chatAuthTried = false;
+
+  async function ensureChatAuthOnce() {
+    try {
+      const session = await supabase.auth.getSession();
+      const currentUser = session?.data?.session?.user;
+      if (currentUser) return currentUser;
+    } catch {}
+
+    if (chatAuthPromise) return chatAuthPromise;
+    if (chatAuthTried) return null;
+    chatAuthTried = true;
+    chatAuthPromise = ensureAuthSession()
+      .catch((err) => {
+        console.warn("[CHAT] auth unavailable:", err?.message || err);
+        return null;
+      })
+      .finally(() => {
+        chatAuthPromise = null;
+      });
+    return chatAuthPromise;
+  }
+
   ensureChatStyle();
   ensureProfileModal();
 
@@ -227,8 +251,6 @@ export function startChat(store) {
     };
 
     try {
-      const user = await ensureChatAuthOnce();
-      if (!user) throw new Error("auth unavailable");
       const { data, error } = await supabase
         .from("chat_messages")
         .insert(payload)
@@ -249,6 +271,7 @@ export function startChat(store) {
 
   async function loadHistory() {
     try {
+      await ensureChatAuthOnce().catch(() => null);
       const { data, error } = await supabase
         .from("chat_messages")
         .select("*")
