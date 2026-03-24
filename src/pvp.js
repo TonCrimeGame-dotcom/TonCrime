@@ -499,8 +499,8 @@
 
       this.bg = null;
       this.fallbackBg = new Image();
-      this.fallbackBg.src = "./assets/pvp-bg.png";
-      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./assets/pvp.jpg"; };
+      this.fallbackBg.src = "./src/assets/pvp-bg.png";
+      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
     }
 
     onEnter() {
