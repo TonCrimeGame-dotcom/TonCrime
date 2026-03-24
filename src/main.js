@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { supabase } from "./supabase.js";
+import { supabase, ensureAuthSession, syncProfileToBackend, getIdentityKey } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -288,88 +288,56 @@ function bootstrapTelegramUser() {
   } catch (_) {}
 }
 bootstrapTelegramUser();
+ensureAuthSession().catch(() => null);
 
-/* ===== SUPABASE PROFILE SYNC ===== */
+/* ===== PROFILE SYNC (safe backend sync) ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
-let _lastProfilePayload = "";
 let _profileSyncDisabled = false;
-let _profileSyncWarned = false;
+let _lastProfilePayload = "";
 
-function disableProfileSync(reason, detail) {
-  _profileSyncDisabled = true;
-  _profileSyncBusy = false;
-  if (_profileSyncWarned) return;
-  _profileSyncWarned = true;
-  console.warn("[PROFILE_SYNC] disabled:", reason, detail || "");
-}
-
-async function syncProfileToSupabase() {
-  if (_profileSyncDisabled) return;
-  if (_profileSyncBusy) return;
+async function syncProfileSafely() {
+  if (_profileSyncBusy || _profileSyncDisabled) return;
 
   const s = store.get();
   const p = s.player || {};
-  const telegramId = String(
-    p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  );
+  const identityKey = String(p.telegramId || getIdentityKey() || "").trim();
 
-  if (!telegramId) return;
+  if (!identityKey) return;
   if (!s?.intro?.profileCompleted) return;
 
   const payload = {
-    telegram_id: telegramId,
+    identity_key: identityKey,
     username: String(p.username || "Player"),
     age: p.age ?? null,
     level: Number(p.level || 1),
     coins: Number(s.coins || 0),
     energy: Number(p.energy || 10),
     energy_max: Number(p.energyMax || 10),
-    updated_at: new Date().toISOString(),
   };
 
   const payloadKey = JSON.stringify(payload);
   if (payloadKey === _lastProfilePayload) return;
 
   _profileSyncBusy = true;
-
   try {
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(payload, { onConflict: "telegram_id" });
-
-    if (error) {
-      const code = String(error.code || "");
-      const msg = String(error.message || "");
-      if (code === "42501" || /row-level security|Unauthorized|JWT|permission/i.test(msg)) {
-        disableProfileSync(code || "auth", msg);
-        return;
-      }
-      console.error("Supabase profile sync error:", error);
-      return;
-    }
-
+    await syncProfileToBackend(payload);
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
   } catch (err) {
-    const msg = String(err?.message || err || "");
-    if (/Unauthorized|JWT|permission|row-level security/i.test(msg)) {
-      disableProfileSync("fatal", msg);
-    } else {
-      console.error("Supabase profile sync fatal:", err);
-    }
+    _profileSyncDisabled = true;
+    console.warn("[PROFILE_SYNC] disabled:", err?.message || err);
   } finally {
     _profileSyncBusy = false;
   }
 }
 
 (function profileSyncLoop() {
-  if (_profileSyncDisabled) return;
   const now = Date.now();
-  if (now - _lastProfileSyncAt > 1500) {
-    syncProfileToSupabase();
+  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 8000) {
+    syncProfileSafely();
   }
-  setTimeout(profileSyncLoop, 1500);
+  setTimeout(profileSyncLoop, 8000);
 })();
 
 /* ===== AUTOSAVE ===== */
@@ -432,26 +400,26 @@ function addImage(key, url) {
   console.warn("[ASSETS] image ekleme fonksiyonu yok:", key, url);
 }
 
-addImage("background", "./assets/pvp-bg.png");
-addImage("missions", "./assets/missions.jpg");
-addImage("pvp", "./assets/pvp.jpg");
-addImage("weapons", "./assets/weapons.jpg");
-addImage("nightclub", "./assets/nightclub.jpg");
-addImage("coffeeshop", "./assets/coffeeshop.jpg");
-addImage("xxx", "./assets/xxx.jpg");
-addImage("tata", "./assets/tata.png");
-addImage("background_alt", "./assets/nightclub-bg.png");
-addImage("home_bg", "./assets/pvp-bg.png");
-addImage("clan", "./assets/Clan-bg.png");
-addImage("clan_bg", "./assets/Clan-bg.png");
-addImage("nightclub_bg", "./assets/nightclub-bg.png");
-addImage("pvp_bg", "./assets/pvp-bg.png");
-addImage("xxx_bg", "./assets/xxx-bg.png");
+addImage("background", "./src/assets/pvp-bg.png");
+addImage("missions", "./src/assets/missions.jpg");
+addImage("pvp", "./src/assets/pvp.jpg");
+addImage("weapons", "./src/assets/weapons.jpg");
+addImage("nightclub", "./src/assets/nightclub.jpg");
+addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
+addImage("xxx", "./src/assets/xxx.jpg");
+addImage("tata", "./src/assets/tata.png");
+addImage("background_alt", "./src/assets/nightclub-bg.png");
+addImage("home_bg", "./src/assets/pvp-bg.png");
+addImage("clan", "./src/assets/Clan-bg.png");
+addImage("clan_bg", "./src/assets/Clan-bg.png");
+addImage("nightclub_bg", "./src/assets/nightclub-bg.png");
+addImage("pvp_bg", "./src/assets/pvp-bg.png");
+addImage("xxx_bg", "./src/assets/xxx-bg.png");
 
 /* BLACK MARKET */
-addImage("blackmarket", "./assets/BlackMarket.png");
-addImage("blackmarket_bg", "./assets/BlackMarket.png");
-addImage("trade", "./assets/BlackMarket.png");
+addImage("blackmarket", "./src/assets/BlackMarket.png");
+addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
+addImage("trade", "./src/assets/BlackMarket.png");
 
 /* ===== HELPERS ===== */
 function pointInRect(px, py, r) {
@@ -1119,4 +1087,3 @@ normalizeGlobalUi(store);
 /* ===== START ===== */
 scenes.go("boot");
 engine.start();
- 
