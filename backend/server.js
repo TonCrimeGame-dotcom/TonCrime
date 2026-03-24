@@ -292,69 +292,100 @@ app.post('/wallet/validate', async (req, res) => {
 });
 
 
-const publicRateBuckets = new Map();
-const PUBLIC_RATE_LIMIT_WINDOW_MS = Number(process.env.PUBLIC_RATE_LIMIT_WINDOW_MS || 60_000);
-const PUBLIC_PROFILE_SYNC_MAX = Number(process.env.PUBLIC_PROFILE_SYNC_MAX || 30);
-
-function publicRateLimit(key) {
-  const now = Date.now();
-  const bucketKey = String(key || 'unknown');
-  const bucket = publicRateBuckets.get(bucketKey) || { count: 0, resetAt: now + PUBLIC_RATE_LIMIT_WINDOW_MS };
-
-  if (now > bucket.resetAt) {
-    bucket.count = 0;
-    bucket.resetAt = now + PUBLIC_RATE_LIMIT_WINDOW_MS;
-  }
-
-  bucket.count += 1;
-  publicRateBuckets.set(bucketKey, bucket);
-
-  return bucket.count <= PUBLIC_PROFILE_SYNC_MAX;
+function sanitizePlayerMeta(meta = {}, fallbackUsername = 'Player') {
+  const username = String(meta?.username || fallbackUsername || 'Player').trim().slice(0, 32) || 'Player';
+  return {
+    username,
+    telegramId: String(meta?.telegramId || '').trim().slice(0, 80),
+    level: Math.max(1, Math.min(9999, asNumber(meta?.level, 1))),
+    premium: !!meta?.premium,
+    clan: String(meta?.clan || '').trim().slice(0, 32),
+    rating: Math.max(0, Math.min(999999, asNumber(meta?.rating, 1000))),
+    wins: Math.max(0, Math.min(999999, asNumber(meta?.wins, 0))),
+    losses: Math.max(0, Math.min(999999, asNumber(meta?.losses, 0))),
+    online: meta?.online !== false,
+    isBot: !!meta?.isBot,
+  };
 }
 
 app.post('/public/profile-sync', async (req, res) => {
   try {
-    const telegramId = String(req.body?.telegram_id || '').trim().slice(0, 120);
-    const username = String(req.body?.username || 'Player').trim().slice(0, 24) || 'Player';
-    const ageRaw = req.body?.age;
-    const age = ageRaw === null || ageRaw === undefined || ageRaw === '' ? null : Math.max(18, Math.min(120, asNumber(ageRaw, 18)));
-    const level = Math.max(1, Math.min(9999, asNumber(req.body?.level, 1)));
-    const coins = Math.max(0, Math.min(1_000_000_000, asNumber(req.body?.coins, 0)));
-    const energyMax = Math.max(1, Math.min(500, asNumber(req.body?.energy_max, 50)));
-    const energy = Math.max(0, Math.min(energyMax, asNumber(req.body?.energy, energyMax)));
-    const updatedAt = String(req.body?.updated_at || new Date().toISOString());
+    const telegram_id = String(req.body?.telegram_id || '').trim().slice(0, 80);
+    const username = String(req.body?.username || 'Player').trim().slice(0, 32) || 'Player';
 
-    if (!telegramId) {
-      return res.status(400).json({ ok: false, error: 'telegram_id_required' });
+    if (!telegram_id) {
+      return res.status(400).json({ ok: false, error: 'telegram_id is required' });
     }
 
-    const rateKey = `${getClientIp(req)}:${telegramId}`;
-    if (!publicRateLimit(rateKey)) {
-      return res.status(429).json({ ok: false, error: 'rate_limited' });
-    }
+    const payload = {
+      telegram_id,
+      username,
+      age: req.body?.age == null ? null : Math.max(18, Math.min(120, asNumber(req.body?.age, 18))),
+      level: Math.max(1, Math.min(9999, asNumber(req.body?.level, 1))),
+      coins: Math.max(0, asNumber(req.body?.coins, 0)),
+      energy: Math.max(0, asNumber(req.body?.energy, 0)),
+      energy_max: Math.max(0, asNumber(req.body?.energy_max, req.body?.energy || 0)),
+      updated_at: new Date().toISOString(),
+    };
 
     const { data, error } = await supabase
       .from('profiles')
-      .upsert({
-        telegram_id: telegramId,
-        username,
-        age,
-        level,
-        coins,
-        energy,
-        energy_max: energyMax,
-        updated_at: updatedAt,
-      }, { onConflict: 'telegram_id' })
+      .upsert(payload, { onConflict: 'telegram_id' })
       .select('id, telegram_id, username, level, coins, energy, energy_max, updated_at')
       .single();
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     return res.json({ ok: true, item: data });
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message || 'profile_sync_failed' });
+    return res.status(500).json({ ok: false, error: err.message || 'profile sync failed' });
+  }
+});
+
+app.get('/public/chat/history', async (req, res) => {
+  try {
+    const limit = Math.max(10, Math.min(200, asNumber(req.query.limit, 120)));
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (error) throw error;
+
+    return res.json({ ok: true, items: data || [] });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'chat history failed' });
+  }
+});
+
+app.post('/public/chat/send', async (req, res) => {
+  try {
+    const username = String(req.body?.username || 'Player').trim().slice(0, 32) || 'Player';
+    const text = String(req.body?.text || '').trim().slice(0, 300);
+    if (!text) {
+      return res.status(400).json({ ok: false, error: 'text is required' });
+    }
+
+    const payload = {
+      username,
+      text,
+      telegram_id: String(req.body?.telegram_id || '').trim().slice(0, 80) || null,
+      player_meta: sanitizePlayerMeta(req.body?.player_meta || {}, username),
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return res.json({ ok: true, item: data });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'chat send failed' });
   }
 });
 
