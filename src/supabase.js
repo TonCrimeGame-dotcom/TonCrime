@@ -2,9 +2,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = "https://ubcyamjoektbbxbrjtyy.supabase.co";
 const SUPABASE_KEY = "sb_publishable_t--0L9Neb58SKtiED8K7gA_2w1gtC37";
-const GUEST_IDENTITY_KEY = "toncrime_guest_identity_v3";
-const AUTH_COOLDOWN_UNTIL_KEY = "toncrime_auth_cooldown_until_v1";
-const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v1";
+const GUEST_IDENTITY_KEY = "toncrime_guest_identity_v4";
+const AUTH_COOLDOWN_UNTIL_KEY = "toncrime_auth_cooldown_until_v2";
+const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
+const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 window.supabase = supabase;
@@ -88,18 +89,10 @@ function clearAuthCooldown() {
   } catch {}
 }
 
-function getCooldownReason() {
-  try {
-    return String(localStorage.getItem(AUTH_COOLDOWN_REASON_KEY) || "");
-  } catch {
-    return "";
-  }
-}
-
 function isRateLimitError(err) {
   const msg = String(err?.message || err?.error_description || err?.name || "").toLowerCase();
   const status = Number(err?.status || err?.code || 0);
-  return status === 429 || msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("email rate limit exceeded");
+  return status == 429 || msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("email rate limit exceeded");
 }
 
 function isEmailDisabledError(err) {
@@ -116,13 +109,19 @@ function warnOnce(...args) {
   console.warn(...args);
 }
 
+function canAttemptNow() {
+  const cooldownUntil = getAuthCooldownUntil();
+  if (cooldownUntil > nowMs()) return false;
+  try {
+    const last = Number(localStorage.getItem(AUTH_LAST_TRY_KEY) || 0);
+    if (last && nowMs() - last < 15000) return false;
+    localStorage.setItem(AUTH_LAST_TRY_KEY, String(nowMs()));
+  } catch {}
+  return true;
+}
+
 export async function ensureAuthSession() {
   if (authPromise) return authPromise;
-
-  const cooldownUntil = getAuthCooldownUntil();
-  if (cooldownUntil > nowMs()) {
-    return null;
-  }
 
   authPromise = (async () => {
     try {
@@ -132,6 +131,8 @@ export async function ensureAuthSession() {
         return data.session.user;
       }
     } catch {}
+
+    if (!canAttemptNow()) return null;
 
     const identityKey = getIdentityKey();
     const email = buildIdentityEmail(identityKey);
@@ -185,13 +186,11 @@ export async function ensureAuthSession() {
         warnOnce("[AUTH] signUp rate limited. Auth paused for 30 minutes.");
         return null;
       }
-
       if (isEmailDisabledError(signUpRes?.error)) {
         setAuthCooldown(12 * 60 * 60 * 1000, signUpRes.error.message || "Email auth disabled");
         warnOnce("[AUTH] email signups disabled. Auth paused.");
         return null;
       }
-
       if (signUpRes?.error) {
         setAuthCooldown(10 * 60 * 1000, signUpRes.error.message || "Auth sign-up failed");
         warnOnce("[AUTH] signUp failed. Auth paused for 10 minutes:", signUpRes.error);
@@ -208,8 +207,6 @@ export async function ensureAuthSession() {
       return null;
     }
 
-    const reason = getCooldownReason();
-    if (reason) warnOnce("[AUTH] unavailable:", reason);
     return null;
   })().finally(() => {
     authPromise = null;
@@ -220,4 +217,3 @@ export async function ensureAuthSession() {
 
 window.tcEnsureAuthSession = ensureAuthSession;
 window.tcGetIdentityKey = getIdentityKey;
-window.tcAuthCooldownUntil = getAuthCooldownUntil;
