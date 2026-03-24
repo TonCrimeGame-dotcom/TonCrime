@@ -20,9 +20,20 @@ function bindGlobals() {
   try { window.__tcSupabase = supabase; } catch (_) {}
 }
 
+function anonAuthEnabled() {
+  try {
+    if (window.__TONCRIME_ENABLE_ANON_AUTH === true) return true;
+  } catch (_) {}
+  try {
+    return localStorage.getItem("toncrime_enable_anon_auth") === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
 bindGlobals();
 
-export async function ensureAuthSession() {
+export async function ensureAuthSession(options = {}) {
   bindGlobals();
 
   try {
@@ -31,14 +42,21 @@ export async function ensureAuthSession() {
     if (existing) return existing;
   } catch (_) {}
 
+  const allowAnonymous = options?.allowAnonymous === true || anonAuthEnabled();
+  if (!allowAnonymous) return null;
+
   try {
     const { data, error } = await supabase.auth.signInAnonymously();
     if (error) throw error;
     bindGlobals();
     return data?.user || data?.session?.user || null;
   } catch (err) {
+    const msg = String(err?.message || err || "");
+    if (msg.toLowerCase().includes("anonymous sign-ins are disabled")) {
+      try { window.__tcAnonAuthUnavailable = true; } catch (_) {}
+      return null;
+    }
     console.warn("[AUTH] anonymous sign-in failed:", err);
     return null;
   }
 }
- 
