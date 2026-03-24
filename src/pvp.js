@@ -549,6 +549,10 @@
 
       this.bg = null;
       this.fallbackBg = new Image();
+      this.fallbackBg.onerror = () => {
+        try { this.fallbackBg.onerror = null; } catch (_) {}
+        this.fallbackBg.src = "./assets/pvp.jpg";
+      };
       this.fallbackBg.src = "./assets/pvp-bg.png";
     }
 
@@ -596,6 +600,19 @@
         const userId = res?.data?.user?.id || null;
         if (userId) return userId;
       } catch (_) {}
+
+      const allowAnon = (() => {
+        try {
+          if (window.__TONCRIME_ENABLE_ANON_AUTH === true) return true;
+        } catch (_) {}
+        try {
+          return localStorage.getItem("toncrime_enable_anon_auth") === "1";
+        } catch (_) {
+          return false;
+        }
+      })();
+
+      if (!allowAnon) return null;
 
       try {
         const anon = await sb.auth.signInAnonymously?.();
