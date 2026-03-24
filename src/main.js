@@ -520,26 +520,26 @@ function addImage(key, url) {
   console.warn("[ASSETS] image ekleme fonksiyonu yok:", key, url);
 }
 
-addImage("background", "./src/assets/pvp-bg.png");
-addImage("missions", "./src/assets/missions.jpg");
-addImage("pvp", "./src/assets/pvp.jpg");
-addImage("weapons", "./src/assets/weapons.jpg");
-addImage("nightclub", "./src/assets/nightclub.jpg");
-addImage("coffeeshop", "./src/assets/coffeeshop.jpg");
-addImage("xxx", "./src/assets/xxx.jpg");
-addImage("tata", "./src/assets/tata.png");
-addImage("background_alt", "./src/assets/nightclub-bg.png");
-addImage("home_bg", "./src/assets/pvp-bg.png");
-addImage("clan", "./src/assets/Clan-bg.png");
-addImage("clan_bg", "./src/assets/Clan-bg.png");
-addImage("nightclub_bg", "./src/assets/nightclub-bg.png");
-addImage("pvp_bg", "./src/assets/pvp-bg.png");
-addImage("xxx_bg", "./src/assets/xxx-bg.png");
+addImage("background", "./assets/pvp-bg.png");
+addImage("missions", "./assets/missions.jpg");
+addImage("pvp", "./assets/pvp.jpg");
+addImage("weapons", "./assets/weapons.jpg");
+addImage("nightclub", "./assets/nightclub.jpg");
+addImage("coffeeshop", "./assets/coffeeshop.jpg");
+addImage("xxx", "./assets/xxx.jpg");
+addImage("tata", "./assets/tata.png");
+addImage("background_alt", "./assets/nightclub-bg.png");
+addImage("home_bg", "./assets/pvp-bg.png");
+addImage("clan", "./assets/Clan-bg.png");
+addImage("clan_bg", "./assets/Clan-bg.png");
+addImage("nightclub_bg", "./assets/nightclub-bg.png");
+addImage("pvp_bg", "./assets/pvp-bg.png");
+addImage("xxx_bg", "./assets/xxx-bg.png");
 
 /* BLACK MARKET */
-addImage("blackmarket", "./src/assets/BlackMarket.png");
-addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
-addImage("trade", "./src/assets/BlackMarket.png");
+addImage("blackmarket", "./assets/BlackMarket.png");
+addImage("blackmarket_bg", "./assets/BlackMarket.png");
+addImage("trade", "./assets/BlackMarket.png");
 
 /* ===== HELPERS ===== */
 function pointInRect(px, py, r) {
