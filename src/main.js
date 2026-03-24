@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { supabase, ensureAuthSession } from "./supabase.js";
+import { supabase, ensureAuthSession, ensureGuestIdentitySync, getProfileKey, bindProfileToCurrentAuth } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -289,20 +289,69 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
+function ensureRuntimeProfileIdentity() {
+  try {
+    const s = store.get() || {};
+    const p = s.player || {};
+    const telegramId = String(p.telegramId || getProfileKey(store) || "").trim();
+    if (!telegramId) return;
+    ensureGuestIdentitySync(store);
+    if (String(p.telegramId || "").trim() !== telegramId) {
+      store.set({
+        player: {
+          ...p,
+          telegramId,
+        },
+      });
+    }
+  } catch (_) {}
+}
+ensureRuntimeProfileIdentity();
+
 /* ===== SUPABASE PROFILE SYNC ===== */
 let _profileSyncWarned = false;
 async function syncProfileToSupabase() {
-  if (_profileSyncWarned) return;
-  _profileSyncWarned = true;
-  console.warn("[PROFILE_SYNC] client-side profiles upsert disabled to avoid RLS error loop.");
+  try {
+    ensureRuntimeProfileIdentity();
+    const profileKey = String(getProfileKey(store) || "").trim();
+    if (!profileKey) return null;
+
+    const authUser = await ensureAuthSession().catch(() => null);
+    if (!authUser) {
+      if (!_profileSyncWarned) {
+        _profileSyncWarned = true;
+        console.warn("[PROFILE_SYNC] auth session unavailable; profile bind postponed.");
+      }
+      return null;
+    }
+
+    _profileSyncWarned = false;
+    return await bindProfileToCurrentAuth(profileKey).catch((err) => {
+      console.warn("[PROFILE_SYNC] bind failed:", err?.message || err);
+      return null;
+    });
+  } catch (err) {
+    if (!_profileSyncWarned) {
+      _profileSyncWarned = true;
+      console.warn("[PROFILE_SYNC] unexpected error:", err?.message || err);
+    }
+    return null;
+  }
 }
 
-(function profileSyncLoop() {
-  // no-op: profile sync intentionally disabled on client
-})();
+window.addEventListener("tc:profile-sync-now", () => {
+  syncProfileToSupabase().catch(() => null);
+});
 
 /* ===== AUTH WARMUP ===== */
-setTimeout(() => { ensureAuthSession().catch(() => null); }, 1200);
+setTimeout(() => {
+  ensureGuestIdentitySync(store);
+  ensureRuntimeProfileIdentity();
+  ensureAuthSession().then(() => syncProfileToSupabase()).catch(() => null);
+}, 1200);
+setTimeout(() => {
+  syncProfileToSupabase().catch(() => null);
+}, 4500);
 
 /* ===== AUTOSAVE ===== */
 let _lastSaveAt = 0;
