@@ -2,14 +2,36 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = "https://ubcyamjoektbbxbrjtyy.supabase.co";
 const SUPABASE_KEY = "sb_publishable_t--0L9Neb58SKtiED8K7gA_2w1gtC37";
+const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
 const GUEST_IDENTITY_KEY = "toncrime_guest_identity_v4";
 const AUTH_COOLDOWN_UNTIL_KEY = "toncrime_auth_cooldown_until_v2";
 const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
+const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 window.supabase = supabase;
 window.tcSupabase = supabase;
+
+function safeLocalGet(key) {
+  try {
+    return String(localStorage.getItem(key) || "");
+  } catch {
+    return "";
+  }
+}
+
+function safeLocalSet(key, value) {
+  try {
+    localStorage.setItem(key, String(value ?? ""));
+  } catch {}
+}
+
+function safeLocalRemove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
 
 function getTelegramUser() {
   try {
@@ -29,20 +51,69 @@ function makeRandomId() {
   }
 }
 
+export function getProfileKey(store = null) {
+  const fromStore = String(store?.get?.()?.player?.telegramId || window.tcStore?.get?.()?.player?.telegramId || "").trim();
+  if (fromStore) {
+    if (!getTelegramUser()?.id) safeLocalSet(PROFILE_KEY_STORAGE, fromStore);
+    return fromStore;
+  }
+
+  const tgUser = getTelegramUser();
+  const tgId = String(tgUser?.id || "").trim();
+  if (tgId) return tgId;
+
+  let profileKey = safeLocalGet(PROFILE_KEY_STORAGE).trim();
+  if (!profileKey) {
+    const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
+    profileKey = authKey || `guest_${makeRandomId()}`;
+    safeLocalSet(PROFILE_KEY_STORAGE, profileKey);
+  }
+  return profileKey;
+}
+
+export function ensureGuestIdentitySync(store = null) {
+  const tgUser = getTelegramUser();
+  if (tgUser?.id) return `tg_${String(tgUser.id)}`;
+
+  const profileKey = getProfileKey(store);
+  const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
+
+  if (!authKey) safeLocalSet(GUEST_IDENTITY_KEY, profileKey);
+  if (!safeLocalGet(PROFILE_KEY_STORAGE).trim()) safeLocalSet(PROFILE_KEY_STORAGE, profileKey);
+
+  return authKey || profileKey;
+}
+
 export function getIdentityKey() {
   const tgUser = getTelegramUser();
   if (tgUser?.id) return `tg_${String(tgUser.id)}`;
 
-  try {
-    let key = localStorage.getItem(GUEST_IDENTITY_KEY);
-    if (!key) {
-      key = `guest_${makeRandomId()}`;
-      localStorage.setItem(GUEST_IDENTITY_KEY, key);
-    }
-    return key;
-  } catch {
-    return `guest_${makeRandomId()}`;
+  const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
+  if (authKey) return authKey;
+
+  const profileKey = getProfileKey();
+  safeLocalSet(GUEST_IDENTITY_KEY, profileKey);
+  return profileKey;
+}
+
+function getIdentityCandidates() {
+  const tgUser = getTelegramUser();
+  if (tgUser?.id) return [`tg_${String(tgUser.id)}`];
+
+  const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
+  const profileKey = getProfileKey();
+  const list = [];
+
+  if (authKey) list.push(authKey);
+  if (profileKey && profileKey !== authKey) list.push(profileKey);
+  if (!list.length) {
+    const created = `guest_${makeRandomId()}`;
+    safeLocalSet(PROFILE_KEY_STORAGE, created);
+    safeLocalSet(GUEST_IDENTITY_KEY, created);
+    list.push(created);
   }
+
+  return list;
 }
 
 function sanitizeIdentityKey(identityKey) {
@@ -66,38 +137,36 @@ function nowMs() {
 }
 
 function getAuthCooldownUntil() {
-  try {
-    return Number(localStorage.getItem(AUTH_COOLDOWN_UNTIL_KEY) || 0);
-  } catch {
-    return 0;
-  }
+  return Number(safeLocalGet(AUTH_COOLDOWN_UNTIL_KEY) || 0);
 }
 
 function setAuthCooldown(ms, reason = "auth temporarily disabled") {
   const until = nowMs() + Math.max(1000, Number(ms || 0));
-  try {
-    localStorage.setItem(AUTH_COOLDOWN_UNTIL_KEY, String(until));
-    localStorage.setItem(AUTH_COOLDOWN_REASON_KEY, String(reason || ""));
-  } catch {}
+  safeLocalSet(AUTH_COOLDOWN_UNTIL_KEY, until);
+  safeLocalSet(AUTH_COOLDOWN_REASON_KEY, String(reason || ""));
   return until;
 }
 
 function clearAuthCooldown() {
-  try {
-    localStorage.removeItem(AUTH_COOLDOWN_UNTIL_KEY);
-    localStorage.removeItem(AUTH_COOLDOWN_REASON_KEY);
-  } catch {}
+  safeLocalRemove(AUTH_COOLDOWN_UNTIL_KEY);
+  safeLocalRemove(AUTH_COOLDOWN_REASON_KEY);
 }
 
 function isRateLimitError(err) {
   const msg = String(err?.message || err?.error_description || err?.name || "").toLowerCase();
   const status = Number(err?.status || err?.code || 0);
-  return status == 429 || msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("email rate limit exceeded");
+  return status === 429 || msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("email rate limit exceeded");
 }
 
 function isEmailDisabledError(err) {
   const msg = String(err?.message || err?.error_description || "").toLowerCase();
   return msg.includes("email") && (msg.includes("disabled") || msg.includes("not allowed"));
+}
+
+function isInvalidCredentialsError(err) {
+  const msg = String(err?.message || err?.error_description || "").toLowerCase();
+  const status = Number(err?.status || err?.code || 0);
+  return status === 400 || msg.includes("invalid login") || msg.includes("invalid credentials") || msg.includes("email not confirmed") || msg.includes("user not found");
 }
 
 let authPromise = null;
@@ -109,15 +178,38 @@ function warnOnce(...args) {
   console.warn(...args);
 }
 
-function canAttemptNow() {
+function canAttemptNow(identityKey) {
+  const lastIdentity = safeLocalGet(AUTH_LAST_IDENTITY_KEY);
+  if (lastIdentity !== identityKey) {
+    safeLocalSet(AUTH_LAST_IDENTITY_KEY, identityKey);
+    clearAuthCooldown();
+    safeLocalRemove(AUTH_LAST_TRY_KEY);
+  }
+
   const cooldownUntil = getAuthCooldownUntil();
   if (cooldownUntil > nowMs()) return false;
-  try {
-    const last = Number(localStorage.getItem(AUTH_LAST_TRY_KEY) || 0);
-    if (last && nowMs() - last < 15000) return false;
-    localStorage.setItem(AUTH_LAST_TRY_KEY, String(nowMs()));
-  } catch {}
+
+  const last = Number(safeLocalGet(AUTH_LAST_TRY_KEY) || 0);
+  if (last && nowMs() - last < 15000) return false;
+
+  safeLocalSet(AUTH_LAST_TRY_KEY, nowMs());
   return true;
+}
+
+function rememberSuccessfulIdentity(identityKey) {
+  if (!identityKey || getTelegramUser()?.id) return;
+  safeLocalSet(GUEST_IDENTITY_KEY, identityKey);
+  if (!safeLocalGet(PROFILE_KEY_STORAGE).trim()) {
+    safeLocalSet(PROFILE_KEY_STORAGE, identityKey);
+  }
+}
+
+function getPreferredUsername() {
+  return String(
+    getTelegramUser()?.username ||
+      window.tcStore?.get?.()?.player?.username ||
+      "Player"
+  ).trim() || "Player";
 }
 
 export async function ensureAuthSession() {
@@ -132,30 +224,48 @@ export async function ensureAuthSession() {
       }
     } catch {}
 
-    if (!canAttemptNow()) return null;
+    const candidates = getIdentityCandidates();
+    const primaryIdentity = candidates[0] || getIdentityKey();
+    if (!canAttemptNow(primaryIdentity)) return null;
 
-    const identityKey = getIdentityKey();
-    const email = buildIdentityEmail(identityKey);
-    const password = buildIdentityPassword(identityKey);
+    for (const identityKey of candidates) {
+      const email = buildIdentityEmail(identityKey);
+      const password = buildIdentityPassword(identityKey);
 
-    try {
-      const signInRes = await supabase.auth.signInWithPassword({ email, password });
-      if (!signInRes.error && signInRes.data?.user) {
-        clearAuthCooldown();
-        return signInRes.data.user;
-      }
-      if (isRateLimitError(signInRes?.error)) {
-        setAuthCooldown(30 * 60 * 1000, signInRes.error.message || "Auth rate limited");
-        warnOnce("[AUTH] cooldown started after signIn rate limit:", signInRes.error);
-        return null;
-      }
-    } catch (err) {
-      if (isRateLimitError(err)) {
-        setAuthCooldown(30 * 60 * 1000, err?.message || "Auth rate limited");
-        warnOnce("[AUTH] cooldown started after signIn rate limit:", err);
-        return null;
+      try {
+        const signInRes = await supabase.auth.signInWithPassword({ email, password });
+        if (!signInRes.error && signInRes.data?.user) {
+          clearAuthCooldown();
+          rememberSuccessfulIdentity(identityKey);
+          return signInRes.data.user;
+        }
+        if (isRateLimitError(signInRes?.error)) {
+          setAuthCooldown(30 * 60 * 1000, signInRes.error.message || "Auth rate limited");
+          warnOnce("[AUTH] cooldown started after signIn rate limit:", signInRes.error);
+          return null;
+        }
+      } catch (err) {
+        if (isRateLimitError(err)) {
+          setAuthCooldown(30 * 60 * 1000, err?.message || "Auth rate limited");
+          warnOnce("[AUTH] cooldown started after signIn rate limit:", err);
+          return null;
+        }
+        if (!isInvalidCredentialsError(err)) {
+          warnOnce("[AUTH] signIn error:", err);
+        }
       }
     }
+
+    const signupIdentity = getProfileKey() || primaryIdentity;
+    if (!signupIdentity) return null;
+
+    if (!getTelegramUser()?.id) {
+      safeLocalSet(PROFILE_KEY_STORAGE, signupIdentity);
+      safeLocalSet(GUEST_IDENTITY_KEY, signupIdentity);
+    }
+
+    const email = buildIdentityEmail(signupIdentity);
+    const password = buildIdentityPassword(signupIdentity);
 
     try {
       const signUpRes = await supabase.auth.signUp({
@@ -163,8 +273,8 @@ export async function ensureAuthSession() {
         password,
         options: {
           data: {
-            identity_key: identityKey,
-            username: String(getTelegramUser()?.username || "Player"),
+            identity_key: signupIdentity,
+            username: getPreferredUsername(),
           },
         },
       });
@@ -172,11 +282,13 @@ export async function ensureAuthSession() {
       if (!signUpRes.error && signUpRes.data?.user) {
         if (signUpRes.data.session?.user) {
           clearAuthCooldown();
+          rememberSuccessfulIdentity(signupIdentity);
           return signUpRes.data.session.user;
         }
         const signInAgain = await supabase.auth.signInWithPassword({ email, password });
         if (!signInAgain.error && signInAgain.data?.user) {
           clearAuthCooldown();
+          rememberSuccessfulIdentity(signupIdentity);
           return signInAgain.data.user;
         }
       }
@@ -215,5 +327,25 @@ export async function ensureAuthSession() {
   return authPromise;
 }
 
+export async function bindProfileToCurrentAuth(profileKey = "") {
+  const key = String(profileKey || getProfileKey()).trim();
+  if (!key) return { ok: false, reason: "missing_profile_key" };
+
+  const user = await ensureAuthSession().catch(() => null);
+  if (!user) return { ok: false, reason: "missing_auth" };
+
+  const res = await supabase.rpc("bind_profile_to_current_auth", {
+    p_profile_key: key,
+  });
+
+  if (res?.error) {
+    console.warn("[PROFILE_BIND] failed:", res.error);
+    return { ok: false, error: res.error };
+  }
+  return { ok: true, data: res?.data || null };
+}
+
 window.tcEnsureAuthSession = ensureAuthSession;
 window.tcGetIdentityKey = getIdentityKey;
+window.tcGetProfileKey = getProfileKey;
+window.tcBindProfileToCurrentAuth = bindProfileToCurrentAuth;
