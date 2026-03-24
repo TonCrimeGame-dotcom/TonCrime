@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { supabase, ensureAuthSession, syncProfileToBackend, getIdentityKey } from "./supabase.js";
+import { supabase, ensureAuthSession } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -288,56 +288,16 @@ function bootstrapTelegramUser() {
   } catch (_) {}
 }
 bootstrapTelegramUser();
-ensureAuthSession().catch(() => null);
 
-/* ===== PROFILE SYNC (safe backend sync) ===== */
-let _lastProfileSyncAt = 0;
-let _profileSyncBusy = false;
-let _profileSyncDisabled = false;
-let _lastProfilePayload = "";
+try { ensureAuthSession().catch(() => {}); } catch (_) {}
 
-async function syncProfileSafely() {
-  if (_profileSyncBusy || _profileSyncDisabled) return;
-
-  const s = store.get();
-  const p = s.player || {};
-  const identityKey = String(p.telegramId || getIdentityKey() || "").trim();
-
-  if (!identityKey) return;
-  if (!s?.intro?.profileCompleted) return;
-
-  const payload = {
-    identity_key: identityKey,
-    username: String(p.username || "Player"),
-    age: p.age ?? null,
-    level: Number(p.level || 1),
-    coins: Number(s.coins || 0),
-    energy: Number(p.energy || 10),
-    energy_max: Number(p.energyMax || 10),
-  };
-
-  const payloadKey = JSON.stringify(payload);
-  if (payloadKey === _lastProfilePayload) return;
-
-  _profileSyncBusy = true;
-  try {
-    await syncProfileToBackend(payload);
-    _lastProfilePayload = payloadKey;
-    _lastProfileSyncAt = Date.now();
-  } catch (err) {
-    _profileSyncDisabled = true;
-    console.warn("[PROFILE_SYNC] disabled:", err?.message || err);
-  } finally {
-    _profileSyncBusy = false;
-  }
+/* ===== SUPABASE PROFILE SYNC ===== */
+let _profileSyncDisabled = true;
+async function syncProfileToSupabase() {
+  return null;
 }
-
 (function profileSyncLoop() {
-  const now = Date.now();
-  if (!_profileSyncDisabled && now - _lastProfileSyncAt > 8000) {
-    syncProfileSafely();
-  }
-  setTimeout(profileSyncLoop, 8000);
+  return;
 })();
 
 /* ===== AUTOSAVE ===== */
