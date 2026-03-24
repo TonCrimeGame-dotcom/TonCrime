@@ -593,7 +593,13 @@
 
       try {
         const res = await sb.auth.getUser();
-        return res?.data?.user?.id || null;
+        const userId = res?.data?.user?.id || null;
+        if (userId) return userId;
+      } catch (_) {}
+
+      try {
+        const anon = await sb.auth.signInAnonymously?.();
+        return anon?.data?.user?.id || anon?.data?.session?.user?.id || null;
       } catch (_) {
         return null;
       }
