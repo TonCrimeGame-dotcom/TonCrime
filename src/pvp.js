@@ -448,6 +448,7 @@
       this.matchLaunchTimer = null;
 
       this.rtChannel = null;
+      this.matchStatusText = "";
       this.rtFallbackMs = 10000;
       this.rtMatchStarted = false;
 
@@ -533,16 +534,27 @@
       return window.supabase || window.tcSupabase || null;
     }
 
-    async _getAuthUserId() {
+    async _getAuthUserId(options = {}) {
       const sb = this._getSupabase();
       if (!sb?.auth?.getUser) return null;
+
+      const waitForSession = !!options?.waitForSession;
+      const timeoutMs = Math.max(1000, Number(options?.timeoutMs || 9000));
 
       try {
         let res = await sb.auth.getUser();
         let userId = res?.data?.user?.id || null;
         if (userId) return userId;
+
+        if (waitForSession && typeof window.tcWaitForAuthSession === "function") {
+          await window.tcWaitForAuthSession(timeoutMs).catch(() => null);
+          res = await sb.auth.getUser();
+          userId = res?.data?.user?.id || null;
+          if (userId) return userId;
+        }
+
         if (typeof window.tcEnsureAuthSession === "function") {
-          await window.tcEnsureAuthSession().catch(() => null);
+          await window.tcEnsureAuthSession({ force: waitForSession }).catch(() => null);
           res = await sb.auth.getUser();
           userId = res?.data?.user?.id || null;
           if (userId) return userId;
@@ -812,13 +824,17 @@
       this._startingMatchmaking = true;
 
       this._resetMatchmaking();
+      this.matchState = "searching";
       this.matchModeId = id;
+      this.matchStartedAt = Date.now();
+      this.matchStatusText = "Giriş hazırlanıyor...";
 
       const sb = this._getSupabase();
-      const userId = await this._getAuthUserId();
+      const userId = await this._getAuthUserId({ waitForSession: true, timeoutMs: 9000 });
       const mode = this._mapModeIdToSqlMode(id);
       const stake = getStakeForMode(id);
       const player = this._getPlayerMeta();
+      if (userId) this.matchStatusText = "Rakip aranıyor...";
       const s = this.store?.get?.() || {};
       const playerState = { ...(s.player || {}) };
       const currentEnergy = Number(playerState.energy || 0);
@@ -833,7 +849,13 @@
           stake,
         });
         this._startingMatchmaking = false;
-        this.matchState = "menu";
+        this.matchStatusText = "Giriş hazır değil";
+        setTimeout(() => {
+          if (this.matchState === "searching" && !this._startingMatchmaking) {
+            this.matchState = "menu";
+            this.matchStatusText = "";
+          }
+        }, 900);
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: "Online eşleşme için giriş hazır değil" },
@@ -868,6 +890,7 @@
       this.matchStartedAt = Date.now();
 
       try {
+        this.matchStatusText = "Rakip aranıyor...";
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
 
@@ -1534,7 +1557,7 @@
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "900 20px system-ui, Arial";
-      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranıyor", cx, boxY + 46);
+      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : (this.matchStatusText || "Rakip aranıyor"), cx, boxY + 46);
 
       if (this.matchState === "found" && this.matchOpponent) {
         ctx.font = "900 28px system-ui, Arial";
@@ -1550,10 +1573,10 @@
       } else {
         ctx.font = "500 15px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
+        ctx.fillText(this.matchStatusText || "Eşleşme hazırlanıyor", cx, boxY + 104);
         ctx.font = "700 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
+        ctx.fillText(this.matchStatusText === "Giriş hazırlanıyor..." ? "Oturum doğrulanıyor..." : "Oyuncular taranıyor...", cx, boxY + 132);
       }
     }
 
