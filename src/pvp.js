@@ -149,12 +149,16 @@
     return Number(BET_STAKES[modeId] || 0);
   }
 
-async function enqueueBetPvp(supabase, mode, stake) {
-  return await supabase.rpc("enqueue_ranked_pvp", {
-    p_mode: mode,
-    p_stake_yton: stake,
-  });
-}
+  async function enqueueBetPvp(supabase, mode, stake, playerMeta = null) {
+    const meta = playerMeta && typeof playerMeta === "object" ? playerMeta : {};
+    return await supabase.rpc("enqueue_ranked_pvp", {
+      p_mode: mode,
+      p_stake_yton: stake,
+      p_username: String(meta.username || "Player").trim() || "Player",
+      p_level: Math.max(1, Number(meta.level || 1)),
+      p_rank: Math.max(100, Number(meta.rank || 1000)),
+    });
+  }
 
   async function cancelBetPvp(supabase, mode, stake) {
     return await supabase.rpc("cancel_ranked_pvp", {
@@ -442,11 +446,6 @@ async function enqueueBetPvp(supabase, mode, stake) {
       this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
-      this.matchStatusTitle = "";
-      this.matchStatusLine1 = "";
-      this.matchStatusLine2 = "";
-      this._authRetryBlockUntil = 0;
-      this._authRecoveryTriedAt = 0;
 
       this.matchSearchTimer = null;
       this.matchFallbackTimer = null;
@@ -504,8 +503,8 @@ async function enqueueBetPvp(supabase, mode, stake) {
 
       this.bg = null;
       this.fallbackBg = new Image();
-      this.fallbackBg.src = "./assets/pvp-bg.png";
-      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./assets/pvp.jpg"; };
+      this.fallbackBg.src = "./src/assets/pvp-bg.png";
+      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
     }
 
     onEnter() {
@@ -524,64 +523,32 @@ async function enqueueBetPvp(supabase, mode, stake) {
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
-      this._startingMatchmaking = false;
       this._resetMatchmaking();
     }
 
     onExit() {
       this._resetMatchmaking();
       this._launchingGame = false;
-      this._startingMatchmaking = false;
     }
 
     _getSupabase() {
       return window.supabase || window.tcSupabase || null;
     }
 
-    async _getAuthUserId(options = {}) {
+    async _getAuthUserId() {
       const sb = this._getSupabase();
-      if (!sb?.auth) return null;
-
-      const waitForSession = !!options?.waitForSession;
-      const timeoutMs = Math.max(1000, Number(options?.timeoutMs || 9000));
+      if (!sb?.auth?.getUser) return null;
 
       try {
-        if (typeof sb.auth.getSession === "function") {
-          const sessionRes = await sb.auth.getSession().catch(() => null);
-          const sessionUserId = sessionRes?.data?.session?.user?.id || null;
-          if (sessionUserId) return sessionUserId;
-        }
-
-        if (typeof sb.auth.getUser === "function") {
-          let res = await sb.auth.getUser().catch(() => null);
-          let userId = res?.data?.user?.id || null;
+        let res = await sb.auth.getUser();
+        let userId = res?.data?.user?.id || null;
+        if (userId) return userId;
+        if (typeof window.tcEnsureAuthSession === "function") {
+          await window.tcEnsureAuthSession().catch(() => null);
+          res = await sb.auth.getUser();
+          userId = res?.data?.user?.id || null;
           if (userId) return userId;
         }
-
-        if (waitForSession && typeof window.tcWaitForAuthSession === "function") {
-          const waitedUser = await window.tcWaitForAuthSession(timeoutMs).catch(() => null);
-          const waitedUserId = waitedUser?.id || null;
-          if (waitedUserId) return waitedUserId;
-        }
-
-        if (typeof window.tcEnsureAuthSession === "function") {
-          const ensuredUser = await window.tcEnsureAuthSession().catch(() => null);
-          const ensuredUserId = ensuredUser?.id || null;
-          if (ensuredUserId) return ensuredUserId;
-
-          if (typeof sb.auth.getSession === "function") {
-            const afterEnsureSession = await sb.auth.getSession().catch(() => null);
-            const sessionUserId = afterEnsureSession?.data?.session?.user?.id || null;
-            if (sessionUserId) return sessionUserId;
-          }
-
-          if (typeof sb.auth.getUser === "function") {
-            const afterEnsureUser = await sb.auth.getUser().catch(() => null);
-            const userId = afterEnsureUser?.data?.user?.id || null;
-            if (userId) return userId;
-          }
-        }
-
         return null;
       } catch (_) {
         return null;
@@ -833,11 +800,6 @@ async function enqueueBetPvp(supabase, mode, stake) {
       this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
-      this.matchStatusTitle = "";
-      this.matchStatusLine1 = "";
-      this.matchStatusLine2 = "";
-      this._authRetryBlockUntil = 0;
-      this._authRecoveryTriedAt = 0;
     }
 
     _mapModeIdToSqlMode(id) {
@@ -848,28 +810,15 @@ async function enqueueBetPvp(supabase, mode, stake) {
     }
 
     async startMatchmaking(id) {
-      if (this._launchingGame || this._startingMatchmaking || this.matchState !== "menu") return;
-      this._startingMatchmaking = true;
+      if (this._launchingGame) return;
 
       this._resetMatchmaking();
-      this.matchModeId = id;
       this.matchState = "searching";
+      this.matchModeId = id;
       this.matchStartedAt = Date.now();
-      this.matchStatusTitle = "Giriş hazırlanıyor";
-      this.matchStatusLine1 = "Oyuncu oturumu kontrol ediliyor";
-      this.matchStatusLine2 = "Lütfen bekle...";
-
-      try {
-        window.dispatchEvent(new CustomEvent("tc:profile-sync-now"));
-      } catch (_) {}
 
       const sb = this._getSupabase();
-      let userId = await this._getAuthUserId({ waitForSession: true, timeoutMs: 9000 });
-      if (!userId && typeof window.tcClearAuthCooldown === "function" && Date.now() - Number(this._authRecoveryTriedAt || 0) > 60000) {
-        this._authRecoveryTriedAt = Date.now();
-        try { window.tcClearAuthCooldown("pvp_recovery"); } catch (_) {}
-        userId = await this._getAuthUserId({ waitForSession: true, timeoutMs: 4000 });
-      }
+      const userId = await this._getAuthUserId();
       const mode = this._mapModeIdToSqlMode(id);
       const stake = getStakeForMode(id);
       const player = this._getPlayerMeta();
@@ -880,29 +829,16 @@ async function enqueueBetPvp(supabase, mode, stake) {
       const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
       if (!sb || !userId || !mode || !stake) {
-        console.warn("[TonCrime][PVP] matchmaking not ready", {
-          hasSupabase: !!sb,
-          hasUserId: !!userId,
-          mode,
-          stake,
-        });
-        this._startingMatchmaking = false;
         this.matchState = "menu";
-        this._authRetryBlockUntil = Date.now() + 2500;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: "Giriş oturumu hazır değil • 2-3 sn sonra tekrar dene" },
+            detail: { text: "Online eşleşme için giriş hazır değil" },
           }));
         } catch (_) {}
         return;
       }
 
-      this.matchStatusTitle = "Rakip aranıyor";
-      this.matchStatusLine1 = "Eşleşme hazırlanıyor";
-      this.matchStatusLine2 = "Oyuncular taranıyor...";
-
       if (currentEnergy < energyCost) {
-        this._startingMatchmaking = false;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
@@ -913,7 +849,6 @@ async function enqueueBetPvp(supabase, mode, stake) {
       }
 
       if (ytonBalance < stake) {
-        this._startingMatchmaking = false;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: `Yetersiz YTON • ${stake} gerekli` },
@@ -923,12 +858,8 @@ async function enqueueBetPvp(supabase, mode, stake) {
         return;
       }
 
-      this.matchState = "searching";
-      this.matchStartedAt = Date.now();
-
       try {
-        const { data: queueData, error: queueError } =
-  await enqueueBetPvp(sb, mode, stake, player.username);
+        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake, player);
         if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
@@ -1025,10 +956,8 @@ async function enqueueBetPvp(supabase, mode, stake) {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
           } catch (_) {}
         }, 1000);
-        this._startingMatchmaking = false;
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
-        this._startingMatchmaking = false;
         this.matchState = "menu";
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -1119,11 +1048,14 @@ async function enqueueBetPvp(supabase, mode, stake) {
 
       if (this.dragging && justUp) {
         this.dragging = false;
-        const shouldClick = !!this.clickCandidate;
-        this.clickCandidate = false;
-        if (shouldClick) {
+        if (this.clickCandidate) {
           this.pointerUp(px, py);
         }
+      }
+
+      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
+        this.clickCandidate = false;
+        this.pointerUp(px, py);
       }
 
       const wheel = Number(this.input?.wheelDelta || 0);
@@ -1140,16 +1072,12 @@ async function enqueueBetPvp(supabase, mode, stake) {
     }
 
     pointerUp(x, y) {
-      if (Date.now() < Number(this._authRetryBlockUntil || 0)) return;
-
       if (this.closeRect && pointInRect(x, y, this.closeRect)) {
         this._cancelRealtimeQueue();
         this._resetMatchmaking();
         this.scenes.go("home");
         return;
       }
-
-      if (this.matchState !== "menu" || this._startingMatchmaking) return;
 
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
@@ -1596,10 +1524,7 @@ async function enqueueBetPvp(supabase, mode, stake) {
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "900 20px system-ui, Arial";
-      const statusTitle = this.matchState === "found"
-        ? (this.matchStatusTitle || "Rakip bulundu")
-        : (this.matchStatusTitle || "Rakip aranıyor");
-      ctx.fillText(statusTitle, cx, boxY + 46);
+      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranıyor", cx, boxY + 46);
 
       if (this.matchState === "found" && this.matchOpponent) {
         ctx.font = "900 28px system-ui, Arial";
@@ -1615,10 +1540,10 @@ async function enqueueBetPvp(supabase, mode, stake) {
       } else {
         ctx.font = "500 15px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText(this.matchStatusLine1 || "Eşleşme hazırlanıyor", cx, boxY + 104);
+        ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
         ctx.font = "700 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText(this.matchStatusLine2 || "Oyuncular taranıyor...", cx, boxY + 132);
+        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
       }
     }
 
