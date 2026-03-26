@@ -1,4 +1,4 @@
-import { supabase, ensureAuthSession } from "../supabase.js";
+import { supabase } from "../supabase.js";
 
 export function startChat(store) {
   const drawer = document.getElementById("chatDrawer");
@@ -29,7 +29,6 @@ export function startChat(store) {
   };
 
   let chatAuthPromise = null;
-  let chatAuthTried = false;
 
   async function ensureChatAuthOnce() {
     try {
@@ -39,16 +38,9 @@ export function startChat(store) {
     } catch {}
 
     if (chatAuthPromise) return chatAuthPromise;
-    if (chatAuthTried) return null;
-    chatAuthTried = true;
-    chatAuthPromise = ensureAuthSession()
-      .catch((err) => {
-        console.warn("[CHAT] auth unavailable:", err?.message || err);
-        return null;
-      })
-      .finally(() => {
-        chatAuthPromise = null;
-      });
+    chatAuthPromise = Promise.resolve(null).finally(() => {
+      chatAuthPromise = null;
+    });
     return chatAuthPromise;
   }
 
@@ -82,11 +74,11 @@ export function startChat(store) {
       localStorage.getItem("toncrime_backend_url"),
       localStorage.getItem("backendUrl"),
       "https://toncrime.onrender.com",
-      "",
     ];
     const out = [];
     for (const item of raw) {
       const val = String(item || "").trim().replace(/\/$/, "");
+      if (!val) continue;
       if (!out.includes(val)) out.push(val);
     }
     return out;
@@ -327,7 +319,8 @@ export function startChat(store) {
 
   async function loadHistory() {
     try {
-      await ensureChatAuthOnce().catch(() => null);
+      const authUser = await ensureChatAuthOnce().catch(() => null);
+      if (!authUser) throw new Error("auth unavailable");
       const { data, error } = await supabase
         .from("chat_messages")
         .select("*")
@@ -536,7 +529,6 @@ export function startChat(store) {
   });
   window.addEventListener("pagehide", () => setOpen(false));
 
-  ensureChatAuthOnce().catch(() => null);
   loadHistory();
   subscribeRealtime();
   setInterval(() => { loadHistory().catch?.(() => {}); }, 5000);
