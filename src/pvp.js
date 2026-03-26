@@ -627,6 +627,43 @@
       return true;
     }
 
+    _matchHasRealOpponent(match, userId) {
+      if (!match || !userId) return false;
+      const p1 = String(match.player1_id || "").trim();
+      const p2 = String(match.player2_id || "").trim();
+      if (!p1 || !p2) return false;
+      if (p1 === p2) return false;
+      if (p1 !== String(userId) && p2 !== String(userId)) return false;
+      return true;
+    }
+
+    _matchLooksReady(match, userId) {
+      if (!this._matchHasRealOpponent(match, userId)) return false;
+      const rawStatus = String(match?.status || match?.match_status || "").toLowerCase().trim();
+      if (rawStatus && ["searching", "queued", "pending", "waiting"].includes(rawStatus)) return false;
+      return true;
+    }
+
+    _getMatchTimestampMs(match) {
+      const raw = match?.updated_at || match?.created_at || match?.started_at || null;
+      if (!raw) return 0;
+      const ts = Date.parse(raw);
+      return Number.isFinite(ts) ? ts : 0;
+    }
+
+    _isFreshEnoughMatch(match) {
+      const matchTs = this._getMatchTimestampMs(match);
+      if (!matchTs || !this.matchStartedAt) return true;
+      return matchTs >= (this.matchStartedAt - 15000);
+    }
+
+    _isReadyLiveMatch(match, userId, mode, stake) {
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
+      if (!this._matchLooksReady(match, userId)) return false;
+      if (!this._isFreshEnoughMatch(match)) return false;
+      return true;
+    }
+
     async _fetchMatchById(sb, matchId) {
       if (!sb || !matchId) return null;
       try {
@@ -732,14 +769,14 @@
       if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
-      if (!this._isUsableMatch(match, userId, mode, stake)) {
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) {
         const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
         }
       }
 
-      if (this._isUsableMatch(match, userId, mode, stake)) {
+      if (this._isReadyLiveMatch(match, userId, mode, stake)) {
         this.rtMatchStarted = true;
         this.onMatchFound(
           this._buildOpponentFromMatch(match, userId),
@@ -1458,7 +1495,7 @@
       try {
         const { data: queueRow } = await sb
           .from("pvp_match_queue")
-          .select("match_id, status")
+          .select("match_id, status, updated_at")
           .eq("user_id", userId)
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
@@ -1473,7 +1510,7 @@
             .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
+          if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1493,7 +1530,7 @@
           .limit(1)
           .maybeSingle();
 
-        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
+        if (this._isReadyLiveMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
@@ -1869,4 +1906,3 @@
 
   window.TonCrimePVP = TonCrimePVPController;
 })();
- 
