@@ -150,7 +150,7 @@
   }
 
   async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("enqueue_ranked_pvp", {
+    return await supabase.rpc("tc_enqueue_ranked_pvp", {
       p_mode: mode,
       p_stake_yton: stake,
     });
@@ -164,7 +164,7 @@
   }
 
   async function tryBetMatch(supabase, userId, mode) {
-    return await supabase.rpc("try_ranked_pvp_match", {
+    return await supabase.rpc("tc_try_ranked_pvp_match", {
       p_user_id: userId,
       p_mode: mode,
     });
@@ -625,16 +625,6 @@
       return true;
     }
 
-    _isReadyLiveMatch(match, userId, mode, stake) {
-      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
-      const p1 = String(match.player1_id || "").trim();
-      const p2 = String(match.player2_id || "").trim();
-      if (!p1 || !p2 || p1 === p2) return false;
-      const status = String(match.status || "").toLowerCase();
-      if (["searching", "queued", "pending", "waiting"].includes(status)) return false;
-      return true;
-    }
-
     async _fetchMatchById(sb, matchId) {
       if (!sb || !matchId) return null;
       try {
@@ -740,14 +730,14 @@
       if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
-      if (!this._isReadyLiveMatch(match, userId, mode, stake)) {
+      if (!this._isUsableMatch(match, userId, mode, stake)) {
         const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
         }
       }
 
-      if (this._isReadyLiveMatch(match, userId, mode, stake)) {
+      if (this._isUsableMatch(match, userId, mode, stake)) {
         this.rtMatchStarted = true;
         this.onMatchFound(
           this._buildOpponentFromMatch(match, userId),
@@ -945,9 +935,7 @@
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               try {
                 await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-              } catch (err) {
-                console.warn("[TonCrime][PVP] queue update poll error:", err);
-              }
+              } catch (_) {}
             }
           )
           .subscribe();
@@ -959,14 +947,10 @@
             if (tryError) throw tryError;
             const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
             if (matchedFromRpc) return;
-          } catch (err) {
-            console.warn("[TonCrime][PVP] try_match error:", err);
-          }
+          } catch (_) {}
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (err) {
-            console.warn("[TonCrime][PVP] poll error:", err);
-          }
+          } catch (_) {}
         }, 1000);
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
@@ -1454,33 +1438,24 @@
 
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
       try {
-        const { data: queueRows, error: queueError } = await sb
+        const { data: queueRow } = await sb
           .from("pvp_match_queue")
-          .select("*")
+          .select("match_id, status")
           .eq("user_id", userId)
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
-          .limit(5);
-
-        if (queueError) {
-          console.warn("[TonCrime][PVP] queue poll error:", queueError);
-        }
-
-        const queueList = Array.isArray(queueRows) ? queueRows : (queueRows ? [queueRows] : []);
-        const queueRow = queueList.find((r) => r?.match_id) || queueList[0] || null;
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (queueRow?.match_id) {
-          const { data: matchRow, error: matchError } = await sb
+          const { data: matchRow } = await sb
             .from("pvp_matches")
             .select("*")
             .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchError) {
-            console.warn("[TonCrime][PVP] match-by-id poll error:", matchError);
-          }
-
-          if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
+          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1490,20 +1465,15 @@
           }
         }
 
-        const { data: directMatches, error: directError } = await sb
+        const { data: directMatch } = await sb
           .from("pvp_matches")
           .select("*")
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
           .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-          .limit(10);
-
-        if (directError) {
-          console.warn("[TonCrime][PVP] direct match poll error:", directError);
-        }
-
-        const directList = Array.isArray(directMatches) ? directMatches : (directMatches ? [directMatches] : []);
-        const directMatch = directList.find((m) => this._isReadyLiveMatch(m, userId, mode, stake)) || null;
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
@@ -1513,9 +1483,7 @@
           );
           return true;
         }
-      } catch (err) {
-        console.warn("[TonCrime][PVP] matchmaking poll fatal:", err);
-      }
+      } catch (_) {}
       return false;
     }
 
