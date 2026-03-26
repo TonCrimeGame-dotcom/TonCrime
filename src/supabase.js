@@ -8,43 +8,33 @@ const AUTH_COOLDOWN_UNTIL_KEY = "toncrime_auth_cooldown_until_v2";
 const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
-const AUTH_ANON_DISABLED_KEY = "toncrime_auth_anon_disabled_v1";
 const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
-const AUTH_PATCH_VERSION = "2026-03-26-pvp-recover-1";
+const AUTH_PATCH_VERSION = "2026-03-26-anon-only-1";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 window.supabase = supabase;
 window.tcSupabase = supabase;
-applyAuthPatchReset();
 
 function safeLocalGet(key) {
-  try {
-    return String(localStorage.getItem(key) || "");
-  } catch {
-    return "";
-  }
+  try { return String(localStorage.getItem(key) || ""); } catch { return ""; }
 }
-
 function safeLocalSet(key, value) {
-  try {
-    localStorage.setItem(key, String(value ?? ""));
-  } catch {}
+  try { localStorage.setItem(key, String(value ?? "")); } catch {}
 }
-
 function safeLocalRemove(key) {
-  try {
-    localStorage.removeItem(key);
-  } catch {}
+  try { localStorage.removeItem(key); } catch {}
 }
+function nowMs() { return Date.now(); }
 
 function getTelegramUser() {
-  try {
-    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
-  } catch {
-    return null;
-  }
+  try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
 }
-
 function makeRandomId() {
   try {
     const arr = new Uint8Array(16);
@@ -62,8 +52,7 @@ export function getProfileKey(store = null) {
     return fromStore;
   }
 
-  const tgUser = getTelegramUser();
-  const tgId = String(tgUser?.id || "").trim();
+  const tgId = String(getTelegramUser()?.id || "").trim();
   if (tgId) return tgId;
 
   let profileKey = safeLocalGet(PROFILE_KEY_STORAGE).trim();
@@ -81,10 +70,8 @@ export function ensureGuestIdentitySync(store = null) {
 
   const profileKey = getProfileKey(store);
   const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
-
   if (!authKey) safeLocalSet(GUEST_IDENTITY_KEY, profileKey);
   if (!safeLocalGet(PROFILE_KEY_STORAGE).trim()) safeLocalSet(PROFILE_KEY_STORAGE, profileKey);
-
   return authKey || profileKey;
 }
 
@@ -104,69 +91,36 @@ function getIdentityCandidates() {
   const tgUser = getTelegramUser();
   if (tgUser?.id) return [`tg_${String(tgUser.id)}`];
 
+  const out = [];
   const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
-  const profileKey = getProfileKey();
-  const list = [];
-
-  if (authKey) list.push(authKey);
-  if (profileKey && profileKey !== authKey) list.push(profileKey);
-  if (!list.length) {
-    const created = `guest_${makeRandomId()}`;
-    safeLocalSet(PROFILE_KEY_STORAGE, created);
-    safeLocalSet(GUEST_IDENTITY_KEY, created);
-    list.push(created);
+  const profileKey = safeLocalGet(PROFILE_KEY_STORAGE).trim();
+  const current = getProfileKey();
+  for (const item of [authKey, profileKey, current]) {
+    const val = String(item || "").trim();
+    if (val && !out.includes(val)) out.push(val);
   }
-
-  return list;
-}
-
-function sanitizeIdentityKey(identityKey) {
-  return String(identityKey || "guest_unknown")
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, "_")
-    .slice(0, 48);
-}
-
-function buildIdentityEmail(identityKey = getIdentityKey()) {
-  return `${sanitizeIdentityKey(identityKey)}@toncrime.local`;
-}
-
-function buildIdentityPassword(identityKey = getIdentityKey()) {
-  const safe = sanitizeIdentityKey(identityKey);
-  return `TonCrime_${safe}_Auth!2026`.slice(0, 64);
-}
-
-function nowMs() {
-  return Date.now();
+  if (!out.length) out.push(`guest_${makeRandomId()}`);
+  return out;
 }
 
 function getAuthCooldownUntil() {
   return Number(safeLocalGet(AUTH_COOLDOWN_UNTIL_KEY) || 0);
 }
-
 function setAuthCooldown(ms, reason = "auth temporarily disabled") {
   const until = nowMs() + Math.max(1000, Number(ms || 0));
   safeLocalSet(AUTH_COOLDOWN_UNTIL_KEY, until);
   safeLocalSet(AUTH_COOLDOWN_REASON_KEY, String(reason || ""));
   return until;
 }
-
-function clearAuthCooldown() {
+function clearAuthCooldown(reason = "") {
   safeLocalRemove(AUTH_COOLDOWN_UNTIL_KEY);
   safeLocalRemove(AUTH_COOLDOWN_REASON_KEY);
-}
-
-function clearAuthBackoffState(reason = "") {
-  clearAuthCooldown();
   safeLocalRemove(AUTH_LAST_TRY_KEY);
-  if (reason) safeLocalSet(AUTH_COOLDOWN_REASON_KEY, String(reason));
+  if (reason) safeLocalSet("toncrime_auth_cooldown_cleared_reason_v1", reason);
 }
-
-function applyAuthPatchReset() {
-  const current = safeLocalGet(AUTH_PATCH_VERSION_KEY);
-  if (current === AUTH_PATCH_VERSION) return;
-  clearAuthBackoffState("auth patch reset");
-  safeLocalSet(AUTH_PATCH_VERSION_KEY, AUTH_PATCH_VERSION);
+export function tcClearAuthCooldown(reason = "manual") {
+  clearAuthCooldown(reason);
+  return true;
 }
 
 function isRateLimitError(err) {
@@ -174,97 +128,39 @@ function isRateLimitError(err) {
   const status = Number(err?.status || err?.code || 0);
   return status === 429 || msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("email rate limit exceeded");
 }
-
-function isEmailDisabledError(err) {
-  const msg = String(err?.message || err?.error_description || "").toLowerCase();
-  return msg.includes("email") && (msg.includes("disabled") || msg.includes("not allowed"));
-}
-
-function isInvalidCredentialsError(err) {
-  const msg = String(err?.message || err?.error_description || "").toLowerCase();
-  const status = Number(err?.status || err?.code || 0);
-  return status === 400 || msg.includes("invalid login") || msg.includes("invalid credentials") || msg.includes("email not confirmed") || msg.includes("user not found");
-}
-
 function isAnonymousDisabledError(err) {
   const msg = String(err?.message || err?.error_description || "").toLowerCase();
   return msg.includes("anonymous") && (msg.includes("disabled") || msg.includes("not enabled") || msg.includes("not allowed"));
 }
 
-async function tryAnonymousAuth() {
-  if (safeLocalGet(AUTH_ANON_DISABLED_KEY) === "1") return null;
-  if (typeof supabase?.auth?.signInAnonymously !== "function") {
-    safeLocalSet(AUTH_ANON_DISABLED_KEY, "1");
-    return null;
-  }
-
-  try {
-    const res = await supabase.auth.signInAnonymously({
-      options: {
-        data: {
-          identity_key: getIdentityKey(),
-          username: getPreferredUsername(),
-        },
-      },
-    });
-
-    if (!res?.error && res?.data?.user) {
-      clearAuthCooldown();
-      return res.data.user;
-    }
-
-    if (isRateLimitError(res?.error)) {
-      setAuthCooldown(5 * 60 * 1000, res.error.message || "Anon auth rate limited");
-      warnOnce("[AUTH] anonymous sign-in rate limited:", res.error);
-      return null;
-    }
-
-    if (isAnonymousDisabledError(res?.error)) {
-      safeLocalSet(AUTH_ANON_DISABLED_KEY, "1");
-      return null;
-    }
-
-    if (res?.error) {
-      warnOnce("[AUTH] anonymous sign-in failed:", res.error);
-    }
-  } catch (err) {
-    if (isRateLimitError(err)) {
-      setAuthCooldown(5 * 60 * 1000, err?.message || "Anon auth rate limited");
-      warnOnce("[AUTH] anonymous sign-in rate limited:", err);
-      return null;
-    }
-
-    if (isAnonymousDisabledError(err)) {
-      safeLocalSet(AUTH_ANON_DISABLED_KEY, "1");
-      return null;
-    }
-
-    warnOnce("[AUTH] anonymous sign-in fatal:", err);
-  }
-
-  return null;
-}
-
 let authPromise = null;
 let authWarned = false;
-
 function warnOnce(...args) {
   if (authWarned) return;
   authWarned = true;
   console.warn(...args);
 }
 
+function applyPatchReset() {
+  const current = safeLocalGet(AUTH_PATCH_VERSION_KEY);
+  if (current === AUTH_PATCH_VERSION) return;
+  safeLocalSet(AUTH_PATCH_VERSION_KEY, AUTH_PATCH_VERSION);
+  clearAuthCooldown("patch_reset");
+}
+applyPatchReset();
+
 function canAttemptNow(identityKey) {
   const lastIdentity = safeLocalGet(AUTH_LAST_IDENTITY_KEY);
   if (lastIdentity !== identityKey) {
     safeLocalSet(AUTH_LAST_IDENTITY_KEY, identityKey);
+    clearAuthCooldown("identity_changed");
   }
 
   const cooldownUntil = getAuthCooldownUntil();
   if (cooldownUntil > nowMs()) return false;
 
   const last = Number(safeLocalGet(AUTH_LAST_TRY_KEY) || 0);
-  if (last && nowMs() - last < 15000) return false;
+  if (last && nowMs() - last < 5000) return false;
 
   safeLocalSet(AUTH_LAST_TRY_KEY, nowMs());
   return true;
@@ -273,17 +169,56 @@ function canAttemptNow(identityKey) {
 function rememberSuccessfulIdentity(identityKey) {
   if (!identityKey || getTelegramUser()?.id) return;
   safeLocalSet(GUEST_IDENTITY_KEY, identityKey);
-  if (!safeLocalGet(PROFILE_KEY_STORAGE).trim()) {
-    safeLocalSet(PROFILE_KEY_STORAGE, identityKey);
-  }
+  if (!safeLocalGet(PROFILE_KEY_STORAGE).trim()) safeLocalSet(PROFILE_KEY_STORAGE, identityKey);
 }
 
-function getPreferredUsername() {
-  return String(
-    getTelegramUser()?.username ||
-      window.tcStore?.get?.()?.player?.username ||
-      "Player"
-  ).trim() || "Player";
+async function tryAnonymousAuth(identityKey) {
+  if (typeof supabase?.auth?.signInAnonymously !== "function") return null;
+  try {
+    const res = await supabase.auth.signInAnonymously({
+      options: {
+        data: {
+          identity_key: identityKey,
+          username: String(getTelegramUser()?.username || window.tcStore?.get?.()?.player?.username || "Player").trim() || "Player",
+        },
+      },
+    });
+
+    if (!res?.error && res?.data?.user) {
+      clearAuthCooldown("anon_success");
+      rememberSuccessfulIdentity(identityKey);
+      return res.data.user;
+    }
+    if (isRateLimitError(res?.error)) {
+      setAuthCooldown(10 * 60 * 1000, res?.error?.message || "Anonymous auth rate limited");
+      warnOnce("[AUTH] anonymous sign-in rate limited:", res.error);
+      return null;
+    }
+    if (isAnonymousDisabledError(res?.error)) {
+      setAuthCooldown(10 * 60 * 1000, res?.error?.message || "Anonymous auth disabled");
+      warnOnce("[AUTH] anonymous auth disabled in Supabase. Enable Anonymous provider.");
+      return null;
+    }
+    if (res?.error) {
+      setAuthCooldown(2 * 60 * 1000, res?.error?.message || "Anonymous auth failed");
+      warnOnce("[AUTH] anonymous sign-in failed:", res.error);
+      return null;
+    }
+  } catch (err) {
+    if (isRateLimitError(err)) {
+      setAuthCooldown(10 * 60 * 1000, err?.message || "Anonymous auth rate limited");
+      warnOnce("[AUTH] anonymous sign-in rate limited:", err);
+      return null;
+    }
+    if (isAnonymousDisabledError(err)) {
+      setAuthCooldown(10 * 60 * 1000, err?.message || "Anonymous auth disabled");
+      warnOnce("[AUTH] anonymous auth disabled in Supabase. Enable Anonymous provider.");
+      return null;
+    }
+    setAuthCooldown(2 * 60 * 1000, err?.message || "Anonymous auth fatal");
+    warnOnce("[AUTH] anonymous sign-in fatal:", err);
+  }
+  return null;
 }
 
 export async function ensureAuthSession() {
@@ -291,110 +226,28 @@ export async function ensureAuthSession() {
 
   authPromise = (async () => {
     try {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session?.user) {
-        clearAuthCooldown();
-        return data.session.user;
+      const sessionRes = await supabase.auth.getSession().catch(() => null);
+      const sessionUser = sessionRes?.data?.session?.user || null;
+      if (sessionUser) {
+        clearAuthCooldown("session_exists");
+        return sessionUser;
+      }
+
+      const userRes = await supabase.auth.getUser().catch(() => null);
+      const authUser = userRes?.data?.user || null;
+      if (authUser) {
+        clearAuthCooldown("user_exists");
+        return authUser;
       }
     } catch {}
 
     const candidates = getIdentityCandidates();
     const primaryIdentity = candidates[0] || getIdentityKey();
-
-    const anonUser = await tryAnonymousAuth();
-    if (anonUser?.id) return anonUser;
-
     if (!canAttemptNow(primaryIdentity)) return null;
 
     for (const identityKey of candidates) {
-      const email = buildIdentityEmail(identityKey);
-      const password = buildIdentityPassword(identityKey);
-
-      try {
-        const signInRes = await supabase.auth.signInWithPassword({ email, password });
-        if (!signInRes.error && signInRes.data?.user) {
-          clearAuthCooldown();
-          rememberSuccessfulIdentity(identityKey);
-          return signInRes.data.user;
-        }
-        if (isRateLimitError(signInRes?.error)) {
-          setAuthCooldown(30 * 60 * 1000, signInRes.error.message || "Auth rate limited");
-          warnOnce("[AUTH] cooldown started after signIn rate limit:", signInRes.error);
-          return null;
-        }
-      } catch (err) {
-        if (isRateLimitError(err)) {
-          setAuthCooldown(30 * 60 * 1000, err?.message || "Auth rate limited");
-          warnOnce("[AUTH] cooldown started after signIn rate limit:", err);
-          return null;
-        }
-        if (!isInvalidCredentialsError(err)) {
-          warnOnce("[AUTH] signIn error:", err);
-        }
-      }
-    }
-
-    const signupIdentity = getProfileKey() || primaryIdentity;
-    if (!signupIdentity) return null;
-
-    if (!getTelegramUser()?.id) {
-      safeLocalSet(PROFILE_KEY_STORAGE, signupIdentity);
-      safeLocalSet(GUEST_IDENTITY_KEY, signupIdentity);
-    }
-
-    const email = buildIdentityEmail(signupIdentity);
-    const password = buildIdentityPassword(signupIdentity);
-
-    try {
-      const signUpRes = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            identity_key: signupIdentity,
-            username: getPreferredUsername(),
-          },
-        },
-      });
-
-      if (!signUpRes.error && signUpRes.data?.user) {
-        if (signUpRes.data.session?.user) {
-          clearAuthCooldown();
-          rememberSuccessfulIdentity(signupIdentity);
-          return signUpRes.data.session.user;
-        }
-        const signInAgain = await supabase.auth.signInWithPassword({ email, password });
-        if (!signInAgain.error && signInAgain.data?.user) {
-          clearAuthCooldown();
-          rememberSuccessfulIdentity(signupIdentity);
-          return signInAgain.data.user;
-        }
-      }
-
-      if (isRateLimitError(signUpRes?.error)) {
-        setAuthCooldown(30 * 60 * 1000, signUpRes.error.message || "Auth sign-up rate limited");
-        warnOnce("[AUTH] signUp rate limited. Auth paused for 30 minutes.");
-        return null;
-      }
-      if (isEmailDisabledError(signUpRes?.error)) {
-        setAuthCooldown(12 * 60 * 60 * 1000, signUpRes.error.message || "Email auth disabled");
-        warnOnce("[AUTH] email signups disabled. Auth paused.");
-        return null;
-      }
-      if (signUpRes?.error) {
-        setAuthCooldown(10 * 60 * 1000, signUpRes.error.message || "Auth sign-up failed");
-        warnOnce("[AUTH] signUp failed. Auth paused for 10 minutes:", signUpRes.error);
-        return null;
-      }
-    } catch (err) {
-      if (isRateLimitError(err)) {
-        setAuthCooldown(30 * 60 * 1000, err?.message || "Auth sign-up rate limited");
-        warnOnce("[AUTH] signUp rate limited. Auth paused for 30 minutes.");
-        return null;
-      }
-      setAuthCooldown(10 * 60 * 1000, err?.message || "Auth fatal");
-      warnOnce("[AUTH] signUp fatal. Auth paused for 10 minutes:", err);
-      return null;
+      const anonUser = await tryAnonymousAuth(identityKey);
+      if (anonUser?.id) return anonUser;
     }
 
     return null;
@@ -405,65 +258,23 @@ export async function ensureAuthSession() {
   return authPromise;
 }
 
-export async function waitForAuthSession(timeoutMs = 9000) {
-  const startedAt = nowMs();
+export async function waitForAuthSession(timeoutMs = 8000) {
+  const started = nowMs();
+  while (nowMs() - started < Math.max(1000, Number(timeoutMs || 0))) {
+    const sessionRes = await supabase.auth.getSession().catch(() => null);
+    const sessionUser = sessionRes?.data?.session?.user || null;
+    if (sessionUser?.id) return sessionUser;
 
-  try {
-    const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) return data.session.user;
-  } catch {}
+    const userRes = await supabase.auth.getUser().catch(() => null);
+    const authUser = userRes?.data?.user || null;
+    if (authUser?.id) return authUser;
 
-  try {
-    const immediate = await ensureAuthSession().catch(() => null);
-    if (immediate) return immediate;
-  } catch {}
+    const ensured = await ensureAuthSession().catch(() => null);
+    if (ensured?.id) return ensured;
 
-  return await new Promise((resolve) => {
-    let done = false;
-    let sub = null;
-
-    const finish = async (user = null) => {
-      if (done) return;
-      done = true;
-      try { sub?.data?.subscription?.unsubscribe?.(); } catch {}
-      if (user) {
-        resolve(user);
-        return;
-      }
-      try {
-        const { data } = await supabase.auth.getSession();
-        resolve(data?.session?.user || null);
-      } catch {
-        resolve(null);
-      }
-    };
-
-    try {
-      sub = supabase.auth.onAuthStateChange((_event, session) => {
-        const user = session?.user || null;
-        if (user) finish(user);
-      });
-    } catch {}
-
-    const interval = setInterval(async () => {
-      if (done) {
-        clearInterval(interval);
-        return;
-      }
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session?.user) {
-          clearInterval(interval);
-          finish(data.session.user);
-          return;
-        }
-      } catch {}
-      if (nowMs() - startedAt > timeoutMs) {
-        clearInterval(interval);
-        finish(null);
-      }
-    }, 250);
-  });
+    await new Promise((r) => setTimeout(r, 350));
+  }
+  return null;
 }
 
 export async function bindProfileToCurrentAuth(profileKey = "") {
@@ -485,24 +296,27 @@ export async function bindProfileToCurrentAuth(profileKey = "") {
 }
 
 window.tcEnsureAuthSession = ensureAuthSession;
+window.tcWaitForAuthSession = waitForAuthSession;
 window.tcGetIdentityKey = getIdentityKey;
 window.tcGetProfileKey = getProfileKey;
 window.tcBindProfileToCurrentAuth = bindProfileToCurrentAuth;
-
-
-export function tcClearAuthCooldown(reason = "manual_clear") {
-  clearAuthBackoffState(reason);
-  return true;
-}
-
-window.tcWaitForAuthSession = waitForAuthSession;
 window.tcClearAuthCooldown = tcClearAuthCooldown;
 
 try {
+  supabase.auth.onAuthStateChange((event, session) => {
+    const userId = session?.user?.id || "";
+    if (userId) {
+      clearAuthCooldown(`auth_event_${event || 'unknown'}`);
+      try { window.dispatchEvent(new CustomEvent("tc:profile-sync-now")); } catch {}
+    }
+  });
+} catch {}
+
+try {
+  if (document.visibilityState === "visible") ensureAuthSession().catch(() => null);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") ensureAuthSession().catch(() => null);
   });
-  window.addEventListener("focus", () => {
-    ensureAuthSession().catch(() => null);
-  });
+  window.addEventListener("focus", () => ensureAuthSession().catch(() => null));
+  setTimeout(() => ensureAuthSession().catch(() => null), 600);
 } catch {}
