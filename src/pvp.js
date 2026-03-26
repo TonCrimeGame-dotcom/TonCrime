@@ -662,6 +662,33 @@
       return true;
     }
 
+    _matchCreatedAtMs(match) {
+      const raw = match?.created_at ?? match?.inserted_at ?? match?.started_at ?? null;
+      if (!raw) return 0;
+      const ms = Date.parse(raw);
+      return Number.isFinite(ms) ? ms : 0;
+    }
+
+    _isReadyLiveMatch(match, userId, mode, stake) {
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+
+      const player1Id = String(match?.player1_id || "").trim();
+      const player2Id = String(match?.player2_id || "").trim();
+      if (!player1Id || !player2Id || player1Id === player2Id) return false;
+
+      const status = String(match?.status || match?.state || "").trim().toLowerCase();
+      if (["finished", "ended", "cancelled", "canceled", "abandoned", "expired", "closed"].includes(status)) {
+        return false;
+      }
+
+      const createdAtMs = this._matchCreatedAtMs(match);
+      if (createdAtMs && this.matchStartedAt && createdAtMs + 1500 < this.matchStartedAt) {
+        return false;
+      }
+
+      return true;
+    }
+
     async _fetchMatchById(sb, matchId) {
       if (!sb || !matchId) return null;
       try {
@@ -745,7 +772,7 @@
     _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
       const match = payload?.new || payload || null;
       if (this.rtMatchStarted || this.matchState !== "searching") return false;
-      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
 
       this.rtMatchStarted = true;
       this.onMatchFound(
@@ -767,14 +794,14 @@
       if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
-      if (!this._isUsableMatch(match, userId, mode, stake)) {
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) {
         const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
         }
       }
 
-      if (this._isUsableMatch(match, userId, mode, stake)) {
+      if (this._isReadyLiveMatch(match, userId, mode, stake)) {
         this.rtMatchStarted = true;
         this.onMatchFound(
           this._buildOpponentFromMatch(match, userId),
@@ -783,15 +810,7 @@
         return true;
       }
 
-      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
-      if (!fallbackCtx?.matchId) return false;
-
-      this.rtMatchStarted = true;
-      this.onMatchFound(
-        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
-        fallbackCtx
-      );
-      return true;
+      return false;
     }
 
     _clearRealtime() {
@@ -1492,7 +1511,7 @@
             .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
+          if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1512,7 +1531,7 @@
           .limit(1)
           .maybeSingle();
 
-        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
+        if (this._isReadyLiveMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
