@@ -149,12 +149,12 @@
     return Number(BET_STAKES[modeId] || 0);
   }
 
-  async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("enqueue_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
-    });
-  }
+async function enqueueBetPvp(supabase, mode, stake) {
+  return await supabase.rpc("enqueue_ranked_pvp", {
+    p_mode: mode,
+    p_stake_yton: stake,
+  });
+}
 
   async function cancelBetPvp(supabase, mode, stake) {
     return await supabase.rpc("cancel_ranked_pvp", {
@@ -927,7 +927,8 @@
       this.matchStartedAt = Date.now();
 
       try {
-        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
+        const { data: queueData, error: queueError } =
+  await enqueueBetPvp(sb, mode, stake, player.username);
         if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
