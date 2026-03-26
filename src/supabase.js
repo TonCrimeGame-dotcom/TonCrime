@@ -9,10 +9,13 @@ const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 const AUTH_ANON_DISABLED_KEY = "toncrime_auth_anon_disabled_v1";
+const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
+const AUTH_PATCH_VERSION = "2026-03-26-pvp-recover-1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 window.supabase = supabase;
 window.tcSupabase = supabase;
+applyAuthPatchReset();
 
 function safeLocalGet(key) {
   try {
@@ -151,6 +154,19 @@ function setAuthCooldown(ms, reason = "auth temporarily disabled") {
 function clearAuthCooldown() {
   safeLocalRemove(AUTH_COOLDOWN_UNTIL_KEY);
   safeLocalRemove(AUTH_COOLDOWN_REASON_KEY);
+}
+
+function clearAuthBackoffState(reason = "") {
+  clearAuthCooldown();
+  safeLocalRemove(AUTH_LAST_TRY_KEY);
+  if (reason) safeLocalSet(AUTH_COOLDOWN_REASON_KEY, String(reason));
+}
+
+function applyAuthPatchReset() {
+  const current = safeLocalGet(AUTH_PATCH_VERSION_KEY);
+  if (current === AUTH_PATCH_VERSION) return;
+  clearAuthBackoffState("auth patch reset");
+  safeLocalSet(AUTH_PATCH_VERSION_KEY, AUTH_PATCH_VERSION);
 }
 
 function isRateLimitError(err) {
