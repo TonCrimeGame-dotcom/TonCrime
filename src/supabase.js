@@ -212,8 +212,9 @@ function getPreferredUsername() {
   ).trim() || "Player";
 }
 
-export async function ensureAuthSession() {
-  if (authPromise) return authPromise;
+export async function ensureAuthSession(options = {}) {
+  const force = !!options?.force;
+  if (authPromise && !force) return authPromise;
 
   authPromise = (async () => {
     try {
@@ -226,7 +227,11 @@ export async function ensureAuthSession() {
 
     const candidates = getIdentityCandidates();
     const primaryIdentity = candidates[0] || getIdentityKey();
-    if (!canAttemptNow(primaryIdentity)) return null;
+    if (!force && !canAttemptNow(primaryIdentity)) return null;
+    if (force) {
+      safeLocalSet(AUTH_LAST_IDENTITY_KEY, primaryIdentity);
+      safeLocalSet(AUTH_LAST_TRY_KEY, nowMs());
+    }
 
     for (const identityKey of candidates) {
       const email = buildIdentityEmail(identityKey);
@@ -304,8 +309,8 @@ export async function ensureAuthSession() {
         return null;
       }
       if (signUpRes?.error) {
-        setAuthCooldown(10 * 60 * 1000, signUpRes.error.message || "Auth sign-up failed");
-        warnOnce("[AUTH] signUp failed. Auth paused for 10 minutes:", signUpRes.error);
+        setAuthCooldown(force ? 45 * 1000 : 10 * 60 * 1000, signUpRes.error.message || "Auth sign-up failed");
+        warnOnce("[AUTH] signUp failed. Auth paused:", signUpRes.error);
         return null;
       }
     } catch (err) {
@@ -314,8 +319,8 @@ export async function ensureAuthSession() {
         warnOnce("[AUTH] signUp rate limited. Auth paused for 30 minutes.");
         return null;
       }
-      setAuthCooldown(10 * 60 * 1000, err?.message || "Auth fatal");
-      warnOnce("[AUTH] signUp fatal. Auth paused for 10 minutes:", err);
+      setAuthCooldown(force ? 45 * 1000 : 10 * 60 * 1000, err?.message || "Auth fatal");
+      warnOnce("[AUTH] signUp fatal. Auth paused:", err);
       return null;
     }
 
@@ -325,6 +330,67 @@ export async function ensureAuthSession() {
   });
 
   return authPromise;
+}
+
+export async function waitForAuthSession(timeoutMs = 9000) {
+  const startedAt = nowMs();
+
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user) return data.session.user;
+  } catch {}
+
+  try {
+    const immediate = await ensureAuthSession({ force: true }).catch(() => null);
+    if (immediate) return immediate;
+  } catch {}
+
+  return await new Promise((resolve) => {
+    let done = false;
+    let sub = null;
+
+    const finish = async (user = null) => {
+      if (done) return;
+      done = true;
+      try { sub?.data?.subscription?.unsubscribe?.(); } catch {}
+      if (user) {
+        resolve(user);
+        return;
+      }
+      try {
+        const { data } = await supabase.auth.getSession();
+        resolve(data?.session?.user || null);
+      } catch {
+        resolve(null);
+      }
+    };
+
+    try {
+      sub = supabase.auth.onAuthStateChange((_event, session) => {
+        const user = session?.user || null;
+        if (user) finish(user);
+      });
+    } catch {}
+
+    const interval = setInterval(async () => {
+      if (done) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session?.user) {
+          clearInterval(interval);
+          finish(data.session.user);
+          return;
+        }
+      } catch {}
+      if (nowMs() - startedAt > timeoutMs) {
+        clearInterval(interval);
+        finish(null);
+      }
+    }, 250);
+  });
 }
 
 export async function bindProfileToCurrentAuth(profileKey = "") {
@@ -346,6 +412,7 @@ export async function bindProfileToCurrentAuth(profileKey = "") {
 }
 
 window.tcEnsureAuthSession = ensureAuthSession;
+window.tcWaitForAuthSession = waitForAuthSession;
 window.tcGetIdentityKey = getIdentityKey;
 window.tcGetProfileKey = getProfileKey;
 window.tcBindProfileToCurrentAuth = bindProfileToCurrentAuth;
