@@ -75,6 +75,49 @@ export function startChat(store) {
     };
   };
 
+  function getBackendCandidates() {
+    const raw = [
+      window.TONCRIME_BACKEND_URL,
+      window.__TONCRIME_BACKEND_URL__,
+      localStorage.getItem("toncrime_backend_url"),
+      localStorage.getItem("backendUrl"),
+      "https://toncrime.onrender.com",
+      "",
+    ];
+    const out = [];
+    for (const item of raw) {
+      const val = String(item || "").trim().replace(/\/$/, "");
+      if (!out.includes(val)) out.push(val);
+    }
+    return out;
+  }
+
+  async function fetchChatBackend(path, options = {}) {
+    let lastErr = null;
+    const candidates = getBackendCandidates();
+    for (const base of candidates) {
+      const url = `${base}${path}`;
+      try {
+        const res = await fetch(url, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {}),
+          },
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) {
+          lastErr = new Error(json?.error || `HTTP ${res.status}`);
+          continue;
+        }
+        return json;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error("chat backend unavailable");
+  }
+
   function loadFallbackMessages() {
     try {
       const raw = localStorage.getItem(LOCAL_CACHE_KEY);
@@ -252,21 +295,33 @@ export function startChat(store) {
 
     try {
       const authUser = await ensureChatAuthOnce().catch(() => null);
-      if (!authUser) throw new Error("auth unavailable");
-
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert(payload)
-        .select("*")
-        .single();
-      if (error) throw error;
-      addMessage(data);
+      if (authUser) {
+        const { data, error } = await supabase
+          .from("chat_messages")
+          .insert(payload)
+          .select("*")
+          .single();
+        if (error) throw error;
+        addMessage(data);
+        return;
+      }
+      throw new Error("auth unavailable");
     } catch (err) {
-      console.error("[CHAT] send failed:", err);
-      input.value = text;
+      console.warn("[CHAT] supabase send unavailable, trying backend:", err?.message || err);
       try {
-        window.alert("Mesaj gönderilemedi. Oturum veya bağlantı sorunu olabilir.");
-      } catch {}
+        const json = await fetchChatBackend("/public/chat/send", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (json?.item) addMessage(json.item);
+        return;
+      } catch (backendErr) {
+        console.error("[CHAT] backend send failed:", backendErr);
+        input.value = text;
+        try {
+          window.alert("Mesaj gönderilemedi. Oturum veya bağlantı sorunu olabilir.");
+        } catch {}
+      }
     }
   }
 
@@ -281,8 +336,14 @@ export function startChat(store) {
       if (error) throw error;
       applyMessages(data || []);
     } catch (err) {
-      console.error("[CHAT] history load failed:", err);
-      applyMessages(loadFallbackMessages());
+      console.warn("[CHAT] supabase history unavailable, trying backend:", err?.message || err);
+      try {
+        const json = await fetchChatBackend(`/public/chat/history?limit=${MAX_MESSAGES}`);
+        applyMessages(Array.isArray(json?.items) ? json.items : []);
+      } catch (backendErr) {
+        console.error("[CHAT] backend history failed:", backendErr);
+        applyMessages(loadFallbackMessages());
+      }
     }
   }
 
