@@ -442,6 +442,11 @@
       this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
+      this.matchStatusTitle = "";
+      this.matchStatusLine1 = "";
+      this.matchStatusLine2 = "";
+      this._authRetryBlockUntil = 0;
+      this._authRecoveryTriedAt = 0;
 
       this.matchSearchTimer = null;
       this.matchFallbackTimer = null;
@@ -535,27 +540,46 @@
 
     async _getAuthUserId(options = {}) {
       const sb = this._getSupabase();
-      if (!sb?.auth?.getUser) return null;
+      if (!sb?.auth) return null;
 
       const waitForSession = !!options?.waitForSession;
       const timeoutMs = Math.max(1000, Number(options?.timeoutMs || 9000));
 
       try {
-        let res = await sb.auth.getUser();
-        let userId = res?.data?.user?.id || null;
-        if (userId) return userId;
+        if (typeof sb.auth.getSession === "function") {
+          const sessionRes = await sb.auth.getSession().catch(() => null);
+          const sessionUserId = sessionRes?.data?.session?.user?.id || null;
+          if (sessionUserId) return sessionUserId;
+        }
 
-        if (waitForSession && typeof window.tcWaitForAuthSession === "function") {
-          const user = await window.tcWaitForAuthSession(timeoutMs).catch(() => null);
-          userId = user?.id || null;
+        if (typeof sb.auth.getUser === "function") {
+          let res = await sb.auth.getUser().catch(() => null);
+          let userId = res?.data?.user?.id || null;
           if (userId) return userId;
         }
 
+        if (waitForSession && typeof window.tcWaitForAuthSession === "function") {
+          const waitedUser = await window.tcWaitForAuthSession(timeoutMs).catch(() => null);
+          const waitedUserId = waitedUser?.id || null;
+          if (waitedUserId) return waitedUserId;
+        }
+
         if (typeof window.tcEnsureAuthSession === "function") {
-          await window.tcEnsureAuthSession().catch(() => null);
-          res = await sb.auth.getUser();
-          userId = res?.data?.user?.id || null;
-          if (userId) return userId;
+          const ensuredUser = await window.tcEnsureAuthSession().catch(() => null);
+          const ensuredUserId = ensuredUser?.id || null;
+          if (ensuredUserId) return ensuredUserId;
+
+          if (typeof sb.auth.getSession === "function") {
+            const afterEnsureSession = await sb.auth.getSession().catch(() => null);
+            const sessionUserId = afterEnsureSession?.data?.session?.user?.id || null;
+            if (sessionUserId) return sessionUserId;
+          }
+
+          if (typeof sb.auth.getUser === "function") {
+            const afterEnsureUser = await sb.auth.getUser().catch(() => null);
+            const userId = afterEnsureUser?.data?.user?.id || null;
+            if (userId) return userId;
+          }
         }
 
         return null;
@@ -809,6 +833,11 @@
       this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
+      this.matchStatusTitle = "";
+      this.matchStatusLine1 = "";
+      this.matchStatusLine2 = "";
+      this._authRetryBlockUntil = 0;
+      this._authRecoveryTriedAt = 0;
     }
 
     _mapModeIdToSqlMode(id) {
@@ -824,9 +853,23 @@
 
       this._resetMatchmaking();
       this.matchModeId = id;
+      this.matchState = "searching";
+      this.matchStartedAt = Date.now();
+      this.matchStatusTitle = "Giriş hazırlanıyor";
+      this.matchStatusLine1 = "Oyuncu oturumu kontrol ediliyor";
+      this.matchStatusLine2 = "Lütfen bekle...";
+
+      try {
+        window.dispatchEvent(new CustomEvent("tc:profile-sync-now"));
+      } catch (_) {}
 
       const sb = this._getSupabase();
-      const userId = await this._getAuthUserId({ waitForSession: true, timeoutMs: 9000 });
+      let userId = await this._getAuthUserId({ waitForSession: true, timeoutMs: 9000 });
+      if (!userId && typeof window.tcClearAuthCooldown === "function" && Date.now() - Number(this._authRecoveryTriedAt || 0) > 60000) {
+        this._authRecoveryTriedAt = Date.now();
+        try { window.tcClearAuthCooldown("pvp_recovery"); } catch (_) {}
+        userId = await this._getAuthUserId({ waitForSession: true, timeoutMs: 4000 });
+      }
       const mode = this._mapModeIdToSqlMode(id);
       const stake = getStakeForMode(id);
       const player = this._getPlayerMeta();
@@ -845,13 +888,18 @@
         });
         this._startingMatchmaking = false;
         this.matchState = "menu";
+        this._authRetryBlockUntil = Date.now() + 2500;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: "Online eşleşme için giriş oturumu hazırlanamadı" },
+            detail: { text: "Giriş oturumu hazır değil • 2-3 sn sonra tekrar dene" },
           }));
         } catch (_) {}
         return;
       }
+
+      this.matchStatusTitle = "Rakip aranıyor";
+      this.matchStatusLine1 = "Eşleşme hazırlanıyor";
+      this.matchStatusLine2 = "Oyuncular taranıyor...";
 
       if (currentEnergy < energyCost) {
         this._startingMatchmaking = false;
@@ -1091,6 +1139,8 @@
     }
 
     pointerUp(x, y) {
+      if (Date.now() < Number(this._authRetryBlockUntil || 0)) return;
+
       if (this.closeRect && pointInRect(x, y, this.closeRect)) {
         this._cancelRealtimeQueue();
         this._resetMatchmaking();
@@ -1545,7 +1595,10 @@
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "900 20px system-ui, Arial";
-      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranıyor", cx, boxY + 46);
+      const statusTitle = this.matchState === "found"
+        ? (this.matchStatusTitle || "Rakip bulundu")
+        : (this.matchStatusTitle || "Rakip aranıyor");
+      ctx.fillText(statusTitle, cx, boxY + 46);
 
       if (this.matchState === "found" && this.matchOpponent) {
         ctx.font = "900 28px system-ui, Arial";
@@ -1561,10 +1614,10 @@
       } else {
         ctx.font = "500 15px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
+        ctx.fillText(this.matchStatusLine1 || "Eşleşme hazırlanıyor", cx, boxY + 104);
         ctx.font = "700 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
+        ctx.fillText(this.matchStatusLine2 || "Oyuncular taranıyor...", cx, boxY + 132);
       }
     }
 
