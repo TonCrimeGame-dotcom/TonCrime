@@ -163,11 +163,8 @@
     });
   }
 
-  async function tryBetMatch(supabase, userId, mode) {
-    return await supabase.rpc("tc_try_ranked_pvp_match", {
-      p_user_id: userId,
-      p_mode: mode,
-    });
+  async function tryBetMatch(supabase, userId, mode, stake) {
+    return await enqueueBetPvp(supabase, mode, stake);
   }
 
   function ensurePvpShellStyle() {
@@ -997,11 +994,14 @@
         this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
-            const { data: tryData, error: tryError } = await tryBetMatch(sb, userId, mode);
-            if (tryError) throw tryError;
-            const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
+            const { data: joinData, error: joinError } = await enqueueBetPvp(sb, mode, stake);
+            if (joinError) {
+              const isDuplicateQueue = String(joinError?.code || "") === "23505";
+              if (!isDuplicateQueue) throw joinError;
+            }
+            const matchedFromRpc = await this._resolveRpcMatchResult(sb, joinData, userId, mode, stake, id);
             if (matchedFromRpc) return;
-          } catch (err) { console.warn("[TonCrime][PVP] try match failed", err); }
+          } catch (err) { console.warn("[TonCrime][PVP] repeated enqueue tick failed", err); }
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
           } catch (err) { console.warn("[TonCrime][PVP] followup poll failed", err); }
