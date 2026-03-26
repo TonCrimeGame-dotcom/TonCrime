@@ -658,7 +658,7 @@
     }
 
     _isReadyLiveMatch(match, userId, mode, stake) {
-      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
       if (!this._matchLooksReady(match, userId)) return false;
       if (!this._isFreshEnoughMatch(match)) return false;
       return true;
