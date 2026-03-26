@@ -150,7 +150,7 @@
   }
 
   async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("tc_enqueue_ranked_pvp", {
+    return await supabase.rpc("enqueue_ranked_pvp", {
       p_mode: mode,
       p_stake_yton: stake,
     });
@@ -163,8 +163,11 @@
     });
   }
 
-  async function tryBetMatch(supabase, userId, mode, stake) {
-    return await enqueueBetPvp(supabase, mode, stake);
+  async function tryBetMatch(supabase, userId, mode) {
+    return await supabase.rpc("try_ranked_pvp_match", {
+      p_user_id: userId,
+      p_mode: mode,
+    });
   }
 
   function ensurePvpShellStyle() {
@@ -496,8 +499,8 @@
 
       this.bg = null;
       this.fallbackBg = new Image();
-      this.fallbackBg.src = "./assets/pvp-bg.png";
-      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./assets/pvp.jpg"; };
+      this.fallbackBg.src = "./src/assets/pvp-bg.png";
+      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
     }
 
     onEnter() {
@@ -516,14 +519,12 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
-      this._startingMatchmaking = false;
       this._resetMatchmaking();
     }
 
     onExit() {
       this._resetMatchmaking();
       this._launchingGame = false;
-      this._startingMatchmaking = false;
     }
 
     _getSupabase() {
@@ -624,40 +625,13 @@
       return true;
     }
 
-    _matchHasRealOpponent(match, userId) {
-      if (!match || !userId) return false;
+    _isReadyLiveMatch(match, userId, mode, stake) {
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
       const p1 = String(match.player1_id || "").trim();
       const p2 = String(match.player2_id || "").trim();
-      if (!p1 || !p2) return false;
-      if (p1 === p2) return false;
-      if (p1 !== String(userId) && p2 !== String(userId)) return false;
-      return true;
-    }
-
-    _matchLooksReady(match, userId) {
-      if (!this._matchHasRealOpponent(match, userId)) return false;
-      const rawStatus = String(match?.status || match?.match_status || "").toLowerCase().trim();
-      if (rawStatus && ["searching", "queued", "pending", "waiting"].includes(rawStatus)) return false;
-      return true;
-    }
-
-    _getMatchTimestampMs(match) {
-      const raw = match?.updated_at || match?.created_at || match?.started_at || null;
-      if (!raw) return 0;
-      const ts = Date.parse(raw);
-      return Number.isFinite(ts) ? ts : 0;
-    }
-
-    _isFreshEnoughMatch(match) {
-      const matchTs = this._getMatchTimestampMs(match);
-      if (!matchTs || !this.matchStartedAt) return true;
-      return matchTs >= (this.matchStartedAt - 15000);
-    }
-
-    _isReadyLiveMatch(match, userId, mode, stake) {
-      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
-      if (!this._matchLooksReady(match, userId)) return false;
-      if (!this._isFreshEnoughMatch(match)) return false;
+      if (!p1 || !p2 || p1 === p2) return false;
+      const status = String(match.status || "").toLowerCase();
+      if (["searching", "queued", "pending", "waiting"].includes(status)) return false;
       return true;
     }
 
@@ -744,7 +718,7 @@
     _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
       const match = payload?.new || payload || null;
       if (this.rtMatchStarted || this.matchState !== "searching") return false;
-      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
 
       this.rtMatchStarted = true;
       this.onMatchFound(
@@ -782,9 +756,15 @@
         return true;
       }
 
-      // RPC "matched" sinyali tek başına yeterli değil.
-      // Gerçek match satırı henüz görünmüyorsa oyunu erken açma; realtime/poll ile bekle.
-      return false;
+      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
+      if (!fallbackCtx?.matchId) return false;
+
+      this.rtMatchStarted = true;
+      this.onMatchFound(
+        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
+        fallbackCtx
+      );
+      return true;
     }
 
     _clearRealtime() {
@@ -836,11 +816,12 @@
     }
 
     async startMatchmaking(id) {
-      if (this._launchingGame || this._startingMatchmaking || this.matchState !== "menu") return;
-      this._startingMatchmaking = true;
+      if (this._launchingGame) return;
 
       this._resetMatchmaking();
+      this.matchState = "searching";
       this.matchModeId = id;
+      this.matchStartedAt = Date.now();
 
       const sb = this._getSupabase();
       const userId = await this._getAuthUserId();
@@ -854,13 +835,6 @@
       const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
       if (!sb || !userId || !mode || !stake) {
-        console.warn("[TonCrime][PVP] matchmaking not ready", {
-          hasSupabase: !!sb,
-          hasUserId: !!userId,
-          mode,
-          stake,
-        });
-        this._startingMatchmaking = false;
         this.matchState = "menu";
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -871,7 +845,6 @@
       }
 
       if (currentEnergy < energyCost) {
-        this._startingMatchmaking = false;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
@@ -882,7 +855,6 @@
       }
 
       if (ytonBalance < stake) {
-        this._startingMatchmaking = false;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: `Yetersiz YTON • ${stake} gerekli` },
@@ -892,15 +864,9 @@
         return;
       }
 
-      this.matchState = "searching";
-      this.matchStartedAt = Date.now();
-
       try {
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
-        if (queueError) {
-          const isDuplicateQueue = String(queueError?.code || "") === "23505";
-          if (!isDuplicateQueue) throw queueError;
-        }
+        if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
         this.store?.set?.({
@@ -979,37 +945,31 @@
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               try {
                 await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-              } catch (err) { console.warn("[TonCrime][PVP] queue realtime poll failed", err); }
+              } catch (err) {
+                console.warn("[TonCrime][PVP] queue update poll error:", err);
+              }
             }
           )
           .subscribe();
 
-        setTimeout(async () => {
-          if (this.rtMatchStarted || this.matchState !== "searching") return;
-          try {
-            await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (err) { console.warn("[TonCrime][PVP] initial poll failed", err); }
-        }, 250);
-
         this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
-            const { data: joinData, error: joinError } = await enqueueBetPvp(sb, mode, stake);
-            if (joinError) {
-              const isDuplicateQueue = String(joinError?.code || "") === "23505";
-              if (!isDuplicateQueue) throw joinError;
-            }
-            const matchedFromRpc = await this._resolveRpcMatchResult(sb, joinData, userId, mode, stake, id);
+            const { data: tryData, error: tryError } = await tryBetMatch(sb, userId, mode);
+            if (tryError) throw tryError;
+            const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
             if (matchedFromRpc) return;
-          } catch (err) { console.warn("[TonCrime][PVP] repeated enqueue tick failed", err); }
+          } catch (err) {
+            console.warn("[TonCrime][PVP] try_match error:", err);
+          }
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (err) { console.warn("[TonCrime][PVP] followup poll failed", err); }
+          } catch (err) {
+            console.warn("[TonCrime][PVP] poll error:", err);
+          }
         }, 1000);
-        this._startingMatchmaking = false;
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
-        this._startingMatchmaking = false;
         this.matchState = "menu";
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -1100,11 +1060,14 @@
 
       if (this.dragging && justUp) {
         this.dragging = false;
-        const shouldClick = !!this.clickCandidate;
-        this.clickCandidate = false;
-        if (shouldClick) {
+        if (this.clickCandidate) {
           this.pointerUp(px, py);
         }
+      }
+
+      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
+        this.clickCandidate = false;
+        this.pointerUp(px, py);
       }
 
       const wheel = Number(this.input?.wheelDelta || 0);
@@ -1127,8 +1090,6 @@
         this.scenes.go("home");
         return;
       }
-
-      if (this.matchState !== "menu" || this._startingMatchmaking) return;
 
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
@@ -1493,35 +1454,30 @@
 
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
       try {
-        let queueRow = null;
-        try {
-          const queueResp = await sb
-            .from("pvp_match_queue")
-            .select("*")
-            .eq("user_id", userId)
-            .eq("game_mode", mode)
-            .eq("stake_yton", stake)
-            .limit(5);
-          const queueRows = Array.isArray(queueResp?.data) ? queueResp.data : [];
-          queueRow = queueRows.sort((a, b) => {
-            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
-            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
-            return tb - ta;
-          })[0] || null;
-        } catch (queueErr) {
-          console.warn("[TonCrime][PVP] queue poll failed", queueErr);
+        const { data: queueRows, error: queueError } = await sb
+          .from("pvp_match_queue")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .limit(5);
+
+        if (queueError) {
+          console.warn("[TonCrime][PVP] queue poll error:", queueError);
         }
 
-        const queueMatchId = queueRow?.match_id || queueRow?.matchId || null;
-        if (queueMatchId) {
-          const { data: matchRow, error: matchErr } = await sb
+        const queueList = Array.isArray(queueRows) ? queueRows : (queueRows ? [queueRows] : []);
+        const queueRow = queueList.find((r) => r?.match_id) || queueList[0] || null;
+
+        if (queueRow?.match_id) {
+          const { data: matchRow, error: matchError } = await sb
             .from("pvp_matches")
             .select("*")
-            .eq("id", queueMatchId)
+            .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchErr) {
-            console.warn("[TonCrime][PVP] match-by-id poll failed", matchErr);
+          if (matchError) {
+            console.warn("[TonCrime][PVP] match-by-id poll error:", matchError);
           }
 
           if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
@@ -1534,26 +1490,22 @@
           }
         }
 
-        let directMatch = null;
-        try {
-          const directResp = await sb
-            .from("pvp_matches")
-            .select("*")
-            .eq("game_mode", mode)
-            .eq("stake_yton", stake)
-            .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-            .limit(10);
-          const directRows = Array.isArray(directResp?.data) ? directResp.data : [];
-          directMatch = directRows.sort((a, b) => {
-            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
-            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
-            return tb - ta;
-          })[0] || null;
-        } catch (directErr) {
-          console.warn("[TonCrime][PVP] direct match poll failed", directErr);
+        const { data: directMatches, error: directError } = await sb
+          .from("pvp_matches")
+          .select("*")
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+          .limit(10);
+
+        if (directError) {
+          console.warn("[TonCrime][PVP] direct match poll error:", directError);
         }
 
-        if (this._isReadyLiveMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
+        const directList = Array.isArray(directMatches) ? directMatches : (directMatches ? [directMatches] : []);
+        const directMatch = directList.find((m) => this._isReadyLiveMatch(m, userId, mode, stake)) || null;
+
+        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
@@ -1562,7 +1514,7 @@
           return true;
         }
       } catch (err) {
-        console.warn("[TonCrime][PVP] polling fatal", err);
+        console.warn("[TonCrime][PVP] matchmaking poll fatal:", err);
       }
       return false;
     }
