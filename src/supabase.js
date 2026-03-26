@@ -8,6 +8,7 @@ const AUTH_COOLDOWN_UNTIL_KEY = "toncrime_auth_cooldown_until_v2";
 const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
+const AUTH_ANON_DISABLED_KEY = "toncrime_auth_anon_disabled_v1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 window.supabase = supabase;
@@ -169,6 +170,65 @@ function isInvalidCredentialsError(err) {
   return status === 400 || msg.includes("invalid login") || msg.includes("invalid credentials") || msg.includes("email not confirmed") || msg.includes("user not found");
 }
 
+function isAnonymousDisabledError(err) {
+  const msg = String(err?.message || err?.error_description || "").toLowerCase();
+  return msg.includes("anonymous") && (msg.includes("disabled") || msg.includes("not enabled") || msg.includes("not allowed"));
+}
+
+async function tryAnonymousAuth() {
+  if (safeLocalGet(AUTH_ANON_DISABLED_KEY) === "1") return null;
+  if (typeof supabase?.auth?.signInAnonymously !== "function") {
+    safeLocalSet(AUTH_ANON_DISABLED_KEY, "1");
+    return null;
+  }
+
+  try {
+    const res = await supabase.auth.signInAnonymously({
+      options: {
+        data: {
+          identity_key: getIdentityKey(),
+          username: getPreferredUsername(),
+        },
+      },
+    });
+
+    if (!res?.error && res?.data?.user) {
+      clearAuthCooldown();
+      return res.data.user;
+    }
+
+    if (isRateLimitError(res?.error)) {
+      setAuthCooldown(5 * 60 * 1000, res.error.message || "Anon auth rate limited");
+      warnOnce("[AUTH] anonymous sign-in rate limited:", res.error);
+      return null;
+    }
+
+    if (isAnonymousDisabledError(res?.error)) {
+      safeLocalSet(AUTH_ANON_DISABLED_KEY, "1");
+      return null;
+    }
+
+    if (res?.error) {
+      warnOnce("[AUTH] anonymous sign-in failed:", res.error);
+    }
+  } catch (err) {
+    if (isRateLimitError(err)) {
+      setAuthCooldown(5 * 60 * 1000, err?.message || "Anon auth rate limited");
+      warnOnce("[AUTH] anonymous sign-in rate limited:", err);
+      return null;
+    }
+
+    if (isAnonymousDisabledError(err)) {
+      safeLocalSet(AUTH_ANON_DISABLED_KEY, "1");
+      return null;
+    }
+
+    warnOnce("[AUTH] anonymous sign-in fatal:", err);
+  }
+
+  return null;
+}
+
 let authPromise = null;
 let authWarned = false;
 
@@ -182,8 +242,6 @@ function canAttemptNow(identityKey) {
   const lastIdentity = safeLocalGet(AUTH_LAST_IDENTITY_KEY);
   if (lastIdentity !== identityKey) {
     safeLocalSet(AUTH_LAST_IDENTITY_KEY, identityKey);
-    clearAuthCooldown();
-    safeLocalRemove(AUTH_LAST_TRY_KEY);
   }
 
   const cooldownUntil = getAuthCooldownUntil();
@@ -212,9 +270,8 @@ function getPreferredUsername() {
   ).trim() || "Player";
 }
 
-export async function ensureAuthSession(options = {}) {
-  const force = !!options?.force;
-  if (authPromise && !force) return authPromise;
+export async function ensureAuthSession() {
+  if (authPromise) return authPromise;
 
   authPromise = (async () => {
     try {
@@ -227,11 +284,11 @@ export async function ensureAuthSession(options = {}) {
 
     const candidates = getIdentityCandidates();
     const primaryIdentity = candidates[0] || getIdentityKey();
-    if (!force && !canAttemptNow(primaryIdentity)) return null;
-    if (force) {
-      safeLocalSet(AUTH_LAST_IDENTITY_KEY, primaryIdentity);
-      safeLocalSet(AUTH_LAST_TRY_KEY, nowMs());
-    }
+
+    const anonUser = await tryAnonymousAuth();
+    if (anonUser?.id) return anonUser;
+
+    if (!canAttemptNow(primaryIdentity)) return null;
 
     for (const identityKey of candidates) {
       const email = buildIdentityEmail(identityKey);
@@ -309,8 +366,8 @@ export async function ensureAuthSession(options = {}) {
         return null;
       }
       if (signUpRes?.error) {
-        setAuthCooldown(force ? 45 * 1000 : 10 * 60 * 1000, signUpRes.error.message || "Auth sign-up failed");
-        warnOnce("[AUTH] signUp failed. Auth paused:", signUpRes.error);
+        setAuthCooldown(10 * 60 * 1000, signUpRes.error.message || "Auth sign-up failed");
+        warnOnce("[AUTH] signUp failed. Auth paused for 10 minutes:", signUpRes.error);
         return null;
       }
     } catch (err) {
@@ -319,8 +376,8 @@ export async function ensureAuthSession(options = {}) {
         warnOnce("[AUTH] signUp rate limited. Auth paused for 30 minutes.");
         return null;
       }
-      setAuthCooldown(force ? 45 * 1000 : 10 * 60 * 1000, err?.message || "Auth fatal");
-      warnOnce("[AUTH] signUp fatal. Auth paused:", err);
+      setAuthCooldown(10 * 60 * 1000, err?.message || "Auth fatal");
+      warnOnce("[AUTH] signUp fatal. Auth paused for 10 minutes:", err);
       return null;
     }
 
@@ -341,7 +398,7 @@ export async function waitForAuthSession(timeoutMs = 9000) {
   } catch {}
 
   try {
-    const immediate = await ensureAuthSession({ force: true }).catch(() => null);
+    const immediate = await ensureAuthSession().catch(() => null);
     if (immediate) return immediate;
   } catch {}
 
@@ -412,7 +469,6 @@ export async function bindProfileToCurrentAuth(profileKey = "") {
 }
 
 window.tcEnsureAuthSession = ensureAuthSession;
-window.tcWaitForAuthSession = waitForAuthSession;
 window.tcGetIdentityKey = getIdentityKey;
 window.tcGetProfileKey = getProfileKey;
 window.tcBindProfileToCurrentAuth = bindProfileToCurrentAuth;
