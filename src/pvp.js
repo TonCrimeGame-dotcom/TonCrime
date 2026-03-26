@@ -747,7 +747,7 @@
     _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
       const match = payload?.new || payload || null;
       if (this.rtMatchStarted || this.matchState !== "searching") return false;
-      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
 
       this.rtMatchStarted = true;
       this.onMatchFound(
@@ -982,7 +982,7 @@
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               try {
                 await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-              } catch (_) {}
+              } catch (err) { console.warn("[TonCrime][PVP] queue realtime poll failed", err); }
             }
           )
           .subscribe();
@@ -991,7 +991,7 @@
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (_) {}
+          } catch (err) { console.warn("[TonCrime][PVP] initial poll failed", err); }
         }, 250);
 
         this.matchSearchTimer = setInterval(async () => {
@@ -1001,10 +1001,10 @@
             if (tryError) throw tryError;
             const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
             if (matchedFromRpc) return;
-          } catch (_) {}
+          } catch (err) { console.warn("[TonCrime][PVP] try match failed", err); }
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (_) {}
+          } catch (err) { console.warn("[TonCrime][PVP] followup poll failed", err); }
         }, 1000);
         this._startingMatchmaking = false;
       } catch (err) {
@@ -1493,22 +1493,36 @@
 
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
       try {
-        const { data: queueRow } = await sb
-          .from("pvp_match_queue")
-          .select("match_id, status, updated_at")
-          .eq("user_id", userId)
-          .eq("game_mode", mode)
-          .eq("stake_yton", stake)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let queueRow = null;
+        try {
+          const queueResp = await sb
+            .from("pvp_match_queue")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("game_mode", mode)
+            .eq("stake_yton", stake)
+            .limit(5);
+          const queueRows = Array.isArray(queueResp?.data) ? queueResp.data : [];
+          queueRow = queueRows.sort((a, b) => {
+            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
+            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
+            return tb - ta;
+          })[0] || null;
+        } catch (queueErr) {
+          console.warn("[TonCrime][PVP] queue poll failed", queueErr);
+        }
 
-        if (queueRow?.match_id) {
-          const { data: matchRow } = await sb
+        const queueMatchId = queueRow?.match_id || queueRow?.matchId || null;
+        if (queueMatchId) {
+          const { data: matchRow, error: matchErr } = await sb
             .from("pvp_matches")
             .select("*")
-            .eq("id", queueRow.match_id)
+            .eq("id", queueMatchId)
             .maybeSingle();
+
+          if (matchErr) {
+            console.warn("[TonCrime][PVP] match-by-id poll failed", matchErr);
+          }
 
           if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
@@ -1520,15 +1534,24 @@
           }
         }
 
-        const { data: directMatch } = await sb
-          .from("pvp_matches")
-          .select("*")
-          .eq("game_mode", mode)
-          .eq("stake_yton", stake)
-          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let directMatch = null;
+        try {
+          const directResp = await sb
+            .from("pvp_matches")
+            .select("*")
+            .eq("game_mode", mode)
+            .eq("stake_yton", stake)
+            .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+            .limit(10);
+          const directRows = Array.isArray(directResp?.data) ? directResp.data : [];
+          directMatch = directRows.sort((a, b) => {
+            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
+            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
+            return tb - ta;
+          })[0] || null;
+        } catch (directErr) {
+          console.warn("[TonCrime][PVP] direct match poll failed", directErr);
+        }
 
         if (this._isReadyLiveMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
@@ -1538,7 +1561,9 @@
           );
           return true;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn("[TonCrime][PVP] polling fatal", err);
+      }
       return false;
     }
 
