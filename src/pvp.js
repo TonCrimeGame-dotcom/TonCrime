@@ -149,14 +149,10 @@
     return Number(BET_STAKES[modeId] || 0);
   }
 
-  async function enqueueBetPvp(supabase, mode, stake, playerMeta = null) {
-    const meta = playerMeta && typeof playerMeta === "object" ? playerMeta : {};
-    return await supabase.rpc("enqueue_ranked_pvp", {
+  async function enqueueBetPvp(supabase, mode, stake) {
+    return await supabase.rpc("tc_enqueue_ranked_pvp", {
       p_mode: mode,
       p_stake_yton: stake,
-      p_username: String(meta.username || "Player").trim() || "Player",
-      p_level: Math.max(1, Number(meta.level || 1)),
-      p_rank: Math.max(100, Number(meta.rank || 1000)),
     });
   }
 
@@ -503,8 +499,8 @@
 
       this.bg = null;
       this.fallbackBg = new Image();
-      this.fallbackBg.src = "./src/assets/pvp-bg.png";
-      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
+      this.fallbackBg.src = "./assets/pvp-bg.png";
+      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./assets/pvp.jpg"; };
     }
 
     onEnter() {
@@ -523,12 +519,14 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
+      this._startingMatchmaking = false;
       this._resetMatchmaking();
     }
 
     onExit() {
       this._resetMatchmaking();
       this._launchingGame = false;
+      this._startingMatchmaking = false;
     }
 
     _getSupabase() {
@@ -810,12 +808,11 @@
     }
 
     async startMatchmaking(id) {
-      if (this._launchingGame) return;
+      if (this._launchingGame || this._startingMatchmaking || this.matchState !== "menu") return;
+      this._startingMatchmaking = true;
 
       this._resetMatchmaking();
-      this.matchState = "searching";
       this.matchModeId = id;
-      this.matchStartedAt = Date.now();
 
       const sb = this._getSupabase();
       const userId = await this._getAuthUserId();
@@ -829,6 +826,13 @@
       const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
       if (!sb || !userId || !mode || !stake) {
+        console.warn("[TonCrime][PVP] matchmaking not ready", {
+          hasSupabase: !!sb,
+          hasUserId: !!userId,
+          mode,
+          stake,
+        });
+        this._startingMatchmaking = false;
         this.matchState = "menu";
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -839,6 +843,7 @@
       }
 
       if (currentEnergy < energyCost) {
+        this._startingMatchmaking = false;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
@@ -849,6 +854,7 @@
       }
 
       if (ytonBalance < stake) {
+        this._startingMatchmaking = false;
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: `Yetersiz YTON • ${stake} gerekli` },
@@ -858,8 +864,11 @@
         return;
       }
 
+      this.matchState = "searching";
+      this.matchStartedAt = Date.now();
+
       try {
-        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake, player);
+        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
@@ -956,8 +965,10 @@
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
           } catch (_) {}
         }, 1000);
+        this._startingMatchmaking = false;
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
+        this._startingMatchmaking = false;
         this.matchState = "menu";
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -1048,14 +1059,11 @@
 
       if (this.dragging && justUp) {
         this.dragging = false;
-        if (this.clickCandidate) {
+        const shouldClick = !!this.clickCandidate;
+        this.clickCandidate = false;
+        if (shouldClick) {
           this.pointerUp(px, py);
         }
-      }
-
-      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
-        this.clickCandidate = false;
-        this.pointerUp(px, py);
       }
 
       const wheel = Number(this.input?.wheelDelta || 0);
@@ -1078,6 +1086,8 @@
         this.scenes.go("home");
         return;
       }
+
+      if (this.matchState !== "menu" || this._startingMatchmaking) return;
 
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
