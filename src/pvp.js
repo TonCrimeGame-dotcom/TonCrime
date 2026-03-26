@@ -164,7 +164,7 @@
   }
 
   async function tryBetMatch(supabase, userId, mode) {
-    return await supabase.rpc("try_ranked_pvp_match", {
+    return await supabase.rpc("tc_try_ranked_pvp_match", {
       p_user_id: userId,
       p_mode: mode,
     });
