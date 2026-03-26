@@ -748,15 +748,9 @@
         return true;
       }
 
-      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
-      if (!fallbackCtx?.matchId) return false;
-
-      this.rtMatchStarted = true;
-      this.onMatchFound(
-        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
-        fallbackCtx
-      );
-      return true;
+      // RPC "matched" sinyali tek başına yeterli değil.
+      // Gerçek match satırı henüz görünmüyorsa oyunu erken açma; realtime/poll ile bekle.
+      return false;
     }
 
     _clearRealtime() {
@@ -869,7 +863,10 @@
 
       try {
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
-        if (queueError) throw queueError;
+        if (queueError) {
+          const isDuplicateQueue = String(queueError?.code || "") === "23505";
+          if (!isDuplicateQueue) throw queueError;
+        }
 
         const latest = this.store?.get?.() || {};
         this.store?.set?.({
@@ -952,6 +949,13 @@
             }
           )
           .subscribe();
+
+        setTimeout(async () => {
+          if (this.rtMatchStarted || this.matchState !== "searching") return;
+          try {
+            await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
+          } catch (_) {}
+        }, 250);
 
         this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
