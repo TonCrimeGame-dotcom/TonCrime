@@ -488,3 +488,21 @@ window.tcEnsureAuthSession = ensureAuthSession;
 window.tcGetIdentityKey = getIdentityKey;
 window.tcGetProfileKey = getProfileKey;
 window.tcBindProfileToCurrentAuth = bindProfileToCurrentAuth;
+
+
+export function tcClearAuthCooldown(reason = "manual_clear") {
+  clearAuthBackoffState(reason);
+  return true;
+}
+
+window.tcWaitForAuthSession = waitForAuthSession;
+window.tcClearAuthCooldown = tcClearAuthCooldown;
+
+try {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") ensureAuthSession().catch(() => null);
+  });
+  window.addEventListener("focus", () => {
+    ensureAuthSession().catch(() => null);
+  });
+} catch {}
