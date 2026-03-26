@@ -519,12 +519,16 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
+      this._authUserIdCache = null;
+      this._authUserIdPromise = null;
       this._resetMatchmaking();
     }
 
     onExit() {
       this._resetMatchmaking();
       this._launchingGame = false;
+      this._authUserIdCache = null;
+      this._authUserIdPromise = null;
     }
 
     _getSupabase() {
@@ -532,23 +536,56 @@
     }
 
     async _getAuthUserId() {
-      const sb = this._getSupabase();
-      if (!sb?.auth?.getUser) return null;
+      if (this._authUserIdCache) return this._authUserIdCache;
+      if (this._authUserIdPromise) return await this._authUserIdPromise;
 
-      try {
-        let res = await sb.auth.getUser();
-        let userId = res?.data?.user?.id || null;
-        if (userId) return userId;
-        if (typeof window.tcEnsureAuthSession === "function") {
-          await window.tcEnsureAuthSession().catch(() => null);
-          res = await sb.auth.getUser();
-          userId = res?.data?.user?.id || null;
-          if (userId) return userId;
+      this._authUserIdPromise = (async () => {
+        const sb = this._getSupabase();
+        if (!sb?.auth) return null;
+
+        try {
+          let userId = null;
+
+          if (typeof sb.auth.getSession === "function") {
+            const sess = await sb.auth.getSession().catch(() => null);
+            userId = sess?.data?.session?.user?.id || null;
+            if (userId) {
+              this._authUserIdCache = userId;
+              return userId;
+            }
+          }
+
+          if (typeof window.tcEnsureAuthSession === "function") {
+            await window.tcEnsureAuthSession().catch(() => null);
+          }
+
+          if (typeof sb.auth.getSession === "function") {
+            const sess2 = await sb.auth.getSession().catch(() => null);
+            userId = sess2?.data?.session?.user?.id || null;
+            if (userId) {
+              this._authUserIdCache = userId;
+              return userId;
+            }
+          }
+
+          if (typeof sb.auth.getUser === "function") {
+            const res = await sb.auth.getUser().catch(() => null);
+            userId = res?.data?.user?.id || null;
+            if (userId) {
+              this._authUserIdCache = userId;
+              return userId;
+            }
+          }
+
+          return null;
+        } catch (_) {
+          return null;
+        } finally {
+          this._authUserIdPromise = null;
         }
-        return null;
-      } catch (_) {
-        return null;
-      }
+      })();
+
+      return await this._authUserIdPromise;
     }
 
     _getPlayerMeta() {
