@@ -97,6 +97,11 @@
     return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
   }
 
+  function createCell(type) {
+    const safeType = ICONS[type] ? type : 'punch';
+    return { type: safeType };
+  }
+
   function allCoords() {
     const out = [];
     for (let r = 0; r < ROWS; r++) {
