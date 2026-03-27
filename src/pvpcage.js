@@ -17,13 +17,13 @@ const DAMAGE = {
 };
 
  const ICONS = [
-  { id: "punch", emoji: "ğŸ‘Š", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false, flash: "rgba(255,168,74,0.16)" },
-  { id: "kick", emoji: "ğŸ¦µ", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false, flash: "rgba(99,227,108,0.12)" },
-  { id: "slap", emoji: "ğŸ–ï¸", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false, flash: "rgba(124,182,255,0.14)" },
-  { id: "brain", emoji: "ğŸ§ ", label: "BEYÄ°N", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false, flash: "rgba(255,100,100,0.14)" },
-  { id: "weed", emoji: "ğŸŒ¿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true, flash: "rgba(51,221,119,0.18)" },
-  { id: "drink", emoji: "ğŸº", label: "Ä°Ã‡KÄ°", color: "#ffd166", damage: DAMAGE.drinkHeal, bad: false, heal: true, flash: "rgba(255,209,102,0.18)" },
-  { id: "skull", emoji: "ğŸ’€", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false, flash: "rgba(255,77,109,0.20)" },
+  { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false, flash: "rgba(255,168,74,0.16)" },
+  { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false, flash: "rgba(99,227,108,0.12)" },
+  { id: "slap", emoji: "🖐", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false, flash: "rgba(124,182,255,0.14)" },
+  { id: "brain", emoji: "🧠", label: "BEYIN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false, flash: "rgba(255,100,100,0.14)" },
+  { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true, flash: "rgba(51,221,119,0.18)" },
+  { id: "drink", emoji: "🍺", label: "DRINK", color: "#ffd166", damage: DAMAGE.drinkHeal, bad: false, heal: true, flash: "rgba(255,209,102,0.18)" },
+  { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false, flash: "rgba(255,77,109,0.20)" },
 ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
@@ -58,11 +58,7 @@ const DAMAGE = {
       next();
     });
   }
-  const BOT_NAMES = [
-    "ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven",
-    "BlackMamba", "NightHawk", "CrimsonJack", "DarkVenom", "MafiaKing", "BlueViper",
-    "SteelFang", "RedSkull", "SilentWolf", "NeonGhost", "FrostBite", "WildRaven", "TurboKhan"
-  ];
+  const BOT_NAMES = ["Rakip"];
 
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
@@ -110,9 +106,9 @@ const DAMAGE = {
 
   function buildResultReason(reason, meta = {}) {
     const base = String(reason || "").trim();
-    if (meta?.forfeit && meta?.quitter === "me") return base || "MaÃ§tan Ã§Ä±ktÄ±n â€¢ hÃ¼kmen maÄŸlup";
-    if (meta?.forfeit && meta?.quitter === "enemy") return base || "Rakip Ã§Ä±ktÄ± â€¢ hÃ¼kmen galip";
-    return base || (meta?.win ? "KazandÄ±n" : "Kaybettin");
+    if (meta?.forfeit && meta?.quitter === "me") return base || "Mactan ciktin - hukmen maglup";
+    if (meta?.forfeit && meta?.quitter === "enemy") return base || "Rakip cikti - hukmen galip";
+    return base || (meta?.win ? "Kazandin" : "Kaybettin");
   }
 
   function ensureAudioContext() {
@@ -395,11 +391,11 @@ const DAMAGE = {
     return `
       <div class="tc-cage-root">
         <div class="tc-cage-top">
-          <button class="tc-cage-x" id="tcCageClose" type="button" aria-label="Geri">âœ•</button>
+          <button class="tc-cage-x" id="tcCageClose" type="button" aria-label="Geri">X</button>
 
           <div class="tc-cage-title-wrap">
-            <div class="tc-cage-neon">KAFES DÃ–VÃœÅÃœ</div>
-            <div class="tc-cage-sub" id="tcCageSub">45 saniye â€¢ hÄ±zlÄ± PvP</div>
+            <div class="tc-cage-neon">KAFES DOVUSU</div>
+            <div class="tc-cage-sub" id="tcCageSub">45 saniye - hizli PvP</div>
           </div>
 
           <div class="tc-cage-bar-shell">
@@ -428,7 +424,7 @@ const DAMAGE = {
           <div class="tc-cage-toast" id="tcCageToast"></div>
         </div>
 
-        <div class="tc-cage-rule">ğŸ’€ kuru kafa kendine vurur â€¢ ğŸŒ¿ weed ve ğŸº drink can basar</div>
+        <div class="tc-cage-rule">SKULL kendine vurur - WEED ve DRINK can basar</div>
       </div>
     `;
   }
@@ -440,7 +436,13 @@ const DAMAGE = {
     _raf: 0,
     _unbind: null,
     _resizeObserver: null,
-    _opponent: { username: "ShadowWolf", isBot: true },
+    _opponent: { username: "Rakip", isBot: false },
+    _matchCtx: null,
+    _isHost: false,
+    _rtChannel: null,
+    _rtSubscribed: false,
+    _hostSyncTimer: 0,
+    _peerSessionId: `cage_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
 
     init(opts = {}) {
       ensureStyle();
@@ -504,11 +506,327 @@ const DAMAGE = {
       this._render();
     },
 
+
+    setMatchContext(ctx) {
+      this._matchCtx = ctx && ctx.matchId ? { ...ctx } : null;
+      this._isHost = !!this._matchCtx?.amIPlayer1;
+      this._teardownRealtime();
+      if (this._matchCtx?.matchId) this._ensureRealtime();
+    },
+
+    _getRealtimeClient() {
+      return window.tcSupabase || window.supabase || null;
+    },
+
+    _getChannelName() {
+      return this._matchCtx?.matchId ? `tc-pvpcage-${this._matchCtx.matchId}` : "";
+    },
+
+    _isPlayer1Local() {
+      return !!this._matchCtx?.amIPlayer1;
+    },
+
+    _localActorToCanonical(localActor) {
+      if (localActor === "me") return this._isPlayer1Local() ? "player1" : "player2";
+      return this._isPlayer1Local() ? "player2" : "player1";
+    },
+
+    _canonicalActorToLocal(actor) {
+      if (actor === "player1") return this._isPlayer1Local() ? "me" : "enemy";
+      return this._isPlayer1Local() ? "enemy" : "me";
+    },
+
+    _serializeIcon(cur) {
+      if (!cur) return null;
+      return {
+        id: cur.id,
+        label: cur.label,
+        color: cur.color,
+        damage: cur.damage,
+        bad: !!cur.bad,
+        heal: !!cur.heal,
+        flash: cur.flash,
+        x: cur.x,
+        y: cur.y,
+        w: cur.w,
+        h: cur.h,
+        seq: cur.seq || 0,
+        bornAtEpoch: cur.bornAtEpoch || Date.now(),
+        expiresAtEpoch: cur.expiresAtEpoch || (Date.now() + ICON_LIFE_MS),
+      };
+    },
+
+    _applySerializedIcon(raw) {
+      if (!this._state) return;
+      if (!raw) {
+        this._state.currentIcon = null;
+        return;
+      }
+      const nowPerf = performance.now();
+      const bornLag = Math.max(0, Date.now() - Number(raw.bornAtEpoch || Date.now()));
+      const remainingMs = Math.max(10, Number(raw.expiresAtEpoch || Date.now() + ICON_LIFE_MS) - Date.now());
+      this._state.currentIcon = {
+        id: raw.id,
+        label: raw.label,
+        color: raw.color,
+        damage: raw.damage,
+        bad: !!raw.bad,
+        heal: !!raw.heal,
+        flash: raw.flash,
+        x: Number(raw.x || 0),
+        y: Number(raw.y || 0),
+        w: Number(raw.w || 64),
+        h: Number(raw.h || 64),
+        seq: Number(raw.seq || 0),
+        bornAtEpoch: Number(raw.bornAtEpoch || Date.now()),
+        expiresAtEpoch: Number(raw.expiresAtEpoch || (Date.now() + ICON_LIFE_MS)),
+        bornAt: nowPerf - bornLag,
+        expiresAt: nowPerf + remainingMs,
+        hit: false,
+      };
+    },
+
+    _canonicalStateFromLocal() {
+      if (!this._state) return null;
+      const p1 = this._isPlayer1Local();
+      return {
+        player1Hp: Math.round(p1 ? this._state.meHp : this._state.enemyHp),
+        player2Hp: Math.round(p1 ? this._state.enemyHp : this._state.meHp),
+        player1Damage: Math.round(p1 ? this._state.meDamageDealt : this._state.enemyDamageDealt),
+        player2Damage: Math.round(p1 ? this._state.enemyDamageDealt : this._state.meDamageDealt),
+        player1Hits: Math.round(p1 ? this._state.meHits : this._state.enemyHits),
+        player2Hits: Math.round(p1 ? this._state.enemyHits : this._state.meHits),
+        player1Healed: Math.round(p1 ? this._state.meHealed : this._state.enemyHealed),
+        player2Healed: Math.round(p1 ? this._state.enemyHealed : this._state.meHealed),
+        player1Score: Math.round(p1 ? this._state.meDamageDealt : this._state.enemyDamageDealt),
+        player2Score: Math.round(p1 ? this._state.enemyDamageDealt : this._state.meDamageDealt),
+        remaining: Math.max(0, Math.round(this._state.remaining || 0)),
+        endAtEpoch: Math.round(this._state.endAtEpoch || (Date.now() + this._state.remaining || 0)),
+        finished: !!this._state.finished,
+        finishReason: this._state.finishReason || "",
+        winnerCanonical: this._state.finished ? this._localActorToCanonical(this._state.winner || "enemy") : null,
+        prizeYton: Math.round(this._state.resultPrizeYton || 0),
+        icon: this._serializeIcon(this._state.currentIcon),
+      };
+    },
+
+    _applyCanonicalState(snapshot, opts = {}) {
+      if (!this._state || !snapshot) return;
+      const p1 = this._isPlayer1Local();
+      this._state.meHp = Number(p1 ? snapshot.player1Hp : snapshot.player2Hp) || 0;
+      this._state.enemyHp = Number(p1 ? snapshot.player2Hp : snapshot.player1Hp) || 0;
+      this._state.meDamageDealt = Number(p1 ? snapshot.player1Damage : snapshot.player2Damage) || 0;
+      this._state.enemyDamageDealt = Number(p1 ? snapshot.player2Damage : snapshot.player1Damage) || 0;
+      this._state.meHits = Number(p1 ? snapshot.player1Hits : snapshot.player2Hits) || 0;
+      this._state.enemyHits = Number(p1 ? snapshot.player2Hits : snapshot.player1Hits) || 0;
+      this._state.meHealed = Number(p1 ? snapshot.player1Healed : snapshot.player2Healed) || 0;
+      this._state.enemyHealed = Number(p1 ? snapshot.player2Healed : snapshot.player1Healed) || 0;
+      this._state.meScore = Number(p1 ? snapshot.player1Score : snapshot.player2Score) || this._state.meDamageDealt || 0;
+      this._state.enemyScore = Number(p1 ? snapshot.player2Score : snapshot.player1Score) || this._state.enemyDamageDealt || 0;
+      this._state.remaining = clamp(Number(snapshot.remaining || 0), 0, GAME_MS);
+      this._state.endAtEpoch = Number(snapshot.endAtEpoch || (Date.now() + this._state.remaining));
+      if (Object.prototype.hasOwnProperty.call(snapshot, "icon")) {
+        this._applySerializedIcon(snapshot.icon);
+      }
+      if (!opts.skipFinished && snapshot.finished) {
+        this._applyRemoteFinish({
+          reason: snapshot.finishReason || "Mac bitti",
+          winnerCanonical: snapshot.winnerCanonical || null,
+          prizeYton: Number(snapshot.prizeYton || 0),
+          state: snapshot,
+        });
+      }
+    },
+
+    _ensureRealtime() {
+      if (!this._matchCtx?.matchId || this._rtChannel) return;
+      const sb = this._getRealtimeClient();
+      if (!sb?.channel) return;
+      const ch = sb.channel(this._getChannelName(), { config: { broadcast: { self: false } } });
+      ch.on("broadcast", { event: "pvpcage" }, (payload) => {
+        this._onRealtimeMessage(payload?.payload || null);
+      });
+      ch.subscribe((status) => {
+        this._rtSubscribed = status === "SUBSCRIBED";
+        if (!this._rtSubscribed) return;
+        if (this._isHost && this._state?.startedAt > 0 && !this._state?.finished) {
+          this._broadcastStartSnapshot();
+        }
+        if (!this._isHost) {
+          this._broadcast("peer_ready", {});
+        }
+      });
+      this._rtChannel = ch;
+    },
+
+    _teardownRealtime() {
+      clearInterval(this._hostSyncTimer);
+      this._hostSyncTimer = 0;
+      const sb = this._getRealtimeClient();
+      if (this._rtChannel && sb?.removeChannel) {
+        try { sb.removeChannel(this._rtChannel); } catch (_) {}
+      }
+      this._rtChannel = null;
+      this._rtSubscribed = false;
+    },
+
+    _broadcast(type, data = {}) {
+      if (!this._rtChannel?.send || !this._matchCtx?.matchId) return;
+      try {
+        this._rtChannel.send({
+          type: "broadcast",
+          event: "pvpcage",
+          payload: {
+            type,
+            at: Date.now(),
+            sessionId: this._peerSessionId,
+            matchId: this._matchCtx.matchId,
+            data,
+          },
+        });
+      } catch (_) {}
+    },
+
+    _broadcastStartSnapshot() {
+      if (!this._state) return;
+      this._broadcast("match_start", {
+        endAtEpoch: Number(this._state.endAtEpoch || (Date.now() + GAME_MS)),
+        state: this._canonicalStateFromLocal(),
+      });
+    },
+
+    _startHostSync() {
+      clearInterval(this._hostSyncTimer);
+      if (!this._matchCtx?.matchId || !this._isHost) return;
+      this._hostSyncTimer = setInterval(() => {
+        if (!this._state || this._state.finished) return;
+        this._broadcast("state_sync", { state: this._canonicalStateFromLocal() });
+      }, 280);
+    },
+
+    _onRealtimeMessage(msg) {
+      if (!msg || msg.sessionId === this._peerSessionId) return;
+      const data = msg.data || {};
+      switch (msg.type) {
+        case "peer_ready":
+          if (this._isHost && this._state?.startedAt > 0 && !this._state?.finished) this._broadcastStartSnapshot();
+          break;
+        case "match_start":
+          if (this._isHost || !this._state) break;
+          this._state.endAtEpoch = Number(data.endAtEpoch || (Date.now() + GAME_MS));
+          this._state.startedAt = performance.now();
+          this._state.lastTs = performance.now();
+          this._state.waitingForHost = false;
+          this._state.syncMode = true;
+          this._applyCanonicalState(data.state || {}, { skipFinished: false });
+          this._setStatus("PvP - Kafes dovusu basladi");
+          break;
+        case "state_sync":
+          if (this._isHost || !this._state) break;
+          this._state.waitingForHost = false;
+          this._applyCanonicalState(data.state || {}, { skipFinished: false });
+          break;
+        case "icon_spawn":
+          if (this._isHost || !this._state) break;
+          this._applySerializedIcon(data.icon || null);
+          break;
+        case "action_request":
+          if (!this._isHost || !this._state || this._state.finished) break;
+          this._resolveNetworkAction(data || {});
+          break;
+        case "forfeit":
+          if (!this._isHost || !this._state || this._state.finished) break;
+          this._resolveRemoteForfeit(data || {});
+          break;
+        case "match_finish":
+          if (this._isHost) break;
+          this._applyRemoteFinish(data || {});
+          break;
+      }
+    },
+
+    _resolveNetworkAction(data) {
+      const cur = this._state?.currentIcon;
+      if (!cur || cur.hit) return;
+      if (Number(data.seq || -1) !== Number(cur.seq || 0)) return;
+      const actorCanonical = String(data.actor || "player2");
+      const localActor = this._canonicalActorToLocal(actorCanonical);
+      this._resolveIconAction(cur, localActor, true);
+    },
+
+    _resolveRemoteForfeit(data) {
+      const quitterCanonical = String(data.quitter || "player2");
+      const quitterLocal = this._canonicalActorToLocal(quitterCanonical);
+      const win = quitterLocal !== "me";
+      this._finish(win, win ? "Rakip cikti - hukmen galip" : "Mactan ciktin - hukmen maglup", {
+        forfeit: true,
+        quitter: quitterLocal === "me" ? "me" : "enemy",
+        remoteSync: true,
+      });
+    },
+
+    _broadcastStateSync(includeFinish = false) {
+      if (!this._matchCtx?.matchId || !this._isHost) return;
+      const snapshot = this._canonicalStateFromLocal();
+      this._broadcast("state_sync", { state: snapshot });
+      if (includeFinish && snapshot?.finished) {
+        this._broadcast("match_finish", {
+          reason: snapshot.finishReason || "Mac bitti",
+          winnerCanonical: snapshot.winnerCanonical || null,
+          prizeYton: Number(snapshot.prizeYton || 0),
+          state: snapshot,
+        });
+      }
+    },
+
+    _applyRemoteFinish(data) {
+      if (!this._state || this._state.finished) return;
+      if (data.state) this._applyCanonicalState(data.state, { skipFinished: true });
+      const winnerCanonical = data.winnerCanonical || null;
+      const localWinner = winnerCanonical ? this._canonicalActorToLocal(winnerCanonical) : "enemy";
+      const win = localWinner === "me";
+      this._state.finished = true;
+      this._state.winner = localWinner;
+      this._state.finishAt = Date.now();
+      this._state.finishReason = String(data.reason || (win ? "Kazandin" : "Kaybettin"));
+      this._state.finishMeta = { remoteSync: true, win };
+      this._state.resultPrizeYton = win ? Number(data.prizeYton || getEstimatedPrizeYton() || 0) : 0;
+      this._running = false;
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this._raf = 0;
+      this._setStatus(win ? "PvP - Kazandin" : "PvP - Kaybettin");
+      this._toast(win ? "Kazandin!" : "Kaybettin!", 1200);
+      this._recordResult(win, this._state.finishReason, { remoteSync: true });
+      this._updateHud();
+      this._render();
+    },
+
+    _resolveIconAction(cur, actorLocal, fromNetwork = false) {
+      if (!this._state || !cur || cur.hit || this._state.finished) return false;
+      cur.hit = true;
+      this._state.currentIcon = null;
+
+      if (cur.bad) {
+        this._applyDamage(actorLocal, cur.damage, actorLocal === "me" ? `SKULL -${cur.damage} HP` : `Rakip SKULL -${cur.damage} HP`, cur, actorLocal);
+      } else if (cur.heal) {
+        if (actorLocal === "me") this._healMe(cur.damage, `${cur.label} +${cur.damage} HP`, cur);
+        else this._healEnemy(cur.damage, `Rakip ${cur.label} +${cur.damage} HP`, cur);
+      } else {
+        const target = actorLocal === "me" ? "enemy" : "me";
+        const toast = actorLocal === "me" ? `${cur.label} -${cur.damage} HP` : `Rakip ${cur.label} -${cur.damage} HP`;
+        this._applyDamage(target, cur.damage, toast, cur, actorLocal);
+      }
+
+      this._checkFinish();
+      if (this._matchCtx?.matchId && this._isHost) this._broadcastStateSync(false);
+      return true;
+    },
+
     setOpponent(opp) {
       this._opponent =
         opp && typeof opp.username === "string" && opp.username.trim()
-          ? { ...opp }
-          : { username: choice(BOT_NAMES), isBot: true };
+          ? { ...opp, isBot: false }
+          : { username: "Rakip", isBot: false };
 
       if (this._els?.enemyName) {
         this._els.enemyName.textContent = this._opponent.username;
@@ -539,7 +857,11 @@ const DAMAGE = {
         lastTs: 0,
         playerName,
         nextSpawnAt: 0,
+        endAtEpoch: 0,
+        waitingForHost: false,
+        syncMode: !!this._matchCtx?.matchId,
         currentIcon: null,
+        iconSeq: 0,
         particles: [],
         hitFlashUntil: 0,
         hitFlashColor: "rgba(255,255,255,0.04)",
@@ -560,8 +882,8 @@ const DAMAGE = {
       if (this._els?.meName) this._els.meName.textContent = playerName;
       if (this._els?.enemyName) this._els.enemyName.textContent = this._opponent?.username || choice(BOT_NAMES);
 
-      this._toast("HazÄ±r");
-      this._setStatus("PvP â€¢ Kafes dÃ¶vÃ¼ÅŸÃ¼ hazÄ±r");
+      this._toast("Hazir");
+      this._setStatus("PvP - Kafes dovusu hazir");
       this._updateHud();
       this._render();
     },
@@ -569,21 +891,48 @@ const DAMAGE = {
     start() {
       if (!this._els || !this._state) return;
       this.reset();
+      this._ensureRealtime();
 
       const now = performance.now();
       this._running = true;
-      this._state.startedAt = now;
       this._state.lastTs = now;
-      this._state.nextSpawnAt = now + 180;
-      this._state.botNextActionAt = this._opponent?.isBot ? now + randInt(340, 680) : Number.POSITIVE_INFINITY;
       this._state.lastWarningSecond = null;
+      this._state.botNextActionAt = Number.POSITIVE_INFINITY;
 
-      this._setStatus("PvP â€¢ Kafes dÃ¶vÃ¼ÅŸÃ¼ baÅŸladÄ±");
-      this._toast("BaÅŸladÄ±");
+      if (this._matchCtx?.matchId) {
+        this._state.syncMode = true;
+        this._state.endAtEpoch = Date.now() + GAME_MS;
+        if (this._isHost) {
+          this._state.startedAt = now;
+          this._state.nextSpawnAt = now + 180;
+          this._state.waitingForHost = false;
+          this._setStatus("PvP - Kafes dovusu basladi");
+          this._toast("Basladi");
+          this._broadcastStartSnapshot();
+          this._startHostSync();
+        } else {
+          this._state.startedAt = now;
+          this._state.nextSpawnAt = Number.POSITIVE_INFINITY;
+          this._state.waitingForHost = true;
+          this._setStatus("PvP - Esitleme bekleniyor");
+          this._toast("Baglanti kuruluyor", 900);
+          this._broadcast("peer_ready", {});
+        }
+        this._loop();
+        return;
+      }
+
+      this._state.startedAt = now;
+      this._state.endAtEpoch = Date.now() + GAME_MS;
+      this._state.nextSpawnAt = now + 180;
+      this._setStatus("PvP - Kafes dovusu basladi");
+      this._toast("Basladi");
       this._loop();
     },
 
     stop() {
+      clearInterval(this._hostSyncTimer);
+      this._hostSyncTimer = 0;
       this._running = false;
       if (this._raf) cancelAnimationFrame(this._raf);
       this._raf = 0;
@@ -593,6 +942,9 @@ const DAMAGE = {
       if (!this._state || this._state.finished) return false;
       const quitter = side === "enemy" ? "enemy" : "me";
       const win = quitter === "enemy";
+      if (this._matchCtx?.matchId && !this._isHost && quitter === "me") {
+        this._broadcast("forfeit", { quitter: this._localActorToCanonical("me") });
+      }
       return this._finish(win, reason, {
         forfeit: true,
         quitter,
@@ -601,11 +953,12 @@ const DAMAGE = {
     },
 
     resolveOpponentQuit(reason = "") {
-      return this.forfeit("enemy", reason || "Rakip Ã§Ä±ktÄ± â€¢ hÃ¼kmen galip");
+      return this.forfeit("enemy", reason || "Rakip cikti - hukmen galip");
     },
 
     backToMenu() {
       this.stop();
+      this._teardownRealtime();
       clearTimeout(this._autoCloseTimer);
       this._autoCloseTimer = null;
 
@@ -620,8 +973,8 @@ const DAMAGE = {
         wrap.classList.remove("open");
         wrap.style.display = "none";
       }
-      if (status) status.textContent = "PvP â€¢ HazÄ±r";
-      if (opponent) opponent.textContent = "â€”";
+      if (status) status.textContent = "PvP - Hazir";
+      if (opponent) opponent.textContent = "-";
       if (spinner) spinner.classList.add("hidden");
     },
 
@@ -648,8 +1001,13 @@ const DAMAGE = {
       const dt = clamp((now - this._state.lastTs) / 16.6667, 0.25, 2.2);
       this._state.lastTs = now;
 
-      this._state.elapsed = now - this._state.startedAt;
-      this._state.remaining = clamp(GAME_MS - this._state.elapsed, 0, GAME_MS);
+      if (this._state.endAtEpoch) {
+        this._state.remaining = clamp(this._state.endAtEpoch - Date.now(), 0, GAME_MS);
+        this._state.elapsed = GAME_MS - this._state.remaining;
+      } else {
+        this._state.elapsed = now - this._state.startedAt;
+        this._state.remaining = clamp(GAME_MS - this._state.elapsed, 0, GAME_MS);
+      }
 
       this._warnFinalCountdown();
       this._updateIcon(now);
@@ -669,11 +1027,12 @@ const DAMAGE = {
       s.lastWarningSecond = sec;
       this._flashScreen("rgba(255,88,88,0.18)", 180);
       safeVibrate(sec <= 2 ? [110, 45, 110] : 90);
-      this._toast(`${sec} saniye kaldÄ±`, 420);
+      this._toast(`${sec} saniye kaldi`, 420);
     },
 
     _updateIcon(now) {
       if (!this._state || this._state.finished) return;
+      if (this._state.syncMode && !this._isHost) return;
       if (!this._assetsReady) return;
 
       const cur = this._state.currentIcon;
@@ -700,41 +1059,32 @@ const DAMAGE = {
       const x = rand(12, Math.max(12, w - size - 12));
       const y = rand(12, Math.max(12, h - size - 12));
 
+      const bornAtEpoch = Date.now();
+      const expiresAtEpoch = bornAtEpoch + ICON_LIFE_MS;
       this._state.currentIcon = {
         ...icon,
         x,
         y,
         w: size,
         h: size,
+        seq: (this._state.iconSeq || 0) + 1,
+        bornAtEpoch,
+        expiresAtEpoch,
         bornAt: now,
         expiresAt: now + ICON_LIFE_MS,
         hit: false,
       };
+      this._state.iconSeq = this._state.currentIcon.seq;
+
+      if (this._matchCtx?.matchId && this._isHost) {
+        this._broadcast("icon_spawn", { icon: this._serializeIcon(this._state.currentIcon) });
+      }
 
       this._state.nextSpawnAt = now + randInt(70, 180);
     },
 
     _updateBot(now) {
-      if (!this._state || this._state.finished) return;
-      if (!this._opponent?.isBot) return;
-      if (now < this._state.botNextActionAt) return;
-
-      const missChance = 0.18;
-      const skullFailChance = 0.10;
-
-      if (Math.random() < skullFailChance) {
-        const skull = ICONS.find((x) => x.id === "skull");
-        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastÄ±", skull, "enemy");
-      } else if (Math.random() > missChance) {
-        const attack = choice(GOOD_ICONS);
-        if (attack.heal) {
-          this._healEnemy(attack.damage, `${this._opponent.username} ${attack.label} kullandÄ±`, attack);
-        } else {
-          this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`, attack, "enemy");
-        }
-      }
-
-      this._state.botNextActionAt = now + randInt(320, 760);
+      return;
     },
 
     _applyDamage(target, dmg, toastText, iconMeta = null, source = null) {
@@ -980,7 +1330,7 @@ const DAMAGE = {
       if (close) {
         close.onclick = () => {
           if (this._state && !this._state.finished && this._state.startedAt > 0) {
-            this.forfeit("me", "MaÃ§tan Ã§Ä±ktÄ±n â€¢ hÃ¼kmen maÄŸlup");
+            this.forfeit("me", "Mactan ciktin - hukmen maglup");
             return;
           }
           this.backToMenu();
@@ -1035,40 +1385,34 @@ const DAMAGE = {
 
 _handleTap(x, y) {
   const cur = this._state?.currentIcon;
-  if (!cur || cur.hit) return;
+  if (!cur || cur.hit || cur.pending) return;
   if (!pointInRect(x, y, cur)) return;
 
-  cur.hit = true;
-  this._state.currentIcon = null;
-
-  if (cur.bad) {
-    this._applyDamage("me", cur.damage, `ğŸ’€ Hata! -${cur.damage} HP`, cur, "me");
+  if (this._matchCtx?.matchId && !this._isHost) {
+    cur.pending = true;
+    this._broadcast("action_request", {
+      actor: this._localActorToCanonical("me"),
+      seq: Number(cur.seq || 0),
+    });
     return;
   }
 
-  if (cur.heal) {
-    const healPrefix = cur.id === "drink" ? "ğŸº Ä°Ã‡KÄ°" : "ğŸŒ¿ OT";
-    this._healMe(cur.damage, `${healPrefix} â€¢ +${cur.damage} HP`, cur);
-    return;
-  }
-
-  this._applyDamage("enemy", cur.damage, `${cur.label} â€¢ -${cur.damage} HP`, cur, "me");
+  this._resolveIconAction(cur, "me", false);
 },
 
     _checkFinish() {
       if (!this._state || this._state.finished) return;
 
-      if (this._state.enemyHp <= 0) return this._finish(true, "Rakip dÃ¼ÅŸtÃ¼");
-      if (this._state.meHp <= 0) return this._finish(false, "Sen dÃ¼ÅŸtÃ¼n");
+      if (this._state.syncMode && !this._isHost) return;
+      if (this._state.enemyHp <= 0) return this._finish(true, "Rakip dustu");
+      if (this._state.meHp <= 0) return this._finish(false, "Sen dustun");
 
       if (this._state.remaining <= 0) {
-        if (this._state.meHp > this._state.enemyHp) return this._finish(true, "SÃ¼re bitti â€¢ HP Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
-        if (this._state.meHp < this._state.enemyHp) return this._finish(false, "SÃ¼re bitti â€¢ Rakip Ã¶nde");
-        if (this._state.meDamageDealt > this._state.enemyDamageDealt) return this._finish(true, "SÃ¼re bitti â€¢ Hasar Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
-        if (this._state.meDamageDealt < this._state.enemyDamageDealt) return this._finish(false, "SÃ¼re bitti â€¢ Rakip hasar Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
-        if (this._state.meScore > this._state.enemyScore) return this._finish(true, "SÃ¼re bitti â€¢ Puan Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
-        if (this._state.meScore < this._state.enemyScore) return this._finish(false, "SÃ¼re bitti â€¢ Rakip puan Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
-        return this._finish(true, "SÃ¼re bitti â€¢ Beraberlik avantajÄ± sende");
+        if (this._state.meHp > this._state.enemyHp) return this._finish(true, "Sure bitti - HP ustunlugu");
+        if (this._state.meHp < this._state.enemyHp) return this._finish(false, "Sure bitti - Rakip onde");
+        if (this._state.meDamageDealt > this._state.enemyDamageDealt) return this._finish(true, "Sure bitti - Hasar ustunlugu");
+        if (this._state.meDamageDealt < this._state.enemyDamageDealt) return this._finish(false, "Sure bitti - Rakip hasar ustunlugu");
+        return this._finish(false, "Sure bitti - Berabere");
       }
     },
 
@@ -1086,11 +1430,12 @@ _handleTap(x, y) {
       if (this._raf) cancelAnimationFrame(this._raf);
       this._raf = 0;
 
-      this._setStatus(win ? "PvP â€¢ KazandÄ±n" : "PvP â€¢ Kaybettin");
-      this._toast(win ? "KazandÄ±n!" : "Kaybettin!", 1200);
+      this._setStatus(win ? "PvP - Kazandin" : "PvP - Kaybettin");
+      this._toast(win ? "Kazandin!" : "Kaybettin!", 1200);
       this._recordResult(win, finalReason, meta);
       this._updateHud();
       this._render();
+      if (this._matchCtx?.matchId && this._isHost) this._broadcastStateSync(true);
 
       if (meta?.autoClose) {
         clearTimeout(this._autoCloseTimer);
@@ -1195,11 +1540,13 @@ _handleTap(x, y) {
       if (this._els.timerText) this._els.timerText.textContent = String(sec);
       if (this._els.sub) {
         if (this._state.finished) {
-          this._els.sub.textContent = this._state.finishReason || "MaÃ§ bitti";
+          this._els.sub.textContent = this._state.finishReason || "Mac bitti";
+        } else if (this._state.waitingForHost) {
+          this._els.sub.textContent = "Rakip baglantisi bekleniyor";
         } else if (sec <= FINAL_WARNING_SECONDS) {
-          this._els.sub.textContent = `${sec} saniye â€¢ son uyarÄ±`;
+          this._els.sub.textContent = `${sec} saniye - son uyari`;
         } else {
-          this._els.sub.textContent = `${sec} saniye â€¢ ikon yakala`;
+          this._els.sub.textContent = `${sec} saniye - ikon yakala`;
         }
       }
     },
@@ -1256,12 +1603,12 @@ _handleTap(x, y) {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = "900 22px system-ui, Arial";
-        ctx.fillText(this._state.winner === "me" ? "KAZANDIN" : "KAYBETTÄ°N", w * 0.5, boxY + 28);
+        ctx.fillText(this._state.winner === "me" ? "KAZANDIN" : "KAYBETTIN", w * 0.5, boxY + 28);
 
         ctx.font = "800 12px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText(`${Math.round(this._state.meHp)} HP â€¢ ${Math.round(this._state.enemyHp)} HP`, w * 0.5, boxY + 50);
-        ctx.fillText(`Skor ${Math.round(this._state.meScore)} â€¢ ${Math.round(this._state.enemyScore)}`, w * 0.5, boxY + 68);
+        ctx.fillText(`${Math.round(this._state.meHp)} HP - ${Math.round(this._state.enemyHp)} HP`, w * 0.5, boxY + 50);
+        ctx.fillText(`Hasar ${Math.round(this._state.meDamageDealt)} - ${Math.round(this._state.enemyDamageDealt)}`, w * 0.5, boxY + 68);
 
         if (this._state.winner === "me" && this._state.resultPrizeYton > 0) {
           ctx.font = "900 16px system-ui, Arial";
@@ -1271,7 +1618,7 @@ _handleTap(x, y) {
 
         ctx.font = "700 11px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.70)";
-        ctx.fillText(this._state.finishReason || "MaÃ§ bitti", w * 0.5, boxY + boxH - 14);
+        ctx.fillText(this._state.finishReason || "Mac bitti", w * 0.5, boxY + boxH - 14);
       }
 
       ctx.textAlign = "left";
@@ -1317,7 +1664,7 @@ _handleTap(x, y) {
         const dh = Math.max(8, ih * fit);
         ctx.drawImage(img, -dw / 2, -dh / 2 - 4, dw, dh);
       } else {
-        // PNG yok â€” sadece renkli daire gÃ¶ster, emoji/harf yok
+        // PNG yok - sadece renkli daire goster, emoji/harf yok
         const rg = ctx.createRadialGradient(0, -3, 4, 0, -3, cur.w * 0.32);
         rg.addColorStop(0, cur.color + "ee");
         rg.addColorStop(1, cur.color + "44");
