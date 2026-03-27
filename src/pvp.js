@@ -90,6 +90,33 @@
     return { w, h };
   }
 
+  const TC_PVP_DEBUG =
+    typeof window !== "undefined" && (
+      window.__TC_PVP_DEBUG === true ||
+      /(?:\?|&)tcdebug=1(?:&|$)/.test(String(window.location?.search || "")) ||
+      window.localStorage?.getItem("tc_pvp_debug") === "1"
+    );
+
+  function tcPvpDebug(tag, data) {
+    if (!TC_PVP_DEBUG) return;
+    const ts = new Date().toISOString();
+    try {
+      console.log(`[TC_PVP_DEBUG ${ts}] ${tag}`, data);
+    } catch (_) {
+      try { console.log(`[TC_PVP_DEBUG ${ts}] ${tag}`); } catch (_) {}
+    }
+  }
+
+  function tcPvpDebugError(tag, err, extra) {
+    if (!TC_PVP_DEBUG) return;
+    const ts = new Date().toISOString();
+    try {
+      console.error(`[TC_PVP_DEBUG ${ts}] ${tag}`, { error: err, ...extra });
+    } catch (_) {
+      try { console.error(`[TC_PVP_DEBUG ${ts}] ${tag}`, err); } catch (_) {}
+    }
+  }
+
   function loadPvpGameScript(srcList) {
     const list = Array.isArray(srcList) ? srcList : [srcList];
 
@@ -526,6 +553,7 @@
     }
 
     onEnter() {
+      tcPvpDebug("onEnter", { source: this.source, previousState: this.matchState });
       this.bg =
         getImageFromAssets(this.assets, "pvp_bg") ||
         getImageFromAssets(this.assets, "pvp-bg") ||
@@ -545,6 +573,7 @@
     }
 
     onExit() {
+      tcPvpDebug("onExit", { matchState: this.matchState, modeId: this.matchModeId, matchRecord: this.matchRecord });
       this._resetMatchmaking();
       this._launchingGame = false;
     }
@@ -640,43 +669,10 @@
       return String(match.player1_id || "") === String(userId) || String(match.player2_id || "") === String(userId);
     }
 
-    _isLiveMatchStatus(status) {
-      const s = String(status || "").trim().toLowerCase();
-      if (!s) return true;
-      return !["finished", "cancelled", "canceled", "expired", "closed"].includes(s);
-    }
-
-    _isFreshMatchForCurrentSearch(row) {
-      const startedAt = Number(this.matchStartedAt || 0);
-      if (!startedAt) return true;
-
-      const raw =
-        row?.updated_at ||
-        row?.created_at ||
-        row?.matched_at ||
-        row?.inserted_at ||
-        null;
-
-      if (!raw) return true;
-      const ts = new Date(raw).getTime();
-      if (!Number.isFinite(ts)) return true;
-      return ts >= (startedAt - 10000);
-    }
-
     _isUsableMatch(match, userId, mode, stake) {
       if (!match?.id || !this._isMatchOwnedByUser(match, userId)) return false;
-      if (!this._isLiveMatchStatus(match.status)) return false;
       if (mode && match.game_mode != null && String(match.game_mode) !== String(mode)) return false;
       if (stake != null && match.stake_yton != null && Number(match.stake_yton) !== Number(stake)) return false;
-
-      const p1 = String(match.player1_id || "");
-      const p2 = String(match.player2_id || "");
-      if (!match.is_bot_match) {
-        if (!p1 || !p2) return false;
-        if (p1 === p2) return false;
-      }
-
-      if (!this._isFreshMatchForCurrentSearch(match)) return false;
       return true;
     }
 
@@ -762,6 +758,15 @@
 
     _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
       const match = payload?.new || payload || null;
+      tcPvpDebug("realtime_match_payload", {
+        matchState: this.matchState,
+        rtMatchStarted: this.rtMatchStarted,
+        userId,
+        mode,
+        stake,
+        payload,
+        match,
+      });
       if (this.rtMatchStarted || this.matchState !== "searching") return false;
       if (!this._isUsableMatch(match, userId, mode, stake)) return false;
 
@@ -775,31 +780,50 @@
 
     async _resolveRpcMatchResult(sb, payload, userId, mode, stake, sceneModeId) {
       const rpc = this._normalizeRpcPayload(payload);
+      tcPvpDebug("resolve_rpc_match_result:start", {
+        matchState: this.matchState,
+        rtMatchStarted: this.rtMatchStarted,
+        userId,
+        mode,
+        stake,
+        payload,
+        rpc,
+      });
       if (!rpc || this.rtMatchStarted || this.matchState !== "searching") return false;
 
-      const status = String(rpc.status || "").toLowerCase();
       const hasMatchSignal =
-        status === "matched" ||
-        status === "ready" ||
-        status === "playing" ||
-        !!(rpc.match_id || rpc.matchId || rpc.match || rpc.match_row || rpc.matchRecord);
+        rpc.ok === true ||
+        rpc.status === "matched" ||
+        !!(rpc.match_id || rpc.matchId || rpc.id || rpc.match || rpc.match_row || rpc.matchRecord);
 
       if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
       if (!this._isUsableMatch(match, userId, mode, stake)) {
-        const matchId = rpc.match_id || rpc.matchId || match?.id || null;
+        const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
         }
       }
 
-      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+      if (this._isUsableMatch(match, userId, mode, stake)) {
+        tcPvpDebug("resolve_rpc_match_result:usable_match", { match });
+        this.rtMatchStarted = true;
+        this.onMatchFound(
+          this._buildOpponentFromMatch(match, userId),
+          this._buildMatchContext(match, userId, sceneModeId)
+        );
+        return true;
+      }
+
+      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
+      tcPvpDebug("resolve_rpc_match_result:fallback", { fallbackCtx, rpc });
+      if (!fallbackCtx?.matchId) return false;
 
       this.rtMatchStarted = true;
       this.onMatchFound(
-        this._buildOpponentFromMatch(match, userId),
-        this._buildMatchContext(match, userId, sceneModeId)
+        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
+        fallbackCtx
       );
       return true;
     }
@@ -836,6 +860,12 @@
     }
 
     _resetMatchmaking() {
+      tcPvpDebug("reset_matchmaking", {
+        prevState: this.matchState,
+        prevModeId: this.matchModeId,
+        prevOpponent: this.matchOpponent,
+        prevMatchRecord: this.matchRecord,
+      });
       this._clearRealtime();
       this.matchState = "menu";
       this.matchModeId = null;
@@ -853,6 +883,13 @@
     }
 
     async startMatchmaking(id) {
+      tcPvpDebug("start_matchmaking:click", {
+        id,
+        launching: this._launchingGame,
+        busy: this._matchmakingBusy,
+        currentState: this.matchState,
+        currentModeId: this.matchModeId,
+      });
       if (this._launchingGame || this._matchmakingBusy || this.matchState === "searching" || this.matchState === "found") return;
       this._matchmakingBusy = true;
 
@@ -872,7 +909,17 @@
         const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
         const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
+        tcPvpDebug("start_matchmaking:resolved_inputs", {
+          userId,
+          mode,
+          stake,
+          currentEnergy,
+          energyCost,
+          ytonBalance,
+        });
+
         if (!sb || !userId || !mode || !stake) {
+          tcPvpDebug("start_matchmaking:abort_missing_prereq", { hasSupabase: !!sb, userId, mode, stake });
           this.matchState = "menu";
           try {
             window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -883,6 +930,7 @@
         }
 
         if (currentEnergy < energyCost) {
+        tcPvpDebug("start_matchmaking:abort_energy", { currentEnergy, energyCost });
           try {
             window.dispatchEvent(new CustomEvent("tc:toast", {
               detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
@@ -893,6 +941,7 @@
         }
 
         if (ytonBalance < stake) {
+        tcPvpDebug("start_matchmaking:abort_balance", { ytonBalance, stake });
           try {
             window.dispatchEvent(new CustomEvent("tc:toast", {
               detail: { text: `Yetersiz YTON • ${stake} gerekli` },
@@ -902,11 +951,8 @@
           return;
         }
 
-        try {
-          await cancelBetPvp(sb, mode, stake);
-        } catch (_) {}
-
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
+        tcPvpDebug("start_matchmaking:enqueue_result", { queueData, queueError, mode, stake, userId });
         if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
@@ -919,7 +965,9 @@
           },
         });
 
-        if (await this._resolveRpcMatchResult(sb, queueData, userId, mode, stake, id)) {
+        const matchedImmediately = await this._resolveRpcMatchResult(sb, queueData, userId, mode, stake, id);
+        tcPvpDebug("start_matchmaking:matched_immediately", { matchedImmediately, queueData });
+        if (matchedImmediately) {
           return;
         }
 
@@ -989,21 +1037,39 @@
               } catch (_) {}
             }
           )
-          .subscribe();
+          .subscribe((status, err) => {
+            tcPvpDebug("realtime_subscribe", { status, err, channelName, userId, mode, stake });
+          });
 
         this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
+          tcPvpDebug("matchmaking_tick", {
+            matchState: this.matchState,
+            rtMatchStarted: this.rtMatchStarted,
+            userId,
+            mode,
+            stake,
+            modeId: id,
+          });
           try {
             const { data: tryData, error: tryError } = await tryBetMatch(sb, userId, mode);
+            tcPvpDebug("matchmaking_tick:tryBetMatch", { tryData, tryError, userId, mode });
             if (tryError) throw tryError;
             const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
+            tcPvpDebug("matchmaking_tick:matched_from_rpc", { matchedFromRpc, tryData });
             if (matchedFromRpc) return;
-          } catch (_) {}
+          } catch (err) {
+            tcPvpDebugError("matchmaking_tick:tryBetMatch_error", err, { userId, mode, stake });
+          }
           try {
-            await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (_) {}
+            const polled = await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
+            tcPvpDebug("matchmaking_tick:poll_result", { polled, userId, mode, stake });
+          } catch (err) {
+            tcPvpDebugError("matchmaking_tick:poll_error", err, { userId, mode, stake });
+          }
         }, 1000);
       } catch (err) {
+        tcPvpDebugError("start_matchmaking:fatal", err, { id, userId, mode, stake });
         console.error("[TonCrime] betting matchmaking error:", err);
         this.matchState = "menu";
         try {
@@ -1017,8 +1083,13 @@
     }
 
     onMatchFound(opponent, matchRecord = null) {
+      tcPvpDebug("on_match_found", {
+        matchState: this.matchState,
+        modeId: this.matchModeId,
+        opponent,
+        matchRecord,
+      });
       if (this.matchState !== "searching") return;
-      if (!matchRecord?.matchId) return;
 
       if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
       if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
@@ -1038,6 +1109,11 @@
 
       this.matchLaunchTimer = setTimeout(() => {
         const id = this.matchModeId;
+        tcPvpDebug("on_match_found:launch_timer_fired", {
+          id,
+          opponent: this.matchOpponent,
+          matchRecord: this.matchRecord,
+        });
         const opp = this.matchOpponent;
         const matchCtx = this.matchRecord;
         this.matchLaunchTimer = null;
@@ -1124,7 +1200,9 @@
     }
 
     pointerUp(x, y) {
+      tcPvpDebug("pointer_up", { x, y, matchState: this.matchState, modeId: this.matchModeId });
       if (this.closeRect && pointInRect(x, y, this.closeRect)) {
+        tcPvpDebug("pointer_up:close_clicked", { x, y, matchState: this.matchState, modeId: this.matchModeId });
         this._cancelRealtimeQueue();
         this._resetMatchmaking();
         this.scenes.go("home");
@@ -1495,10 +1573,18 @@
 
 
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
+      tcPvpDebug("poll_matched_queue_or_match:start", {
+        userId,
+        mode,
+        stake,
+        sceneModeId,
+        matchState: this.matchState,
+        rtMatchStarted: this.rtMatchStarted,
+      });
       try {
         const { data: queueRow } = await sb
           .from("pvp_match_queue")
-          .select("match_id, status, updated_at")
+          .select("match_id, status")
           .eq("user_id", userId)
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
@@ -1506,20 +1592,17 @@
           .limit(1)
           .maybeSingle();
 
-        const queueStatus = String(queueRow?.status || "").toLowerCase();
-        const queueLooksMatched =
-          !!queueRow?.match_id &&
-          ["matched", "ready", "playing", "active"].includes(queueStatus) &&
-          this._isFreshMatchForCurrentSearch(queueRow);
+        tcPvpDebug("poll_matched_queue_or_match:queue_row", { queueRow, userId, mode, stake });
 
-        if (queueLooksMatched) {
+        if (queueRow?.match_id) {
           const { data: matchRow } = await sb
             .from("pvp_matches")
             .select("*")
             .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (this._isUsableMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
+          tcPvpDebug("poll_matched_queue_or_match:queue_match_row", { matchRow, queueRow });
+          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1529,19 +1612,19 @@
           }
         }
 
-        const searchStartIso = new Date(Math.max(0, Number(this.matchStartedAt || Date.now()) - 10000)).toISOString();
         const { data: directMatch } = await sb
           .from("pvp_matches")
           .select("*")
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
-          .gte("created_at", searchStartIso)
           .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (this._isUsableMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
+        tcPvpDebug("poll_matched_queue_or_match:direct_match", { directMatch, userId, mode, stake });
+
+        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
@@ -1549,7 +1632,9 @@
           );
           return true;
         }
-      } catch (_) {}
+      } catch (err) {
+        tcPvpDebugError("poll_matched_queue_or_match:error", err, { userId, mode, stake, sceneModeId });
+      }
       return false;
     }
 
