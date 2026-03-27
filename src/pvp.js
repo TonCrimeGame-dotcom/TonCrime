@@ -140,17 +140,11 @@
 
 
   const BET_PACKAGES = [
-    { stake: 5, payout: 8, serverFee: 2, label: "5 yTon" },
-    { stake: 10, payout: 16, serverFee: 4, label: "10 yTon" },
-    { stake: 15, payout: 24, serverFee: 6, label: "15 yTon" },
-    { stake: 30, payout: 55, serverFee: 5, label: "30 yTon" },
+    { stake: 5, payout: 8, commission: 2, label: "5 yTon" },
+    { stake: 10, payout: 16, commission: 4, label: "10 yTon" },
+    { stake: 15, payout: 24, commission: 6, label: "15 yTon" },
+    { stake: 30, payout: 55, commission: 5, label: "30 yTon" },
   ];
-
-  const DEFAULT_BET_BY_MODE = {
-    grid: 5,
-    arena: 5,
-    slotarena: 5,
-  };
 
   const MODE_ENERGY_COST = {
     grid: 10,
@@ -158,95 +152,42 @@
     slotarena: 15,
   };
 
-  function getBetOptionsForMode(modeId) {
-    if (!modeId || modeId === "tournament") return [];
-    return BET_PACKAGES.map((pkg) => ({ ...pkg }));
-  }
-
   function getSelectedStakeForMode(modeId, pvpState = null) {
-    const selected = Number(pvpState?.betSelections?.[modeId] || DEFAULT_BET_BY_MODE[modeId] || BET_PACKAGES[0].stake || 0);
-    const found = BET_PACKAGES.find((pkg) => Number(pkg.stake) === selected);
-    return Number(found?.stake || BET_PACKAGES[0]?.stake || 0);
+    const selected = Number(pvpState?.selectedStakes?.[modeId] || pvpState?.betStake || 0);
+    if (BET_PACKAGES.some((pkg) => Number(pkg.stake) === selected)) return selected;
+    return Number(BET_PACKAGES[0]?.stake || 0);
   }
 
   function getBetPackageForMode(modeId, pvpState = null) {
-    const stake = getSelectedStakeForMode(modeId, pvpState);
-    return BET_PACKAGES.find((pkg) => Number(pkg.stake) === stake) || BET_PACKAGES[0] || { stake: 0, payout: 0, serverFee: 0, label: "0 yTon" };
+    const selectedStake = getSelectedStakeForMode(modeId, pvpState);
+    return BET_PACKAGES.find((pkg) => Number(pkg.stake) === selectedStake) || BET_PACKAGES[0] || {
+      stake: 0,
+      payout: 0,
+      commission: 0,
+      label: "0 yTon",
+    };
   }
 
   function getStakeForMode(modeId, pvpState = null) {
-    return Number(getBetPackageForMode(modeId, pvpState)?.stake || 0);
+    return Number(getBetPackageForMode(modeId, pvpState).stake || 0);
   }
 
   function getEnergyCostForMode(modeId) {
     return Number(MODE_ENERGY_COST[modeId] || 0);
   }
 
-  async function enqueueBetPvp(supabase, { userId, username, level, rank, mode, stake }) {
-    const nowIso = new Date().toISOString();
-    const payload = {
-      user_id: userId,
-      username: String(username || "Player").trim() || "Player",
-      level: Math.max(1, Number(level || 1)),
-      rank: Math.max(100, Number(rank || 1000)),
-      game_mode: mode,
-      stake_yton: Number(stake || 0),
-      status: "searching",
-      is_bot: false,
-      matched_with: null,
-      match_id: null,
-      updated_at: nowIso,
-    };
-
-    await supabase
-      .from("pvp_match_queue")
-      .update({
-        status: "cancelled",
-        updated_at: nowIso,
-      })
-      .eq("user_id", userId)
-      .eq("game_mode", mode)
-      .eq("status", "searching");
-
-    let res = await supabase
-      .from("pvp_match_queue")
-      .upsert(payload, {
-        onConflict: "user_id,game_mode,stake_yton",
-      })
-      .select("*")
-      .maybeSingle();
-
-    if (!res?.error) return res;
-
-    res = await supabase
-      .from("pvp_match_queue")
-      .insert(payload)
-      .select("*")
-      .maybeSingle();
-
-    if (!res?.error) return res;
-
-    return await supabase
-      .from("pvp_match_queue")
-      .update(payload)
-      .eq("user_id", userId)
-      .eq("game_mode", mode)
-      .eq("stake_yton", Number(stake || 0))
-      .select("*")
-      .maybeSingle();
+  async function enqueueBetPvp(supabase, mode, stake) {
+    return await supabase.rpc("enqueue_ranked_pvp", {
+      p_mode: mode,
+      p_stake_yton: stake,
+    });
   }
 
-  async function cancelBetPvp(supabase, { userId, mode, stake }) {
-    return await supabase
-      .from("pvp_match_queue")
-      .update({
-        status: "cancelled",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", userId)
-      .eq("game_mode", mode)
-      .eq("stake_yton", Number(stake || 0))
-      .eq("status", "searching");
+  async function cancelBetPvp(supabase, mode, stake) {
+    return await supabase.rpc("cancel_ranked_pvp", {
+      p_mode: mode,
+      p_stake_yton: stake,
+    });
   }
 
   async function tryBetMatch(supabase, userId, mode) {
@@ -541,9 +482,6 @@
       this.closeRect = null;
       this.cardRects = [];
       this.modePills = [];
-      this.noticeText = "";
-      this.noticeType = "info";
-      this.noticeUntil = 0;
 
       this.source = "general";
 
@@ -553,7 +491,6 @@
           title: "IQ Arena",
           subtitle: "Zeka Çatışması",
           desc: "Sıra tabanlı grid PvP. Kombolar ile rakibi indir.",
-          stakeOptions: getBetOptionsForMode("grid"),
           open: true,
           accent: "#ffb24a",
         },
@@ -562,7 +499,6 @@
           title: "Kafes Dövüşü",
           subtitle: "1v1 Kafes Dövüşü",
           desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
-          stakeOptions: getBetOptionsForMode("arena"),
           open: true,
           accent: "#ff9340",
         },
@@ -571,7 +507,6 @@
           title: "Slot Arena",
           subtitle: "Slot Tadında PvP",
           desc: "6x6 tumble slot PvP.",
-          stakeOptions: getBetOptionsForMode("slotarena"),
           open: true,
           accent: "#ff5ea8",
         },
@@ -580,7 +515,6 @@
           title: "Kartel Turnuvası",
           subtitle: "Sezonluk PvP",
           desc: "Sezon puanı ve lig mantığı. Şimdilik yakında.",
-          stakeOptions: [],
           open: false,
           accent: "#7f7f86",
         },
@@ -601,21 +535,25 @@
 
       const s = this.store?.get?.() || {};
       this.source = s?.pvp?.source || "general";
-
-      const pvp = { ...(s.pvp || {}) };
-      const betSelections = { ...(pvp.betSelections || {}) };
+      const pvp = { ...(s?.pvp || {}) };
+      const selectedStakes = { ...(pvp.selectedStakes || {}) };
       let changed = false;
-      for (const card of this.cards) {
-        if (!card?.open) continue;
-        if (!betSelections[card.id]) {
-          betSelections[card.id] = getSelectedStakeForMode(card.id, { betSelections });
+      for (let i = 0; i < this.cards.length; i++) {
+        const card = this.cards[i];
+        if (!card?.id || !card.open) continue;
+        if (!BET_PACKAGES.some((pkg) => Number(pkg.stake) === Number(selectedStakes[card.id] || 0))) {
+          selectedStakes[card.id] = Number(BET_PACKAGES[0]?.stake || 0);
           changed = true;
         }
       }
       if (changed) {
-        this.store?.set?.({ pvp: { ...pvp, betSelections } });
+        this.store?.set?.({
+          pvp: {
+            ...pvp,
+            selectedStakes,
+          },
+        });
       }
-
       this.scrollY = 0;
       this.velocityY = 0;
       this.dragging = false;
@@ -881,15 +819,14 @@
     async _cancelRealtimeQueue() {
       const sb = this._getSupabase();
       const mode = this._mapModeIdToSqlMode(this.matchModeId);
-      const stake = Number(this._getEconomyForMode(this.matchModeId)?.stake || 0);
-      const userId = await this._getAuthUserId();
+      const stake = getStakeForMode(this.matchModeId, this._getPvpState());
 
       this._clearRealtime();
 
-      if (!sb || !mode || !stake || !userId) return;
+      if (!sb || !mode || !stake) return;
 
       try {
-        await cancelBetPvp(sb, { userId, mode, stake });
+        await cancelBetPvp(sb, mode, stake);
       } catch (_) {}
     }
 
@@ -910,6 +847,27 @@
       return null;
     }
 
+    _getPvpState() {
+      const s = this.store?.get?.() || {};
+      return { ...(s.pvp || {}) };
+    }
+
+    _selectBetStake(modeId, stake) {
+      const selectedStake = Number(stake || 0);
+      if (!selectedStake || !modeId) return;
+      const latest = this.store?.get?.() || {};
+      const pvp = { ...(latest.pvp || {}) };
+      const selectedStakes = { ...(pvp.selectedStakes || {}) };
+      selectedStakes[modeId] = selectedStake;
+      this.store?.set?.({
+        pvp: {
+          ...pvp,
+          selectedStakes,
+          betStake: selectedStake,
+        },
+      });
+    }
+
     async startMatchmaking(id) {
       if (this._launchingGame) return;
 
@@ -921,35 +879,48 @@
       const sb = this._getSupabase();
       const userId = await this._getAuthUserId();
       const mode = this._mapModeIdToSqlMode(id);
-      const player = this._getPlayerMeta();
       const s = this.store?.get?.() || {};
-      const economy = this._getEconomyForMode(id);
-      const stake = Number(economy.stake || 0);
+      const pvpState = { ...(s.pvp || {}) };
+      const stakePkg = getBetPackageForMode(id, pvpState);
+      const stake = Number(stakePkg.stake || 0);
+      const player = this._getPlayerMeta();
       const playerState = { ...(s.player || {}) };
       const currentEnergy = Number(playerState.energy || 0);
-      const energyCost = Number(economy.energy || 0);
+      const energyCost = getEnergyCostForMode(id);
       const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
       if (!sb || !userId || !mode || !stake) {
         this.matchState = "menu";
-        this._notify("Online eşleşme için giriş hazır değil", "error");
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: "Online eşleşme için giriş hazır değil" },
+          }));
+        } catch (_) {}
         return;
       }
 
       if (currentEnergy < energyCost) {
-        this._notify(`Yetersiz enerji • ${energyCost} gerekli`, "error");
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: `Yetersiz enerji • ${energyCost} gerekli • ${id === "grid" ? "IQ Arena" : id === "arena" ? "Kafes Dövüşü" : "Slot Arena"}` },
+          }));
+        } catch (_) {}
         this.matchState = "menu";
         return;
       }
 
       if (ytonBalance < stake) {
-        this._notify(`Yetersiz YTON • ${stake} gerekli`, "error");
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: `Yetersiz YTON • ${stake} giriş gerekli` },
+          }));
+        } catch (_) {}
         this.matchState = "menu";
         return;
       }
 
       try {
-        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, { userId, username: player.username, level: player.level, rank: player.rank, mode, stake });
+        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
@@ -957,10 +928,9 @@
           pvp: {
             ...(latest.pvp || {}),
             betStake: stake,
-            betReward: Number(economy.reward || 0),
-            betServerFee: Number(economy.serverFee || 0),
-            betEnergy: Number(economy.energy || 0),
             betMode: mode,
+            betPayout: Number(stakePkg.payout || 0),
+            betCommission: Number(stakePkg.commission || 0),
             queueStatus: queueData?.status || "searching",
           },
         });
@@ -1052,7 +1022,11 @@
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
         this.matchState = "menu";
-        this._notify("Bahisli PvP kuyruğu başlatılamadı", "error");
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: "Bahisli PvP kuyruğu başlatılamadı" },
+          }));
+        } catch (_) {}
       }
     }
 
@@ -1088,52 +1062,6 @@
       if (this.source === "nightclub") return "Rakip Havuzu: Nightclub içi";
       if (this.source === "coffeeshop") return "Rakip Havuzu: Coffeeshop içi";
       return "Rakip Havuzu: Genel";
-    }
-
-    _notify(text, type = "info") {
-      const msg = String(text || "").trim();
-      if (!msg) return;
-      this.noticeText = msg;
-      this.noticeType = type;
-      this.noticeUntil = Date.now() + 3200;
-
-      try {
-        window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text: msg, type } }));
-      } catch (_) {}
-
-      console.warn("[TonCrime][PvP]", msg);
-    }
-
-    _getSelectedBetPackage(modeId) {
-      const state = this.store?.get?.() || {};
-      return getBetPackageForMode(modeId, state.pvp || {});
-    }
-
-    _selectBetPackage(modeId, stake) {
-      if (!modeId || !Number(stake)) return;
-      const state = this.store?.get?.() || {};
-      const pvp = { ...(state.pvp || {}) };
-      pvp.betSelections = { ...(pvp.betSelections || {}), [modeId]: Number(stake) };
-      pvp.previewMode = modeId;
-      pvp.previewStake = Number(stake);
-      this.store?.set?.({ pvp });
-    }
-
-    _getEconomyForMode(modeId) {
-      const pkg = this._getSelectedBetPackage(modeId);
-      const modeKeyMap = {
-        grid: "iq_arena",
-        arena: "cage_fight",
-        slotarena: "slot_arena",
-      };
-      return {
-        energy: getEnergyCostForMode(modeId),
-        stake: Number(pkg?.stake || 0),
-        reward: Number(pkg?.payout || 0),
-        serverFee: Number(pkg?.serverFee || 0),
-        label: String(pkg?.label || ""),
-        modeKey: modeKeyMap[modeId] || "pvp_mode",
-      };
     }
 
     _availableCards() {
@@ -1216,16 +1144,15 @@
 
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
-
-        if (Array.isArray(r.betPills)) {
-          for (const pill of r.betPills) {
-            if (pill?.rect && pointInRect(x, y, pill.rect)) {
-              this._selectBetPackage(r.card.id, pill.stake);
+        if (Array.isArray(r.betRects)) {
+          for (let bi = 0; bi < r.betRects.length; bi++) {
+            const betRect = r.betRects[bi];
+            if (betRect && pointInRect(x, y, betRect)) {
+              this._selectBetStake(r.card.id, betRect.stake);
               return;
             }
           }
         }
-
         const hitButton = r.btn && pointInRect(x, y, r.btn);
         const hitCard = r.cardRect && pointInRect(x, y, r.cardRect);
         if ((hitButton || hitCard) && r.card.open) {
@@ -1240,12 +1167,30 @@
       this._launchingGame = true;
 
       const s = this.store?.get?.() || {};
-      const ECONOMY = {
-        grid: { ...this._getEconomyForMode("grid"), modeKey: "iq_arena" },
-        arena: { ...this._getEconomyForMode("arena"), modeKey: "cage_fight" },
-        slotarena: { ...this._getEconomyForMode("slotarena"), modeKey: "slot_arena" },
-      };
       const pvp = { ...(s.pvp || {}) };
+      const ECONOMY = {
+        grid: {
+          energy: getEnergyCostForMode("grid"),
+          stake: getStakeForMode("grid", pvp),
+          payout: Number(getBetPackageForMode("grid", pvp).payout || 0),
+          commission: Number(getBetPackageForMode("grid", pvp).commission || 0),
+          modeKey: "iq_arena",
+        },
+        arena: {
+          energy: getEnergyCostForMode("arena"),
+          stake: getStakeForMode("arena", pvp),
+          payout: Number(getBetPackageForMode("arena", pvp).payout || 0),
+          commission: Number(getBetPackageForMode("arena", pvp).commission || 0),
+          modeKey: "cage_fight",
+        },
+        slotarena: {
+          energy: getEnergyCostForMode("slotarena"),
+          stake: getStakeForMode("slotarena", pvp),
+          payout: Number(getBetPackageForMode("slotarena", pvp).payout || 0),
+          commission: Number(getBetPackageForMode("slotarena", pvp).commission || 0),
+          modeKey: "slot_arena",
+        },
+      };
       const player = { ...(s.player || {}) };
       const economy = ECONOMY[id];
 
@@ -1263,14 +1208,13 @@
 
       if (currentEnergy < economy.energy) {
         this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
-        this._notify(`Yetersiz enerji • ${economy.energy} gerekli`, "error");
-        this._launchingGame = false;
-        return;
-      }
-
-      if (currentYton < economy.stake) {
-        this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
-        this._notify(`Yetersiz YTON • ${economy.stake} gerekli`, "error");
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: {
+              text: `Yetersiz enerji • ${economy.energy} gerekli`,
+            },
+          }));
+        } catch (_) {}
         this._launchingGame = false;
         return;
       }
@@ -1291,8 +1235,9 @@
             entryPaid: true,
             entryEnergy: economy.energy,
             entryStake: economy.stake,
-            rewardCoins: economy.reward,
-            serverFee: economy.serverFee,
+            expectedPayout: economy.payout,
+            rewardCoins: Number(economy.payout || 0),
+            serverFee: Number(economy.commission || 0),
             payoutDone: false,
             matchStartedAt: Date.now(),
             modeKey: economy.modeKey,
@@ -1805,7 +1750,7 @@
       const viewportH = viewportBottom - viewportTop;
 
       const cardGap = 14;
-      const cardH = clamp(Math.round(panelH * 0.27), 190, 228);
+      const cardH = clamp(Math.round(panelH * 0.24), 164, 198);
       const contentH = cards.length * cardH + Math.max(0, cards.length - 1) * cardGap;
       this.maxScroll = Math.max(0, contentH - viewportH);
       this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
@@ -1887,7 +1832,9 @@
         ctx.textBaseline = "middle";
         ctx.fillText(card.open ? "Açık" : "Kilitli", btnX + btnW / 2, btnY + btnH / 2);
 
-        const economy = this._getEconomyForMode(card.id);
+        const pvpState = { ...((state && state.pvp) || {}) };
+        const selectedPkg = getBetPackageForMode(card.id, pvpState);
+        const energyCost = getEnergyCostForMode(card.id);
         const descX = x + 18;
         const descY = y + 14 + cardTitleSize + 5 + cardSubSize + 12;
         const descW = cw - 36;
@@ -1897,65 +1844,36 @@
         ctx.textBaseline = "top";
         const lines = wrapLines(ctx, card.desc, descW);
         let lineY = descY;
-        const lineH = Math.round(cardTextSize * 1.35);
+        const lineH = Math.round(cardTextSize * 1.32);
         for (let li = 0; li < Math.min(lines.length, 2); li++) {
           ctx.fillText(lines[li], descX, lineY);
           lineY += lineH;
         }
 
-        const infoY = lineY + 4;
-        ctx.font = `700 ${clamp(cardTextSize - 1, 11, 14)}px system-ui, Arial`;
-        ctx.fillStyle = "rgba(255,236,188,0.96)";
-        ctx.fillText(`Enerji ${economy.energy} • Giriş ${economy.stake} yTon • Kazanç ${economy.reward} yTon • Komisyon ${economy.serverFee} yTon`, descX, infoY);
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.font = `700 ${Math.max(11, cardTextSize - 1)}px system-ui, Arial`;
+        ctx.fillText(`Enerji: ${energyCost} • Giriş: ${selectedPkg.stake} yTon`, descX, lineY + 4);
+        ctx.fillStyle = "rgba(255,214,140,0.96)";
+        ctx.fillText(`Kazanç: ${selectedPkg.payout} yTon • Komisyon: ${selectedPkg.commission} yTon`, descX, lineY + 4 + Math.round((cardTextSize + 1) * 1.22));
 
-        const packageTextY = infoY + lineH + 2;
-        ctx.font = `600 ${clamp(cardTextSize - 2, 10, 13)}px system-ui, Arial`;
-        ctx.fillStyle = "rgba(255,255,255,0.64)";
-        ctx.fillText("Bahis paketi seç:", descX, packageTextY);
-
+        const betRects = [];
         let tagX = x + 18;
-        let tagY = packageTextY + 22;
+        const tagY = y + cardH - 48;
         const tagH = 30;
-        const selectedStake = Number(economy.stake || 0);
-        const betPills = [];
         ctx.font = `700 12px system-ui, Arial`;
-        const options = Array.isArray(card.stakeOptions) ? card.stakeOptions : [];
-        for (let t = 0; t < options.length; t++) {
-          const opt = options[t];
-          const selected = Number(opt?.stake || 0) === selectedStake;
-          const label = `${opt.stake}→${opt.payout}`;
-          const tw = Math.ceil(ctx.measureText(label).width) + 28;
-          if (tagX + tw > x + cw - 18) {
-            tagX = x + 18;
-            tagY += tagH + 8;
-          }
-          fillRoundRect(
-            ctx,
-            tagX,
-            tagY,
-            tw,
-            tagH,
-            10,
-            selected ? "rgba(255,179,71,0.20)" : "rgba(255,255,255,0.06)"
-          );
-          strokeRoundRect(
-            ctx,
-            tagX,
-            tagY,
-            tw,
-            tagH,
-            10,
-            selected ? "rgba(255,179,71,0.76)" : "rgba(255,255,255,0.10)",
-            selected ? 1.4 : 1
-          );
-          ctx.fillStyle = selected ? "rgba(255,236,188,0.98)" : "rgba(255,255,255,0.92)";
+        for (let t = 0; t < BET_PACKAGES.length; t++) {
+          const pkg = BET_PACKAGES[t];
+          const label = `${pkg.stake}→${pkg.payout}`;
+          const tw = Math.ceil(ctx.measureText(label).width) + 24;
+          if (tagX + tw > x + cw - 18) break;
+          const active = Number(selectedPkg.stake) === Number(pkg.stake);
+          fillRoundRect(ctx, tagX, tagY, tw, tagH, 10, active ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)");
+          strokeRoundRect(ctx, tagX, tagY, tw, tagH, 10, active ? "rgba(255,181,74,0.82)" : "rgba(255,255,255,0.10)", active ? 1.4 : 1);
+          ctx.fillStyle = active ? "#ffd79a" : "rgba(255,255,255,0.92)";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(label, tagX + tw / 2, tagY + tagH / 2);
-          betPills.push({
-            stake: Number(opt.stake || 0),
-            rect: { x: tagX, y: tagY, w: tw, h: tagH },
-          });
+          betRects.push({ x: tagX, y: tagY, w: tw, h: tagH, stake: pkg.stake });
           tagX += tw + 8;
         }
 
@@ -1963,29 +1881,13 @@
           card,
           cardRect: { x, y, w: cw, h: cardH },
           btn: { x: btnX, y: btnY, w: btnW, h: btnH },
-          betPills,
+          betRects,
         });
 
         y += cardH + cardGap;
       }
 
       ctx.restore();
-
-      if (this.noticeText && this.noticeUntil > Date.now()) {
-        const noteW = Math.min(panelW - 24, 420);
-        const noteH = 40;
-        const noteX = panelX + (panelW - noteW) * 0.5;
-        const noteY = panelY + panelH - noteH - 12;
-        const noteFill = this.noticeType === "error" ? "rgba(88,20,20,0.92)" : "rgba(20,34,66,0.90)";
-        const noteStroke = this.noticeType === "error" ? "rgba(255,120,120,0.58)" : "rgba(120,180,255,0.52)";
-        fillRoundRect(ctx, noteX, noteY, noteW, noteH, 12, noteFill);
-        strokeRoundRect(ctx, noteX, noteY, noteW, noteH, 12, noteStroke, 1.2);
-        ctx.fillStyle = "rgba(255,255,255,0.96)";
-        ctx.font = "800 13px system-ui, Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(this.noticeText, noteX + noteW / 2, noteY + noteH / 2);
-      }
 
       if (this.matchState !== "menu") {
         ctx.fillStyle = "rgba(0,0,0,0.30)";
