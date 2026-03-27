@@ -126,8 +126,8 @@ export class CoffeeShopScene {
   }
 
   _getBg() {
-    if (typeof this.assets?.getImage === "function") return this.assets.getImage("coffeeshop_bg") || this.assets.getImage("coffeeshop");
-    if (typeof this.assets?.get === "function") return this.assets.get("coffeeshop_bg") || this.assets.get("coffeeshop");
+    if (typeof this.assets?.getImage === "function") return this.assets.getImage("coffeeshop_bg") || this.assets.getImage("coffeeshop_bg");
+    if (typeof this.assets?.get === "function") return this.assets.get("coffeeshop_bg") || this.assets.get("coffeeshop_bg");
     return this.assets?.images?.coffeeshop_bg || this.assets?.images?.coffeeshop || null;
   }
 
