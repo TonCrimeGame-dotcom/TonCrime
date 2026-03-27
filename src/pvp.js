@@ -149,24 +149,45 @@
     return Number(BET_STAKES[modeId] || 0);
   }
 
+  function isRpcMissingFunction(error) {
+    const code = String(error?.code || "").trim();
+    const msg = String(error?.message || "").toLowerCase();
+    return code === "PGRST202" || msg.includes("could not find the function");
+  }
+
+  async function callRpcWithFallback(supabase, names, params) {
+    const rpcNames = Array.isArray(names) ? names : [names];
+    let last = null;
+
+    for (const rpcName of rpcNames) {
+      if (!rpcName) continue;
+      const res = await supabase.rpc(rpcName, params);
+      if (!res?.error) return res;
+      last = res;
+      if (!isRpcMissingFunction(res.error)) return res;
+    }
+
+    return last || { data: null, error: new Error("rpc_unavailable") };
+  }
+
   async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("enqueue_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
+    return await callRpcWithFallback(supabase, ["tc_enqueue_ranked_pvp", "enqueue_ranked_pvp"], {
+      p_mode: String(mode || ""),
+      p_stake_yton: Number(stake || 0),
     });
   }
 
   async function cancelBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("cancel_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
+    return await callRpcWithFallback(supabase, ["tc_cancel_ranked_pvp", "cancel_ranked_pvp"], {
+      p_mode: String(mode || ""),
+      p_stake_yton: Number(stake || 0),
     });
   }
 
   async function tryBetMatch(supabase, userId, mode) {
-    return await supabase.rpc("try_ranked_pvp_match", {
+    return await callRpcWithFallback(supabase, ["tc_try_ranked_pvp_match", "try_ranked_pvp_match"], {
       p_user_id: userId,
-      p_mode: mode,
+      p_mode: String(mode || ""),
     });
   }
 
@@ -436,10 +457,6 @@
       this._wasPointerDown = false;
       this._launchingGame = false;
       this._matchmakingBusy = false;
-      this._lastMatchmakingRequestAt = 0;
-      this._lastMatchmakingMode = null;
-      this._pointerReleaseHandled = false;
-      this._instanceId = `pvp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
       this.matchState = "menu";
       this.matchModeId = null;
@@ -508,45 +525,6 @@
       this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
     }
 
-    _getGlobalMatchmakingLock() {
-      try {
-        if (typeof window === "undefined") return null;
-        const lock = window.__TC_PVP_MATCHMAKING_LOCK__ || null;
-        if (!lock) return null;
-        const age = Date.now() - Number(lock.ts || 0);
-        if (age > 8000) {
-          try { delete window.__TC_PVP_MATCHMAKING_LOCK__; } catch (_) {}
-          return null;
-        }
-        return lock;
-      } catch (_) {
-        return null;
-      }
-    }
-
-    _setGlobalMatchmakingLock(modeId, userId = null) {
-      try {
-        if (typeof window === "undefined") return;
-        window.__TC_PVP_MATCHMAKING_LOCK__ = {
-          owner: this._instanceId,
-          modeId: modeId || null,
-          userId: userId || null,
-          ts: Date.now(),
-        };
-      } catch (_) {}
-    }
-
-    _clearGlobalMatchmakingLock(force = false) {
-      try {
-        if (typeof window === "undefined") return;
-        const lock = window.__TC_PVP_MATCHMAKING_LOCK__ || null;
-        if (!lock) return;
-        if (force || lock.owner === this._instanceId) {
-          delete window.__TC_PVP_MATCHMAKING_LOCK__;
-        }
-      } catch (_) {}
-    }
-
     onEnter() {
       this.bg =
         getImageFromAssets(this.assets, "pvp_bg") ||
@@ -563,19 +541,12 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
-      this._matchmakingBusy = false;
-      this._lastMatchmakingRequestAt = 0;
-      this._lastMatchmakingMode = null;
-      this._pointerReleaseHandled = false;
       this._resetMatchmaking();
     }
 
     onExit() {
       this._resetMatchmaking();
       this._launchingGame = false;
-      this._matchmakingBusy = false;
-      this._pointerReleaseHandled = false;
-      this._clearGlobalMatchmakingLock(true);
     }
 
     _getSupabase() {
@@ -847,8 +818,6 @@
       this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
-      this._matchmakingBusy = false;
-      this._clearGlobalMatchmakingLock();
     }
 
     _mapModeIdToSqlMode(id) {
@@ -859,77 +828,55 @@
     }
 
     async startMatchmaking(id) {
-      const now = Date.now();
-      if (this._launchingGame) return;
-      if (this._matchmakingBusy) return;
-      if (this.matchState === "searching" || this.matchState === "found") return;
-      if (this._lastMatchmakingMode === id && now - Number(this._lastMatchmakingRequestAt || 0) < 1200) return;
-
-      const globalLock = this._getGlobalMatchmakingLock();
-      if (globalLock && globalLock.owner !== this._instanceId && now - Number(globalLock.ts || 0) < 2500) return;
-
+      if (this._launchingGame || this._matchmakingBusy || this.matchState === "searching" || this.matchState === "found") return;
       this._matchmakingBusy = true;
-      this._lastMatchmakingRequestAt = now;
-      this._lastMatchmakingMode = id;
-      this._setGlobalMatchmakingLock(id);
-
-      this._resetMatchmaking();
-      this._matchmakingBusy = true;
-      this._lastMatchmakingRequestAt = now;
-      this._lastMatchmakingMode = id;
-      this._setGlobalMatchmakingLock(id);
-      this.matchState = "searching";
-      this.matchModeId = id;
-      this.matchStartedAt = now;
-
-      const sb = this._getSupabase();
-      const userId = await this._getAuthUserId();
-      const mode = this._mapModeIdToSqlMode(id);
-      const stake = getStakeForMode(id);
-      const player = this._getPlayerMeta();
-      const s = this.store?.get?.() || {};
-      const playerState = { ...(s.player || {}) };
-      const currentEnergy = Number(playerState.energy || 0);
-      const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
-      const ytonBalance = Number(s.yton ?? s.coins ?? 0);
-
-      if (!sb || !userId || !mode || !stake) {
-        this.matchState = "menu";
-        this._matchmakingBusy = false;
-        this._clearGlobalMatchmakingLock();
-        try {
-          window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: "Online eşleşme için giriş hazır değil" },
-          }));
-        } catch (_) {}
-        return;
-      }
-
-      if (currentEnergy < energyCost) {
-        try {
-          window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
-          }));
-        } catch (_) {}
-        this.matchState = "menu";
-        this._matchmakingBusy = false;
-        this._clearGlobalMatchmakingLock();
-        return;
-      }
-
-      if (ytonBalance < stake) {
-        try {
-          window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: `Yetersiz YTON • ${stake} gerekli` },
-          }));
-        } catch (_) {}
-        this.matchState = "menu";
-        this._matchmakingBusy = false;
-        this._clearGlobalMatchmakingLock();
-        return;
-      }
 
       try {
+        this._resetMatchmaking();
+        this.matchState = "searching";
+        this.matchModeId = id;
+        this.matchStartedAt = Date.now();
+
+        const sb = this._getSupabase();
+        const userId = await this._getAuthUserId();
+        const mode = this._mapModeIdToSqlMode(id);
+        const stake = getStakeForMode(id);
+        const s = this.store?.get?.() || {};
+        const playerState = { ...(s.player || {}) };
+        const currentEnergy = Number(playerState.energy || 0);
+        const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
+        const ytonBalance = Number(s.yton ?? s.coins ?? 0);
+
+        if (!sb || !userId || !mode || !stake) {
+          this.matchState = "menu";
+          try {
+            window.dispatchEvent(new CustomEvent("tc:toast", {
+              detail: { text: "Online eşleşme için giriş hazır değil" },
+            }));
+          } catch (_) {}
+          return;
+        }
+
+        if (currentEnergy < energyCost) {
+          try {
+            window.dispatchEvent(new CustomEvent("tc:toast", {
+              detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
+            }));
+          } catch (_) {}
+          this.matchState = "menu";
+          return;
+        }
+
+        if (ytonBalance < stake) {
+          try {
+            window.dispatchEvent(new CustomEvent("tc:toast", {
+              detail: { text: `Yetersiz YTON • ${stake} gerekli` },
+            }));
+          } catch (_) {}
+          this.matchState = "menu";
+          return;
+        }
+
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
 
@@ -1030,13 +977,13 @@
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
         this.matchState = "menu";
-        this._matchmakingBusy = false;
-        this._clearGlobalMatchmakingLock();
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: "Bahisli PvP kuyruğu başlatılamadı" },
           }));
         } catch (_) {}
+      } finally {
+        this._matchmakingBusy = false;
       }
     }
 
@@ -1103,7 +1050,6 @@
         this.velocityY = 0;
         this.moved = 0;
         this.clickCandidate = true;
-        this._pointerReleaseHandled = false;
       }
 
       if (this.dragging && isDown) {
@@ -1122,30 +1068,16 @@
 
       if (this.dragging && justUp) {
         this.dragging = false;
-        if (this.clickCandidate && !this._pointerReleaseHandled) {
-          this.clickCandidate = false;
-          this._pointerReleaseHandled = true;
+        const shouldClick = !!this.clickCandidate;
+        this.clickCandidate = false;
+        if (shouldClick) {
           this.pointerUp(px, py);
         }
       }
 
-      if (
-        !isDown &&
-        !this.dragging &&
-        this.clickCandidate &&
-        this.moved <= 10 &&
-        !justDown &&
-        !justUp &&
-        !this._launchingGame &&
-        !this._pointerReleaseHandled
-      ) {
+      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
         this.clickCandidate = false;
-        this._pointerReleaseHandled = true;
         this.pointerUp(px, py);
-      }
-
-      if (!isDown && !this.dragging && !this.clickCandidate) {
-        this._pointerReleaseHandled = false;
       }
 
       const wheel = Number(this.input?.wheelDelta || 0);
@@ -1169,15 +1101,13 @@
         return;
       }
 
-      if (this.matchState !== "menu" || this._launchingGame || this._matchmakingBusy) return;
+      if (this.matchState !== "menu" || this._matchmakingBusy) return;
 
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
         const hitButton = r.btn && pointInRect(x, y, r.btn);
         const hitCard = r.cardRect && pointInRect(x, y, r.cardRect);
         if ((hitButton || hitCard) && r.card.open) {
-          this.clickCandidate = false;
-          this.moved = 999;
           this.startMatchmaking(r.card.id);
           return;
         }
