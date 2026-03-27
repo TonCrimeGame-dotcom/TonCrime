@@ -149,7 +149,7 @@
   const MODE_ENERGY_COST = {
     grid: 10,
     arena: 5,
-    slotarena: 15,
+    slotarena: 3,
   };
 
   function getSelectedStakeForMode(modeId, pvpState = null) {
