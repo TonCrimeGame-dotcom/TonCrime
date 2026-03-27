@@ -98,7 +98,7 @@
 
       const tryNext = () => {
         if (i >= list.length) {
-          reject(new Error("PvP oyun dosyas\u0131 y\u00fcklenemedi: " + list.join(" | ")));
+          reject(new Error("PvP oyun dosyası yüklenemedi: " + list.join(" | ")));
           return;
         }
 
@@ -150,7 +150,7 @@
   }
 
   async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("tc_enqueue_ranked_pvp", {
+    return await supabase.rpc("enqueue_ranked_pvp", {
       p_mode: mode,
       p_stake_yton: stake,
     });
@@ -164,7 +164,7 @@
   }
 
   async function tryBetMatch(supabase, userId, mode) {
-    return await supabase.rpc("tc_try_ranked_pvp_match", {
+    return await supabase.rpc("try_ranked_pvp_match", {
       p_user_id: userId,
       p_mode: mode,
     });
@@ -373,24 +373,24 @@
     wrap.innerHTML = `
       <div id="pvpHeader">
         <div id="pvpLeftHead">
-          <div id="pvpStatus">PvP \u2022 Haz\u0131r</div>
+          <div id="pvpStatus">PvP • Hazır</div>
           <div id="pvpOpponentRow">
             <span id="pvpSpinner" class="hidden"></span>
-            Rakip: <b id="pvpOpponent">\u2014</b>
+            Rakip: <b id="pvpOpponent">—</b>
           </div>
         </div>
 
         <div class="pvpBtns">
-          <button class="pvpBtn" id="pvpStart" type="button">Ba\u015flat</button>
+          <button class="pvpBtn" id="pvpStart" type="button">Başlat</button>
           <button class="pvpBtn" id="pvpStop" type="button">Durdur</button>
-          <button class="pvpBtn" id="pvpReset" type="button">S\u0131f\u0131rla</button>
+          <button class="pvpBtn" id="pvpReset" type="button">Sıfırla</button>
         </div>
       </div>
 
       <div id="pvpBars">
         <div>
           <div class="pvpBar"><div class="pvpFill" id="enemyFill"></div></div>
-          <div class="pvpBarLabel"><span>D\u00fc\u015fman</span><span id="enemyHpText">100</span></div>
+          <div class="pvpBarLabel"><span>Düşman</span><span id="enemyHpText">100</span></div>
         </div>
         <div>
           <div class="pvpBar"><div class="pvpFill" id="meFill"></div></div>
@@ -435,6 +435,11 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
+      this._matchmakingBusy = false;
+      this._lastMatchmakingRequestAt = 0;
+      this._lastMatchmakingMode = null;
+      this._pointerReleaseHandled = false;
+      this._instanceId = `pvp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
       this.matchState = "menu";
       this.matchModeId = null;
@@ -462,36 +467,36 @@
         {
           id: "grid",
           title: "IQ Arena",
-          subtitle: "Zeka \u00c7at\u0131\u015fmas\u0131",
-          desc: "S\u0131ra tabanl\u0131 grid PvP. Kombolar ile rakibi indir.",
-          tags: ["Tekme", "Tokat", "\u015eifal\u0131 Bitki", "Beyin", "Yumruk", "KuruKafa"],
+          subtitle: "Zeka Çatışması",
+          desc: "Sıra tabanlı grid PvP. Kombolar ile rakibi indir.",
+          tags: ["Tekme", "Tokat", "Şifalı Bitki", "Beyin", "Yumruk", "KuruKafa"],
           open: true,
           accent: "#ffb24a",
         },
         {
           id: "arena",
-          title: "Kafes D\u00f6v\u00fc\u015f\u00fc",
-          subtitle: "1v1 Kafes D\u00f6v\u00fc\u015f\u00fc",
-          desc: "Daha h\u0131zl\u0131 PvP modu. Kritik sald\u0131r\u0131lar, k\u0131sa ma\u00e7lar ve direkt \u00f6d\u00fcl.",
-          tags: ["H\u0131zl\u0131", "yTon", "D\u00fcello", "XP"],
+          title: "Kafes Dövüşü",
+          subtitle: "1v1 Kafes Dövüşü",
+          desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
+          tags: ["Hızlı", "yTon", "Düello", "XP"],
           open: true,
           accent: "#ff9340",
         },
         {
           id: "slotarena",
           title: "Slot Arena",
-          subtitle: "Slot Tad\u0131nda PvP",
+          subtitle: "Slot Tadında PvP",
           desc: "6x6 tumble slot PvP.",
-          tags: ["Slot", "Tumble", "Bonus", "\u00c7arpan", "PvP"],
+          tags: ["Slot", "Tumble", "Bonus", "Çarpan", "PvP"],
           open: true,
           accent: "#ff5ea8",
         },
         {
           id: "tournament",
-          title: "Kartel Turnuvas\u0131",
+          title: "Kartel Turnuvası",
           subtitle: "Sezonluk PvP",
-          desc: "Sezon puan\u0131 ve lig mant\u0131\u011f\u0131. \u015eimdilik yak\u0131nda.",
-          tags: ["Sezon", "Lig", "\u00d6d\u00fcl"],
+          desc: "Sezon puanı ve lig mantığı. Şimdilik yakında.",
+          tags: ["Sezon", "Lig", "Ödül"],
           open: false,
           accent: "#7f7f86",
         },
@@ -503,84 +508,43 @@
       this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
     }
 
-    _isPvpDebugEnabled() {
+    _getGlobalMatchmakingLock() {
       try {
-        if (typeof window !== "undefined" && window.TC_PVP_DEBUG === true) return true;
-      } catch (_) {}
-      try {
-        return typeof localStorage !== "undefined" && localStorage.getItem("tc_pvp_debug") === "1";
+        if (typeof window === "undefined") return null;
+        const lock = window.__TC_PVP_MATCHMAKING_LOCK__ || null;
+        if (!lock) return null;
+        const age = Date.now() - Number(lock.ts || 0);
+        if (age > 8000) {
+          try { delete window.__TC_PVP_MATCHMAKING_LOCK__; } catch (_) {}
+          return null;
+        }
+        return lock;
       } catch (_) {
-        return false;
+        return null;
       }
     }
 
-    _debugLog(stage, details = null, level = "log") {
-      if (!this._isPvpDebugEnabled()) return;
-      const fn = typeof console?.[level] === "function" ? console[level] : console.log;
+    _setGlobalMatchmakingLock(modeId, userId = null) {
       try {
-        if (details == null) fn.call(console, `[TonCrime][PVP][DEBUG] ${stage}`);
-        else fn.call(console, `[TonCrime][PVP][DEBUG] ${stage}`, details);
+        if (typeof window === "undefined") return;
+        window.__TC_PVP_MATCHMAKING_LOCK__ = {
+          owner: this._instanceId,
+          modeId: modeId || null,
+          userId: userId || null,
+          ts: Date.now(),
+        };
       } catch (_) {}
     }
 
-    _debugMatchSnapshot(match) {
-      if (!match) return null;
-      return {
-        id: match.id || null,
-        status: match.status || match.state || null,
-        game_mode: match.game_mode ?? null,
-        stake_yton: match.stake_yton ?? null,
-        player1_id: match.player1_id || null,
-        player2_id: match.player2_id || null,
-        created_at: match.created_at || match.inserted_at || match.started_at || null,
-        updated_at: match.updated_at || null,
-        is_bot_match: !!match.is_bot_match,
-      };
-    }
-
-    _debugRpcSnapshot(payload) {
-      const rpc = this._normalizeRpcPayload(payload);
-      if (!rpc) return null;
-      return {
-        ok: rpc.ok ?? null,
-        status: rpc.status ?? null,
-        match_id: rpc.match_id || rpc.matchId || rpc.id || rpc.match?.id || rpc.match_row?.id || rpc.matchRecord?.id || null,
-        game_mode: rpc.game_mode || rpc.gameMode || rpc.match?.game_mode || rpc.match_row?.game_mode || rpc.matchRecord?.game_mode || null,
-        stake_yton: rpc.stake_yton ?? rpc.stakeYton ?? rpc.match?.stake_yton ?? rpc.match_row?.stake_yton ?? rpc.matchRecord?.stake_yton ?? null,
-        player1_id: rpc.player1_id || rpc.player1Id || rpc.match?.player1_id || rpc.match_row?.player1_id || rpc.matchRecord?.player1_id || null,
-        player2_id: rpc.player2_id || rpc.player2Id || rpc.match?.player2_id || rpc.match_row?.player2_id || rpc.matchRecord?.player2_id || null,
-        is_bot_match: !!(rpc.is_bot_match ?? rpc.isBotMatch ?? rpc.match?.is_bot_match ?? rpc.match_row?.is_bot_match ?? rpc.matchRecord?.is_bot_match),
-      };
-    }
-
-    _notReadyReason(match, userId, mode, stake) {
-      if (!match) return "match missing";
-      if (!match.id) return "match id missing";
-      if (!userId) return "user id missing";
-      if (!this._isMatchOwnedByUser(match, userId)) return "user is not part of this match";
-      if (mode && match.game_mode != null && String(match.game_mode) !== String(mode)) {
-        return `mode mismatch (${String(match.game_mode)} !== ${String(mode)})`;
-      }
-      if (stake != null && match.stake_yton != null && Number(match.stake_yton) !== Number(stake)) {
-        return `stake mismatch (${Number(match.stake_yton)} !== ${Number(stake)})`;
-      }
-
-      const player1Id = String(match?.player1_id || "").trim();
-      const player2Id = String(match?.player2_id || "").trim();
-      if (!player1Id || !player2Id) return "player id missing";
-      if (player1Id === player2Id) return "player1_id and player2_id are identical";
-
-      const status = String(match?.status || match?.state || "").trim().toLowerCase();
-      if (this._isTerminalMatchStatus(status)) {
-        return `status not active (${status || "unknown"})`;
-      }
-
-      const createdAtMs = this._matchCreatedAtMs(match);
-      if (createdAtMs && this.matchStartedAt && createdAtMs + 1500 < this.matchStartedAt) {
-        return `stale match (${createdAtMs} < ${this.matchStartedAt})`;
-      }
-
-      return null;
+    _clearGlobalMatchmakingLock(force = false) {
+      try {
+        if (typeof window === "undefined") return;
+        const lock = window.__TC_PVP_MATCHMAKING_LOCK__ || null;
+        if (!lock) return;
+        if (force || lock.owner === this._instanceId) {
+          delete window.__TC_PVP_MATCHMAKING_LOCK__;
+        }
+      } catch (_) {}
     }
 
     onEnter() {
@@ -599,16 +563,19 @@
       this.clickCandidate = false;
       this._wasPointerDown = false;
       this._launchingGame = false;
-      this._authUserIdCache = null;
-      this._authUserIdPromise = null;
+      this._matchmakingBusy = false;
+      this._lastMatchmakingRequestAt = 0;
+      this._lastMatchmakingMode = null;
+      this._pointerReleaseHandled = false;
       this._resetMatchmaking();
     }
 
     onExit() {
       this._resetMatchmaking();
       this._launchingGame = false;
-      this._authUserIdCache = null;
-      this._authUserIdPromise = null;
+      this._matchmakingBusy = false;
+      this._pointerReleaseHandled = false;
+      this._clearGlobalMatchmakingLock(true);
     }
 
     _getSupabase() {
@@ -709,22 +676,6 @@
       return true;
     }
 
-    _matchCreatedAtMs(match) {
-      const raw = match?.created_at ?? match?.inserted_at ?? match?.started_at ?? null;
-      if (!raw) return 0;
-      const ms = Date.parse(raw);
-      return Number.isFinite(ms) ? ms : 0;
-    }
-
-    _isTerminalMatchStatus(statusRaw) {
-      const status = String(statusRaw || "").trim().toLowerCase();
-      return ["finished", "ended", "cancelled", "canceled", "abandoned", "expired", "closed"].includes(status);
-    }
-
-    _isReadyLiveMatch(match, userId, mode, stake) {
-      return !this._notReadyReason(match, userId, mode, stake);
-    }
-
     async _fetchMatchById(sb, matchId) {
       if (!sb || !matchId) return null;
       try {
@@ -807,31 +758,9 @@
 
     _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
       const match = payload?.new || payload || null;
-      this._debugLog("realtime payload received", {
-        eventType: payload?.eventType || payload?.event || null,
-        state: this.matchState,
-        rtMatchStarted: !!this.rtMatchStarted,
-        match: this._debugMatchSnapshot(match),
-      });
-      if (this.rtMatchStarted || this.matchState !== "searching") {
-        this._debugLog("realtime payload ignored", {
-          reason: this.rtMatchStarted ? "match already started" : `scene not searching (${this.matchState})`,
-          match: this._debugMatchSnapshot(match),
-        });
-        return false;
-      }
-      const reason = this._notReadyReason(match, userId, mode, stake);
-      if (reason) {
-        this._debugLog("realtime match rejected", {
-          reason,
-          match: this._debugMatchSnapshot(match),
-        }, "warn");
-        return false;
-      }
+      if (this.rtMatchStarted || this.matchState !== "searching") return false;
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
 
-      this._debugLog("realtime match accepted", {
-        match: this._debugMatchSnapshot(match),
-      });
       this.rtMatchStarted = true;
       this.onMatchFound(
         this._buildOpponentFromMatch(match, userId),
@@ -842,55 +771,24 @@
 
     async _resolveRpcMatchResult(sb, payload, userId, mode, stake, sceneModeId) {
       const rpc = this._normalizeRpcPayload(payload);
-      this._debugLog("rpc payload received", {
-        state: this.matchState,
-        rtMatchStarted: !!this.rtMatchStarted,
-        rpc: this._debugRpcSnapshot(payload),
-      });
-      if (!rpc || this.rtMatchStarted || this.matchState !== "searching") {
-        this._debugLog("rpc payload ignored", {
-          reason: !rpc ? "rpc payload missing" : (this.rtMatchStarted ? "match already started" : `scene not searching (${this.matchState})`),
-          rpc: this._debugRpcSnapshot(payload),
-        });
-        return false;
-      }
+      if (!rpc || this.rtMatchStarted || this.matchState !== "searching") return false;
 
       const hasMatchSignal =
         rpc.ok === true ||
         rpc.status === "matched" ||
         !!(rpc.match_id || rpc.matchId || rpc.id || rpc.match || rpc.match_row || rpc.matchRecord);
 
-      if (!hasMatchSignal) {
-        this._debugLog("rpc returned no match signal", {
-          rpc: this._debugRpcSnapshot(payload),
-        });
-        return false;
-      }
+      if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
-      let reason = this._notReadyReason(match, userId, mode, stake);
-      if (reason) {
+      if (!this._isUsableMatch(match, userId, mode, stake)) {
         const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
-        this._debugLog("rpc match needs fetch", {
-          reason,
-          matchId,
-          rpc: this._debugRpcSnapshot(payload),
-          match: this._debugMatchSnapshot(match),
-        }, "warn");
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
-          this._debugLog("rpc fetched match row", {
-            matchId,
-            match: this._debugMatchSnapshot(match),
-          });
-          reason = this._notReadyReason(match, userId, mode, stake);
         }
       }
 
-      if (!reason) {
-        this._debugLog("rpc match accepted", {
-          match: this._debugMatchSnapshot(match),
-        });
+      if (this._isUsableMatch(match, userId, mode, stake)) {
         this.rtMatchStarted = true;
         this.onMatchFound(
           this._buildOpponentFromMatch(match, userId),
@@ -899,22 +797,19 @@
         return true;
       }
 
-      this._debugLog("rpc match rejected", {
-        reason,
-        rpc: this._debugRpcSnapshot(payload),
-        match: this._debugMatchSnapshot(match),
-      }, "warn");
-      return false;
+      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
+      if (!fallbackCtx?.matchId) return false;
+
+      this.rtMatchStarted = true;
+      this.onMatchFound(
+        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
+        fallbackCtx
+      );
+      return true;
     }
 
     _clearRealtime() {
       const sb = this._getSupabase();
-      this._debugLog("clearing realtime state", {
-        hasChannel: !!this.rtChannel,
-        hasSearchTimer: !!this.matchSearchTimer,
-        hasFallbackTimer: !!this.matchFallbackTimer,
-        hasLaunchTimer: !!this.matchLaunchTimer,
-      });
       if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
       if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
       if (this.matchLaunchTimer) clearTimeout(this.matchLaunchTimer);
@@ -952,6 +847,8 @@
       this.matchRecord = null;
       this.matchStartedAt = 0;
       this.matchFoundAt = 0;
+      this._matchmakingBusy = false;
+      this._clearGlobalMatchmakingLock();
     }
 
     _mapModeIdToSqlMode(id) {
@@ -962,20 +859,28 @@
     }
 
     async startMatchmaking(id) {
+      const now = Date.now();
       if (this._launchingGame) return;
-      if (this.matchState === "searching" || this.matchState === "found") {
-        this._debugLog("matchmaking request ignored (already active)", {
-          requestedMode: id,
-          currentState: this.matchState,
-          currentMode: this.matchModeId,
-        });
-        return;
-      }
+      if (this._matchmakingBusy) return;
+      if (this.matchState === "searching" || this.matchState === "found") return;
+      if (this._lastMatchmakingMode === id && now - Number(this._lastMatchmakingRequestAt || 0) < 1200) return;
+
+      const globalLock = this._getGlobalMatchmakingLock();
+      if (globalLock && globalLock.owner !== this._instanceId && now - Number(globalLock.ts || 0) < 2500) return;
+
+      this._matchmakingBusy = true;
+      this._lastMatchmakingRequestAt = now;
+      this._lastMatchmakingMode = id;
+      this._setGlobalMatchmakingLock(id);
 
       this._resetMatchmaking();
+      this._matchmakingBusy = true;
+      this._lastMatchmakingRequestAt = now;
+      this._lastMatchmakingMode = id;
+      this._setGlobalMatchmakingLock(id);
       this.matchState = "searching";
       this.matchModeId = id;
-      this.matchStartedAt = Date.now();
+      this.matchStartedAt = now;
 
       const sb = this._getSupabase();
       const userId = await this._getAuthUserId();
@@ -988,22 +893,13 @@
       const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
       const ytonBalance = Number(s.yton ?? s.coins ?? 0);
 
-      this._debugLog("matchmaking start", {
-        sceneModeId: id,
-        sqlMode: mode,
-        stake,
-        userId,
-        player,
-        currentEnergy,
-        energyCost,
-        ytonBalance,
-      });
-
       if (!sb || !userId || !mode || !stake) {
         this.matchState = "menu";
+        this._matchmakingBusy = false;
+        this._clearGlobalMatchmakingLock();
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: "Online e\u015fle\u015fme i\u00e7in giri\u015f haz\u0131r de\u011fil" },
+            detail: { text: "Online eşleşme için giriş hazır değil" },
           }));
         } catch (_) {}
         return;
@@ -1012,34 +908,30 @@
       if (currentEnergy < energyCost) {
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: `Yetersiz enerji \u2022 ${energyCost} gerekli` },
+            detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
           }));
         } catch (_) {}
         this.matchState = "menu";
+        this._matchmakingBusy = false;
+        this._clearGlobalMatchmakingLock();
         return;
       }
 
       if (ytonBalance < stake) {
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: `Yetersiz YTON \u2022 ${stake} gerekli` },
+            detail: { text: `Yetersiz YTON • ${stake} gerekli` },
           }));
         } catch (_) {}
         this.matchState = "menu";
+        this._matchmakingBusy = false;
+        this._clearGlobalMatchmakingLock();
         return;
       }
 
       try {
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
-        this._debugLog("enqueue result", {
-          error: queueError ? { code: queueError.code || null, message: queueError.message || String(queueError) } : null,
-          rpc: this._debugRpcSnapshot(queueData),
-          raw: queueData || null,
-        }, queueError ? "warn" : "log");
-        if (queueError) {
-          const isDup = String(queueError?.code || "") === "23505" || /duplicate key/i.test(String(queueError?.message || ""));
-          if (!isDup) throw queueError;
-        }
+        if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
         this.store?.set?.({
@@ -1056,7 +948,6 @@
         }
 
         const channelName = `pvp-match-${userId}-${mode}-${Date.now()}`;
-        this._debugLog("creating realtime channel", { channelName, userId, mode, stake });
         this.rtChannel = sb
           .channel(channelName)
           .on(
@@ -1119,53 +1010,37 @@
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               try {
                 await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-              } catch (err) { console.warn("[TonCrime][PVP] realtime queue update poll failed", err); }
+              } catch (_) {}
             }
           )
-          .subscribe((status, err) => {
-            this._debugLog("realtime subscribe status", {
-              channelName,
-              status,
-              error: err ? { message: err.message || String(err), code: err.code || null } : null,
-            }, err ? "warn" : "log");
-          });
+          .subscribe();
 
         this.matchSearchTimer = setInterval(async () => {
           if (this.rtMatchStarted || this.matchState !== "searching") return;
           try {
             const { data: tryData, error: tryError } = await tryBetMatch(sb, userId, mode);
-            this._debugLog("tryBetMatch tick result", {
-              error: tryError ? { code: tryError.code || null, message: tryError.message || String(tryError) } : null,
-              rpc: this._debugRpcSnapshot(tryData),
-              raw: tryData || null,
-            }, tryError ? "warn" : "log");
             if (tryError) throw tryError;
             const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
-            this._debugLog("tryBetMatch tick resolved", { matchedFromRpc });
             if (matchedFromRpc) return;
-          } catch (err) { console.warn("[TonCrime][PVP] try-match tick failed", err); }
+          } catch (_) {}
           try {
-            const matchedFromPoll = await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-            this._debugLog("poll tick resolved", { matchedFromPoll });
-          } catch (err) { console.warn("[TonCrime][PVP] poll tick failed", err); }
+            await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
+          } catch (_) {}
         }, 1000);
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
         this.matchState = "menu";
+        this._matchmakingBusy = false;
+        this._clearGlobalMatchmakingLock();
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: "Bahisli PvP kuyru\u011fu ba\u015flat\u0131lamad\u0131" },
+            detail: { text: "Bahisli PvP kuyruğu başlatılamadı" },
           }));
         } catch (_) {}
       }
     }
 
     onMatchFound(opponent, matchRecord = null) {
-      this._debugLog("onMatchFound called", {
-        state: this.matchState,
-        opponent,
-        matchRecord,
-      });
       if (this.matchState !== "searching") return;
 
       if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
@@ -1194,8 +1069,8 @@
     }
 
     _headerText() {
-      if (this.source === "nightclub") return "Rakip Havuzu: Nightclub i\u00e7i";
-      if (this.source === "coffeeshop") return "Rakip Havuzu: Coffeeshop i\u00e7i";
+      if (this.source === "nightclub") return "Rakip Havuzu: Nightclub içi";
+      if (this.source === "coffeeshop") return "Rakip Havuzu: Coffeeshop içi";
       return "Rakip Havuzu: Genel";
     }
 
@@ -1228,6 +1103,7 @@
         this.velocityY = 0;
         this.moved = 0;
         this.clickCandidate = true;
+        this._pointerReleaseHandled = false;
       }
 
       if (this.dragging && isDown) {
@@ -1246,15 +1122,30 @@
 
       if (this.dragging && justUp) {
         this.dragging = false;
-        if (this.clickCandidate) {
+        if (this.clickCandidate && !this._pointerReleaseHandled) {
           this.clickCandidate = false;
+          this._pointerReleaseHandled = true;
           this.pointerUp(px, py);
         }
       }
 
-      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
+      if (
+        !isDown &&
+        !this.dragging &&
+        this.clickCandidate &&
+        this.moved <= 10 &&
+        !justDown &&
+        !justUp &&
+        !this._launchingGame &&
+        !this._pointerReleaseHandled
+      ) {
         this.clickCandidate = false;
+        this._pointerReleaseHandled = true;
         this.pointerUp(px, py);
+      }
+
+      if (!isDown && !this.dragging && !this.clickCandidate) {
+        this._pointerReleaseHandled = false;
       }
 
       const wheel = Number(this.input?.wheelDelta || 0);
@@ -1278,11 +1169,15 @@
         return;
       }
 
+      if (this.matchState !== "menu" || this._launchingGame || this._matchmakingBusy) return;
+
       for (let i = 0; i < this.cardRects.length; i++) {
         const r = this.cardRects[i];
         const hitButton = r.btn && pointInRect(x, y, r.btn);
         const hitCard = r.cardRect && pointInRect(x, y, r.cardRect);
         if ((hitButton || hitCard) && r.card.open) {
+          this.clickCandidate = false;
+          this.moved = 999;
           this.startMatchmaking(r.card.id);
           return;
         }
@@ -1321,7 +1216,7 @@
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: {
-              text: `Yetersiz enerji \u2022 ${economy.energy} gerekli`,
+              text: `Yetersiz enerji • ${economy.energy} gerekli`,
             },
           }));
         } catch (_) {}
@@ -1378,7 +1273,7 @@
 
         const dom = ensurePvpDom();
 
-        if (dom.status) dom.status.textContent = "PvP \u2022 Y\u00fckleniyor...";
+        if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
         if (dom.opponent) dom.opponent.textContent = (opponentData?.username || "ShadowWolf");
         if (dom.spinner) dom.spinner.classList.remove("hidden");
 
@@ -1386,7 +1281,7 @@
           await loadPvpGameScript(["./src/pvpcrush.js", "./pvpcrush.js"]);
 
           if (!window.TonCrimePVP_CRUSH) {
-            throw new Error("TonCrimePVP_CRUSH bulunamad\u0131");
+            throw new Error("TonCrimePVP_CRUSH bulunamadı");
           }
 
           window.TonCrimePVP = window.TonCrimePVP_CRUSH;
@@ -1447,7 +1342,7 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP \u2022 IQ Arena ba\u015flad\u0131";
+          if (dom.status) dom.status.textContent = "PvP • IQ Arena başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           this._resetMatchmaking();
@@ -1458,7 +1353,7 @@
           await loadPvpGameScript(["./src/pvpslotarena.js", "./pvpslotarena.js"]);
 
           if (!window.TonCrimePVP_SLOT) {
-            throw new Error("TonCrimePVP_SLOT bulunamad\u0131");
+            throw new Error("TonCrimePVP_SLOT bulunamadı");
           }
 
           window.TonCrimePVP = window.TonCrimePVP_SLOT;
@@ -1519,7 +1414,7 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP \u2022 Slot Arena ba\u015flad\u0131";
+          if (dom.status) dom.status.textContent = "PvP • Slot Arena başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           this._resetMatchmaking();
@@ -1530,7 +1425,7 @@
           await loadPvpGameScript(["./src/pvpcage.js", "./pvpcage.js"]);
 
           if (!window.TonCrimePVP_CAGE) {
-            throw new Error("TonCrimePVP_CAGE bulunamad\u0131");
+            throw new Error("TonCrimePVP_CAGE bulunamadı");
           }
 
           window.TonCrimePVP = window.TonCrimePVP_CAGE;
@@ -1587,21 +1482,21 @@
           await new Promise((r) => setTimeout(r, 180));
           window.TonCrimePVP.start?.();
 
-          if (dom.status) dom.status.textContent = "PvP \u2022 Kafes D\u00f6v\u00fc\u015f\u00fc ba\u015flad\u0131";
+          if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
           if (dom.spinner) dom.spinner.classList.add("hidden");
           this._launchingGame = false;
           this._resetMatchmaking();
           return;
         }
 
-        if (dom.status) dom.status.textContent = "PvP \u2022 Mod bulunamad\u0131";
+        if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
         if (dom.spinner) dom.spinner.classList.add("hidden");
       } catch (err) {
         refundMatch();
         console.error("[TonCrime] startGame fatal:", err);
         const status = document.getElementById("pvpStatus");
         const spinner = document.getElementById("pvpSpinner");
-        if (status) status.textContent = "PvP \u2022 Oyun y\u00fcklenemedi";
+        if (status) status.textContent = "PvP • Oyun yüklenemedi";
         if (spinner) spinner.classList.add("hidden");
       }
 
@@ -1638,73 +1533,27 @@
       }
     }
 
+
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
       try {
-        this._debugLog("polling start", { userId, mode, stake, state: this.matchState, rtMatchStarted: !!this.rtMatchStarted });
-        const searchStartedAt = Number(this.matchStartedAt || 0);
+        const { data: queueRow } = await sb
+          .from("pvp_match_queue")
+          .select("match_id, status")
+          .eq("user_id", userId)
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        let queueRow = null;
-        let queueRowsTotal = 0;
-        let queueRowsFilteredCount = 0;
-        try {
-          const queueResp = await sb
-            .from("pvp_match_queue")
-            .select("*")
-            .eq("user_id", userId)
-            .eq("game_mode", mode)
-            .eq("stake_yton", stake)
-            .limit(5);
-          const queueRows = Array.isArray(queueResp?.data) ? queueResp.data : [];
-          queueRowsTotal = queueRows.length;
-          const queueRowsFiltered = queueRows.filter((row) => {
-            const status = String(row?.status || "").trim().toLowerCase();
-            if (status && status !== "searching" && status !== "queued" && status !== "matching") return false;
-            const rowTime = Date.parse(row?.updated_at || row?.created_at || 0) || 0;
-            if (searchStartedAt && rowTime && rowTime + 1500 < searchStartedAt) return false;
-            return true;
-          });
-          queueRowsFilteredCount = queueRowsFiltered.length;
-          queueRow = queueRowsFiltered.sort((a, b) => {
-            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
-            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
-            return tb - ta;
-          })[0] || null;
-        } catch (queueErr) {
-          console.warn("[TonCrime][PVP] queue poll failed", queueErr);
-        }
-
-        this._debugLog("queue poll result", {
-          rows: queueRowsTotal,
-          rowsFiltered: queueRowsFilteredCount,
-          queueRow: queueRow ? {
-            id: queueRow.id || null,
-            status: queueRow.status || null,
-            user_id: queueRow.user_id || null,
-            game_mode: queueRow.game_mode || null,
-            stake_yton: queueRow.stake_yton ?? null,
-            match_id: queueRow.match_id || queueRow.matchId || null,
-            created_at: queueRow.created_at || null,
-            updated_at: queueRow.updated_at || null,
-          } : null,
-        });
-
-        const queueMatchId = queueRow?.match_id || queueRow?.matchId || null;
-        if (queueMatchId) {
-          const { data: matchRow, error: matchErr } = await sb
+        if (queueRow?.match_id) {
+          const { data: matchRow } = await sb
             .from("pvp_matches")
             .select("*")
-            .eq("id", queueMatchId)
+            .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchErr) {
-            console.warn("[TonCrime][PVP] match-by-id poll failed", matchErr);
-          }
-
-          const queueMatchReason = this._notReadyReason(matchRow, userId, mode, stake);
-          if (!queueMatchReason && !this.rtMatchStarted && this.matchState === "searching") {
-            this._debugLog("queue match accepted", {
-              match: this._debugMatchSnapshot(matchRow),
-            });
+          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1712,48 +1561,19 @@
             );
             return true;
           }
-          this._debugLog("queue match rejected", {
-            reason: queueMatchReason || (this.rtMatchStarted ? "match already started" : `scene not searching (${this.matchState})`),
-            match: this._debugMatchSnapshot(matchRow),
-          }, queueMatchReason ? "warn" : "log");
         }
 
-        let directMatch = null;
-        let directRowsTotal = 0;
-        let directRowsFilteredCount = 0;
-        try {
-          const directResp = await sb
-            .from("pvp_matches")
-            .select("*")
-            .eq("game_mode", mode)
-            .eq("stake_yton", stake)
-            .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-            .limit(10);
-          const directRows = Array.isArray(directResp?.data) ? directResp.data : [];
-          directRowsTotal = directRows.length;
-          const directRowsFiltered = directRows.filter((row) => {
-            if (this._isTerminalMatchStatus(row?.status || row?.state)) return false;
-            const rowTime = this._matchCreatedAtMs(row);
-            if (searchStartedAt && rowTime && rowTime + 1500 < searchStartedAt) return false;
-            return true;
-          });
-          directRowsFilteredCount = directRowsFiltered.length;
-          directMatch = directRowsFiltered.sort((a, b) => {
-            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
-            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
-            return tb - ta;
-          })[0] || null;
-        } catch (directErr) {
-          console.warn("[TonCrime][PVP] direct match poll failed", directErr);
-        }
+        const { data: directMatch } = await sb
+          .from("pvp_matches")
+          .select("*")
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        const directReason = this._notReadyReason(directMatch, userId, mode, stake);
-        if (!directReason && !this.rtMatchStarted && this.matchState === "searching") {
-          this._debugLog("direct poll match accepted", {
-            rows: directRowsTotal,
-            rowsFiltered: directRowsFilteredCount,
-            match: this._debugMatchSnapshot(directMatch),
-          });
+        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
@@ -1761,15 +1581,7 @@
           );
           return true;
         }
-        this._debugLog("direct poll match rejected", {
-          rows: directRowsTotal,
-          rowsFiltered: directRowsFilteredCount,
-          reason: directReason || (this.rtMatchStarted ? "match already started" : `scene not searching (${this.matchState})`),
-          match: this._debugMatchSnapshot(directMatch),
-        }, directReason ? "warn" : "log");
-      } catch (err) {
-        console.warn("[TonCrime][PVP] polling fatal", err);
-      }
+      } catch (_) {}
       return false;
     }
 
@@ -1806,7 +1618,7 @@
       ctx.textAlign = "center";
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "900 20px system-ui, Arial";
-      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aran\u0131yor", cx, boxY + 46);
+      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranıyor", cx, boxY + 46);
 
       if (this.matchState === "found" && this.matchOpponent) {
         ctx.font = "900 28px system-ui, Arial";
@@ -1818,14 +1630,14 @@
         const left = Math.max(0, 3000 - (Date.now() - this.matchFoundAt));
         ctx.font = "500 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.fillText(`Ma\u00e7 ${Math.max(1, Math.ceil(left / 1000))} sn i\u00e7inde ba\u015fl\u0131yor`, cx, boxY + 178);
+        ctx.fillText(`Maç ${Math.max(1, Math.ceil(left / 1000))} sn içinde başlıyor`, cx, boxY + 178);
       } else {
         ctx.font = "500 15px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText("E\u015fle\u015fme haz\u0131rlan\u0131yor", cx, boxY + 104);
+        ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
         ctx.font = "700 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.86)";
-        ctx.fillText("Oyuncular taran\u0131yor...", cx, boxY + 132);
+        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
       }
     }
 
@@ -1880,7 +1692,7 @@
       ctx.font = `700 ${titleSize}px system-ui, Arial`;
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText("PvP \u2022 Oyun Se\u00e7", panelX + innerPad, panelY + 16);
+      ctx.fillText("PvP • Oyun Seç", panelX + innerPad, panelY + 16);
 
       ctx.fillStyle = "rgba(255,255,255,0.78)";
       ctx.font = `500 ${subtitleSize}px system-ui, Arial`;
@@ -1909,10 +1721,10 @@
           id: this.source,
           label:
             this.source === "nightclub"
-              ? "Nightclub i\u00e7i havuz"
+              ? "Nightclub içi havuz"
               : this.source === "coffeeshop"
-              ? "Coffeeshop i\u00e7i havuz"
-              : "En temiz komboyu yapan paray\u0131 toplar.",
+              ? "Coffeeshop içi havuz"
+              : "En temiz komboyu yapan parayı toplar.",
         },
       ];
 
@@ -2022,7 +1834,7 @@
         ctx.font = `700 ${clamp(Math.round(btnH * 0.34), 11, 14)}px system-ui, Arial`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(card.open ? "A\u00e7\u0131k" : "Kilitli", btnX + btnW / 2, btnY + btnH / 2);
+        ctx.fillText(card.open ? "Açık" : "Kilitli", btnX + btnW / 2, btnY + btnH / 2);
 
         const descX = x + 18;
         const descY = y + 14 + cardTitleSize + 5 + cardSubSize + 12;
