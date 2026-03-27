@@ -958,6 +958,14 @@
 
     async startMatchmaking(id) {
       if (this._launchingGame) return;
+      if (this.matchState === "searching" || this.matchState === "found") {
+        this._debugLog("matchmaking request ignored (already active)", {
+          requestedMode: id,
+          currentState: this.matchState,
+          currentMode: this.matchModeId,
+        });
+        return;
+      }
 
       this._resetMatchmaking();
       this.matchState = "searching";
@@ -1234,6 +1242,7 @@
       if (this.dragging && justUp) {
         this.dragging = false;
         if (this.clickCandidate) {
+          this.clickCandidate = false;
           this.pointerUp(px, py);
         }
       }
