@@ -840,16 +840,26 @@
 
     _forceTurnTimeout(turn) {
       if (!this._state || this._state.finished || this._state.turn !== turn) return;
+      const isOnline = this._isRealtimeMatch();
       if (turn === "me") {
         this._state.meActionLeft = 0;
         this._state.info = "Süre doldu • sıra rakipte";
         this._toast("Süre doldu");
         this._beginTurn("enemy");
+        this._locked = true;
         if (this._running && !this._checkFinish()) {
-          clearTimeout(this._turnTimer);
-          this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(450, 900));
+          if (isOnline) {
+            this._broadcastOnline("state_sync", {
+              state: this._toNetworkState(),
+              toast: "Rakibin süresi doldu",
+            }).catch?.(() => {});
+          } else {
+            clearTimeout(this._turnTimer);
+            this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(450, 900));
+          }
         }
       } else {
+        if (isOnline) return;
         this._state.enemyActionLeft = 0;
         this._state.info = "Rakibin süresi doldu";
         this._toast("Rakibin süresi doldu");
@@ -1030,6 +1040,13 @@
       this._onlineChannel = sb.channel(room, { config: { broadcast: { self: false } } });
 
       this._onlineChannel
+        .on("broadcast", { event: "request_state" }, async () => {
+          if (!this._running || !this._state || !this._onlineReady) return;
+          if (!this._matchCtx?.amIPlayer1) return;
+          await this._broadcastOnline("init_state", {
+            state: this._toNetworkState(),
+          });
+        })
         .on("broadcast", { event: "init_state" }, ({ payload }) => {
           if (!payload?.state) return;
           this._applyNetworkState(payload.state);
@@ -1055,14 +1072,21 @@
           resolve();
         };
         try {
-          this._onlineChannel.subscribe(() => finish());
+          this._onlineChannel.subscribe((status) => {
+            if (status === "SUBSCRIBED") finish();
+          });
         } catch (_) {
           finish();
         }
-        setTimeout(finish, 1200);
+        setTimeout(finish, 1500);
       });
 
       this._onlineReady = true;
+      if (this._matchCtx?.amIPlayer1 && this._state) {
+        await this._broadcastOnline("init_state", { state: this._toNetworkState() });
+      } else {
+        await this._broadcastOnline("request_state", { matchId: this._matchCtx?.matchId || null });
+      }
       return true;
     },
 
@@ -1081,18 +1105,25 @@
       this.reset();
       this._running = true;
       this._state.matchmaking = false;
-      this._state.turn = "me";
-      this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
-      this._state.info = `${this._opponent?.username || "Rakip"} hazır`;
-      this._setStatus(`IQ ARENA • ${this._opponent?.username || "Rakip"} hazır`);
       clearTimeout(this._queueTimer);
       this._queueTimer = null;
 
-      // İlk tur oyuncudaysa kilit açık olmalı.
-      // Önceki sürümde burada true verildiği için ilk swipe işlenmiyordu,
-      // süre boşa akıp tur rakibe geçiyordu.
-      this._locked = this._state.turn !== "me";
+      if (this._isRealtimeMatch()) {
+        await this._setupOnlineRoom();
+        const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
+        this._state.turn = amIPlayer1 ? "me" : "enemy";
+        this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+        this._state.info = amIPlayer1
+          ? `${this._opponent?.username || "Rakip"} hazır • ilk sıra sende`
+          : `${this._opponent?.username || "Rakip"} hazır • ilk sıra rakipte`;
+      } else {
+        this._state.turn = "me";
+        this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+        this._state.info = `${this._opponent?.username || "Rakip"} hazır`;
+      }
 
+      this._setStatus(`IQ ARENA • ${this._opponent?.username || "Rakip"} hazır`);
+      this._locked = this._state.turn !== "me";
       this._updateHud();
       this._render();
     },
