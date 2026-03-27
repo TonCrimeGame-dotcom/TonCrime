@@ -5,17 +5,18 @@
   const BASE_SPINS = 25;
   const BONUS_SPINS = 10;
   const BONUS_TRIGGER = 4;
-  const MIN_CLUSTER = 12;
+  const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
+  const MATCH_WATCH_MS = 700;
 
   const ICONS = {
-    weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 16 },
-    brain: { id: "brain", emoji: "🧠", label: "BEYİN",   color: "#ff5b64", base: 18, weight: 12 },
-    drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 15 },
-    kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 15 },
-    slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 17 },
-    punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 15 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 8 },
+    weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 17 },
+    brain: { id: "brain", emoji: "🧠", label: "BEYIN",   color: "#ff5b64", base: 18, weight: 15 },
+    drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 17 },
+    kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 16 },
+    slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 18 },
+    punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 17 },
+    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 4 },
   };
 
   const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
@@ -134,6 +135,15 @@
     return out;
   }
 
+  function createSpinIntroMap() {
+    return Array.from({ length: ROWS }, (_, r) =>
+      Array.from({ length: COLS }, (_, c) => ({
+        fromRows: 1.75 + Math.random() * 4.25 + (ROWS - r) * 0.08,
+        delay: Math.random() * 0.28 + c * 0.012,
+      }))
+    );
+  }
+
   function evaluateBoard(board, inBonus) {
     const { counts, bonusCount } = countTypes(board);
     const remove = new Set();
@@ -144,7 +154,7 @@
       if (count < MIN_CLUSTER) continue;
       const meta = ICONS[type];
       const extra = count - MIN_CLUSTER;
-      const hitDamage = meta.base * count * 0.7 + extra * meta.base * 0.35;
+      const hitDamage = meta.base * count * 0.9 + extra * meta.base * 0.55;
       damage += hitDamage;
       hits.push({ type, count, damage: hitDamage });
 
@@ -514,6 +524,70 @@
         color: rgba(255,255,255,0.65);
       }
 
+      #arena .tc-slot-result {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(4, 6, 12, 0.48);
+        backdrop-filter: blur(6px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .18s ease;
+      }
+
+      #arena .tc-slot-result.on {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      #arena .tc-slot-result-card {
+        width: min(320px, calc(100% - 20px));
+        border-radius: 20px;
+        padding: 20px 18px;
+        text-align: center;
+        border: 1px solid rgba(255,255,255,0.16);
+        background: linear-gradient(180deg, rgba(24,28,42,0.96), rgba(12,14,24,0.96));
+        box-shadow: 0 22px 60px rgba(0,0,0,0.34);
+      }
+
+      #arena .tc-slot-result-title {
+        font: 900 28px system-ui, Arial;
+        letter-spacing: 1.2px;
+        color: #fff;
+        text-transform: uppercase;
+      }
+
+      #arena .tc-slot-result-title.win {
+        color: #7dffae;
+        text-shadow: 0 0 14px rgba(125,255,174,0.28);
+      }
+
+      #arena .tc-slot-result-title.loss {
+        color: #ff8282;
+        text-shadow: 0 0 14px rgba(255,130,130,0.24);
+      }
+
+      #arena .tc-slot-result-reason {
+        margin-top: 8px;
+        font: 800 13px system-ui, Arial;
+        color: rgba(255,255,255,0.78);
+      }
+
+      #arena .tc-slot-result-prize {
+        margin-top: 14px;
+        font: 900 22px system-ui, Arial;
+        color: #ffd36f;
+      }
+
+      #arena .tc-slot-result-note {
+        margin-top: 8px;
+        font: 700 11px system-ui, Arial;
+        color: rgba(255,255,255,0.62);
+      }
+
       @media (max-width: 520px) {
         #arena .tc-cage-root.tc-crush-root { padding: 8px; }
         #arena .tc-cage-neon.tc-crush-neon { font-size: 18px; }
@@ -578,6 +652,14 @@
         <div class="tc-cage-stage tc-crush-stage" id="tcSlotStage">
           <canvas class="tc-cage-canvas tc-crush-canvas" id="tcSlotCanvas"></canvas>
           <div class="tc-cage-toast tc-crush-toast" id="tcSlotToast"></div>
+                  <div class="tc-slot-result" id="tcSlotResult">
+            <div class="tc-slot-result-card">
+              <div class="tc-slot-result-title" id="tcSlotResultTitle">KAZANDIN</div>
+              <div class="tc-slot-result-reason" id="tcSlotResultReason">Maç bitti</div>
+              <div class="tc-slot-result-prize" id="tcSlotResultPrize">+0 YTON</div>
+              <div class="tc-slot-result-note" id="tcSlotResultNote">Ödül backend tarafından işlenir</div>
+            </div>
+          </div>
         </div>
 
         <div class="tc-slot-footer">
@@ -608,6 +690,10 @@
     _turnTimer: null,
     _toastTimer: null,
     _lastTs: 0,
+    _matchCtx: null,
+    _matchWatchTimer: null,
+    _resultReported: false,
+    onMatchFinished: null,
 
     init(opts = {}) {
       injectStyle();
@@ -657,6 +743,11 @@
         chipBase: arena.querySelector("#tcSlotChipBase"),
         chipTimer: arena.querySelector("#tcSlotChipTimer"),
         chipTumble: arena.querySelector("#tcSlotChipTumble"),
+        resultWrap: arena.querySelector("#tcSlotResult"),
+        resultTitle: arena.querySelector("#tcSlotResultTitle"),
+        resultReason: arena.querySelector("#tcSlotResultReason"),
+        resultPrize: arena.querySelector("#tcSlotResultPrize"),
+        resultNote: arena.querySelector("#tcSlotResultNote"),
       };
 
       this._setupState();
@@ -705,6 +796,9 @@
         markedRemove: new Set(),
         decisionEndsAt: 0,
         imageReady: !!this._iconImages,
+        spinIntroMap: null,
+        spinIntroProgress: 1,
+        result: null,
       };
     },
 
@@ -714,10 +808,22 @@
       this._render();
     },
 
+    setMatchContext(ctx) {
+      this._matchCtx = ctx && typeof ctx === "object" ? { ...ctx } : null;
+      if (this._running) this._beginMatchWatch();
+    },
+
+    resolveOpponentQuit() {
+      if (!this._state || this._state.finished) return;
+      this._finish(true, "Rakip maçtan çıktı", { notify: true });
+    },
+
     reset() {
       this.stop();
       if (!this._els) return;
+      this._resultReported = false;
       this._setupState();
+      this._hideResultOverlay();
       this._updateHud();
       this._setStatus("PvP • Slot Arena hazır");
       this._toast("Hazır");
@@ -733,6 +839,8 @@
       if (this._els.enemyName) this._els.enemyName.textContent = this._opponent.username || "Rakip";
       this._setStatus("PvP • Slot Arena başladı");
       this._state.info = "Sıran sende • 3 sn içinde spin başlat";
+      this._hideResultOverlay();
+      this._beginMatchWatch();
       this._startTurnWindow();
       this._tick(performance.now());
     },
@@ -745,12 +853,18 @@
       this._queuedResolve = null;
       clearTimeout(this._turnTimer);
       this._turnTimer = null;
+      this._stopMatchWatch();
     },
 
     _bindEvents() {
       if (!this._els) return;
 
       const onClose = () => {
+        const shouldReportLoss = !!(this._state && !this._state.finished);
+        if (shouldReportLoss && typeof this.onMatchFinished === "function" && !this._resultReported) {
+          this._resultReported = true;
+          try { this.onMatchFinished(false, { reason: "quit" }); } catch (_) {}
+        }
         this.stop();
         try {
           const arena = document.getElementById("arena");
@@ -829,6 +943,73 @@
       this._toastTimer = setTimeout(() => {
         if (this._els?.toast) this._els.toast.classList.remove("on");
       }, ms);
+    },
+
+    _estimatePrizeYton(win) {
+      if (!win) return 0;
+      const ctxPrize = Number(this._matchCtx?.prizeYton || 0);
+      if (ctxPrize > 0) return ctxPrize;
+      try {
+        const state = window.tcStore?.get?.() || {};
+        const stake = Number(state?.pvp?.entryStake || 0);
+        return stake > 0 ? stake : 0;
+      } catch (_) {
+        return 0;
+      }
+    },
+
+    _hideResultOverlay() {
+      if (!this._els?.resultWrap) return;
+      this._els.resultWrap.classList.remove("on");
+    },
+
+    _showResultOverlay(win, reason) {
+      if (!this._els?.resultWrap) return;
+      const prize = this._estimatePrizeYton(win);
+      if (this._els.resultTitle) {
+        this._els.resultTitle.textContent = win ? "KAZANDIN" : "KAYBETTIN";
+        this._els.resultTitle.classList.remove("win", "loss");
+        this._els.resultTitle.classList.add(win ? "win" : "loss");
+      }
+      if (this._els.resultReason) this._els.resultReason.textContent = String(reason || (win ? "Mac bitti" : "Mac bitti"));
+      if (this._els.resultPrize) this._els.resultPrize.textContent = win ? `+${Math.max(0, Math.round(prize))} YTON` : `+0 YTON`;
+      if (this._els.resultNote) this._els.resultNote.textContent = win ? (prize > 0 ? "Odul backend tarafinda islenir" : "YTON odulu backend tarafinda islenir") : "Bu mac kayip olarak islenir";
+      this._els.resultWrap.classList.add("on");
+    },
+
+    _stopMatchWatch() {
+      clearInterval(this._matchWatchTimer);
+      this._matchWatchTimer = null;
+    },
+
+    _beginMatchWatch() {
+      this._stopMatchWatch();
+      const matchId = this._matchCtx?.matchId;
+      if (!matchId || !window.supabase) return;
+      this._matchWatchTimer = setInterval(() => {
+        this._pollMatchStateOnce().catch?.(() => {});
+      }, MATCH_WATCH_MS);
+    },
+
+    async _pollMatchStateOnce() {
+      if (!this._matchCtx?.matchId || !window.supabase || this._state?.finished) return;
+      const { data } = await window.supabase
+        .from("pvp_matches")
+        .select("id,status,winner_user_id,player1_id,player2_id")
+        .eq("id", this._matchCtx.matchId)
+        .maybeSingle();
+      if (!data) return;
+      const myId = String(this._matchCtx?.userId || "");
+      const winnerId = String(data?.winner_user_id || "");
+      if (winnerId) {
+        const didWin = myId && winnerId === myId;
+        this._finish(!!didWin, didWin ? "Mac sonlandi" : "Mac sonlandi", { notify: !!didWin });
+        return;
+      }
+      const status = String(data?.status || "").toLowerCase();
+      if ((status === "cancelled" || status === "canceled") && !this._state?.finished) {
+        this._finish(true, "Rakip maçtan çıktı", { notify: false });
+      }
     },
 
     _updateHud() {
@@ -942,7 +1123,11 @@
       this._render();
 
       s.board = makeBoard();
+      s.spinIntroMap = createSpinIntroMap();
+      s.spinIntroProgress = 0;
       await this._spinAnimation();
+      s.spinIntroMap = null;
+      s.spinIntroProgress = 1;
 
       if (s.inBonus && s.bonusOwner === actor) {
         s.bonusSpinsLeft = Math.max(0, s.bonusSpinsLeft - 1);
@@ -979,17 +1164,17 @@
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 720;
+      const duration = 980;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
           if (!this._state || !this._running) return resolve();
           const t = clamp((ts - start) / duration, 0, 1);
           const ease = 1 - Math.pow(1 - t, 3);
-          s.spinOffset = (1 - ease) * 38;
+          s.spinIntroProgress = ease;
           this._render();
           if (t >= 1) {
-            s.spinOffset = 0;
+            s.spinIntroProgress = 1;
             this._render();
             resolve();
             return;
@@ -1128,6 +1313,7 @@
 
       clearTimeout(this._turnTimer);
       this._turnTimer = null;
+      this._stopMatchWatch();
       clearTimeout(this._queuedResolve);
       this._queuedResolve = null;
 
@@ -1162,7 +1348,7 @@
       return false;
     },
 
-    _finish(win, reason) {
+    _finish(win, reason, opts = {}) {
       const s = this._state;
       if (!s || s.finished) return true;
       s.finished = true;
@@ -1172,10 +1358,16 @@
       this._locked = true;
       clearTimeout(this._turnTimer);
       clearTimeout(this._queuedResolve);
+      this._stopMatchWatch();
       this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
       s.info = reason || (win ? "Kazandın" : "Kaybettin");
       this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
+      this._showResultOverlay(!!win, reason);
       this._recordResult(win);
+      if (!this._resultReported && typeof this.onMatchFinished === "function" && opts.notify !== false) {
+        this._resultReported = true;
+        try { this.onMatchFinished(!!win, { reason: reason || "finish" }); } catch (_) {}
+      }
       this._updateHud();
       this._render();
       return true;
@@ -1270,7 +1462,6 @@
       const gap = Math.max(small ? 3 : 5, Math.floor(Math.min(w / COLS, h / ROWS) * (small ? 0.05 : 0.08)));
       const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
       const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
-      const spinOffset = s.spinOffset || 0;
       const flashPulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.02);
 
       for (let r = 0; r < ROWS; r++) {
@@ -1278,7 +1469,14 @@
           const px = x + c * (cellW + gap);
           const extraRows = s.dropMap?.[r]?.[c] || 0;
           const dropPx = extraRows > 0 ? (1 - s.dropProgress) * extraRows * (cellH + gap) : 0;
-          const py = y + r * (cellH + gap) - dropPx + spinOffset;
+          let py = y + r * (cellH + gap) - dropPx;
+          const intro = s.spinIntroMap?.[r]?.[c];
+          if (intro) {
+            const introT = clamp((s.spinIntroProgress - Number(intro.delay || 0)) / Math.max(0.001, 1 - Number(intro.delay || 0)), 0, 1);
+            const introEase = 1 - Math.pow(1 - introT, 3);
+            const introDrop = (1 - introEase) * Number(intro.fromRows || 0) * (cellH + gap);
+            py -= introDrop;
+          }
           const cell = board[r][c];
           const meta = ICONS[cell?.type] || ICONS.punch;
           const key = `${r}:${c}`;
