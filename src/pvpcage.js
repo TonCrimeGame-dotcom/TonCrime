@@ -1,6 +1,11 @@
 (function () {
   const GAME_MS = 45000;
-  const ICON_LIFE_MS = 500;
+  const ICON_LIFE_MS = 900;
+  const REMOTE_MIN_ICON_MS = 260;
+  const HOST_STATE_SYNC_MS = 120;
+  const NEXT_ICON_DELAY_MIN_MS = 120;
+  const NEXT_ICON_DELAY_MAX_MS = 260;
+  const RESOLVED_GHOST_MS = 220;
   const START_HP = 1000;
   const FINAL_WARNING_SECONDS = 5;
   const FORFEIT_EXIT_DELAY_MS = 1450;
@@ -562,9 +567,11 @@ const DAMAGE = {
         this._state.currentIcon = null;
         return;
       }
+      const nowEpoch = Date.now();
       const nowPerf = performance.now();
-      const bornLag = Math.max(0, Date.now() - Number(raw.bornAtEpoch || Date.now()));
-      const remainingMs = Math.max(10, Number(raw.expiresAtEpoch || Date.now() + ICON_LIFE_MS) - Date.now());
+      const bornEpoch = Number(raw.bornAtEpoch || nowEpoch);
+      const bornLag = Math.max(0, nowEpoch - bornEpoch);
+      const remainingMs = Math.max(REMOTE_MIN_ICON_MS, Number(raw.expiresAtEpoch || (nowEpoch + ICON_LIFE_MS)) - nowEpoch);
       this._state.currentIcon = {
         id: raw.id,
         label: raw.label,
@@ -578,11 +585,14 @@ const DAMAGE = {
         w: Number(raw.w || 64),
         h: Number(raw.h || 64),
         seq: Number(raw.seq || 0),
-        bornAtEpoch: Number(raw.bornAtEpoch || Date.now()),
-        expiresAtEpoch: Number(raw.expiresAtEpoch || (Date.now() + ICON_LIFE_MS)),
+        bornAtEpoch: bornEpoch,
+        expiresAtEpoch: nowEpoch + remainingMs,
         bornAt: nowPerf - bornLag,
         expiresAt: nowPerf + remainingMs,
-        hit: false,
+        hit: !!raw.hit,
+        pending: false,
+        resolvedGhost: !!raw.resolvedGhost,
+        holdUntil: Number(raw.holdUntil || 0),
       };
     },
 
@@ -626,7 +636,14 @@ const DAMAGE = {
       this._state.remaining = clamp(Number(snapshot.remaining || 0), 0, GAME_MS);
       this._state.endAtEpoch = Number(snapshot.endAtEpoch || (Date.now() + this._state.remaining));
       if (Object.prototype.hasOwnProperty.call(snapshot, "icon")) {
-        this._applySerializedIcon(snapshot.icon);
+        if (snapshot.icon) {
+          this._applySerializedIcon(snapshot.icon);
+        } else {
+          const keepGhost =
+            !!this._state.currentIcon?.resolvedGhost &&
+            Number(this._state.currentIcon?.holdUntil || 0) > performance.now();
+          if (!keepGhost) this._applySerializedIcon(null);
+        }
       }
       if (!opts.skipFinished && snapshot.finished) {
         this._applyRemoteFinish({
@@ -636,6 +653,59 @@ const DAMAGE = {
           state: snapshot,
         });
       }
+    },
+
+    _showResolvedGhost(raw) {
+      if (!this._state || !raw) return;
+      const nowEpoch = Date.now();
+      const nowPerf = performance.now();
+      const holdMs = Math.max(RESOLVED_GHOST_MS, REMOTE_MIN_ICON_MS);
+      this._state.currentIcon = {
+        id: raw.id,
+        label: raw.label,
+        color: raw.color,
+        damage: Number(raw.damage || 0),
+        bad: !!raw.bad,
+        heal: !!raw.heal,
+        flash: raw.flash,
+        x: Number(raw.x || 0),
+        y: Number(raw.y || 0),
+        w: Number(raw.w || 64),
+        h: Number(raw.h || 64),
+        seq: Number(raw.seq || 0),
+        bornAtEpoch: nowEpoch - 60,
+        expiresAtEpoch: nowEpoch + holdMs,
+        bornAt: nowPerf - 60,
+        expiresAt: nowPerf + holdMs,
+        hit: true,
+        pending: false,
+        resolvedGhost: true,
+        holdUntil: nowPerf + holdMs,
+      };
+    },
+
+    _playResolvedFx(raw, actorCanonical) {
+      if (!this._state || !raw) return;
+      const actorLocal = this._canonicalActorToLocal(String(actorCanonical || "player1"));
+      let toastText = "";
+      let anchor = actorLocal === "me" ? 0.72 : 0.28;
+      if (raw.bad) {
+        anchor = actorLocal === "me" ? 0.72 : 0.28;
+        toastText = actorLocal === "me" ? `SKULL -${raw.damage} HP` : `Rakip SKULL -${raw.damage} HP`;
+      } else if (raw.heal) {
+        anchor = actorLocal === "me" ? 0.72 : 0.28;
+        toastText = actorLocal === "me" ? `${raw.label} +${raw.damage} HP` : `Rakip ${raw.label} +${raw.damage} HP`;
+      } else {
+        anchor = actorLocal === "me" ? 0.28 : 0.72;
+        toastText = actorLocal === "me" ? `${raw.label} -${raw.damage} HP` : `Rakip ${raw.label} -${raw.damage} HP`;
+      }
+      this._showResolvedGhost(raw);
+      this._state.hitFlashUntil = performance.now() + 110;
+      this._state.hitFlashColor = raw.flash || "rgba(255,255,255,0.05)";
+      this._flashScreen(raw.flash || "rgba(255,255,255,0.08)", 170);
+      this._playIconSound(raw.id || "punch");
+      this._toast(toastText, 520);
+      this._spawnBurst(anchor, raw.color || "#ff965a");
     },
 
     _ensureRealtime() {
@@ -701,7 +771,7 @@ const DAMAGE = {
       this._hostSyncTimer = setInterval(() => {
         if (!this._state || this._state.finished) return;
         this._broadcast("state_sync", { state: this._canonicalStateFromLocal() });
-      }, 280);
+      }, HOST_STATE_SYNC_MS);
     },
 
     _onRealtimeMessage(msg) {
@@ -728,7 +798,14 @@ const DAMAGE = {
           break;
         case "icon_spawn":
           if (this._isHost || !this._state) break;
+          this._state.waitingForHost = false;
           this._applySerializedIcon(data.icon || null);
+          break;
+        case "icon_resolved":
+          if (this._isHost || !this._state) break;
+          this._state.waitingForHost = false;
+          if (data.state) this._applyCanonicalState(data.state || {}, { skipFinished: false });
+          this._playResolvedFx(data.icon || null, data.actor || "player1");
           break;
         case "action_request":
           if (!this._isHost || !this._state || this._state.finished) break;
@@ -803,6 +880,13 @@ const DAMAGE = {
 
     _resolveIconAction(cur, actorLocal, fromNetwork = false) {
       if (!this._state || !cur || cur.hit || this._state.finished) return false;
+      const resolvedIcon = this._serializeIcon({
+        ...cur,
+        hit: true,
+        resolvedGhost: true,
+        holdUntil: performance.now() + RESOLVED_GHOST_MS,
+        expiresAtEpoch: Date.now() + RESOLVED_GHOST_MS,
+      });
       cur.hit = true;
       this._state.currentIcon = null;
 
@@ -818,7 +902,15 @@ const DAMAGE = {
       }
 
       this._checkFinish();
-      if (this._matchCtx?.matchId && this._isHost) this._broadcastStateSync(false);
+      if (this._matchCtx?.matchId && this._isHost) {
+        this._broadcast("icon_resolved", {
+          icon: resolvedIcon,
+          actor: this._localActorToCanonical(actorLocal),
+          state: this._canonicalStateFromLocal(),
+          fromNetwork: !!fromNetwork,
+        });
+        this._broadcastStateSync(false);
+      }
       return true;
     },
 
@@ -1078,9 +1170,10 @@ const DAMAGE = {
 
       if (this._matchCtx?.matchId && this._isHost) {
         this._broadcast("icon_spawn", { icon: this._serializeIcon(this._state.currentIcon) });
+        this._broadcast("state_sync", { state: this._canonicalStateFromLocal() });
       }
 
-      this._state.nextSpawnAt = now + randInt(70, 180);
+      this._state.nextSpawnAt = now + randInt(NEXT_ICON_DELAY_MIN_MS, NEXT_ICON_DELAY_MAX_MS);
     },
 
     _updateBot(now) {
