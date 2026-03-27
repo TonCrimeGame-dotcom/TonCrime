@@ -386,6 +386,35 @@
     return collapseBoard(next);
   }
 
+  function buildDropSpecs(prevBoard, nextBoard) {
+    const prevIds = new Set();
+    const out = [];
+    let seq = 0;
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        const tile = prevBoard?.[r]?.[c];
+        if (tile?.id) prevIds.add(tile.id);
+      }
+    }
+    for (let c = 0; c < GRID; c++) {
+      for (let r = 0; r < GRID; r++) {
+        const tile = nextBoard?.[r]?.[c];
+        if (!tile?.id || prevIds.has(tile.id)) continue;
+        out.push({
+          id: tile.id,
+          type: tile.type,
+          r,
+          c,
+          delay: seq * 45 + randInt(0, 35),
+          duration: 340 + randInt(0, 90),
+          startOffset: 1 + (seq % 3) * 0.55 + Math.random() * 0.9,
+        });
+        seq += 1;
+      }
+    }
+    return out;
+  }
+
   function calcBotMove(board, hpBias) {
     let best = null;
 
@@ -779,6 +808,9 @@
     _remoteSwipe: null,
     _remoteSwipeUntil: 0,
     _remoteSwapAnim: null,
+    _hiddenTileIds: null,
+    _resultOverlay: null,
+    _fxReplayToken: 0,
 
 
     _ensureAudio() {
@@ -845,6 +877,13 @@
         noise.stop(now + dur);
         osc.start(now);
         osc.stop(now + dur);
+      } catch (_) {}
+    },
+
+    _vibrate(pattern) {
+      try {
+        if (!navigator?.vibrate) return;
+        navigator.vibrate(pattern);
       } catch (_) {}
     },
 
@@ -1006,7 +1045,7 @@
         from,
         to,
         startAt: performance.now(),
-        duration: 150,
+        duration: 240,
         board: cloneBoard(this._state.board),
         nextState: netState,
         nextMeta: { ...meta, fromRemote: false, move: null },
@@ -1053,16 +1092,71 @@
 
       this._locked = this._state.finished ? true : this._state.turn !== "me";
 
+      if (meta.toast) this._toast(meta.toast);
+      const replayPromise = Array.isArray(meta.fxTimeline) && meta.fxTimeline.length
+        ? this._queueFxTimeline(meta.fxTimeline)
+        : Promise.resolve();
+
       if (this._state.finished) {
         const win = this._state.enemyHp <= 0 ||
           (this._state.meMoves <= 0 && this._state.enemyMoves <= 0 && this._state.meHp >= this._state.enemyHp);
-        this._finishGame(win, this._state.info || (win ? "Kazandın" : "Kaybettin"));
+        replayPromise.finally(() => {
+          this._finishGame(win, this._state.info || (win ? "Kazandın" : "Kaybettin"));
+        });
+        this._updateHud();
+        this._render();
         return;
       }
 
-      if (meta.toast) this._toast(meta.toast);
       this._updateHud();
       this._render();
+    },
+
+    _spawnRainDrops(specs) {
+      if (!Array.isArray(specs) || !specs.length) return;
+      if (!this._hiddenTileIds) this._hiddenTileIds = new Set();
+      for (const spec of specs) {
+        const rect = this._tileRects.find((t) => t.r === spec.r && t.c === spec.c);
+        if (!rect) continue;
+        const tileId = spec.id || null;
+        if (tileId) this._hiddenTileIds.add(tileId);
+        this._effects.push({
+          type: "tile_drop",
+          tileId,
+          tileType: spec.type,
+          x: rect.x + 2,
+          y: rect.y + 2 - rect.h * (spec.startOffset || 1.2),
+          toY: rect.y + 2,
+          size: rect.w - 4,
+          life: 0,
+          delay: Number(spec.delay || 0),
+          duration: Number(spec.duration || 360),
+        });
+      }
+    },
+
+    async _queueFxTimeline(timeline) {
+      if (!Array.isArray(timeline) || !timeline.length) return;
+      const token = ++this._fxReplayToken;
+      for (const step of timeline) {
+        if (token !== this._fxReplayToken) return;
+        if (step?.bursts?.length) this._spawnMatchEffects(step.bursts, { remote: true });
+        if (step?.drops?.length) this._spawnRainDrops(step.drops);
+        this._render();
+        await this._sleep(Number(step?.waitMs || 250));
+      }
+    },
+
+    _getStakeRewardYton() {
+      const sqlMode = String(this._matchCtx?.sqlMode || "");
+      if (sqlMode === "pvpcrush") return 100;
+      if (sqlMode === "pvpcage") return 75;
+      if (sqlMode === "pvpslotarena") return 150;
+      const modeId = String(this._matchCtx?.modeId || "");
+      if (modeId === "grid") return 100;
+      if (modeId === "arena") return 75;
+      if (modeId === "slotarena") return 150;
+      return 0;
     },
 
     async _destroyOnlineChannel() {
@@ -1113,6 +1207,7 @@
             toast: payload.toast || "",
             fromRemote: true,
             move: payload.move || null,
+            fxTimeline: payload.fxTimeline || null,
           });
         })
         .on("broadcast", { event: "finish_sync" }, ({ payload }) => {
@@ -1120,6 +1215,7 @@
           this._applyNetworkState(payload.state, {
             fromRemote: true,
             move: payload.move || null,
+            fxTimeline: payload.fxTimeline || null,
           });
         })
         .on("broadcast", { event: "leave_match" }, () => {
@@ -1211,6 +1307,9 @@
       clearInterval(this._turnTicker);
       this._turnTimer = null;
       this._queueTimer = null;
+      this._fxReplayToken += 1;
+      if (this._hiddenTileIds) this._hiddenTileIds.clear();
+      this._resultOverlay = null;
       if (this._state) {
         this._state.matchmaking = false;
         this._state.info = "Maç durduruldu";
@@ -1241,6 +1340,9 @@
       this._remoteSwipe = null;
       this._remoteSwipeUntil = 0;
       this._remoteSwapAnim = null;
+      this._hiddenTileIds = new Set();
+      this._resultOverlay = null;
+      this._fxReplayToken += 1;
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -1543,7 +1645,7 @@
       el._offTimer = setTimeout(() => el.classList.remove("on"), 1100);
     },
 
-    _spawnMatchEffects(bursts) {
+    _spawnMatchEffects(bursts, opts = {}) {
       if (!Array.isArray(bursts) || !bursts.length) return;
 
       for (const burst of bursts) {
@@ -1560,6 +1662,7 @@
         this._flashColor = color;
         this._shakeUntil = Date.now() + 90 + burst.len * 28;
         this._playExplosionSound(burst.len + (burst.kind === "extra" ? 2 : 0));
+        this._vibrate(burst.kind === "extra" ? [12, 20, 22] : [10, 14, 10]);
 
         this._effects.push({
           type: "label",
@@ -1647,9 +1750,20 @@
             } else if (fx.type === "ring") {
               const t = clamp(fx.life / fx.duration, 0, 1);
               fx.r = fx.r + (fx.maxR - fx.r) * Math.min(1, 0.15 + t * 0.2);
+            } else if (fx.type === "tile_drop") {
+              if (fx.life < Number(fx.delay || 0)) {
+                // wait
+              }
             }
 
-            return fx.life < fx.duration;
+            const totalLife = fx.type === "tile_drop"
+              ? Number(fx.delay || 0) + fx.duration
+              : fx.duration;
+            const alive = fx.life < totalLife;
+            if (!alive && fx.type === "tile_drop" && fx.tileId && this._hiddenTileIds) {
+              this._hiddenTileIds.delete(fx.tileId);
+            }
+            return alive;
           });
         }
 
@@ -1725,8 +1839,8 @@
 
       this._state.board = swapped;
       this._render();
-      await this._sleep(110);
-      await this._resolveTurn("me");
+      await this._sleep(140);
+      const turnFx = await this._resolveTurn("me");
 
       if (!this._running) return;
       if (this._checkFinish()) {
@@ -1734,6 +1848,7 @@
           await this._broadcastOnline("finish_sync", {
           state: this._toNetworkState(),
           move: { from: a, to: b },
+          fxTimeline: turnFx?.fxTimeline || [],
         });
         }
         return;
@@ -1744,6 +1859,7 @@
           state: this._toNetworkState(),
           move: { from: a, to: b },
           toast: "Rakip oynadı",
+          fxTimeline: turnFx?.fxTimeline || [],
         });
         this._locked = this._state.turn !== "me";
         return;
@@ -1802,6 +1918,7 @@
       let totalDamage = 0;
       let totalHeal = 0;
       let totalExtra = 0;
+      const fxTimeline = [];
 
       while (true) {
         const res = evaluateBoard(board);
@@ -1815,12 +1932,26 @@
         this._render();
         this._spawnMatchEffects(res.fxBursts);
 
-        board = applyResolution(board, res);
+        const nextBoard = applyResolution(board, res);
+        const drops = buildDropSpecs(board, nextBoard);
+        board = nextBoard;
         this._state.board = board;
+        this._spawnRainDrops(drops);
+        fxTimeline.push({
+          bursts: res.fxBursts.map((b) => ({
+            kind: b.kind,
+            label: b.label,
+            color: b.color,
+            len: b.len,
+            cell: b.cell ? { r: b.cell.r, c: b.cell.c } : null,
+          })),
+          drops: drops.map((d) => ({ ...d })),
+          waitMs: 260,
+        });
         this._state.info = `${actor === "me" ? "SEN" : this._opponent.username} • Combo x${chain}`;
         this._updateHud();
         this._render();
-        await this._sleep(185);
+        await this._sleep(250);
       }
 
       if (!hasAnyPossibleMove(board)) {
@@ -1879,6 +2010,7 @@
       this._state.info = totalExtra > 0 ? `${Math.max(1, chain)} chain • Extra +${totalExtra}` : `${Math.max(1, chain)} chain`;
       this._updateHud();
       this._render();
+      return { fxTimeline, totalDamage, totalHeal, totalExtra, chain };
     },
 
     _recordResult(win) {
@@ -1952,9 +2084,16 @@
       clearTimeout(this._queueTimer);
       this._turnTimer = null;
       this._queueTimer = null;
+      const rewardYton = win ? this._getStakeRewardYton() : 0;
       this._setStatus(win ? "Kazandın" : "Kaybettin");
       this._state.info = reason || (win ? "Kazandın" : "Kaybettin");
-      this._toast(win ? "Kazandın" : "Kaybettin");
+      this._resultOverlay = {
+        title: win ? "KAZANDIN" : "KAYBETTIN",
+        reason: this._state.info,
+        rewardYton,
+        shownAt: Date.now(),
+      };
+      this._toast(win ? (rewardYton ? `Kazandın • +${rewardYton} YTON` : "Kazandın") : "Kaybettin");
       this._recordResult(win);
       this._updateHud();
       this._render();
@@ -2009,10 +2148,47 @@
           ctx.beginPath();
           ctx.arc(fx.x, fx.y, fx.r, 0, Math.PI * 2);
           ctx.stroke();
+        } else if (fx.type === "tile_drop") {
+          const life = Math.max(0, fx.life - Number(fx.delay || 0));
+          if (life <= 0) continue;
+          const tt = clamp(life / fx.duration, 0, 1);
+          const ease = 1 - Math.pow(1 - tt, 3);
+          const y = fx.y + (fx.toY - fx.y) * ease;
+          ctx.globalAlpha = Math.min(1, 0.35 + tt * 0.8);
+          drawTileIcon(ctx, fx.tileType, fx.x, y, fx.size, false, Date.now());
         }
       }
       ctx.globalAlpha = 1;
     },
+
+    _renderResultOverlay(ctx, w, h) {
+      const overlay = this._resultOverlay;
+      if (!overlay) return;
+      const boxW = Math.min(w - 32, 320);
+      const boxH = Math.min(h - 36, 170);
+      const boxX = Math.floor((w - boxW) / 2);
+      const boxY = Math.floor((h - boxH) / 2);
+      const titleColor = overlay.title === "KAZANDIN" ? "#7dff9b" : "#ff7d93";
+      fillRoundRect(ctx, boxX, boxY, boxW, boxH, 24, "rgba(5,10,18,0.82)");
+      strokeRoundRect(ctx, boxX, boxY, boxW, boxH, 24, titleColor + "88", 2);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.font = "900 30px system-ui, Arial";
+      ctx.strokeText(overlay.title, boxX + boxW / 2, boxY + 44);
+      ctx.fillStyle = titleColor;
+      ctx.fillText(overlay.title, boxX + boxW / 2, boxY + 44);
+      ctx.font = "800 15px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+      ctx.fillText(String(overlay.reason || ""), boxX + boxW / 2, boxY + 86);
+      if (overlay.rewardYton) {
+        ctx.font = "900 24px system-ui, Arial";
+        ctx.fillStyle = "#ffd166";
+        ctx.fillText(`+${overlay.rewardYton} YTON`, boxX + boxW / 2, boxY + 124);
+      }
+    },
+
     _renderRemoteSwap(ctx) {
       const anim = this._remoteSwapAnim;
       if (!anim?.from || !anim?.to || !anim?.board) return;
@@ -2024,18 +2200,26 @@
       if (!fromTile || !toTile) return;
 
       const t = clamp((performance.now() - anim.startAt) / anim.duration, 0, 1);
-      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const ease = t < 0.55 ? 2.4 * t * t : 1 - Math.pow(-2 * t + 2, 2.4) / 2;
       const mix = (a, b) => a + (b - a) * ease;
       const pad = 2;
       const drawMoving = (tile, src, dst) => {
         const x = mix(src.x, dst.x);
         const y = mix(src.y, dst.y);
         const radius = Math.max(10, Math.floor(src.w * 0.18));
-        fillRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, "rgba(255,255,255,0.08)");
         const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
-        const glowR = src.w * 0.4;
+        for (let ghost = 2; ghost >= 1; ghost--) {
+          const lag = ghost * 0.12;
+          const gx = mix(src.x, dst.x) - (dst.x - src.x) * lag;
+          const gy = mix(src.y, dst.y) - (dst.y - src.y) * lag;
+          ctx.globalAlpha = 0.12 / ghost;
+          drawTileIcon(ctx, tile.type, gx + pad, gy + pad, src.w - 4, false, Date.now());
+        }
+        ctx.globalAlpha = 1;
+        fillRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, "rgba(255,255,255,0.10)");
+        const glowR = src.w * 0.58;
         const glow = ctx.createRadialGradient(x + src.w / 2, y + src.h / 2, 2, x + src.w / 2, y + src.h / 2, glowR);
-        glow.addColorStop(0, meta.color + "66");
+        glow.addColorStop(0, meta.color + "99");
         glow.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = glow;
         ctx.beginPath();
@@ -2124,7 +2308,7 @@
             selected ? "rgba(255,181,74,0.18)" : "rgba(255,255,255,0.05)"
           );
 
-          if (tile && !hiddenByRemoteAnim) {
+          if (tile && !hiddenByRemoteAnim && !(this._hiddenTileIds && this._hiddenTileIds.has(tile.id))) {
             const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
 
             // Güçlü glow
@@ -2155,6 +2339,7 @@
 
       this._renderRemoteSwap(ctx);
       this._renderEffects(ctx);
+      this._renderResultOverlay(ctx, w, h);
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
