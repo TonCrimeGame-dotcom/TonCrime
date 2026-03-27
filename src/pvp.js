@@ -536,56 +536,23 @@
     }
 
     async _getAuthUserId() {
-      if (this._authUserIdCache) return this._authUserIdCache;
-      if (this._authUserIdPromise) return await this._authUserIdPromise;
+      const sb = this._getSupabase();
+      if (!sb?.auth?.getUser) return null;
 
-      this._authUserIdPromise = (async () => {
-        const sb = this._getSupabase();
-        if (!sb?.auth) return null;
-
-        try {
-          let userId = null;
-
-          if (typeof sb.auth.getSession === "function") {
-            const sess = await sb.auth.getSession().catch(() => null);
-            userId = sess?.data?.session?.user?.id || null;
-            if (userId) {
-              this._authUserIdCache = userId;
-              return userId;
-            }
-          }
-
-          if (typeof window.tcEnsureAuthSession === "function") {
-            await window.tcEnsureAuthSession().catch(() => null);
-          }
-
-          if (typeof sb.auth.getSession === "function") {
-            const sess2 = await sb.auth.getSession().catch(() => null);
-            userId = sess2?.data?.session?.user?.id || null;
-            if (userId) {
-              this._authUserIdCache = userId;
-              return userId;
-            }
-          }
-
-          if (typeof sb.auth.getUser === "function") {
-            const res = await sb.auth.getUser().catch(() => null);
-            userId = res?.data?.user?.id || null;
-            if (userId) {
-              this._authUserIdCache = userId;
-              return userId;
-            }
-          }
-
-          return null;
-        } catch (_) {
-          return null;
-        } finally {
-          this._authUserIdPromise = null;
+      try {
+        let res = await sb.auth.getUser();
+        let userId = res?.data?.user?.id || null;
+        if (userId) return userId;
+        if (typeof window.tcEnsureAuthSession === "function") {
+          await window.tcEnsureAuthSession().catch(() => null);
+          res = await sb.auth.getUser();
+          userId = res?.data?.user?.id || null;
+          if (userId) return userId;
         }
-      })();
-
-      return await this._authUserIdPromise;
+        return null;
+      } catch (_) {
+        return null;
+      }
     }
 
     _getPlayerMeta() {
@@ -912,7 +879,10 @@
 
       try {
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
-        if (queueError) throw queueError;
+        if (queueError) {
+          const isDup = String(queueError?.code || "") === "23505" || /duplicate key/i.test(String(queueError?.message || ""));
+          if (!isDup) throw queueError;
+        }
 
         const latest = this.store?.get?.() || {};
         this.store?.set?.({
@@ -991,7 +961,7 @@
               if (this.rtMatchStarted || this.matchState !== "searching") return;
               try {
                 await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-              } catch (_) {}
+              } catch (err) { console.warn("[TonCrime][PVP] realtime queue update poll failed", err); }
             }
           )
           .subscribe();
@@ -1003,10 +973,10 @@
             if (tryError) throw tryError;
             const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
             if (matchedFromRpc) return;
-          } catch (_) {}
+          } catch (err) { console.warn("[TonCrime][PVP] try-match tick failed", err); }
           try {
             await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
-          } catch (_) {}
+          } catch (err) { console.warn("[TonCrime][PVP] poll tick failed", err); }
         }, 1000);
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
@@ -1491,25 +1461,38 @@
       }
     }
 
-
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
       try {
-        const { data: queueRow } = await sb
-          .from("pvp_match_queue")
-          .select("match_id, status")
-          .eq("user_id", userId)
-          .eq("game_mode", mode)
-          .eq("stake_yton", stake)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let queueRow = null;
+        try {
+          const queueResp = await sb
+            .from("pvp_match_queue")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("game_mode", mode)
+            .eq("stake_yton", stake)
+            .limit(5);
+          const queueRows = Array.isArray(queueResp?.data) ? queueResp.data : [];
+          queueRow = queueRows.sort((a, b) => {
+            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
+            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
+            return tb - ta;
+          })[0] || null;
+        } catch (queueErr) {
+          console.warn("[TonCrime][PVP] queue poll failed", queueErr);
+        }
 
-        if (queueRow?.match_id) {
-          const { data: matchRow } = await sb
+        const queueMatchId = queueRow?.match_id || queueRow?.matchId || null;
+        if (queueMatchId) {
+          const { data: matchRow, error: matchErr } = await sb
             .from("pvp_matches")
             .select("*")
-            .eq("id", queueRow.match_id)
+            .eq("id", queueMatchId)
             .maybeSingle();
+
+          if (matchErr) {
+            console.warn("[TonCrime][PVP] match-by-id poll failed", matchErr);
+          }
 
           if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
@@ -1521,15 +1504,24 @@
           }
         }
 
-        const { data: directMatch } = await sb
-          .from("pvp_matches")
-          .select("*")
-          .eq("game_mode", mode)
-          .eq("stake_yton", stake)
-          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let directMatch = null;
+        try {
+          const directResp = await sb
+            .from("pvp_matches")
+            .select("*")
+            .eq("game_mode", mode)
+            .eq("stake_yton", stake)
+            .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+            .limit(10);
+          const directRows = Array.isArray(directResp?.data) ? directResp.data : [];
+          directMatch = directRows.sort((a, b) => {
+            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
+            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
+            return tb - ta;
+          })[0] || null;
+        } catch (directErr) {
+          console.warn("[TonCrime][PVP] direct match poll failed", directErr);
+        }
 
         if (this._isReadyLiveMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
@@ -1539,7 +1531,9 @@
           );
           return true;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn("[TonCrime][PVP] polling fatal", err);
+      }
       return false;
     }
 
