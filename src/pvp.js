@@ -182,18 +182,71 @@
     return Number(MODE_ENERGY_COST[modeId] || 0);
   }
 
-  async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("enqueue_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
-    });
+  async function enqueueBetPvp(supabase, { userId, username, level, rank, mode, stake }) {
+    const nowIso = new Date().toISOString();
+    const payload = {
+      user_id: userId,
+      username: String(username || "Player").trim() || "Player",
+      level: Math.max(1, Number(level || 1)),
+      rank: Math.max(100, Number(rank || 1000)),
+      game_mode: mode,
+      stake_yton: Number(stake || 0),
+      status: "searching",
+      is_bot: false,
+      matched_with: null,
+      match_id: null,
+      updated_at: nowIso,
+    };
+
+    await supabase
+      .from("pvp_match_queue")
+      .update({
+        status: "cancelled",
+        updated_at: nowIso,
+      })
+      .eq("user_id", userId)
+      .eq("game_mode", mode)
+      .eq("status", "searching");
+
+    let res = await supabase
+      .from("pvp_match_queue")
+      .upsert(payload, {
+        onConflict: "user_id,game_mode,stake_yton",
+      })
+      .select("*")
+      .maybeSingle();
+
+    if (!res?.error) return res;
+
+    res = await supabase
+      .from("pvp_match_queue")
+      .insert(payload)
+      .select("*")
+      .maybeSingle();
+
+    if (!res?.error) return res;
+
+    return await supabase
+      .from("pvp_match_queue")
+      .update(payload)
+      .eq("user_id", userId)
+      .eq("game_mode", mode)
+      .eq("stake_yton", Number(stake || 0))
+      .select("*")
+      .maybeSingle();
   }
 
-  async function cancelBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("cancel_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
-    });
+  async function cancelBetPvp(supabase, { userId, mode, stake }) {
+    return await supabase
+      .from("pvp_match_queue")
+      .update({
+        status: "cancelled",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("game_mode", mode)
+      .eq("stake_yton", Number(stake || 0))
+      .eq("status", "searching");
   }
 
   async function tryBetMatch(supabase, userId, mode) {
@@ -828,14 +881,15 @@
     async _cancelRealtimeQueue() {
       const sb = this._getSupabase();
       const mode = this._mapModeIdToSqlMode(this.matchModeId);
-      const stake = getStakeForMode(this.matchModeId);
+      const stake = Number(this._getEconomyForMode(this.matchModeId)?.stake || 0);
+      const userId = await this._getAuthUserId();
 
       this._clearRealtime();
 
-      if (!sb || !mode || !stake) return;
+      if (!sb || !mode || !stake || !userId) return;
 
       try {
-        await cancelBetPvp(sb, mode, stake);
+        await cancelBetPvp(sb, { userId, mode, stake });
       } catch (_) {}
     }
 
@@ -895,7 +949,7 @@
       }
 
       try {
-        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
+        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, { userId, username: player.username, level: player.level, rank: player.rank, mode, stake });
         if (queueError) throw queueError;
 
         const latest = this.store?.get?.() || {};
@@ -1852,7 +1906,7 @@
         const infoY = lineY + 4;
         ctx.font = `700 ${clamp(cardTextSize - 1, 11, 14)}px system-ui, Arial`;
         ctx.fillStyle = "rgba(255,236,188,0.96)";
-        ctx.fillText(`Enerji ${economy.energy} • Giriş ${economy.stake} yTon • Kazanç ${economy.reward} yTon • Kasa ${economy.serverFee} yTon`, descX, infoY);
+        ctx.fillText(`Enerji ${economy.energy} • Giriş ${economy.stake} yTon • Kazanç ${economy.reward} yTon • Komisyon ${economy.serverFee} yTon`, descX, infoY);
 
         const packageTextY = infoY + lineH + 2;
         ctx.font = `600 ${clamp(cardTextSize - 2, 10, 13)}px system-ui, Arial`;
