@@ -1,53 +1,10 @@
 (function () {
-  const COLS = 6;
-  const ROWS = 6;
-  const START_HP = 1000;
-  const BASE_SPINS = 24;
-  const BONUS_SPINS = 10;
-  const BONUS_CHANCE = 0.10;
-  const SPIN_EXPLODE_CHANCE = 0.36;
-  const BONUS_MODE_EXPLODE_CHANCE = 0.42;
-  const CHAIN_CONTINUE_CHANCE = 0.30;
-  const BONUS_TRIGGER = 4;
-  const MIN_CLUSTER = 8;
-  const PLAYER_DECISION_MS = 3000;
-  const MATCH_WATCH_MS = 700;
-  const SYNC_HEARTBEAT_MS = 900;
-
-  const ICONS = {
-    weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 17 },
-    brain: { id: "brain", emoji: "🧠", label: "BEYIN",   color: "#ff5b64", base: 18, weight: 15 },
-    drink: { id: "drink", emoji: "🍾", label: "ALKOL",   color: "#ffd166", base: 14, weight: 17 },
-    kick:  { id: "kick",  emoji: "🦵", label: "TEKME",   color: "#66e26f", base: 16, weight: 16 },
-    slap:  { id: "slap",  emoji: "🖐️", label: "TOKAT",   color: "#76b8ff", base: 11, weight: 18 },
-    punch: { id: "punch", emoji: "👊", label: "YUMRUK",  color: "#ffb24a", base: 15, weight: 17 },
-    bonus: { id: "bonus", emoji: "⭐", label: "BONUS",   color: "#d68bff", base: 0,  weight: 4 },
-  };
-
-  const PAY_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch"];
-  const ALL_SYMBOLS = ["weed", "brain", "drink", "kick", "slap", "punch", "bonus"];
-  const BOT_NAMES = ["ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven"];
-  const BONUS_MULTI_VALUES = [2, 3, 5, 8, 10, 12, 15, 20, 25, 50];
-  const ICON_PATHS = {
-    weed: "./assets/weed.png",
-    brain: "./assets/brain.png",
-    drink: "./assets/drink.png",
-    kick: "./assets/kick.png",
-    slap: "./assets/slap.png",
-    punch: "./assets/punch.png",
-    bonus: "./assets/bonus.png",
-  };
-
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
   }
 
-  function randInt(min, max) {
-    return min + Math.floor(Math.random() * (max - min + 1));
-  }
-
-  function choice(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
+  function pointInRect(px, py, r) {
+    return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
   }
 
   function roundRectPath(ctx, x, y, w, h, r) {
@@ -74,1936 +31,1898 @@
     ctx.stroke();
   }
 
-  function weightedChoiceFrom(list) {
-    const pool = Array.isArray(list) && list.length ? list : PAY_SYMBOLS;
-    let total = 0;
-    for (const id of pool) total += Number(ICONS[id]?.weight || 1);
-    let roll = Math.random() * Math.max(1, total);
-    for (const id of pool) {
-      roll -= Number(ICONS[id]?.weight || 1);
-      if (roll <= 0) return id;
-    }
-    return pool[pool.length - 1];
+  function drawCoverImage(ctx, img, x, y, w, h, alpha) {
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const scale = Math.max(w / iw, h / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = x + (w - dw) * 0.5;
+    const dy = y + (h - dh) * 0.5;
+    const prev = ctx.globalAlpha;
+    ctx.globalAlpha = alpha == null ? 1 : alpha;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.globalAlpha = prev;
   }
 
-  function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
+  function wrapLines(ctx, text, maxWidth) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
 
-  function makeEmptyBoard() {
-    return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
-  }
-
-  function createCell(type) {
-    const safeType = ICONS[type] ? type : 'punch';
-    return { type: safeType };
-  }
-
-  function allCoords() {
-    const out = [];
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) out.push({ r, c });
-    }
-    return out;
-  }
-
-  function takeRandom(source, count) {
-    const pool = source.slice();
-    shuffle(pool);
-    const picked = pool.slice(0, Math.max(0, count));
-    const pickedSet = new Set(picked.map((p) => `${p.r}:${p.c}`));
-    const rest = source.filter((p) => !pickedSet.has(`${p.r}:${p.c}`));
-    return { picked, rest };
-  }
-
-  function countBoardTotals(board) {
-    const counts = Object.fromEntries(PAY_SYMBOLS.map((id) => [id, 0]));
-    let bonusCount = 0;
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = board[r]?.[c];
-        if (!cell) continue;
-        if (cell.type === 'bonus') bonusCount += 1;
-        else if (counts[cell.type] != null) counts[cell.type] += 1;
+    for (let i = 0; i < words.length; i++) {
+      const test = line ? line + " " + words[i] : words[i];
+      if (ctx.measureText(test).width <= maxWidth || !line) {
+        line = test;
+      } else {
+        lines.push(line);
+        line = words[i];
       }
     }
-    return { counts, bonusCount };
+    if (line) lines.push(line);
+    return lines;
   }
 
-  function chooseSafeSymbol(counts, caps) {
-    let candidates = PAY_SYMBOLS.filter((id) => (counts[id] || 0) < Number(caps[id] ?? (MIN_CLUSTER - 1)));
-    if (!candidates.length) {
-      const minCount = Math.min(...PAY_SYMBOLS.map((id) => counts[id] || 0));
-      candidates = PAY_SYMBOLS.filter((id) => (counts[id] || 0) <= minCount);
+  function getImageFromAssets(assets, key) {
+    if (!assets) return null;
+    if (typeof assets.get === "function") {
+      const a = assets.get(key);
+      if (a) return a;
     }
-    return weightedChoiceFrom(candidates);
+    if (assets[key]) return assets[key];
+    if (assets.images && assets.images[key]) return assets.images[key];
+    return null;
   }
 
-  function fillBoardWithPlan(board, coords, opts = {}) {
-    const options = opts && typeof opts === 'object' ? opts : {};
-    const { counts, bonusCount: startBonus } = countBoardTotals(board);
-    const caps = Object.fromEntries(PAY_SYMBOLS.map((id) => [id, MIN_CLUSTER - 1]));
-    let bonusCount = startBonus;
-    let remaining = coords.slice();
+  function getCanvasCssSize(canvas) {
+    const rect = canvas?.getBoundingClientRect?.();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-    if (options.forceBonus && Number(bonusCount || 0) < BONUS_TRIGGER) {
-      const needBonus = Math.max(0, BONUS_TRIGGER - bonusCount);
-      if (needBonus > 0 && needBonus <= remaining.length) {
-        const { picked, rest } = takeRandom(remaining, needBonus);
-        remaining = rest;
-        for (const pos of picked) {
-          board[pos.r][pos.c] = createCell('bonus');
-          bonusCount += 1;
-        }
-      }
+    let w = Math.round(rect?.width || 0);
+    let h = Math.round(rect?.height || 0);
+
+    if (!w || !h) {
+      w = Math.round((canvas?.width || window.innerWidth) / dpr);
+      h = Math.round((canvas?.height || window.innerHeight) / dpr);
     }
 
-    if (options.forceCluster) {
-      const candidates = shuffle(PAY_SYMBOLS.slice()).map((id) => {
-        const existing = Number(counts[id] || 0);
-        const maxTarget = Math.min(MIN_CLUSTER + 2, existing + remaining.length);
-        if (maxTarget < MIN_CLUSTER) return null;
-        const target = randInt(MIN_CLUSTER, maxTarget);
-        const need = target - existing;
-        if (need <= 0 || need > remaining.length) return null;
-        return { id, target, need };
-      }).filter(Boolean);
-
-      if (candidates.length) {
-        const pickedPlan = candidates[0];
-        caps[pickedPlan.id] = pickedPlan.target;
-        const taken = takeRandom(remaining, pickedPlan.need);
-        remaining = taken.rest;
-        for (const pos of taken.picked) {
-          board[pos.r][pos.c] = createCell(pickedPlan.id);
-          counts[pickedPlan.id] = Number(counts[pickedPlan.id] || 0) + 1;
-        }
-      }
-    }
-
-    for (const pos of remaining) {
-      const id = chooseSafeSymbol(counts, caps);
-      board[pos.r][pos.c] = createCell(id);
-      counts[id] = Number(counts[id] || 0) + 1;
-    }
-
-    return board;
+    return { w, h };
   }
 
-  function makeBoard(options = {}) {
-    const board = makeEmptyBoard();
-    return fillBoardWithPlan(board, allCoords(), options);
-  }
+  function loadPvpGameScript(srcList) {
+    const list = Array.isArray(srcList) ? srcList : [srcList];
 
-  function cloneBoard(board) {
-    return board.map((row) => row.map((cell) => (cell ? { ...cell } : null)));
-  }
-
-  function countTypes(board) {
-    const map = new Map();
-    let bonusCount = 0;
-
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = board[r][c];
-        if (!cell) continue;
-        if (cell.type === 'bonus') {
-          bonusCount += 1;
-          continue;
-        }
-        map.set(cell.type, (map.get(cell.type) || 0) + 1);
-      }
-    }
-
-    return { counts: map, bonusCount };
-  }
-
-  function getMultiplierDrop() {
-    const count = randInt(1, 2);
-    const out = [];
-    for (let i = 0; i < count; i++) {
-      const value = choice(BONUS_MULTI_VALUES);
-      out.push({
-        value,
-        x: 0.12 + Math.random() * 0.76,
-        y: -0.10 - Math.random() * 0.35,
-        vy: 0.0045 + Math.random() * 0.0035,
-        rot: -0.08 + Math.random() * 0.16,
-        size: 0.92 + Math.random() * 0.28,
-        glow: 0.7 + Math.random() * 0.6,
-      });
-    }
-    return out;
-  }
-
-  function createSpinIntroMap() {
-    return Array.from({ length: ROWS }, (_, r) =>
-      Array.from({ length: COLS }, (_, c) => ({
-        fromRows: 1.75 + Math.random() * 4.25 + (ROWS - r) * 0.08,
-        delay: Math.random() * 0.28 + c * 0.012,
-      }))
-    );
-  }
-
-  function evaluateBoard(board, inBonus) {
-    const { counts, bonusCount } = countTypes(board);
-    const remove = new Set();
-    const hits = [];
-    let damage = 0;
-
-    for (const [type, count] of counts.entries()) {
-      if (count < MIN_CLUSTER) continue;
-      const meta = ICONS[type];
-      const extra = count - MIN_CLUSTER;
-      const hitDamage = meta.base * (count * 0.42 + extra * 0.18);
-      damage += hitDamage;
-      hits.push({ type, count, damage: hitDamage });
-
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = board[r][c];
-          if (cell && cell.type === type) remove.add(`${r}:${c}`);
-        }
-      }
-    }
-
-    let bonusTriggered = false;
-    if (!inBonus && bonusCount >= BONUS_TRIGGER) {
-      bonusTriggered = true;
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = board[r][c];
-          if (cell && cell.type === 'bonus') remove.add(`${r}:${c}`);
-        }
-      }
-    }
-
-    if (inBonus && bonusCount > 0) {
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = board[r][c];
-          if (cell && cell.type === 'bonus') remove.add(`${r}:${c}`);
-        }
-      }
-    }
-
-    return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
-  }
-
-  function tumble(board, removeSet, options = {}) {
-    const next = cloneBoard(board);
-    const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-
-    for (const key of removeSet) {
-      const [r, c] = key.split(':').map(Number);
-      if (next[r] && next[r][c]) next[r][c] = null;
-    }
-
-    const emptyCoords = [];
-    for (let c = 0; c < COLS; c++) {
-      const stack = [];
-      for (let r = ROWS - 1; r >= 0; r--) {
-        if (next[r][c]) stack.push(next[r][c]);
-      }
-
-      let wr = ROWS - 1;
-      for (let i = 0; i < stack.length; i++) {
-        const item = stack[i];
-        next[wr][c] = item;
-        const oldBottomIndex = i;
-        const oldRow = ROWS - 1 - oldBottomIndex;
-        dropMap[wr][c] = Math.max(0, oldRow - wr);
-        wr -= 1;
-      }
-
-      let newCount = 0;
-      while (wr >= 0) {
-        next[wr][c] = null;
-        newCount += 1;
-        dropMap[wr][c] = newCount + wr + 1;
-        emptyCoords.push({ r: wr, c });
-        wr -= 1;
-      }
-    }
-
-    fillBoardWithPlan(next, emptyCoords, {
-      forceCluster: !!options.forceCluster,
-      forceBonus: !!options.forceBonus,
-    });
-
-    return { board: next, dropMap };
-  }
-
-  function loadImage(src) {
-    return new Promise((resolve) => {
-      const tries = [src];
-      if (typeof src === "string" && src.startsWith("./assets/")) {
-        tries.push(src.replace("./assets/", "./src/assets/"));
-      } else if (typeof src === "string" && src.startsWith("./src/assets/")) {
-        tries.push(src.replace("./src/assets/", "./assets/"));
-      }
+    return new Promise((resolve, reject) => {
       let i = 0;
-      const next = () => {
-        if (i >= tries.length) return resolve(null);
-        const img = new Image();
-        img.decoding = "async";
-        img.onload = () => resolve(img);
-        img.onerror = () => next();
-        img.src = tries[i++];
+
+      const tryNext = () => {
+        if (i >= list.length) {
+          reject(new Error("PvP oyun dosyası yüklenemedi: " + list.join(" | ")));
+          return;
+        }
+
+        const src = list[i++];
+        const existing = document.querySelector(`script[data-pvp-game="${src}"]`);
+
+        if (existing) {
+          if (existing.dataset.loaded === "1") {
+            resolve(src);
+            return;
+          }
+
+          existing.addEventListener("load", () => resolve(src), { once: true });
+          existing.addEventListener("error", () => tryNext(), { once: true });
+          return;
+        }
+
+        const s = document.createElement("script");
+        s.src = src;
+        s.defer = true;
+        s.dataset.pvpGame = src;
+
+        s.onload = () => {
+          s.dataset.loaded = "1";
+          resolve(src);
+        };
+
+        s.onerror = () => {
+          s.remove();
+          tryNext();
+        };
+
+        document.body.appendChild(s);
       };
-      next();
+
+      tryNext();
     });
   }
 
-  function drawSymbolArt(ctx, img, meta, x, y, w, h) {
-    const pad = Math.max(4, Math.floor(Math.min(w, h) * 0.08));
-    const innerX = x + pad;
-    const innerY = y + pad;
-    const innerW = Math.max(6, w - pad * 2);
-    const innerH = Math.max(6, h - pad * 2);
 
-    if (img && img.complete && (img.naturalWidth || img.width)) {
-      const iw = img.naturalWidth || img.width || 1;
-      const ih = img.naturalHeight || img.height || 1;
-      const scale = Math.min(innerW / iw, innerH / ih);
-      const dw = Math.max(4, iw * scale);
-      const dh = Math.max(4, ih * scale);
-      const dx = innerX + (innerW - dw) * 0.5;
-      const dy = innerY + (innerH - dh) * 0.5;
-      ctx.drawImage(img, dx, dy, dw, dh);
-      return;
-    }
+  const BET_STAKES = {
+    grid: 100,
+    arena: 75,
+    slotarena: 150,
+  };
 
-    const rg = ctx.createRadialGradient(x + w / 2, y + h / 2, 4, x + w / 2, y + h / 2, Math.max(w, h) * 0.55);
-    rg.addColorStop(0, meta.color + "bb");
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = rg;
-    ctx.beginPath();
-    ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) * 0.34, 0, Math.PI * 2);
-    ctx.fill();
+  function getStakeForMode(modeId) {
+    return Number(BET_STAKES[modeId] || 0);
   }
 
-  function injectStyle() {
-    const id = "tc-pvp-slot-style";
-    if (document.getElementById(id)) return;
+  function isRpcMissingFunction(error) {
+    const code = String(error?.code || "").trim();
+    const msg = String(error?.message || "").toLowerCase();
+    return code === "PGRST202" || msg.includes("could not find the function");
+  }
+
+  async function callRpcWithFallback(supabase, names, params) {
+    const rpcNames = Array.isArray(names) ? names : [names];
+    let last = null;
+
+    for (const rpcName of rpcNames) {
+      if (!rpcName) continue;
+      const res = await supabase.rpc(rpcName, params);
+      if (!res?.error) return res;
+      last = res;
+      if (!isRpcMissingFunction(res.error)) return res;
+    }
+
+    return last || { data: null, error: new Error("rpc_unavailable") };
+  }
+
+  async function enqueueBetPvp(supabase, mode, stake) {
+    return await callRpcWithFallback(supabase, ["tc_enqueue_ranked_pvp", "enqueue_ranked_pvp"], {
+      p_mode: String(mode || ""),
+      p_stake_yton: Number(stake || 0),
+    });
+  }
+
+  async function cancelBetPvp(supabase, mode, stake) {
+    return await callRpcWithFallback(supabase, ["tc_cancel_ranked_pvp", "cancel_ranked_pvp"], {
+      p_mode: String(mode || ""),
+      p_stake_yton: Number(stake || 0),
+    });
+  }
+
+  async function tryBetMatch(supabase, userId, mode) {
+    return await callRpcWithFallback(supabase, ["tc_try_ranked_pvp_match", "try_ranked_pvp_match"], {
+      p_user_id: userId,
+      p_mode: String(mode || ""),
+    });
+  }
+
+  function ensurePvpShellStyle() {
+    if (document.getElementById("tc-pvp-shell-style")) return;
 
     const style = document.createElement("style");
-    style.id = id;
+    style.id = "tc-pvp-shell-style";
     style.textContent = `
-      #pvpStart, #pvpStop, #pvpReset { display: none !important; }
-      #pvpHeader { display: none !important; }
-      #pvpBars { display: none !important; }
-
-      #arena {
-        position: relative;
-        overflow: hidden;
-        touch-action: none;
-        background:
-          radial-gradient(circle at 50% 16%, rgba(255,94,94,0.14), transparent 30%),
-          radial-gradient(circle at 50% 82%, rgba(255,180,70,0.12), transparent 34%),
-          linear-gradient(180deg, rgba(16,18,28,0.98), rgba(6,8,14,1)) !important;
-      }
-
-      #arena .tc-cage-root.tc-crush-root {
-        position: absolute;
-        inset: 0;
-        display: flex;
+      #pvpWrap.tc-inline-shell {
+        position: fixed !important;
+        left: 12px !important;
+        right: 12px !important;
+        top: 96px !important;
+        bottom: 64px !important;
+        z-index: 7000 !important;
+        display: none;
         flex-direction: column;
-        padding: 10px;
-        box-sizing: border-box;
-        color: #fff;
-        user-select: none;
-      }
-
-      #arena .tc-cage-top.tc-crush-top {
-        position: relative;
-        flex: 0 0 auto;
-        padding-top: 4px;
-        margin-bottom: 10px;
-      }
-
-      #arena .tc-cage-x.tc-crush-x {
-        position: absolute;
-        right: 0;
-        top: 0;
-        width: 36px;
-        height: 36px;
-        border: 1px solid rgba(255,255,255,0.14);
-        border-radius: 12px;
-        background: rgba(0,0,0,0.34);
-        color: rgba(255,255,255,0.92);
-        font: 900 16px system-ui, Arial;
-        backdrop-filter: blur(8px);
-        cursor: pointer;
-      }
-
-      #arena .tc-cage-title-wrap.tc-crush-title-wrap {
-        text-align: center;
-        padding: 2px 42px 0;
-      }
-
-      #arena .tc-cage-neon.tc-crush-neon {
-        display: inline-block;
-        font: 900 22px system-ui, Arial;
-        letter-spacing: 1.8px;
-        text-transform: uppercase;
-        color: #ff5858;
-        text-shadow: 0 0 4px rgba(255,88,88,0.95), 0 0 10px rgba(255,88,88,0.95), 0 0 18px rgba(255,40,40,0.92), 0 0 34px rgba(255,0,0,0.78);
-        animation: tcSlotNeon 1.15s ease-in-out infinite alternate;
-      }
-
-      @keyframes tcSlotNeon {
-        0% { opacity: .76; transform: scale(0.995); }
-        100% { opacity: 1; transform: scale(1.01); }
-      }
-
-      #arena .tc-cage-sub.tc-crush-sub {
-        margin-top: 6px;
-        font: 800 11px system-ui, Arial;
-        color: rgba(255,255,255,0.74);
-        letter-spacing: .4px;
-      }
-
-      #arena .tc-cage-row.tc-crush-row {
-        display: grid;
-        grid-template-columns: 1fr 96px 1fr;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 10px;
-      }
-
-      #arena .tc-cage-vs.tc-crush-vs {
-        text-align: center;
-        font: 900 16px system-ui, Arial;
-        color: rgba(255,255,255,0.9);
-      }
-
-      #arena .tc-cage-card.tc-crush-card {
-        min-height: 92px;
         border-radius: 16px;
         border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(255,255,255,0.05);
-        backdrop-filter: blur(8px);
-        padding: 10px 12px;
-        box-sizing: border-box;
-      }
-
-      #arena .tc-cage-name.tc-crush-name {
-        font: 900 13px system-ui, Arial;
-        color: rgba(255,255,255,0.96);
-        margin-bottom: 8px;
-        white-space: nowrap;
+        background: rgba(8,10,16,0.88);
+        backdrop-filter: blur(12px);
         overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      #arena .tc-cage-hpbar.tc-crush-hpbar {
-        height: 12px;
-        border-radius: 999px;
-        overflow: hidden;
-        background: rgba(255,255,255,0.08);
-        border: 1px solid rgba(255,255,255,0.10);
-      }
-
-      #arena .tc-cage-hpfill.tc-crush-hpfill {
-        height: 100%;
-        width: 100%;
-        transform-origin: left center;
-        background: linear-gradient(90deg, #2fe870, #88ffb0);
-      }
-
-      #arena .tc-cage-hptext.tc-crush-hptext {
-        margin-top: 6px;
-        font: 800 11px system-ui, Arial;
-        color: rgba(255,255,255,0.76);
-        text-align: right;
-      }
-
-      #arena .tc-crush-chipline {
-        margin-top: 8px;
-        min-height: 26px;
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.10);
-        background: rgba(0,0,0,0.18);
-        color: rgba(255,255,255,0.92);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0 8px;
-        font: 800 11px system-ui, Arial;
-      }
-
-      #arena .tc-slot-spinbtn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        height: 42px;
-        border-radius: 14px;
-        border: 1px solid rgba(255,255,255,0.16);
-        background: linear-gradient(180deg, rgba(255,124,66,0.94), rgba(255,71,121,0.88));
-        box-shadow: 0 10px 26px rgba(255,71,121,0.18), inset 0 1px 0 rgba(255,255,255,0.22);
-        color: #fff;
-        font: 900 13px system-ui, Arial;
-        letter-spacing: .4px;
-        cursor: pointer;
-        padding: 0 14px;
-      }
-
-      #arena .tc-slot-spinbtn[disabled] {
-        opacity: .46;
-        cursor: default;
-      }
-
-      #arena .tc-cage-stage.tc-crush-stage {
-        position: relative;
-        flex: 1 1 auto;
-        min-height: 280px;
-        border-radius: 20px;
-        overflow: hidden;
-        background: radial-gradient(circle at 50% 52%, rgba(255,255,255,0.04), transparent 30%), linear-gradient(180deg, rgba(18,22,34,0.88), rgba(6,10,18,0.95));
-        border: 1px solid rgba(255,255,255,0.08);
-      }
-
-      #arena .tc-cage-canvas.tc-crush-canvas {
-        width: 100%;
-        height: 100%;
-        display: block;
-        touch-action: none;
-      }
-
-      #arena .tc-cage-toast.tc-crush-toast {
-        position: absolute;
-        left: 50%;
-        bottom: 14px;
-        transform: translateX(-50%);
-        min-width: 170px;
-        max-width: calc(100% - 28px);
-        padding: 11px 14px;
-        border-radius: 14px;
-        background: rgba(0,0,0,0.56);
-        border: 1px solid rgba(255,255,255,0.12);
-        backdrop-filter: blur(8px);
-        text-align: center;
-        font: 900 12px system-ui, Arial;
-        color: #fff;
-        opacity: 0;
-        transition: opacity .16s ease;
-        pointer-events: none;
-      }
-
-      #arena .tc-cage-toast.tc-crush-toast.on { opacity: 1; }
-
-      #arena .tc-slot-footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        margin-top: 10px;
-      }
-
-      #arena .tc-slot-meta {
-        min-width: 0;
-        flex: 1 1 auto;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
-      }
-
-      #arena .tc-slot-meta-chip {
-        min-height: 42px;
-        border-radius: 14px;
-        border: 1px solid rgba(255,255,255,0.10);
-        background: rgba(0,0,0,0.22);
-        color: rgba(255,255,255,0.92);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0 10px;
-        text-align: center;
-        font: 800 12px system-ui, Arial;
-        letter-spacing: .2px;
-        white-space: nowrap;
-      }
-
-      #arena .tc-cage-rule.tc-crush-rule {
-        margin-top: 8px;
-        text-align: center;
-        font: 800 11px system-ui, Arial;
-        color: rgba(255,255,255,0.65);
-      }
-
-      #arena .tc-slot-result {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-        background: rgba(4, 6, 12, 0.48);
-        backdrop-filter: blur(6px);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity .18s ease;
-      }
-
-      #arena .tc-slot-result.on {
-        opacity: 1;
         pointer-events: auto;
       }
 
-      #arena .tc-slot-result-card {
-        width: min(320px, calc(100% - 20px));
-        border-radius: 20px;
-        padding: 20px 18px;
-        text-align: center;
+      #pvpWrap.tc-inline-shell.open {
+        display: flex !important;
+      }
+
+      #pvpHeader {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 10px 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.10);
+        flex: 0 0 auto;
+      }
+
+      #pvpLeftHead {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      #pvpStatus {
+        font-weight: 900;
+        font-size: 13px;
+        color: rgba(255,255,255,0.92);
+      }
+
+      #pvpOpponentRow {
+        font-size: 12px;
+        color: rgba(255,255,255,0.80);
+      }
+
+      #pvpOpponentRow b {
+        color: rgba(255,255,255,0.95);
+      }
+
+      #pvpSpinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.25);
+        border-top-color: rgba(255,255,255,0.85);
+        vertical-align: -2px;
+        margin-right: 8px;
+        animation: tcPvpSpin 0.8s linear infinite;
+      }
+
+      #pvpSpinner.hidden {
+        display: none !important;
+      }
+
+      @keyframes tcPvpSpin {
+        to { transform: rotate(360deg); }
+      }
+
+      .pvpBtns {
+        display: flex;
+        gap: 8px;
+      }
+
+      .pvpBtn {
+        appearance: none;
         border: 1px solid rgba(255,255,255,0.16);
-        background: linear-gradient(180deg, rgba(24,28,42,0.96), rgba(12,14,24,0.96));
-        box-shadow: 0 22px 60px rgba(0,0,0,0.34);
+        background: rgba(0,0,0,0.35);
+        color: rgba(255,255,255,0.92);
+        border-radius: 10px;
+        height: 30px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 900;
+        cursor: pointer;
+        white-space: nowrap;
       }
 
-      #arena .tc-slot-result-title {
-        font: 900 28px system-ui, Arial;
-        letter-spacing: 1.2px;
-        color: #fff;
-        text-transform: uppercase;
+      #pvpBars {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 10px;
+        flex: 0 0 auto;
       }
 
-      #arena .tc-slot-result-title.win {
-        color: #7dffae;
-        text-shadow: 0 0 14px rgba(125,255,174,0.28);
+      .pvpBar {
+        height: 14px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.12);
+        overflow: hidden;
       }
 
-      #arena .tc-slot-result-title.loss {
-        color: #ff8282;
-        text-shadow: 0 0 14px rgba(255,130,130,0.24);
+      .pvpFill {
+        height: 100%;
+        width: 100%;
+        transform-origin: left center;
+        transform: scaleX(1);
+        background: rgba(255,255,255,0.65);
       }
 
-      #arena .tc-slot-result-reason {
-        margin-top: 8px;
-        font: 800 13px system-ui, Arial;
-        color: rgba(255,255,255,0.78);
+      .pvpBarLabel {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: rgba(255,255,255,0.95);
+        margin-top: 6px;
       }
 
-      #arena .tc-slot-result-prize {
-        margin-top: 14px;
-        font: 900 22px system-ui, Arial;
-        color: #ffd36f;
+      #arena {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 280px;
+        width: calc(100% - 20px);
+        margin: 0 10px 10px;
+        border-radius: 14px;
+        background: rgba(0,0,0,0.92);
+        overflow: hidden;
+        box-sizing: border-box;
       }
 
-      #arena .tc-slot-result-note {
-        margin-top: 8px;
-        font: 700 11px system-ui, Arial;
-        color: rgba(255,255,255,0.62);
-      }
+      @media (max-width: 640px) {
+        #pvpWrap.tc-inline-shell {
+          left: 10px !important;
+          right: 10px !important;
+          top: 84px !important;
+          bottom: 58px !important;
+        }
 
-      @media (max-width: 520px) {
-        #arena .tc-cage-root.tc-crush-root { padding: 8px; }
-        #arena .tc-cage-neon.tc-crush-neon { font-size: 18px; }
-        #arena .tc-cage-row.tc-crush-row { grid-template-columns: 1fr 78px 1fr; gap: 8px; margin-bottom: 8px; }
-        #arena .tc-cage-card.tc-crush-card { min-height: 88px; padding: 9px 10px; }
-        #arena .tc-cage-vs.tc-crush-vs { font-size: 13px; }
-        #arena .tc-slot-spinbtn { height: 38px; font-size: 12px; padding: 0 12px; }
-        #arena .tc-slot-footer { gap: 8px; margin-top: 8px; }
-        #arena .tc-slot-meta { gap: 6px; }
-        #arena .tc-slot-meta-chip { min-height: 38px; font-size: 11px; padding: 0 6px; }
-      }
+        #pvpHeader {
+          padding: 8px 8px 6px;
+        }
 
-      @media (max-width: 420px) {
-        #arena .tc-cage-root.tc-crush-root { padding: 6px; }
-        #arena .tc-cage-title-wrap.tc-crush-title-wrap { padding: 2px 34px 0; }
-        #arena .tc-cage-neon.tc-crush-neon { font-size: 16px; letter-spacing: 1.1px; }
-        #arena .tc-cage-sub.tc-crush-sub { font-size: 10px; }
-        #arena .tc-cage-row.tc-crush-row { grid-template-columns: 1fr 62px 1fr; gap: 6px; }
-        #arena .tc-cage-card.tc-crush-card { min-height: 80px; padding: 8px; border-radius: 14px; }
-        #arena .tc-cage-name.tc-crush-name { font-size: 12px; margin-bottom: 6px; }
-        #arena .tc-cage-stage.tc-crush-stage { min-height: 250px; border-radius: 16px; }
-        #arena .tc-slot-footer { align-items: stretch; gap: 6px; }
-        #arena .tc-slot-meta { gap: 5px; }
-        #arena .tc-slot-meta-chip { min-height: 34px; font-size: 10px; padding: 0 4px; border-radius: 12px; }
-        #arena .tc-slot-spinbtn { flex: 0 0 108px; height: 36px; font-size: 11px; padding: 0 8px; border-radius: 12px; }
-        #arena .tc-cage-rule.tc-crush-rule { margin-top: 6px; font-size: 10px; }
+        .pvpBtns {
+          gap: 6px;
+        }
+
+        .pvpBtn {
+          font-size: 11px;
+          height: 28px;
+          padding: 0 8px;
+        }
+
+        #pvpBars {
+          gap: 8px;
+          padding: 8px;
+        }
+
+        #arena {
+          width: calc(100% - 16px);
+          margin: 0 8px 8px;
+          min-height: 240px;
+        }
       }
     `;
     document.head.appendChild(style);
   }
 
-  function makeMarkup() {
-    return `
-      <div class="tc-cage-root tc-crush-root">
-        <div class="tc-cage-top tc-crush-top">
-          <button class="tc-cage-x tc-crush-x" id="tcSlotClose" type="button" aria-label="Geri">✕</button>
+  function ensurePvpDom() {
+    ensurePvpShellStyle();
 
-          <div class="tc-cage-title-wrap tc-crush-title-wrap">
-            <div class="tc-cage-neon tc-crush-neon">SLOT ARENA</div>
-            <div class="tc-cage-sub tc-crush-sub" id="tcSlotSub">6x6 tumble PvP • 24 spin • 4 BONUS ile free spin</div>
-          </div>
-        </div>
+    let wrap = document.getElementById("pvpWrap");
+    let layer = document.getElementById("pvpLayer");
 
-        <div class="tc-cage-row tc-crush-row">
-          <div class="tc-cage-card tc-crush-card">
-            <div class="tc-cage-name tc-crush-name" id="tcSlotEnemyName">Rakip</div>
-            <div class="tc-cage-hpbar tc-crush-hpbar"><div class="tc-cage-hpfill tc-crush-hpfill" id="tcSlotEnemyFill"></div></div>
-            <div class="tc-cage-hptext tc-crush-hptext" id="tcSlotEnemyText">1000 / 1000</div>
-            <div class="tc-crush-chipline" id="tcSlotEnemySpins">Spin: 24</div>
-          </div>
-
-          <div class="tc-cage-vs tc-crush-vs" id="tcSlotTurn">VS</div>
-
-          <div class="tc-cage-card tc-crush-card">
-            <div class="tc-cage-name tc-crush-name" id="tcSlotMeName">Sen</div>
-            <div class="tc-cage-hpbar tc-crush-hpbar"><div class="tc-cage-hpfill tc-crush-hpfill" id="tcSlotMeFill"></div></div>
-            <div class="tc-cage-hptext tc-crush-hptext" id="tcSlotMeText">1000 / 1000</div>
-            <div class="tc-crush-chipline" id="tcSlotMeSpins">Spin: 24</div>
-          </div>
-        </div>
-
-        <div class="tc-cage-stage tc-crush-stage" id="tcSlotStage">
-          <canvas class="tc-cage-canvas tc-crush-canvas" id="tcSlotCanvas"></canvas>
-          <div class="tc-cage-toast tc-crush-toast" id="tcSlotToast"></div>
-                  <div class="tc-slot-result" id="tcSlotResult">
-            <div class="tc-slot-result-card">
-              <div class="tc-slot-result-title" id="tcSlotResultTitle">KAZANDIN</div>
-              <div class="tc-slot-result-reason" id="tcSlotResultReason">Maç bitti</div>
-              <div class="tc-slot-result-prize" id="tcSlotResultPrize">+0 YTON</div>
-              <div class="tc-slot-result-note" id="tcSlotResultNote">Ödül backend tarafından işlenir</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="tc-slot-footer">
-          <div class="tc-slot-meta" id="tcSlotMetaWrap">
-            <div class="tc-slot-meta-chip" id="tcSlotChipBase">BASE 24</div>
-            <div class="tc-slot-meta-chip" id="tcSlotChipTimer">SPIN SÜRESİ 3</div>
-            <div class="tc-slot-meta-chip" id="tcSlotChipTumble">TUMBLE 0</div>
-          </div>
-          <button class="tc-slot-spinbtn" id="tcSlotSpinBtn" type="button">SPIN BAŞLAT</button>
-        </div>
-
-        <div class="tc-cage-rule tc-crush-rule">8+ aynı ikon = patlar • BONUS şansı %10 • zincir şansı %30</div>
-      </div>
-    `;
-  }
-
-
-  function deepCloneSafe(value) {
-    try {
-      return value == null ? value : JSON.parse(JSON.stringify(value));
-    } catch (_) {
-      return value;
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "pvpLayer";
+      document.body.appendChild(layer);
     }
+
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.id = "pvpWrap";
+      layer.appendChild(wrap);
+    }
+
+    wrap.classList.add("tc-inline-shell", "open");
+    wrap.style.display = "flex";
+    wrap.style.pointerEvents = "auto";
+
+    wrap.innerHTML = `
+      <div id="pvpHeader">
+        <div id="pvpLeftHead">
+          <div id="pvpStatus">PvP • Hazır</div>
+          <div id="pvpOpponentRow">
+            <span id="pvpSpinner" class="hidden"></span>
+            Rakip: <b id="pvpOpponent">—</b>
+          </div>
+        </div>
+
+        <div class="pvpBtns">
+          <button class="pvpBtn" id="pvpStart" type="button">Başlat</button>
+          <button class="pvpBtn" id="pvpStop" type="button">Durdur</button>
+          <button class="pvpBtn" id="pvpReset" type="button">Sıfırla</button>
+        </div>
+      </div>
+
+      <div id="pvpBars">
+        <div>
+          <div class="pvpBar"><div class="pvpFill" id="enemyFill"></div></div>
+          <div class="pvpBarLabel"><span>Düşman</span><span id="enemyHpText">100</span></div>
+        </div>
+        <div>
+          <div class="pvpBar"><div class="pvpFill" id="meFill"></div></div>
+          <div class="pvpBarLabel"><span>Sen</span><span id="meHpText">100</span></div>
+        </div>
+      </div>
+
+      <div id="arena"></div>
+    `;
+
+    return {
+      wrap,
+      arena: document.getElementById("arena"),
+      status: document.getElementById("pvpStatus"),
+      opponent: document.getElementById("pvpOpponent"),
+      spinner: document.getElementById("pvpSpinner"),
+      startBtn: document.getElementById("pvpStart"),
+      stopBtn: document.getElementById("pvpStop"),
+      resetBtn: document.getElementById("pvpReset"),
+      enemyFill: document.getElementById("enemyFill"),
+      meFill: document.getElementById("meFill"),
+      enemyHpText: document.getElementById("enemyHpText"),
+      meHpText: document.getElementById("meHpText"),
+    };
   }
 
-  function normalizeSeq(n) {
-    const num = Number(n || 0);
-    return Number.isFinite(num) ? num : 0;
-  }
+  class PvpScene {
+    constructor({ store, input, scenes, assets }) {
+      this.store = store;
+      this.input = input;
+      this.scenes = scenes;
+      this.assets = assets;
 
-  const api = {
-    _els: null,
-    _state: null,
-    _iconImages: {},
-    _running: false,
-    _locked: false,
-    _raf: 0,
-    _opponent: { username: "ShadowWolf", isBot: false },
-    _unbind: null,
-    _resizeObserver: null,
-    _queuedResolve: null,
-    _turnTimer: null,
-    _toastTimer: null,
-    _lastTs: 0,
-    _matchCtx: null,
-    _matchWatchTimer: null,
-    _syncChannel: null,
-    _syncHeartbeat: null,
-    _syncReady: false,
-    _syncSessionId: `slot_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-    _lastSentSeq: 0,
-    _lastAppliedSeq: 0,
-    _lastSyncTs: 0,
-    _resultReported: false,
-    onMatchFinished: null,
+      this.scrollY = 0;
+      this.maxScroll = 0;
+      this.dragging = false;
+      this.downY = 0;
+      this.startScrollY = 0;
+      this.velocityY = 0;
+      this.lastPointerY = 0;
+      this.moved = 0;
+      this.clickCandidate = false;
+      this._wasPointerDown = false;
+      this._launchingGame = false;
+      this._matchmakingBusy = false;
 
-    init(opts = {}) {
-      injectStyle();
+      this.matchState = "menu";
+      this.matchModeId = null;
+      this.matchOpponent = null;
+      this.matchRecord = null;
+      this.matchStartedAt = 0;
+      this.matchFoundAt = 0;
 
-      const arena = document.getElementById(opts.arenaId || "arena");
-      const status = document.getElementById(opts.statusId || "pvpStatus");
-      const enemyFill = document.getElementById(opts.enemyFillId || "enemyFill");
-      const meFill = document.getElementById(opts.meFillId || "meFill");
-      const enemyHpText = document.getElementById(opts.enemyHpTextId || "enemyHpText");
-      const meHpText = document.getElementById(opts.meHpTextId || "meHpText");
+      this.matchSearchTimer = null;
+      this.matchFallbackTimer = null;
+      this.matchLaunchTimer = null;
 
-      if (!arena || !status || !enemyFill || !meFill || !enemyHpText || !meHpText) {
-        console.warn("[TonCrimePVP_SLOT] arena/status/bar elementleri bulunamadı");
+      this.rtChannel = null;
+      this.rtFallbackMs = 10000;
+      this.rtMatchStarted = false;
+
+      this.panelRect = { x: 0, y: 0, w: 0, h: 0 };
+      this.closeRect = null;
+      this.cardRects = [];
+      this.modePills = [];
+
+      this.source = "general";
+
+      this.cards = [
+        {
+          id: "grid",
+          title: "IQ Arena",
+          subtitle: "Zeka Çatışması",
+          desc: "Sıra tabanlı grid PvP. Kombolar ile rakibi indir.",
+          tags: ["Tekme", "Tokat", "Şifalı Bitki", "Beyin", "Yumruk", "KuruKafa"],
+          open: true,
+          accent: "#ffb24a",
+        },
+        {
+          id: "arena",
+          title: "Kafes Dövüşü",
+          subtitle: "1v1 Kafes Dövüşü",
+          desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
+          tags: ["Hızlı", "yTon", "Düello", "XP"],
+          open: true,
+          accent: "#ff9340",
+        },
+        {
+          id: "slotarena",
+          title: "Slot Arena",
+          subtitle: "Slot Tadında PvP",
+          desc: "6x6 tumble slot PvP.",
+          tags: ["Slot", "Tumble", "Bonus", "Çarpan", "PvP"],
+          open: true,
+          accent: "#ff5ea8",
+        },
+        {
+          id: "tournament",
+          title: "Kartel Turnuvası",
+          subtitle: "Sezonluk PvP",
+          desc: "Sezon puanı ve lig mantığı. Şimdilik yakında.",
+          tags: ["Sezon", "Lig", "Ödül"],
+          open: false,
+          accent: "#7f7f86",
+        },
+      ];
+
+      this.bg = null;
+      this.fallbackBg = new Image();
+      this.fallbackBg.src = "./src/assets/pvp-bg.png";
+      this.fallbackBg.onerror = () => { this.fallbackBg.src = "./src/assets/pvp.jpg"; };
+    }
+
+    onEnter() {
+      this.bg =
+        getImageFromAssets(this.assets, "pvp_bg") ||
+        getImageFromAssets(this.assets, "pvp-bg") ||
+        getImageFromAssets(this.assets, "pvp") ||
+        this.fallbackBg;
+
+      const s = this.store?.get?.() || {};
+      this.source = s?.pvp?.source || "general";
+      this.scrollY = 0;
+      this.velocityY = 0;
+      this.dragging = false;
+      this.moved = 0;
+      this.clickCandidate = false;
+      this._wasPointerDown = false;
+      this._launchingGame = false;
+      this._resetMatchmaking();
+    }
+
+    onExit() {
+      this._resetMatchmaking();
+      this._launchingGame = false;
+    }
+
+    _getSupabase() {
+      return window.supabase || window.tcSupabase || null;
+    }
+
+    async _getAuthUserId() {
+      const sb = this._getSupabase();
+      if (!sb?.auth?.getUser) return null;
+
+      try {
+        let res = await sb.auth.getUser();
+        let userId = res?.data?.user?.id || null;
+        if (userId) return userId;
+        if (typeof window.tcEnsureAuthSession === "function") {
+          await window.tcEnsureAuthSession().catch(() => null);
+          res = await sb.auth.getUser();
+          userId = res?.data?.user?.id || null;
+          if (userId) return userId;
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    _getPlayerMeta() {
+      const s = this.store?.get?.() || {};
+      const tg = window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+      return {
+        username:
+          s?.player?.username ||
+          tg?.username ||
+          [tg?.first_name, tg?.last_name].filter(Boolean).join(" ") ||
+          "Player",
+        level: Math.max(1, Number(s?.player?.level || 1)),
+        rank: Math.max(100, Number(s?.player?.rank || 1000)),
+      };
+    }
+
+    _makeOpponent() {
+      const level = this._getPlayerMeta().level;
+      const names = [
+        "ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven",
+        "BlackMamba", "NightHawk", "CrimsonJack", "DarkVenom", "MafiaKing", "BlueViper",
+        "SteelFang", "RedSkull", "SilentWolf", "NeonGhost", "FrostBite", "WildRaven", "TurboKhan"
+      ];
+      return {
+        username: names[Math.floor(Math.random() * names.length)],
+        level: Math.max(1, level + Math.floor(Math.random() * 7) - 3),
+        rank: this._getPlayerMeta().rank,
+        isBot: true,
+      };
+    }
+
+    _buildOpponentFromMatch(match, userId) {
+      const amIPlayer1 = match.player1_id === userId;
+      return {
+        username: amIPlayer1 ? match.player2_username : match.player1_username,
+        level: amIPlayer1 ? match.player2_level : match.player1_level,
+        rank: amIPlayer1 ? match.player2_rank : match.player1_rank,
+        isBot: !!match.is_bot_match,
+      };
+    }
+
+    _buildMatchContext(match, userId, modeId) {
+      if (!match || !userId) return null;
+      const amIPlayer1 = String(match.player1_id || "") === String(userId);
+      return {
+        matchId: match.id,
+        userId,
+        modeId: modeId || this.matchModeId || "grid",
+        sqlMode: match.game_mode || this._mapModeIdToSqlMode(modeId || this.matchModeId),
+        amIPlayer1,
+        isBotMatch: !!match.is_bot_match,
+        player1Id: match.player1_id || null,
+        player2Id: match.player2_id || null,
+        player1Username: match.player1_username || "Player 1",
+        player2Username: match.player2_username || "Player 2",
+        opponentUsername: amIPlayer1 ? (match.player2_username || "Rakip") : (match.player1_username || "Rakip"),
+      };
+    }
+
+    _normalizeRpcPayload(payload) {
+      if (Array.isArray(payload)) return payload[0] || null;
+      return payload || null;
+    }
+
+    _isMatchOwnedByUser(match, userId) {
+      if (!match || !userId) return false;
+      return String(match.player1_id || "") === String(userId) || String(match.player2_id || "") === String(userId);
+    }
+
+    _isLiveMatchStatus(status) {
+      const s = String(status || "").trim().toLowerCase();
+      if (!s) return true;
+      return !["finished", "cancelled", "canceled", "expired", "closed"].includes(s);
+    }
+
+    _isFreshMatchForCurrentSearch(matchOrQueue) {
+      const startedAt = Number(this.matchStartedAt || 0);
+      if (!startedAt) return true;
+
+      const raw =
+        matchOrQueue?.updated_at ||
+        matchOrQueue?.created_at ||
+        matchOrQueue?.matched_at ||
+        matchOrQueue?.inserted_at ||
+        null;
+
+      if (!raw) return true;
+      const ts = new Date(raw).getTime();
+      if (!Number.isFinite(ts)) return true;
+
+      return ts >= (startedAt - 10000);
+    }
+
+    _isUsableMatch(match, userId, mode, stake) {
+      if (!match?.id || !this._isMatchOwnedByUser(match, userId)) return false;
+      if (!this._isLiveMatchStatus(match.status)) return false;
+      if (mode && match.game_mode != null && String(match.game_mode) !== String(mode)) return false;
+      if (stake != null && match.stake_yton != null && Number(match.stake_yton) !== Number(stake)) return false;
+
+      const p1 = String(match.player1_id || "");
+      const p2 = String(match.player2_id || "");
+      if (!match.is_bot_match) {
+        if (!p1 || !p2) return false;
+        if (p1 === p2) return false;
+      }
+
+      if (!this._isFreshMatchForCurrentSearch(match)) return false;
+      return true;
+    }
+
+    async _fetchMatchById(sb, matchId) {
+      if (!sb || !matchId) return null;
+      try {
+        const { data } = await sb
+          .from("pvp_matches")
+          .select("*")
+          .eq("id", matchId)
+          .maybeSingle();
+        return data || null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    _buildFallbackOpponentFromRpc(payload, userId) {
+      const rpc = this._normalizeRpcPayload(payload);
+      if (!rpc) return null;
+
+      const amIPlayer1 = String(rpc.player1_id || rpc.player1Id || "") === String(userId);
+      const username =
+        rpc.opponent_username ||
+        rpc.opponentUsername ||
+        (amIPlayer1
+          ? (rpc.player2_username || rpc.player2Username)
+          : (rpc.player1_username || rpc.player1Username)) ||
+        "Rakip";
+
+      const levelRaw =
+        rpc.opponent_level ??
+        rpc.opponentLevel ??
+        (amIPlayer1
+          ? (rpc.player2_level ?? rpc.player2Level)
+          : (rpc.player1_level ?? rpc.player1Level));
+
+      const rankRaw =
+        rpc.opponent_rank ??
+        rpc.opponentRank ??
+        (amIPlayer1
+          ? (rpc.player2_rank ?? rpc.player2Rank)
+          : (rpc.player1_rank ?? rpc.player1Rank));
+
+      return {
+        username,
+        level: Math.max(1, Number(levelRaw || 1)),
+        rank: Math.max(100, Number(rankRaw || this._getPlayerMeta().rank || 1000)),
+        isBot: !!(rpc.is_bot_match ?? rpc.isBotMatch),
+      };
+    }
+
+    _buildFallbackMatchContextFromRpc(payload, userId, modeId) {
+      const rpc = this._normalizeRpcPayload(payload);
+      if (!rpc || !userId) return null;
+
+      const matchId = rpc.match_id || rpc.matchId || rpc.id || null;
+      if (!matchId) return null;
+
+      const player1Id = rpc.player1_id || rpc.player1Id || null;
+      const player2Id = rpc.player2_id || rpc.player2Id || null;
+      const amIPlayer1 = player1Id ? String(player1Id) === String(userId) : false;
+
+      return {
+        matchId,
+        userId,
+        modeId: modeId || this.matchModeId || "grid",
+        sqlMode: rpc.game_mode || rpc.gameMode || this._mapModeIdToSqlMode(modeId || this.matchModeId),
+        amIPlayer1,
+        isBotMatch: !!(rpc.is_bot_match ?? rpc.isBotMatch),
+        player1Id,
+        player2Id,
+        player1Username: rpc.player1_username || rpc.player1Username || "Player 1",
+        player2Username: rpc.player2_username || rpc.player2Username || "Player 2",
+        opponentUsername:
+          rpc.opponent_username ||
+          rpc.opponentUsername ||
+          (amIPlayer1
+            ? (rpc.player2_username || rpc.player2Username || "Rakip")
+            : (rpc.player1_username || rpc.player1Username || "Rakip")),
+      };
+    }
+
+    _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
+      const match = payload?.new || payload || null;
+      if (this.rtMatchStarted || this.matchState !== "searching") return false;
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+
+      this.rtMatchStarted = true;
+      this.onMatchFound(
+        this._buildOpponentFromMatch(match, userId),
+        this._buildMatchContext(match, userId, sceneModeId)
+      );
+      return true;
+    }
+
+    async _resolveRpcMatchResult(sb, payload, userId, mode, stake, sceneModeId) {
+      const rpc = this._normalizeRpcPayload(payload);
+      if (!rpc || this.rtMatchStarted || this.matchState !== "searching") return false;
+
+      const hasMatchSignal =
+        rpc.status === "matched" ||
+        rpc.status === "ready" ||
+        rpc.status === "playing" ||
+        !!(rpc.match_id || rpc.matchId || rpc.match || rpc.match_row || rpc.matchRecord);
+
+      if (!hasMatchSignal) return false;
+
+      let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
+      if (!this._isUsableMatch(match, userId, mode, stake)) {
+        const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
+        if (matchId) {
+          match = await this._fetchMatchById(sb, matchId);
+        }
+      }
+
+      if (this._isUsableMatch(match, userId, mode, stake)) {
+        this.rtMatchStarted = true;
+        this.onMatchFound(
+          this._buildOpponentFromMatch(match, userId),
+          this._buildMatchContext(match, userId, sceneModeId)
+        );
+        return true;
+      }
+
+      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
+      if (!fallbackCtx?.matchId) return false;
+
+      this.rtMatchStarted = true;
+      this.onMatchFound(
+        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
+        fallbackCtx
+      );
+      return true;
+    }
+
+    _clearRealtime() {
+      const sb = this._getSupabase();
+      if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
+      if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
+      if (this.matchLaunchTimer) clearTimeout(this.matchLaunchTimer);
+
+      this.matchSearchTimer = null;
+      this.matchFallbackTimer = null;
+      this.matchLaunchTimer = null;
+
+      if (this.rtChannel && sb?.removeChannel) {
+        try { sb.removeChannel(this.rtChannel); } catch (_) {}
+      }
+      this.rtChannel = null;
+      this.rtMatchStarted = false;
+    }
+
+    async _cancelRealtimeQueue() {
+      const sb = this._getSupabase();
+      const mode = this._mapModeIdToSqlMode(this.matchModeId);
+      const stake = getStakeForMode(this.matchModeId);
+
+      this._clearRealtime();
+
+      if (!sb || !mode || !stake) return;
+
+      try {
+        await cancelBetPvp(sb, mode, stake);
+      } catch (_) {}
+    }
+
+    _resetMatchmaking() {
+      this._clearRealtime();
+      this.matchState = "menu";
+      this.matchModeId = null;
+      this.matchOpponent = null;
+      this.matchRecord = null;
+      this.matchStartedAt = 0;
+      this.matchFoundAt = 0;
+    }
+
+    _mapModeIdToSqlMode(id) {
+      if (id === "grid") return "pvpcrush";
+      if (id === "arena") return "pvpcage";
+      if (id === "slotarena") return "pvpslotarena";
+      return null;
+    }
+
+    async startMatchmaking(id) {
+      if (this._launchingGame || this._matchmakingBusy || this.matchState === "searching" || this.matchState === "found") return;
+      this._matchmakingBusy = true;
+
+      try {
+        this._resetMatchmaking();
+        this.matchState = "searching";
+        this.matchModeId = id;
+        this.matchStartedAt = Date.now();
+
+        const sb = this._getSupabase();
+        const userId = await this._getAuthUserId();
+        const mode = this._mapModeIdToSqlMode(id);
+        const stake = getStakeForMode(id);
+        const s = this.store?.get?.() || {};
+        const playerState = { ...(s.player || {}) };
+        const currentEnergy = Number(playerState.energy || 0);
+        const energyCost = id === "slotarena" ? 15 : id === "arena" ? 5 : 10;
+        const ytonBalance = Number(s.yton ?? s.coins ?? 0);
+
+        if (!sb || !userId || !mode || !stake) {
+          this.matchState = "menu";
+          try {
+            window.dispatchEvent(new CustomEvent("tc:toast", {
+              detail: { text: "Online eşleşme için giriş hazır değil" },
+            }));
+          } catch (_) {}
+          return;
+        }
+
+        if (currentEnergy < energyCost) {
+          try {
+            window.dispatchEvent(new CustomEvent("tc:toast", {
+              detail: { text: `Yetersiz enerji • ${energyCost} gerekli` },
+            }));
+          } catch (_) {}
+          this.matchState = "menu";
+          return;
+        }
+
+        if (ytonBalance < stake) {
+          try {
+            window.dispatchEvent(new CustomEvent("tc:toast", {
+              detail: { text: `Yetersiz YTON • ${stake} gerekli` },
+            }));
+          } catch (_) {}
+          this.matchState = "menu";
+          return;
+        }
+
+        try {
+          await cancelBetPvp(sb, mode, stake);
+        } catch (_) {}
+
+        const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
+        if (queueError) throw queueError;
+
+        const latest = this.store?.get?.() || {};
+        this.store?.set?.({
+          pvp: {
+            ...(latest.pvp || {}),
+            betStake: stake,
+            betMode: mode,
+            queueStatus: queueData?.status || "searching",
+          },
+        });
+
+        if (await this._resolveRpcMatchResult(sb, queueData, userId, mode, stake, id)) {
+          return;
+        }
+
+        const channelName = `pvp-match-${userId}-${mode}-${Date.now()}`;
+        this.rtChannel = sb
+          .channel(channelName)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "pvp_matches",
+              filter: `player1_id=eq.${userId}`,
+            },
+            (payload) => {
+              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "pvp_matches",
+              filter: `player1_id=eq.${userId}`,
+            },
+            (payload) => {
+              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "pvp_matches",
+              filter: `player2_id=eq.${userId}`,
+            },
+            (payload) => {
+              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "pvp_matches",
+              filter: `player2_id=eq.${userId}`,
+            },
+            (payload) => {
+              this._handleRealtimeMatchPayload(payload, userId, mode, stake, id);
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "pvp_match_queue",
+              filter: `user_id=eq.${userId}`,
+            },
+            async () => {
+              if (this.rtMatchStarted || this.matchState !== "searching") return;
+              try {
+                await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
+              } catch (_) {}
+            }
+          )
+          .subscribe();
+
+        this.matchSearchTimer = setInterval(async () => {
+          if (this.rtMatchStarted || this.matchState !== "searching") return;
+          try {
+            const { data: tryData, error: tryError } = await tryBetMatch(sb, userId, mode);
+            if (tryError) throw tryError;
+            const matchedFromRpc = await this._resolveRpcMatchResult(sb, tryData, userId, mode, stake, id);
+            if (matchedFromRpc) return;
+          } catch (_) {}
+          try {
+            await this._pollMatchedQueueOrMatch(sb, userId, mode, stake, id);
+          } catch (_) {}
+        }, 1000);
+      } catch (err) {
+        console.error("[TonCrime] betting matchmaking error:", err);
+        this.matchState = "menu";
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: "Bahisli PvP kuyruğu başlatılamadı" },
+          }));
+        } catch (_) {}
+      } finally {
+        this._matchmakingBusy = false;
+      }
+    }
+
+    onMatchFound(opponent, matchRecord = null) {
+      if (this.matchState !== "searching") return;
+
+      if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
+      if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
+      this.matchSearchTimer = null;
+      this.matchFallbackTimer = null;
+
+      const sb = this._getSupabase();
+      if (this.rtChannel && sb?.removeChannel) {
+        try { sb.removeChannel(this.rtChannel); } catch (_) {}
+      }
+      this.rtChannel = null;
+
+      this.matchOpponent = opponent;
+      this.matchRecord = matchRecord || null;
+      this.matchState = "found";
+      this.matchFoundAt = Date.now();
+
+      this.matchLaunchTimer = setTimeout(() => {
+        const id = this.matchModeId;
+        const opp = this.matchOpponent;
+        const matchCtx = this.matchRecord;
+        this.matchLaunchTimer = null;
+        this.startGame(id, opp, matchCtx);
+      }, 3000);
+    }
+
+    _headerText() {
+      if (this.source === "nightclub") return "Rakip Havuzu: Nightclub içi";
+      if (this.source === "coffeeshop") return "Rakip Havuzu: Coffeeshop içi";
+      return "Rakip Havuzu: Genel";
+    }
+
+    _availableCards() {
+      if (this.source === "nightclub") {
+        return this.cards.filter(
+          (c) => c.id === "grid" || c.id === "arena" || c.id === "slotarena"
+        );
+      }
+      if (this.source === "coffeeshop") {
+        return this.cards.filter((c) => c.id === "grid" || c.id === "slotarena");
+      }
+      return this.cards;
+    }
+
+    update() {
+      const p = this.input?.pointer || {};
+      const px = Number(p.x || 0);
+      const py = Number(p.y || 0);
+
+      const isDown = !!(p.down || this.input?.isDown?.());
+      const justDown = !!(p.justDown || (isDown && !this._wasPointerDown));
+      const justUp = !!(!isDown && this._wasPointerDown);
+
+      if (justDown) {
+        this.dragging = true;
+        this.downY = py;
+        this.lastPointerY = py;
+        this.startScrollY = this.scrollY;
+        this.velocityY = 0;
+        this.moved = 0;
+        this.clickCandidate = true;
+      }
+
+      if (this.dragging && isDown) {
+        const dy = py - this.downY;
+        this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
+
+        const step = this.lastPointerY - py;
+        this.velocityY = step;
+        this.lastPointerY = py;
+
+        this.moved = Math.max(this.moved, Math.abs(dy));
+        if (this.moved > 10) {
+          this.clickCandidate = false;
+        }
+      }
+
+      if (this.dragging && justUp) {
+        this.dragging = false;
+        const shouldClick = !!this.clickCandidate;
+        this.clickCandidate = false;
+        if (shouldClick) {
+          this.pointerUp(px, py);
+        }
+      }
+
+      if (!isDown && !this.dragging && this.clickCandidate && this.moved <= 10 && !justDown && !justUp && !this._launchingGame) {
+        this.clickCandidate = false;
+        this.pointerUp(px, py);
+      }
+
+      const wheel = Number(this.input?.wheelDelta || 0);
+      if (wheel) {
+        this.scrollY = clamp(this.scrollY + wheel * 0.55, 0, this.maxScroll);
+      }
+
+      if (!this.dragging && Math.abs(this.velocityY) > 0.1) {
+        this.scrollY = clamp(this.scrollY + this.velocityY, 0, this.maxScroll);
+        this.velocityY *= 0.9;
+      }
+
+      this._wasPointerDown = isDown;
+    }
+
+    pointerUp(x, y) {
+      if (this.closeRect && pointInRect(x, y, this.closeRect)) {
+        this._cancelRealtimeQueue();
+        this._resetMatchmaking();
+        this.scenes.go("home");
         return;
       }
 
-      this.stop();
-      this._destroyEvents();
-      this._preloadAssets();
-      arena.innerHTML = makeMarkup();
+      if (this.matchState !== "menu" || this._matchmakingBusy) return;
 
-      const canvas = arena.querySelector("#tcSlotCanvas");
-      const ctx = canvas.getContext("2d");
+      for (let i = 0; i < this.cardRects.length; i++) {
+        const r = this.cardRects[i];
+        const hitButton = r.btn && pointInRect(x, y, r.btn);
+        const hitCard = r.cardRect && pointInRect(x, y, r.cardRect);
+        if ((hitButton || hitCard) && r.card.open) {
+          this.startMatchmaking(r.card.id);
+          return;
+        }
+      }
+    }
 
-      this._els = {
-        arena,
-        canvas,
-        ctx,
-        status,
-        enemyFill,
-        meFill,
-        enemyHpText,
-        meHpText,
-        rootEnemyFill: arena.querySelector("#tcSlotEnemyFill"),
-        rootMeFill: arena.querySelector("#tcSlotMeFill"),
-        rootEnemyText: arena.querySelector("#tcSlotEnemyText"),
-        rootMeText: arena.querySelector("#tcSlotMeText"),
-        enemyName: arena.querySelector("#tcSlotEnemyName"),
-        meName: arena.querySelector("#tcSlotMeName"),
-        enemySpins: arena.querySelector("#tcSlotEnemySpins"),
-        meSpins: arena.querySelector("#tcSlotMeSpins"),
-        turn: arena.querySelector("#tcSlotTurn"),
-        sub: arena.querySelector("#tcSlotSub"),
-        toast: arena.querySelector("#tcSlotToast"),
-        closeBtn: arena.querySelector("#tcSlotClose"),
-        spinBtn: arena.querySelector("#tcSlotSpinBtn"),
-        chipBase: arena.querySelector("#tcSlotChipBase"),
-        chipTimer: arena.querySelector("#tcSlotChipTimer"),
-        chipTumble: arena.querySelector("#tcSlotChipTumble"),
-        resultWrap: arena.querySelector("#tcSlotResult"),
-        resultTitle: arena.querySelector("#tcSlotResultTitle"),
-        resultReason: arena.querySelector("#tcSlotResultReason"),
-        resultPrize: arena.querySelector("#tcSlotResultPrize"),
-        resultNote: arena.querySelector("#tcSlotResultNote"),
+    async startGame(id, opponentData = null, matchCtx = null) {
+      if (this._launchingGame) return;
+      this._launchingGame = true;
+
+      const ECONOMY = {
+        grid: { energy: 10, stake: getStakeForMode("grid"), modeKey: "iq_arena" },
+        arena: { energy: 5, stake: getStakeForMode("arena"), modeKey: "cage_fight" },
+        slotarena: { energy: 15, stake: getStakeForMode("slotarena"), modeKey: "slot_arena" },
       };
 
-      this._setupState();
-      this._bindEvents();
-      this._resizeCanvas();
-      this._updateHud();
-      this._render();
-      this._preloadAssets();
+      const s = this.store?.get?.() || {};
+      const pvp = { ...(s.pvp || {}) };
+      const player = { ...(s.player || {}) };
+      const economy = ECONOMY[id];
+
+      pvp.selectedMode = id;
+      pvp.source = this.source || "general";
+
+      if (!economy) {
+        this.store?.set?.({ pvp });
+        this._launchingGame = false;
+        return;
+      }
+
+      const currentEnergy = Number(player.energy || 0);
+      const currentYton = Number(s.yton ?? s.coins ?? 0);
+
+      if (currentEnergy < economy.energy) {
+        this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: {
+              text: `Yetersiz enerji • ${economy.energy} gerekli`,
+            },
+          }));
+        } catch (_) {}
+        this._launchingGame = false;
+        return;
+      }
+
+      let charged = false;
+      const chargeMatch = () => {
+        if (charged) return;
+        charged = true;
+        this.store?.set?.({
+          player: {
+            ...player,
+            energy: Math.max(0, currentEnergy - economy.energy),
+          },
+          pvp: {
+            ...pvp,
+            selectedMode: id,
+            source: this.source || "general",
+            entryPaid: true,
+            entryEnergy: economy.energy,
+            entryStake: economy.stake,
+            rewardCoins: 0,
+            serverFee: 0,
+            payoutDone: false,
+            matchStartedAt: Date.now(),
+            modeKey: economy.modeKey,
+          },
+        });
+      };
+
+      const refundMatch = () => {
+        if (!charged) return;
+        charged = false;
+        const latest = this.store?.get?.() || {};
+        const latestPlayer = { ...(latest.player || player) };
+        this.store?.set?.({
+          player: {
+            ...latestPlayer,
+            energy: Number(latestPlayer.energy || 0) + economy.energy,
+          },
+          pvp: {
+            ...(latest.pvp || pvp),
+            selectedMode: null,
+            entryPaid: false,
+            payoutDone: false,
+          },
+        });
+      };
+
+      try {
+        chargeMatch();
+
+        const dom = ensurePvpDom();
+
+        if (dom.status) dom.status.textContent = "PvP • Yükleniyor...";
+        if (dom.opponent) dom.opponent.textContent = (opponentData?.username || "ShadowWolf");
+        if (dom.spinner) dom.spinner.classList.remove("hidden");
+
+        if (id === "grid") {
+          await loadPvpGameScript(["./src/pvpcrush.js", "./pvpcrush.js"]);
+
+          if (!window.TonCrimePVP_CRUSH) {
+            throw new Error("TonCrimePVP_CRUSH bulunamadı");
+          }
+
+          window.TonCrimePVP = window.TonCrimePVP_CRUSH;
+
+          window.TonCrimePVP.init?.({
+            arenaId: "arena",
+            statusId: "pvpStatus",
+            enemyFillId: "enemyFill",
+            meFillId: "meFill",
+            enemyHpTextId: "enemyHpText",
+            meHpTextId: "meHpText",
+          });
+
+          window.TonCrimePVP.setMatchContext?.(matchCtx || null);
+          window.TonCrimePVP.setOpponent?.({
+            username: opponentData?.username || "ShadowWolf",
+            isBot: !!(opponentData?.isBot ?? true),
+            level: opponentData?.level || 1,
+          });
+          try {
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+          } catch (_) {}
+
+          if (dom.startBtn) {
+            dom.startBtn.style.display = "";
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.setOpponent?.({
+                  username: opponentData?.username || "ShadowWolf",
+                  isBot: !!(opponentData?.isBot ?? true),
+                  level: opponentData?.level || 1,
+                });
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Start button error:", err);
+              }
+            };
+          }
+
+          if (dom.stopBtn) {
+            dom.stopBtn.style.display = "";
+            dom.stopBtn.onclick = () => {
+              try { window.TonCrimePVP.stop?.(); } catch (err) {}
+            };
+          }
+
+          if (dom.resetBtn) {
+            dom.resetBtn.style.display = "";
+            dom.resetBtn.onclick = () => {
+              try { window.TonCrimePVP.reset?.(); } catch (err) {}
+            };
+          }
+
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.reset?.();
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.start?.();
+
+          if (dom.status) dom.status.textContent = "PvP • IQ Arena başladı";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          this._launchingGame = false;
+          this._resetMatchmaking();
+          return;
+        }
+
+        if (id === "slotarena") {
+          await loadPvpGameScript(["./src/pvpslotarena.js", "./pvpslotarena.js"]);
+
+          if (!window.TonCrimePVP_SLOT) {
+            throw new Error("TonCrimePVP_SLOT bulunamadı");
+          }
+
+          window.TonCrimePVP = window.TonCrimePVP_SLOT;
+
+          window.TonCrimePVP.init?.({
+            arenaId: "arena",
+            statusId: "pvpStatus",
+            enemyFillId: "enemyFill",
+            meFillId: "meFill",
+            enemyHpTextId: "enemyHpText",
+            meHpTextId: "meHpText",
+          });
+
+          window.TonCrimePVP.setMatchContext?.(matchCtx || null);
+          window.TonCrimePVP.setOpponent?.({
+            username: opponentData?.username || "ShadowWolf",
+            isBot: !!(opponentData?.isBot ?? true),
+            level: opponentData?.level || 1,
+          });
+          try {
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+          } catch (_) {}
+
+          if (dom.startBtn) {
+            dom.startBtn.style.display = "";
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.setOpponent?.({
+                  username: opponentData?.username || "ShadowWolf",
+                  isBot: !!(opponentData?.isBot ?? true),
+                  level: opponentData?.level || 1,
+                });
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Start button error:", err);
+              }
+            };
+          }
+
+          if (dom.stopBtn) {
+            dom.stopBtn.style.display = "";
+            dom.stopBtn.onclick = () => {
+              try { window.TonCrimePVP.stop?.(); } catch (err) {}
+            };
+          }
+
+          if (dom.resetBtn) {
+            dom.resetBtn.style.display = "";
+            dom.resetBtn.onclick = () => {
+              try { window.TonCrimePVP.reset?.(); } catch (err) {}
+            };
+          }
+
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.reset?.();
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.start?.();
+
+          if (dom.status) dom.status.textContent = "PvP • Slot Arena başladı";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          this._launchingGame = false;
+          this._resetMatchmaking();
+          return;
+        }
+
+        if (id === "arena") {
+          await loadPvpGameScript(["./src/pvpcage.js", "./pvpcage.js"]);
+
+          if (!window.TonCrimePVP_CAGE) {
+            throw new Error("TonCrimePVP_CAGE bulunamadı");
+          }
+
+          window.TonCrimePVP = window.TonCrimePVP_CAGE;
+
+          window.TonCrimePVP.init?.({
+            arenaId: "arena",
+            statusId: "pvpStatus",
+            enemyFillId: "enemyFill",
+            meFillId: "meFill",
+            enemyHpTextId: "enemyHpText",
+            meHpTextId: "meHpText",
+          });
+
+          window.TonCrimePVP.setMatchContext?.(matchCtx || null);
+          window.TonCrimePVP.setOpponent?.({
+            username: opponentData?.username || "ShadowWolf",
+            isBot: !!(opponentData?.isBot ?? true),
+            level: opponentData?.level || 1,
+          });
+          try {
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+          } catch (_) {}
+
+          if (dom.startBtn) {
+            dom.startBtn.style.display = "";
+            dom.startBtn.onclick = async () => {
+              try {
+                window.TonCrimePVP.setOpponent?.({
+                  username: opponentData?.username || "ShadowWolf",
+                  isBot: !!(opponentData?.isBot ?? true),
+                  level: opponentData?.level || 1
+                });
+                window.TonCrimePVP.reset?.();
+                await new Promise((r) => setTimeout(r, 120));
+                window.TonCrimePVP.start?.();
+              } catch (err) {
+                console.error("[TonCrime] Cage start error:", err);
+              }
+            };
+          }
+
+          if (dom.stopBtn) {
+            dom.stopBtn.style.display = "";
+            dom.stopBtn.onclick = () => { try { window.TonCrimePVP.stop?.(); } catch (_) {} };
+          }
+
+          if (dom.resetBtn) {
+            dom.resetBtn.style.display = "";
+            dom.resetBtn.onclick = () => { try { window.TonCrimePVP.reset?.(); } catch (_) {} };
+          }
+
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.reset?.();
+          await new Promise((r) => setTimeout(r, 180));
+          window.TonCrimePVP.start?.();
+
+          if (dom.status) dom.status.textContent = "PvP • Kafes Dövüşü başladı";
+          if (dom.spinner) dom.spinner.classList.add("hidden");
+          this._launchingGame = false;
+          this._resetMatchmaking();
+          return;
+        }
+
+        if (dom.status) dom.status.textContent = "PvP • Mod bulunamadı";
+        if (dom.spinner) dom.spinner.classList.add("hidden");
+      } catch (err) {
+        refundMatch();
+        console.error("[TonCrime] startGame fatal:", err);
+        const status = document.getElementById("pvpStatus");
+        const spinner = document.getElementById("pvpSpinner");
+        if (status) status.textContent = "PvP • Oyun yüklenemedi";
+        if (spinner) spinner.classList.add("hidden");
+      }
+
+      this._launchingGame = false;
+    }
+
+
+    async _finishBetMatchIfNeeded(matchCtx, opponentData, didWin) {
+      try {
+        if (!matchCtx?.matchId) return;
+        const sb = this._getSupabase();
+        const userId = await this._getAuthUserId();
+        if (!sb || !userId) return;
+        const opponentId = String(matchCtx.player1Id || "") === String(userId)
+          ? (matchCtx.player2Id || null)
+          : (matchCtx.player1Id || null);
+        const winnerId = didWin ? userId : (opponentData?.id || opponentId || null);
+        if (!winnerId) return;
+        const { data, error } = await sb.rpc("finish_pvp_match", {
+          p_match_id: matchCtx.matchId,
+          p_winner_user_id: winnerId,
+          p_reason: didWin ? "win" : "loss",
+        });
+        if (error) {
+          console.error("[TonCrime] finish_pvp_match error:", error);
+          return;
+        }
+        if (didWin && data?.prize_yton != null) {
+          const latest = this.store?.get?.() || {};
+          this.store?.set?.({ yton: Number(latest.yton ?? latest.coins ?? 0) + Number(data.prize_yton || 0) });
+        }
+      } catch (err) {
+        console.error("[TonCrime] _finishBetMatchIfNeeded fatal:", err);
+      }
+    }
+
+
+    async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
+      try {
+        const { data: queueRow } = await sb
+          .from("pvp_match_queue")
+          .select("match_id, status, updated_at")
+          .eq("user_id", userId)
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const queueStatus = String(queueRow?.status || "").toLowerCase();
+        const queueLooksMatched =
+          !!queueRow?.match_id &&
+          ["matched", "ready", "playing", "active"].includes(queueStatus) &&
+          this._isFreshMatchForCurrentSearch(queueRow);
+
+        if (queueLooksMatched) {
+          const { data: matchRow } = await sb
+            .from("pvp_matches")
+            .select("*")
+            .eq("id", queueRow.match_id)
+            .maybeSingle();
+
+          if (this._isUsableMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
+            this.rtMatchStarted = true;
+            this.onMatchFound(
+              this._buildOpponentFromMatch(matchRow, userId),
+              this._buildMatchContext(matchRow, userId, sceneModeId)
+            );
+            return true;
+          }
+        }
+
+        const searchStartIso = new Date(Math.max(0, Number(this.matchStartedAt || Date.now()) - 10000)).toISOString();
+        const { data: directMatch } = await sb
+          .from("pvp_matches")
+          .select("*")
+          .eq("game_mode", mode)
+          .eq("stake_yton", stake)
+          .gte("created_at", searchStartIso)
+          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (this._isUsableMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
+          this.rtMatchStarted = true;
+          this.onMatchFound(
+            this._buildOpponentFromMatch(directMatch, userId),
+            this._buildMatchContext(directMatch, userId, sceneModeId)
+          );
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    }
+
+    renderSearchingOverlay(ctx, panelX, panelY, panelW, panelH) {
+      const cx = panelX + panelW * 0.5;
+      const cy = panelY + panelH * 0.46;
+      const boxW = Math.min(panelW - 28, 410);
+      const boxH = Math.min(panelH - 28, 260);
+      const boxX = cx - boxW * 0.5;
+      const boxY = panelY + Math.max(18, (panelH - boxH) * 0.24);
+
+      fillRoundRect(ctx, boxX, boxY, boxW, boxH, 24, "rgba(7,12,24,0.72)");
+      strokeRoundRect(ctx, boxX, boxY, boxW, boxH, 24, "rgba(255,255,255,0.12)", 1.5);
+
+      const t = Date.now() * 0.004;
+      for (let i = 0; i < 3; i++) {
+        const rr = 34 + i * 22 + Math.sin(t + i * 0.7) * 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,255,255,${0.18 - i * 0.04})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      for (let i = 0; i < 8; i++) {
+        const a = t * 1.6 + i * (Math.PI / 4);
+        const x = cx + Math.cos(a) * 54;
+        const y = cy + Math.sin(a) * 54;
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${0.35 + (i % 2) * 0.2})`;
+        ctx.fill();
+      }
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = "900 20px system-ui, Arial";
+      ctx.fillText(this.matchState === "found" ? "Rakip bulundu" : "Rakip aranıyor", cx, boxY + 46);
+
+      if (this.matchState === "found" && this.matchOpponent) {
+        ctx.font = "900 28px system-ui, Arial";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(this.matchOpponent.username || "Rakip", cx, boxY + 104);
+        ctx.font = "700 16px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.82)";
+        ctx.fillText(`Level ${this.matchOpponent.level || 1}`, cx, boxY + 132);
+        const left = Math.max(0, 3000 - (Date.now() - this.matchFoundAt));
+        ctx.font = "500 14px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.fillText(`Maç ${Math.max(1, Math.ceil(left / 1000))} sn içinde başlıyor`, cx, boxY + 178);
+      } else {
+        ctx.font = "500 15px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.78)";
+        ctx.fillText("Eşleşme hazırlanıyor", cx, boxY + 104);
+        ctx.font = "700 14px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.86)";
+        ctx.fillText("Oyuncular taranıyor...", cx, boxY + 132);
+      }
+    }
+
+    render(ctx) {
+      const canvas = ctx.canvas;
+      const size = getCanvasCssSize(canvas);
+      const w = size.w;
+      const h = size.h;
+
+      const state = this.store?.get?.() || {};
+      const safe = state?.ui?.safe || { x: 0, y: 0, w, h };
+      const hudReservedTop = Number(state?.ui?.hudReservedTop || 92);
+      const chatReservedBottom = Number(state?.ui?.chatReservedBottom || 58);
+
+      ctx.clearRect(0, 0, w, h);
+
+      drawCoverImage(ctx, this.bg || this.fallbackBg, 0, 0, w, h, 1);
+
+      const fade = ctx.createLinearGradient(0, 0, 0, h);
+      fade.addColorStop(0, "rgba(0,0,0,0.28)");
+      fade.addColorStop(0.5, "rgba(0,0,0,0.40)");
+      fade.addColorStop(1, "rgba(0,0,0,0.62)");
+      ctx.fillStyle = fade;
+      ctx.fillRect(0, 0, w, h);
+
+      const side = clamp(Math.round(safe.w * 0.035), 12, 18);
+      const panelX = safe.x + side;
+      const panelY = safe.y + Math.max(6, hudReservedTop - 4);
+      const panelW = safe.w - side * 2;
+      const panelBottom = safe.y + safe.h - Math.max(10, chatReservedBottom - 6);
+      const panelH = Math.max(320, panelBottom - panelY);
+
+      this.panelRect = { x: panelX, y: panelY, w: panelW, h: panelH };
+
+      ctx.save();
+      fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(10,14,24,0.20)");
+      strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,181,74,0.0)", 0);
+
+      const gloss = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+      gloss.addColorStop(0, "rgba(255,255,255,0.06)");
+      gloss.addColorStop(1, "rgba(255,255,255,0.01)");
+      fillRoundRect(ctx, panelX + 1, panelY + 1, panelW - 2, panelH - 2, 21, gloss);
+
+      const innerPad = Math.max(14, Math.round(panelW * 0.03));
+      const titleSize = clamp(Math.round(panelW * 0.045), 22, 34);
+      const subtitleSize = clamp(Math.round(panelW * 0.022), 12, 16);
+      const cardTitleSize = clamp(Math.round(panelW * 0.042), 19, 28);
+      const cardSubSize = clamp(Math.round(panelW * 0.022), 11, 15);
+      const cardTextSize = clamp(Math.round(panelW * 0.023), 12, 16);
+
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = `700 ${titleSize}px system-ui, Arial`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("PvP • Oyun Seç", panelX + innerPad, panelY + 16);
+
+      ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.font = `500 ${subtitleSize}px system-ui, Arial`;
+      ctx.fillText(this._headerText(), panelX + innerPad, panelY + 16 + titleSize + 10);
+
+      const closeW = clamp(Math.round(panelW * 0.14), 84, 112);
+      const closeH = clamp(Math.round(panelH * 0.065), 34, 42);
+      const closeX = panelX + panelW - innerPad - closeW;
+      const closeY = panelY + 14;
+      this.closeRect = { x: closeX, y: closeY, w: closeW, h: closeH };
+
+      fillRoundRect(ctx, closeX, closeY, closeW, closeH, 12, "rgba(20,20,26,0.72)");
+      strokeRoundRect(ctx, closeX, closeY, closeW, closeH, 12, "rgba(255,255,255,0.16)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.font = `700 ${clamp(Math.round(closeH * 0.36), 12, 16)}px system-ui, Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Kapat", closeX + closeW / 2, closeY + closeH / 2);
+
+      const chipsY = panelY + 16 + titleSize + 10 + subtitleSize + 14;
+      const chipH = clamp(Math.round(panelH * 0.06), 28, 36);
+
+      const chips = [
+        { id: "general", label: "PvP merkezi" },
+        {
+          id: this.source,
+          label:
+            this.source === "nightclub"
+              ? "Nightclub içi havuz"
+              : this.source === "coffeeshop"
+              ? "Coffeeshop içi havuz"
+              : "En temiz komboyu yapan parayı toplar.",
+        },
+      ];
+
+      this.modePills = [];
+      let chipX = panelX + innerPad;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = `600 ${clamp(Math.round(chipH * 0.34), 11, 14)}px system-ui, Arial`;
+
+      for (let i = 0; i < chips.length; i++) {
+        const c = chips[i];
+        const textW = Math.ceil(ctx.measureText(c.label).width);
+        const chipW = Math.min(panelW - innerPad * 2, textW + 24);
+        fillRoundRect(ctx, chipX, chipsY, chipW, chipH, chipH * 0.5, "rgba(18,18,22,0.46)");
+        strokeRoundRect(ctx, chipX, chipsY, chipW, chipH, chipH * 0.5, "rgba(255,255,255,0.14)", 1);
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillText(c.label, chipX + 12, chipsY + chipH / 2 + 0.5);
+        chipX += chipW + 10;
+        if (chipX > panelX + panelW - innerPad - 80) break;
+      }
+
+      const cards = this._availableCards();
+      const scrollTop = chipsY + chipH + 14;
+      const contentBottomPad = 16;
+      const viewportTop = scrollTop;
+      const viewportBottom = panelY + panelH - contentBottomPad;
+      const viewportH = viewportBottom - viewportTop;
+
+      const cardGap = 14;
+      const cardH = clamp(Math.round(panelH * 0.22), 150, 188);
+      const contentH = cards.length * cardH + Math.max(0, cards.length - 1) * cardGap;
+      this.maxScroll = Math.max(0, contentH - viewportH);
+      this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+
+      ctx.beginPath();
+      ctx.rect(panelX + 1, viewportTop, panelW - 2, viewportH);
+      ctx.clip();
+
+      this.cardRects = [];
+      let y = viewportTop - this.scrollY;
+
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+        const x = panelX + innerPad;
+        const cw = panelW - innerPad * 2;
+
+        fillRoundRect(ctx, x, y, cw, cardH, 18, "rgba(6,10,18,0.56)");
+
+        const artKey = card.id === "grid" ? "brain" : card.id === "arena" ? "punch" : card.id === "slotarena" ? "bonus" : null;
+        const artImg = artKey ? getImageFromAssets(this.assets, artKey) : null;
+        if (artImg && artImg.complete) {
+          drawCoverImage(ctx, artImg, x + cw - 132, y + 42, 98, 98, 0.95);
+        }
+        strokeRoundRect(
+          ctx,
+          x,
+          y,
+          cw,
+          cardH,
+          18,
+          card.open ? "rgba(255,170,50,0.72)" : "rgba(255,255,255,0.14)",
+          1.4
+        );
+
+        const shine = ctx.createLinearGradient(x, y, x + cw, y + cardH);
+        shine.addColorStop(0, "rgba(255,160,50,0.05)");
+        shine.addColorStop(0.4, "rgba(0,0,0,0)");
+        shine.addColorStop(1, "rgba(255,255,255,0.02)");
+        fillRoundRect(ctx, x + 1, y + 1, cw - 2, cardH - 2, 17, shine);
+
+        ctx.fillStyle = "rgba(255,255,255,0.96)";
+        ctx.font = `700 ${cardTitleSize}px system-ui, Arial`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText(card.title, x + 18, y + 14);
+
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.font = `500 ${cardSubSize}px system-ui, Arial`;
+        ctx.fillText(card.subtitle, x + 18, y + 14 + cardTitleSize + 5);
+
+        const btnW = clamp(Math.round(cw * 0.16), 72, 92);
+        const btnH = clamp(Math.round(cardH * 0.22), 32, 38);
+        const btnX = x + cw - btnW - 14;
+        const btnY = y + 14;
+
+        fillRoundRect(
+          ctx,
+          btnX,
+          btnY,
+          btnW,
+          btnH,
+          12,
+          card.open ? "rgba(255,255,255,0.13)" : "rgba(255,255,255,0.08)"
+        );
+        strokeRoundRect(
+          ctx,
+          btnX,
+          btnY,
+          btnW,
+          btnH,
+          12,
+          card.open ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)",
+          1
+        );
+
+        ctx.fillStyle = card.open ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.56)";
+        ctx.font = `700 ${clamp(Math.round(btnH * 0.34), 11, 14)}px system-ui, Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(card.open ? "Açık" : "Kilitli", btnX + btnW / 2, btnY + btnH / 2);
+
+        const descX = x + 18;
+        const descY = y + 14 + cardTitleSize + 5 + cardSubSize + 12;
+        const descW = cw - 36;
+        ctx.fillStyle = "rgba(255,255,255,0.80)";
+        ctx.font = `500 ${cardTextSize}px system-ui, Arial`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        const lines = wrapLines(ctx, card.desc, descW);
+        let lineY = descY;
+        const lineH = Math.round(cardTextSize * 1.35);
+        for (let li = 0; li < Math.min(lines.length, 3); li++) {
+          ctx.fillText(lines[li], descX, lineY);
+          lineY += lineH;
+        }
+
+        let tagX = x + 18;
+        const tagY = y + cardH - 48;
+        const tagH = 30;
+        ctx.font = `600 12px system-ui, Arial`;
+        for (let t = 0; t < card.tags.length; t++) {
+          const label = card.tags[t];
+          const tw = Math.ceil(ctx.measureText(label).width) + 20;
+          if (tagX + tw > x + cw - 18) break;
+          fillRoundRect(ctx, tagX, tagY, tw, tagH, 10, "rgba(255,255,255,0.06)");
+          strokeRoundRect(ctx, tagX, tagY, tw, tagH, 10, "rgba(255,255,255,0.10)", 1);
+          ctx.fillStyle = "rgba(255,255,255,0.92)";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, tagX + tw / 2, tagY + tagH / 2);
+          tagX += tw + 8;
+        }
+
+        this.cardRects.push({
+          card,
+          cardRect: { x, y, w: cw, h: cardH },
+          btn: { x: btnX, y: btnY, w: btnW, h: btnH },
+        });
+
+        y += cardH + cardGap;
+      }
+
+      ctx.restore();
+
+      if (this.matchState !== "menu") {
+        ctx.fillStyle = "rgba(0,0,0,0.30)";
+        ctx.fillRect(panelX, panelY, panelW, panelH);
+        this.renderSearchingOverlay(ctx, panelX, panelY, panelW, panelH);
+      }
+
+      if (this.maxScroll > 0) {
+        const trackW = 4;
+        const trackX = panelX + panelW - 8;
+        const trackY = viewportTop;
+        const trackH = viewportH;
+        fillRoundRect(ctx, trackX, trackY, trackW, trackH, 4, "rgba(255,255,255,0.08)");
+
+        const thumbH = Math.max(42, trackH * (viewportH / contentH));
+        const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
+        fillRoundRect(ctx, trackX, thumbY, trackW, thumbH, 4, "rgba(255,181,74,0.78)");
+      }
+    }
+  }
+
+  window.PvpScene = PvpScene;
+
+  const TonCrimePVPController = {
+    _engine: null,
+    _opts: null,
+    _opponent: { username: "ShadowWolf", isBot: true },
+
+    boot() {
+      console.log("[TonCrime] PvP controller booted");
     },
 
-    async _preloadAssets() {
-      const keys = Object.keys(ICON_PATHS);
-      const out = {};
-      await Promise.all(keys.map(async (key) => {
-        out[key] = await loadImage(ICON_PATHS[key]);
-      }));
-      this._iconImages = out;
-      if (this._state) this._state.imageReady = true;
-      this._render();
-    },
-
-    _setupState() {
-      const startsAsMe = this._matchCtx?.amIPlayer1 !== false;
-      this._state = {
-        board: makeBoard(),
-        meHp: START_HP,
-        enemyHp: START_HP,
-        meSpins: BASE_SPINS,
-        enemySpins: BASE_SPINS,
-        turn: startsAsMe ? "me" : "enemy",
-        finished: false,
-        spinning: false,
-        inBonus: false,
-        bonusOwner: null,
-        bonusSpinsLeft: 0,
-        bonusMultiplierBank: 0,
-        displayedMultiplier: 0,
-        multipliers: [],
-        tumbleIndex: 0,
-        info: "Hazır",
-        fxHits: [],
-        flashUntil: 0,
-        shakeUntil: 0,
-        spinOffset: 0,
-        dropMap: Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0)),
-        dropProgress: 1,
-        markedRemove: new Set(),
-        decisionEndsAt: 0,
-        imageReady: !!this._iconImages,
-        spinIntroMap: null,
-        spinIntroProgress: 1,
-        result: null,
+    init(opts = {}) {
+      this._opts = {
+        arenaId: opts.arenaId || "arena",
+        statusId: opts.statusId || "pvpStatus",
+        enemyFillId: opts.enemyFillId || "enemyFill",
+        meFillId: opts.meFillId || "meFill",
+        enemyHpTextId: opts.enemyHpTextId || "enemyHpText",
+        meHpTextId: opts.meHpTextId || "meHpText",
       };
     },
 
     setOpponent(opp) {
-      this._opponent = opp && opp.username ? { ...opp } : { username: choice(BOT_NAMES), isBot: false };
-      if (this._els?.enemyName) this._els.enemyName.textContent = this._opponent.username || "Rakip";
-      this._render();
-    },
+      this._opponent =
+        opp && typeof opp.username === "string"
+          ? { ...opp }
+          : { username: "ShadowWolf", isBot: true };
 
-    setMatchContext(ctx) {
-      this._matchCtx = ctx && typeof ctx === "object" ? { ...ctx } : null;
-      if (this._running) {
-        this._beginMatchWatch();
-        this._setupSync();
-      }
-    },
-
-    _isOnlineMatch() {
-      const ctx = this._matchCtx || {};
-      return !!(ctx.matchId && ctx.userId && !ctx.isBotMatch && ctx.player1Id && ctx.player2Id && window.supabase);
-    },
-
-    _isAuthoritativePeer() {
-      return !!(this._isOnlineMatch() && this._matchCtx?.amIPlayer1);
-    },
-
-    _mySideKey() {
-      return this._matchCtx?.amIPlayer1 ? "p1" : "p2";
-    },
-
-    _localTurnSide() {
-      return this._state?.turn === "me" ? this._mySideKey() : (this._mySideKey() === "p1" ? "p2" : "p1");
-    },
-
-    _clearSync() {
-      clearInterval(this._syncHeartbeat);
-      this._syncHeartbeat = null;
-      this._syncReady = false;
-      try { this._syncChannel?.unsubscribe?.(); } catch (_) {}
-      this._syncChannel = null;
-    },
-
-    _broadcast(event, payload = {}) {
       try {
-        if (!this._syncChannel || !this._syncReady) return false;
-        this._syncChannel.send({
-          type: "broadcast",
-          event,
-          payload: {
-            ...payload,
-            matchId: this._matchCtx?.matchId || null,
-            senderId: this._matchCtx?.userId || null,
-            sessionId: this._syncSessionId,
-            sentAt: Date.now(),
-          },
-        });
-        return true;
-      } catch (_) {
-        return false;
+        this._engine?.setOpponent?.(this._opponent);
+      } catch (err) {
+        console.error("[TonCrime] controller setOpponent error:", err);
       }
-    },
-
-    _buildCanonicalSnapshot(reason = "sync") {
-      const s = this._state;
-      if (!s) return null;
-      this._lastSentSeq = normalizeSeq(this._lastSentSeq) + 1;
-      return {
-        seq: this._lastSentSeq,
-        reason,
-        board: cloneBoard(s.board || makeBoard()),
-        p1Hp: Number(s.meHp || 0),
-        p2Hp: Number(s.enemyHp || 0),
-        p1Spins: Number(s.meSpins || 0),
-        p2Spins: Number(s.enemySpins || 0),
-        turnOwner: s.turn === "me" ? "p1" : "p2",
-        finished: !!s.finished,
-        spinning: !!s.spinning,
-        inBonus: !!s.inBonus,
-        bonusOwner: s.bonusOwner === "me" ? "p1" : s.bonusOwner === "enemy" ? "p2" : null,
-        bonusSpinsLeft: Number(s.bonusSpinsLeft || 0),
-        bonusMultiplierBank: Number(s.bonusMultiplierBank || 0),
-        displayedMultiplier: Number(s.displayedMultiplier || 0),
-        multipliers: deepCloneSafe(s.multipliers || []),
-        tumbleIndex: Number(s.tumbleIndex || 0),
-        info: String(s.info || ""),
-        decisionEndsAt: Number(s.decisionEndsAt || 0),
-        winnerSide: s.finished ? (s.enemyHp <= 0 || (s.meHp >= s.enemyHp && s.meSpins <= 0 && s.enemySpins <= 0) ? "p1" : "p2") : null,
-      };
-    },
-
-    _broadcastState(reason = "sync") {
-      if (!this._isAuthoritativePeer()) return false;
-      const snapshot = this._buildCanonicalSnapshot(reason);
-      if (!snapshot) return false;
-      this._lastSyncTs = Date.now();
-      return this._broadcast("state", { snapshot });
-    },
-
-    _applyCanonicalSnapshot(snapshot, opts = {}) {
-      if (!snapshot || !this._state) return;
-      const seq = normalizeSeq(snapshot.seq);
-      if (!opts.force && seq && seq <= normalizeSeq(this._lastAppliedSeq)) return;
-      if (seq) this._lastAppliedSeq = seq;
-      this._lastSyncTs = Date.now();
-
-      const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
-      const mySide = amIPlayer1 ? "p1" : "p2";
-      const enemySide = amIPlayer1 ? "p2" : "p1";
-      const s = this._state;
-
-      s.board = cloneBoard(snapshot.board || makeBoard());
-      s.meHp = Number(snapshot[`${mySide}Hp`] ?? START_HP);
-      s.enemyHp = Number(snapshot[`${enemySide}Hp`] ?? START_HP);
-      s.meSpins = Number(snapshot[`${mySide}Spins`] ?? BASE_SPINS);
-      s.enemySpins = Number(snapshot[`${enemySide}Spins`] ?? BASE_SPINS);
-      s.turn = snapshot.turnOwner === mySide ? "me" : "enemy";
-      const incomingFinished = !!snapshot.finished;
-      s.finished = incomingFinished && !!opts.silentFinish;
-      s.spinning = !!snapshot.spinning;
-      s.inBonus = !!snapshot.inBonus;
-      s.bonusOwner = snapshot.bonusOwner === mySide ? "me" : snapshot.bonusOwner === enemySide ? "enemy" : null;
-      s.bonusSpinsLeft = Number(snapshot.bonusSpinsLeft || 0);
-      s.bonusMultiplierBank = Number(snapshot.bonusMultiplierBank || 0);
-      s.displayedMultiplier = Number(snapshot.displayedMultiplier || 0);
-      s.multipliers = deepCloneSafe(snapshot.multipliers || []);
-      s.tumbleIndex = Number(snapshot.tumbleIndex || 0);
-      s.info = String(snapshot.info || (s.turn === "me" ? "Sıran sende" : `${this._opponent.username || "Rakip"} sırada`));
-      s.decisionEndsAt = Number(snapshot.decisionEndsAt || 0);
-      s.markedRemove = new Set();
-      s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-      s.dropProgress = 1;
-      s.spinIntroMap = null;
-      s.spinIntroProgress = 1;
-      this._updateHud();
-      this._render();
-
-      if (snapshot.finished && !opts.silentFinish) {
-        const didWin = String(snapshot.winnerSide || "") === mySide;
-        this._finish(didWin, snapshot.info || (didWin ? "Maç sonlandı" : "Maç sonlandı"), { notify: true });
-      }
-    },
-
-    _handleSyncBroadcast(payload) {
-      const snapshot = payload?.snapshot || null;
-      if (!snapshot) return;
-      if (this._isAuthoritativePeer()) return;
-      this._applyCanonicalSnapshot(snapshot);
-    },
-
-    _handleSpinRequestBroadcast(payload) {
-      if (!this._isAuthoritativePeer() || !this._running || !this._state || this._state.finished || this._state.spinning) return;
-      const side = String(payload?.side || "");
-      const expected = this._state.turn === "me" ? "p1" : "p2";
-      if (!side || side !== expected) return;
-      clearTimeout(this._turnTimer);
-      this._turnTimer = null;
-      this._spinCurrentTurn().catch?.(() => {});
-    },
-
-    _handleSyncRequestBroadcast() {
-      if (!this._isAuthoritativePeer()) return;
-      this._broadcastState("sync_reply");
-    },
-
-    _setupSync() {
-      this._clearSync();
-      if (!this._isOnlineMatch()) return;
-      const sb = window.supabase;
-      const channelName = `toncrime-slot-sync-${this._matchCtx.matchId}`;
-      this._syncChannel = sb
-        .channel(channelName, { config: { broadcast: { self: false, ack: false } } })
-        .on("broadcast", { event: "state" }, ({ payload }) => this._handleSyncBroadcast(payload))
-        .on("broadcast", { event: "spin_request" }, ({ payload }) => this._handleSpinRequestBroadcast(payload))
-        .on("broadcast", { event: "sync_request" }, ({ payload }) => this._handleSyncRequestBroadcast(payload))
-        .subscribe((status) => {
-          if (status !== "SUBSCRIBED") return;
-          this._syncReady = true;
-          if (this._isAuthoritativePeer()) {
-            this._broadcastState("initial");
-            clearInterval(this._syncHeartbeat);
-            this._syncHeartbeat = setInterval(() => {
-              if (!this._running || this._state?.finished) return;
-              this._broadcastState("heartbeat");
-            }, SYNC_HEARTBEAT_MS);
-          } else {
-            this._broadcast("sync_request", { want: "state" });
-          }
-        });
-    },
-
-    resolveOpponentQuit() {
-      if (!this._state || this._state.finished) return;
-      this._finish(true, "Rakip maçtan çıktı", { notify: true });
     },
 
     reset() {
-      this.stop();
-      if (!this._els) return;
-      this._resultReported = false;
-      this._lastSentSeq = 0;
-      this._lastAppliedSeq = 0;
-      this._setupState();
-      this._hideResultOverlay();
-      this._updateHud();
-      this._setStatus("PvP • Slot Arena hazır");
-      this._toast("Hazır");
-      this._render();
+      try { this._engine?.reset?.(); } catch (err) {}
     },
 
     start() {
-      if (!this._els || !this._state) return;
-      if (this._running) return;
-      this._running = true;
-      this._locked = false;
-      if (this._els.meName) this._els.meName.textContent = "Sen";
-      if (this._els.enemyName) this._els.enemyName.textContent = this._opponent.username || "Rakip";
-      this._setStatus("PvP • Slot Arena başladı");
-      this._state.info = this._state.turn === "me"
-        ? "Sıran sende • 3 sn içinde spin başlat"
-        : `${this._opponent.username || "Rakip"} başlıyor`;
-      this._hideResultOverlay();
-      this._beginMatchWatch();
-      this._setupSync();
-      this._startTurnWindow();
-      this._tick(performance.now());
+      try { this._engine?.start?.(); } catch (err) {}
     },
 
     stop() {
-      this._running = false;
-      cancelAnimationFrame(this._raf);
-      this._raf = 0;
-      clearTimeout(this._queuedResolve);
-      this._queuedResolve = null;
-      clearTimeout(this._turnTimer);
-      this._turnTimer = null;
-      this._stopMatchWatch();
-      this._clearSync();
-    },
-
-    _bindEvents() {
-      if (!this._els) return;
-
-      const onClose = () => {
-        const shouldReportLoss = !!(this._state && !this._state.finished);
-        if (shouldReportLoss && typeof this.onMatchFinished === "function" && !this._resultReported) {
-          this._resultReported = true;
-          try { this.onMatchFinished(false, { reason: "quit" }); } catch (_) {}
-        }
-        this.stop();
-        try {
-          const arena = document.getElementById("arena");
-          const wrap = document.getElementById("pvpWrap");
-          const status = document.getElementById("pvpStatus");
-          const opponent = document.getElementById("pvpOpponent");
-          const spinner = document.getElementById("pvpSpinner");
-          if (arena) arena.innerHTML = "";
-          if (wrap) {
-            wrap.classList.remove("open");
-            wrap.style.display = "none";
-          }
-          if (status) status.textContent = "PvP • Hazır";
-          if (opponent) opponent.textContent = "—";
-          if (spinner) spinner.classList.add("hidden");
-        } catch (_) {}
-      };
-
-      const onSpin = async () => {
-        if (!this._running || !this._state || this._state.turn !== "me" || this._state.spinning || this._state.finished) return;
-        clearTimeout(this._turnTimer);
-        this._turnTimer = null;
-        if (this._isOnlineMatch() && !this._isAuthoritativePeer()) {
-          this._broadcast("spin_request", { side: this._mySideKey() });
-          this._toast("Spin isteği gönderildi", 650);
-          return;
-        }
-        await this._spinCurrentTurn();
-      };
-
-      this._els.closeBtn?.addEventListener("click", onClose);
-      this._els.spinBtn?.addEventListener("click", onSpin);
-
-      this._unbind = () => {
-        this._els?.closeBtn?.removeEventListener("click", onClose);
-        this._els?.spinBtn?.removeEventListener("click", onSpin);
-      };
-
-      if (typeof ResizeObserver !== "undefined") {
-        this._resizeObserver = new ResizeObserver(() => {
-          this._resizeCanvas();
-          this._render();
-        });
-        this._resizeObserver.observe(this._els.canvas);
-      }
-    },
-
-    _destroyEvents() {
-      try { this._unbind?.(); } catch (_) {}
-      this._unbind = null;
-      try { this._resizeObserver?.disconnect?.(); } catch (_) {}
-      this._resizeObserver = null;
-    },
-
-    _resizeCanvas() {
-      if (!this._els?.canvas || !this._els?.ctx) return false;
-      const canvas = this._els.canvas;
-      const rect = canvas.getBoundingClientRect();
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const width = Math.max(10, Math.floor((rect.width || 300) * dpr));
-      const height = Math.max(10, Math.floor((rect.height || 300) * dpr));
-
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-
-      this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      return true;
-    },
-
-    _setStatus(text) {
-      if (this._els?.status) this._els.status.textContent = text;
-    },
-
-    _toast(text, ms = 1200) {
-      if (!this._els?.toast) return;
-      this._els.toast.textContent = String(text || "");
-      this._els.toast.classList.add("on");
-      clearTimeout(this._toastTimer);
-      this._toastTimer = setTimeout(() => {
-        if (this._els?.toast) this._els.toast.classList.remove("on");
-      }, ms);
-    },
-
-    _vibrate(pattern = 40) {
-      try {
-        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-          navigator.vibrate(pattern);
-        }
-      } catch (_) {}
-    },
-
-    _estimatePrizeYton(win) {
-      if (!win) return 0;
-      const ctxPrize = Number(this._matchCtx?.prizeYton || 0);
-      if (ctxPrize > 0) return ctxPrize;
-      try {
-        const state = window.tcStore?.get?.() || {};
-        const stake = Number(state?.pvp?.entryStake || 0);
-        return stake > 0 ? stake : 0;
-      } catch (_) {
-        return 0;
-      }
-    },
-
-    _hideResultOverlay() {
-      if (!this._els?.resultWrap) return;
-      this._els.resultWrap.classList.remove("on");
-    },
-
-    _showResultOverlay(win, reason) {
-      if (!this._els?.resultWrap) return;
-      const prize = this._estimatePrizeYton(win);
-      if (this._els.resultTitle) {
-        this._els.resultTitle.textContent = win ? "KAZANDIN" : "KAYBETTIN";
-        this._els.resultTitle.classList.remove("win", "loss");
-        this._els.resultTitle.classList.add(win ? "win" : "loss");
-      }
-      if (this._els.resultReason) this._els.resultReason.textContent = String(reason || (win ? "Mac bitti" : "Mac bitti"));
-      if (this._els.resultPrize) this._els.resultPrize.textContent = win ? `+${Math.max(0, Math.round(prize))} YTON` : `+0 YTON`;
-      if (this._els.resultNote) this._els.resultNote.textContent = win ? (prize > 0 ? "Odul backend tarafinda islenir" : "YTON odulu backend tarafinda islenir") : "Bu mac kayip olarak islenir";
-      this._els.resultWrap.classList.add("on");
-    },
-
-    _stopMatchWatch() {
-      clearInterval(this._matchWatchTimer);
-      this._matchWatchTimer = null;
-    },
-
-    _beginMatchWatch() {
-      this._stopMatchWatch();
-      const matchId = this._matchCtx?.matchId;
-      if (!matchId || !window.supabase) return;
-      this._matchWatchTimer = setInterval(() => {
-        this._pollMatchStateOnce().catch?.(() => {});
-      }, MATCH_WATCH_MS);
-    },
-
-    async _pollMatchStateOnce() {
-      if (!this._matchCtx?.matchId || !window.supabase || this._state?.finished) return;
-      const { data } = await window.supabase
-        .from("pvp_matches")
-        .select("id,status,winner_user_id,player1_id,player2_id")
-        .eq("id", this._matchCtx.matchId)
-        .maybeSingle();
-      if (!data) return;
-      const myId = String(this._matchCtx?.userId || "");
-      const winnerId = String(data?.winner_user_id || "");
-      if (winnerId) {
-        const didWin = myId && winnerId === myId;
-        this._finish(!!didWin, didWin ? "Mac sonlandi" : "Mac sonlandi", { notify: !!didWin });
-        return;
-      }
-      const status = String(data?.status || "").toLowerCase();
-      if ((status === "cancelled" || status === "canceled") && !this._state?.finished) {
-        this._finish(true, "Rakip maçtan çıktı", { notify: false });
-      }
-    },
-
-    _updateHud() {
-      if (!this._els || !this._state) return;
-      const s = this._state;
-      const mePct = clamp(s.meHp / START_HP, 0, 1) * 100;
-      const enemyPct = clamp(s.enemyHp / START_HP, 0, 1) * 100;
-      const countdown = s.turn === "me" && !s.spinning && !s.finished && !s.inBonus && s.decisionEndsAt > 0
-        ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000))
-        : s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0
-        ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000))
-        : 0;
-
-      const meHpTxt = `${Math.max(0, Math.round(s.meHp))} / ${START_HP}`;
-      const enemyHpTxt = `${Math.max(0, Math.round(s.enemyHp))} / ${START_HP}`;
-      const meSpinTxt = `Spin: ${s.meSpins}${s.inBonus && s.bonusOwner === "me" ? ` • BONUS ${s.bonusSpinsLeft}` : ""}`;
-      const enemySpinTxt = `Spin: ${s.enemySpins}${s.inBonus && s.bonusOwner === "enemy" ? ` • BONUS ${s.bonusSpinsLeft}` : ""}`;
-
-      this._els.meFill.style.transform = `scaleX(${mePct / 100})`;
-      this._els.enemyFill.style.transform = `scaleX(${enemyPct / 100})`;
-      this._els.rootMeFill.style.transform = `scaleX(${mePct / 100})`;
-      this._els.rootEnemyFill.style.transform = `scaleX(${enemyPct / 100})`;
-      this._els.meHpText.textContent = meHpTxt;
-      this._els.enemyHpText.textContent = enemyHpTxt;
-      this._els.rootMeText.textContent = meHpTxt;
-      this._els.rootEnemyText.textContent = enemyHpTxt;
-      this._els.meSpins.textContent = meSpinTxt;
-      this._els.enemySpins.textContent = enemySpinTxt;
-      this._els.turn.textContent = s.inBonus
-        ? `${s.turn === "me" ? "SEN" : "RAKİP"} BONUS x${Math.max(0, Math.round(s.displayedMultiplier || 0))}`
-        : (s.turn === "me" ? "SEN" : "RAKİP");
-      this._els.sub.textContent = s.info;
-
-      const chipBase = s.inBonus
-        ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
-        : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
-      const chipTimer = s.turn === "me" && !s.spinning && !s.finished
-        ? `SPIN SÜRESİ ${countdown}`
-        : s.turn === "enemy" && !s.finished
-        ? "RAKİP DÜŞÜNÜYOR"
-        : "SONUÇ";
-      const chipTumble = s.inBonus
-        ? `ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
-        : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
-
-      if (this._els.chipBase) this._els.chipBase.textContent = chipBase;
-      if (this._els.chipTimer) this._els.chipTimer.textContent = chipTimer;
-      if (this._els.chipTumble) this._els.chipTumble.textContent = chipTumble;
-
-      if (this._els.spinBtn) {
-        const show = s.turn === "me" && !s.spinning && !s.finished;
-        this._els.spinBtn.style.visibility = show ? "visible" : "hidden";
-        this._els.spinBtn.disabled = !show;
-        this._els.spinBtn.textContent = show
-          ? `SPIN BAŞLAT${countdown > 0 ? ` • ${countdown}` : ""}`
-          : "SPIN BAŞLAT";
-      }
-    },
-
-    _startTurnWindow() {
-      const s = this._state;
-      if (!s || s.finished || s.spinning) return;
-      clearTimeout(this._turnTimer);
-
-      if (this._isOnlineMatch()) {
-        if (!this._isAuthoritativePeer()) {
-          this._updateHud();
-          this._render();
-          return;
-        }
-        s.decisionEndsAt = Date.now() + PLAYER_DECISION_MS;
-        s.info = s.turn === "me"
-          ? (s.inBonus && s.bonusOwner === "me" ? `Bonus sende • 3 sn içinde spin başlat` : `Sıran sende • 3 sn içinde spin başlat`)
-          : `${this._opponent.username || "Rakip"} • 3 sn içinde spin atmalı`;
-        this._updateHud();
-        this._render();
-        this._broadcastState("turn_window");
-        this._turnTimer = setTimeout(() => {
-          if (!this._running || !this._state || this._state.spinning || this._state.finished) return;
-          this._toast(this._state.turn === "me" ? "Süre doldu • sıra rakibe geçti" : "Rakip süreyi kaçırdı", 950);
-          this._advanceTurn(true);
-        }, PLAYER_DECISION_MS + 40);
-        return;
-      }
-
-      if (s.turn === "me") {
-        s.decisionEndsAt = Date.now() + PLAYER_DECISION_MS;
-        s.info = s.inBonus && s.bonusOwner === "me"
-          ? `Bonus sende • 3 sn içinde spin başlat`
-          : `Sıran sende • 3 sn içinde spin başlat`;
-        this._updateHud();
-        this._render();
-        this._turnTimer = setTimeout(() => {
-          if (!this._running || !this._state || this._state.turn !== "me" || this._state.spinning || this._state.finished) return;
-          this._toast("Süre doldu • sıra rakibe geçti", 950);
-          this._advanceTurn(true);
-        }, PLAYER_DECISION_MS + 40);
-      } else {
-        s.decisionEndsAt = 0;
-        this._queueAutoTurn(900);
-      }
-    },
-
-    _queueAutoTurn(delay = 500) {
-      clearTimeout(this._queuedResolve);
-      this._queuedResolve = setTimeout(async () => {
-        this._queuedResolve = null;
-        if (!this._running || this._state?.finished || this._state?.spinning) return;
-        await this._spinCurrentTurn();
-      }, delay);
-    },
-
-    async _spinCurrentTurn() {
-      const s = this._state;
-      if (!s || s.finished || s.spinning) return;
-      const actor = s.turn;
-      const remaining = actor === "me" ? s.meSpins : s.enemySpins;
-      const available = s.inBonus && s.bonusOwner === actor ? s.bonusSpinsLeft : remaining;
-
-      if (available <= 0) {
-        this._advanceTurn();
-        return;
-      }
-
-      clearTimeout(this._turnTimer);
-      s.decisionEndsAt = 0;
-      s.spinning = true;
-      s.tumbleIndex = 0;
-      s.markedRemove = new Set();
-      s.info = actor === "me" ? "Spin atılıyor..." : `${this._opponent.username || "Rakip"} spin atıyor...`;
-      this._updateHud();
-      this._render();
-      if (this._isAuthoritativePeer()) this._broadcastState("spin_start");
-
-      const inOwnedBonus = s.inBonus && s.bonusOwner === actor;
-      const rollBonus = !inOwnedBonus && Math.random() < BONUS_CHANCE;
-      const rollWin = !rollBonus && Math.random() < (inOwnedBonus ? BONUS_MODE_EXPLODE_CHANCE : SPIN_EXPLODE_CHANCE);
-
-      s.board = makeBoard({
-        forceBonus: rollBonus,
-        forceCluster: rollWin,
-      });
-      if (this._isAuthoritativePeer()) this._broadcastState("roll_ready");
-      s.spinIntroMap = createSpinIntroMap();
-      s.spinIntroProgress = 0;
-      await this._spinAnimation();
-      s.spinIntroMap = null;
-      s.spinIntroProgress = 1;
-
-      if (s.inBonus && s.bonusOwner === actor) {
-        s.bonusSpinsLeft = Math.max(0, s.bonusSpinsLeft - 1);
-      } else if (actor === "me") {
-        s.meSpins = Math.max(0, s.meSpins - 1);
-      } else {
-        s.enemySpins = Math.max(0, s.enemySpins - 1);
-      }
-
-      await this._resolveTumbles(actor);
-
-      if (s.inBonus && s.bonusOwner === actor && s.bonusSpinsLeft <= 0) {
-        s.info = `BONUS BİTTİ • x${Math.max(1, s.bonusMultiplierBank)} sıfırlandı`;
-        s.inBonus = false;
-        s.bonusOwner = null;
-        s.bonusMultiplierBank = 0;
-        s.displayedMultiplier = 0;
-        s.multipliers = [];
-        await new Promise((r) => setTimeout(r, 650));
-      }
-
-      s.spinning = false;
-      s.markedRemove = new Set();
-      s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-      s.dropProgress = 1;
-      this._updateHud();
-      this._render();
-      if (this._isAuthoritativePeer()) this._broadcastState("spin_end");
-
-      if (!this._checkFinish()) {
-        this._advanceTurn();
-      }
-    },
-
-    async _spinAnimation() {
-      const s = this._state;
-      const start = performance.now();
-      const duration = 980;
-
-      return new Promise((resolve) => {
-        const frame = (ts) => {
-          if (!this._state || !this._running) return resolve();
-          const t = clamp((ts - start) / duration, 0, 1);
-          const ease = 1 - Math.pow(1 - t, 3);
-          s.spinIntroProgress = ease;
-          this._render();
-          if (t >= 1) {
-            s.spinIntroProgress = 1;
-            this._render();
-            resolve();
-            return;
-          }
-          requestAnimationFrame(frame);
-        };
-        requestAnimationFrame(frame);
-      });
-    },
-
-    async _animateDrop(dropMap) {
-      const s = this._state;
-      s.dropMap = dropMap;
-      s.dropProgress = 0;
-
-      const start = performance.now();
-      const duration = 360;
-
-      return new Promise((resolve) => {
-        const frame = (ts) => {
-          if (!this._state || !this._running) return resolve();
-          const t = clamp((ts - start) / duration, 0, 1);
-          const ease = 1 - Math.pow(1 - t, 3);
-          s.dropProgress = ease;
-          this._render();
-          if (t >= 1) {
-            s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-            s.dropProgress = 1;
-            this._render();
-            resolve();
-            return;
-          }
-          requestAnimationFrame(frame);
-        };
-        requestAnimationFrame(frame);
-      });
-    },
-
-    async _resolveTumbles(actor) {
-      const s = this._state;
-      let chain = 0;
-      let totalDamage = 0;
-      let bonusJustStarted = false;
-
-      while (true) {
-        const res = evaluateBoard(s.board, s.inBonus && s.bonusOwner === actor);
-        if (!res.hasAction) break;
-
-        chain += 1;
-        s.tumbleIndex = chain;
-        s.markedRemove = new Set(res.remove);
-        s.flashUntil = Date.now() + 300;
-        s.info = res.damage > 0 ? `${chain}. tumble • 8+ ikon patladı` : `${chain}. tumble • bonus kontrol`;
-        this._render();
-        await new Promise((r) => setTimeout(r, 420));
-
-        if (res.damage > 0) {
-          let hitDamage = res.damage;
-          if (s.inBonus && s.bonusOwner === actor) {
-            const drops = getMultiplierDrop();
-            s.multipliers = drops;
-            const addMulti = drops.reduce((sum, d) => sum + d.value, 0);
-            s.bonusMultiplierBank = Math.min(20, s.bonusMultiplierBank + addMulti);
-            s.displayedMultiplier = s.bonusMultiplierBank;
-            hitDamage *= Math.max(1, s.bonusMultiplierBank);
-            s.info = `${chain}. tumble • x${s.bonusMultiplierBank} çarpan`;
-          } else {
-            s.info = `${chain}. tumble`;
-          }
-          totalDamage += hitDamage;
-          this._applyDamage(actor === "me" ? "enemy" : "me", hitDamage);
-          this._spawnHitFx(res.hits, actor === "me");
-          this._vibrate(chain > 1 ? [60, 35, 60] : [45]);
-          this._toast(`${this._hitSummary(res.hits)} • ${Math.round(hitDamage)} hasar`, 900);
-        }
-
-        if (res.bonusTriggered) {
-          s.inBonus = true;
-          s.bonusOwner = actor;
-          s.bonusSpinsLeft += BONUS_SPINS;
-          s.bonusMultiplierBank = 0;
-          s.displayedMultiplier = 0;
-          s.multipliers = [];
-          bonusJustStarted = true;
-          this._toast(`⭐ BONUS AÇILDI! +${BONUS_SPINS} spin`, 1400);
-          s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus aldı`;
-        }
-
-        if (this._isAuthoritativePeer()) this._broadcastState("tumble_hit");
-        await new Promise((r) => setTimeout(r, 180));
-        const tum = tumble(s.board, res.remove, {
-          forceCluster: Math.random() < CHAIN_CONTINUE_CHANCE,
-          forceBonus: false,
-        });
-        s.markedRemove = new Set();
-        s.board = tum.board;
-        await this._animateDrop(tum.dropMap);
-        if (this._isAuthoritativePeer()) this._broadcastState("tumble_drop");
-        await new Promise((r) => setTimeout(r, 120));
-        if (this._checkFinish()) return;
-      }
-
-      if (totalDamage <= 0 && !bonusJustStarted) {
-        s.info = s.turn === "me" ? "Boş spin" : "Rakip boş spin";
-        this._toast("Kazanç yok", 700);
-      }
-      s.markedRemove = new Set();
-    },
-
-    _hitSummary(hits) {
-      if (!hits || !hits.length) return "Kazanç";
-      return hits.slice(0, 2).map((h) => `${ICONS[h.type].label} x${h.count}`).join(" + ");
-    },
-
-    _spawnHitFx(hits, fromMe) {
-      const now = performance.now();
-      for (const h of hits) {
-        const meta = ICONS[h.type];
-        this._state.fxHits.push({
-          text: `${meta.label} • ${Math.round(h.damage)}`,
-          color: meta.color,
-          bornAt: now,
-          side: fromMe ? "right" : "left",
-          y: 0.44 + Math.random() * 0.18,
-          life: 1,
-        });
-      }
-      this._state.flashUntil = Date.now() + 120;
-      this._state.shakeUntil = Date.now() + 180;
-    },
-
-    _applyDamage(target, amount) {
-      if (!this._state || amount <= 0) return;
-      if (target === "enemy") this._state.enemyHp = clamp(this._state.enemyHp - amount, 0, START_HP);
-      else this._state.meHp = clamp(this._state.meHp - amount, 0, START_HP);
-      this._updateHud();
-    },
-
-    _advanceTurn(skipped = false) {
-      const s = this._state;
-      if (!s || s.finished) return;
-
-      clearTimeout(this._turnTimer);
-      this._turnTimer = null;
-      this._stopMatchWatch();
-      clearTimeout(this._queuedResolve);
-      this._queuedResolve = null;
-
-      if (!skipped && s.inBonus && s.bonusOwner === s.turn && s.bonusSpinsLeft > 0) {
-        s.info = `${s.turn === "me" ? "Sen" : "Rakip"} bonus devam`;
-        this._startTurnWindow();
-        return;
-      }
-
-      s.turn = s.turn === "me" ? "enemy" : "me";
-      s.info = s.turn === "me" ? "Sıran sende • 3 sn içinde spin başlat" : `${this._opponent.username || "Rakip"} sırada`;
-      this._updateHud();
-      this._render();
-      if (this._isAuthoritativePeer()) this._broadcastState(skipped ? "turn_skip" : "turn_advance");
-      this._checkFinish();
-      if (!s.finished) this._startTurnWindow();
-    },
-
-    _checkFinish() {
-      const s = this._state;
-      if (!s || s.finished) return true;
-
-      if (s.enemyHp <= 0) return this._finish(true, "Rakip düştü");
-      if (s.meHp <= 0) return this._finish(false, "Sen düştün");
-
-      const meDone = s.meSpins <= 0 && (!s.inBonus || s.bonusOwner !== "me" || s.bonusSpinsLeft <= 0);
-      const enemyDone = s.enemySpins <= 0 && (!s.inBonus || s.bonusOwner !== "enemy" || s.bonusSpinsLeft <= 0);
-
-      if (meDone && enemyDone && !s.spinning) {
-        if (s.meHp >= s.enemyHp) return this._finish(true, "Spinler bitti • HP üstünlüğü");
-        return this._finish(false, "Spinler bitti • Rakip önde");
-      }
-      return false;
-    },
-
-    _finish(win, reason, opts = {}) {
-      const s = this._state;
-      if (!s || s.finished) return true;
-      s.finished = true;
-      s.spinning = false;
-      s.decisionEndsAt = 0;
-      this._running = false;
-      this._locked = true;
-      clearTimeout(this._turnTimer);
-      clearTimeout(this._queuedResolve);
-      this._stopMatchWatch();
-      this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
-      s.info = reason || (win ? "Kazandın" : "Kaybettin");
-      this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
-      this._showResultOverlay(!!win, reason);
-      this._recordResult(win);
-      if (this._isAuthoritativePeer()) this._broadcastState("finish");
-      if (!this._resultReported && typeof this.onMatchFinished === "function" && opts.notify !== false) {
-        this._resultReported = true;
-        try { this.onMatchFinished(!!win, { reason: reason || "finish" }); } catch (_) {}
-      }
-      this._updateHud();
-      this._render();
-      return true;
-    },
-
-    _recordResult(win) {
-      const store = window.tcStore;
-      const now = Date.now();
-      const opponent = this._opponent?.username || "Rakip";
-      const resultItem = {
-        id: `pvp_${now}`,
-        opponent,
-        result: win ? "win" : "loss",
-        mode: "slot_arena",
-        meHp: Math.round(this._state?.meHp || 0),
-        enemyHp: Math.round(this._state?.enemyHp || 0),
-        at: now,
-      };
-
-      if (store?.get && store?.set) {
-        const state = store.get() || {};
-        const pvp = { ...(state.pvp || {}) };
-        const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
-        const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
-        const playerName = String(state?.player?.username || "Player");
-
-        pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
-        pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
-        pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 20 : -12), 0, 99999);
-        pvp.currentOpponent = opponent;
-        pvp.recentMatches = [resultItem, ...recentMatches];
-
-        const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
-        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
-        nextBoard.push({
-          id: String(state?.player?.id || "player_main"),
-          name: playerName,
-          wins: Number(pvp.wins || 0),
-          losses: Number(pvp.losses || 0),
-          rating: Number(pvp.rating || 1000),
-          score,
-          updatedAt: now,
-        });
-        nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-        pvp.leaderboard = nextBoard.slice(0, 50);
-
-        store.set({ pvp });
-      }
-
-      const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
-      try {
-        window.dispatchEvent(new CustomEvent(eventName, { detail: resultItem }));
-      } catch (_) {
-        window.dispatchEvent(new Event(eventName));
-      }
-    },
-
-    _tick(ts) {
-      if (!this._running || !this._els || !this._state) return;
-      const dt = this._lastTs ? Math.min(33, ts - this._lastTs) : 16;
-      this._lastTs = ts;
-      this._updateFx(dt);
-      this._updateHud();
-      this._render();
-      this._raf = requestAnimationFrame((t) => this._tick(t));
-    },
-
-    _updateFx(dt) {
-      const s = this._state;
-      if (!s) return;
-      const now = performance.now();
-      for (let i = s.fxHits.length - 1; i >= 0; i--) {
-        const fx = s.fxHits[i];
-        const age = (now - fx.bornAt) / 850;
-        fx.life = 1 - age;
-        if (fx.life <= 0) s.fxHits.splice(i, 1);
-      }
-
-      if (s.multipliers?.length) {
-        for (let i = s.multipliers.length - 1; i >= 0; i--) {
-          const m = s.multipliers[i];
-          m.y += m.vy * dt;
-          if (m.y > 0.82) s.multipliers.splice(i, 1);
-        }
-      }
-    },
-
-    _drawBoard(ctx, x, y, w, h) {
-      const s = this._state;
-      const board = s.board;
-      const small = w <= 420 || h <= 420;
-      const gap = Math.max(small ? 3 : 5, Math.floor(Math.min(w / COLS, h / ROWS) * (small ? 0.05 : 0.08)));
-      const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
-      const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
-      const flashPulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.02);
-
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-          const px = x + c * (cellW + gap);
-          const extraRows = s.dropMap?.[r]?.[c] || 0;
-          const dropPx = extraRows > 0 ? (1 - s.dropProgress) * extraRows * (cellH + gap) : 0;
-          let py = y + r * (cellH + gap) - dropPx;
-          const intro = s.spinIntroMap?.[r]?.[c];
-          if (intro) {
-            const introT = clamp((s.spinIntroProgress - Number(intro.delay || 0)) / Math.max(0.001, 1 - Number(intro.delay || 0)), 0, 1);
-            const introEase = 1 - Math.pow(1 - introT, 3);
-            const introDrop = (1 - introEase) * Number(intro.fromRows || 0) * (cellH + gap);
-            py -= introDrop;
-          }
-          const cell = board[r][c];
-          const meta = ICONS[cell?.type] || ICONS.punch;
-          const key = `${r}:${c}`;
-          const marked = s.markedRemove && s.markedRemove.has(key);
-
-          const panel = ctx.createLinearGradient(px, py, px, py + cellH);
-          panel.addColorStop(0, marked ? `rgba(255,255,255,${0.18 + flashPulse * 0.24})` : "rgba(255,255,255,0.10)");
-          panel.addColorStop(1, marked ? `rgba(255,180,90,${0.10 + flashPulse * 0.14})` : "rgba(255,255,255,0.04)");
-          fillRoundRect(ctx, px, py, cellW, cellH, 18, panel);
-          strokeRoundRect(ctx, px, py, cellW, cellH, 18, marked ? "rgba(255,220,120,0.88)" : "rgba(255,255,255,0.11)", marked ? 2.1 : 1.2);
-
-          const glow = ctx.createRadialGradient(px + cellW / 2, py + cellH / 2, 6, px + cellW / 2, py + cellH / 2, Math.max(cellW, cellH) * 0.52);
-          glow.addColorStop(0, marked ? "rgba(255,235,150,0.95)" : meta.color + "99");
-          glow.addColorStop(1, "rgba(0,0,0,0)");
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(px + cellW / 2, py + cellH / 2, Math.min(cellW, cellH) * (marked ? 0.46 : 0.38), 0, Math.PI * 2);
-          ctx.fill();
-
-          if (marked) {
-            ctx.fillStyle = `rgba(255,255,255,${0.10 + flashPulse * 0.18})`;
-            fillRoundRect(ctx, px + 3, py + 3, cellW - 6, cellH - 6, 15, ctx.fillStyle);
-          }
-
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          drawSymbolArt(ctx, this._iconImages?.[cell?.type], meta, px, py, cellW, cellH);
-        }
-      }
-
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-    },
-
-    _drawMultipliers(ctx, x, y, w, h) {
-      const s = this._state;
-      if (!s.inBonus) return;
-
-      for (const m of s.multipliers) {
-        const px = x + w * m.x;
-        const py = y + h * m.y;
-        const bw = 58 * m.size;
-        const bh = 34 * m.size;
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.rotate(m.rot);
-        const grad = ctx.createLinearGradient(-bw / 2, -bh / 2, -bw / 2, bh / 2);
-        grad.addColorStop(0, "rgba(214,139,255,0.95)");
-        grad.addColorStop(1, "rgba(121,75,255,0.95)");
-        fillRoundRect(ctx, -bw / 2, -bh / 2, bw, bh, 12, grad);
-        strokeRoundRect(ctx, -bw / 2, -bh / 2, bw, bh, 12, "rgba(255,255,255,0.25)", 1);
-        ctx.shadowColor = "rgba(214,139,255,0.75)";
-        ctx.shadowBlur = 18 * m.glow;
-        ctx.fillStyle = "#fff";
-        ctx.font = `900 ${Math.floor(16 * m.size)}px system-ui, Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(`x${m.value}`, 0, 1);
-        ctx.restore();
-      }
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-    },
-
-    _drawHudInsideStage(ctx, x, y, w) {
-      const s = this._state;
-      const infoY = y + 18;
-      const countdown = s.turn === "me" && !s.spinning && !s.finished && s.decisionEndsAt > 0 ? Math.max(0, Math.ceil((s.decisionEndsAt - Date.now()) / 1000)) : 0;
-
-      const chip1 = s.inBonus
-        ? `${s.bonusOwner === "me" ? "SEN" : "RAKİP"} BONUS ${s.bonusSpinsLeft}`
-        : `BASE ${Math.max(s.meSpins, s.enemySpins)}`;
-      const chip2 = s.inBonus
-        ? `TOPLAM ÇARPAN x${Math.max(0, s.bonusMultiplierBank)}`
-        : `TUMBLE ${Math.max(0, s.tumbleIndex)}`;
-      const chip3 = s.turn === "me" && !s.spinning && !s.finished ? `SPIN SÜRESİ ${countdown}` : (s.turn === "enemy" ? "RAKİP DÜŞÜNÜYOR" : "SONUÇ");
-
-      fillRoundRect(ctx, x, infoY, 116, 26, 13, "rgba(0,0,0,0.34)");
-      fillRoundRect(ctx, x + w - 166, infoY, 166, 26, 13, "rgba(0,0,0,0.34)");
-      fillRoundRect(ctx, x + (w - 128) / 2, infoY, 128, 26, 13, "rgba(0,0,0,0.34)");
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.font = "800 12px system-ui, Arial";
-      ctx.textBaseline = "middle";
-      ctx.fillText(chip1, x + 12, infoY + 13);
-      ctx.textAlign = "center";
-      ctx.fillText(chip3, x + w / 2, infoY + 13);
-      ctx.textAlign = "right";
-      ctx.fillText(chip2, x + w - 12, infoY + 13);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-    },
-
-    _drawHitFx(ctx, w, h) {
-      const s = this._state;
-      if (!s.fxHits.length) return;
-      for (const fx of s.fxHits) {
-        const alpha = clamp(fx.life, 0, 1);
-        const px = fx.side === "right" ? w * 0.76 : w * 0.24;
-        const py = h * fx.y - (1 - fx.life) * 46;
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = fx.color;
-        ctx.font = "900 24px system-ui, Arial";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(fx.text, px, py);
-      }
-      ctx.globalAlpha = 1;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-    },
-
-    _render() {
-      if (!this._els?.ctx || !this._state || !this._els?.canvas) return;
-
-      const ctx = this._els.ctx;
-      const canvas = this._els.canvas;
-      const rect = canvas.getBoundingClientRect();
-      const w = Math.round(rect.width || 300);
-      const h = Math.round(rect.height || 300);
-      if (w < 20 || h < 20) return;
-
-      const shakeActive = Date.now() < this._state.shakeUntil;
-      const sx = shakeActive ? (Math.random() - 0.5) * 6 : 0;
-      const sy = shakeActive ? (Math.random() - 0.5) * 6 : 0;
-
-      ctx.clearRect(0, 0, w, h);
-      ctx.save();
-      ctx.translate(sx, sy);
-
-      const mobile = w <= 420;
-      const pad = mobile ? 8 : Math.max(12, Math.floor(w * 0.03));
-      const innerX = pad;
-      const innerY = mobile ? 8 : 14;
-      const innerW = w - pad * 2;
-      const innerH = h - (mobile ? 16 : 28);
-
-      const bg = ctx.createLinearGradient(0, innerY, 0, innerY + innerH);
-      bg.addColorStop(0, "rgba(28,33,48,0.88)");
-      bg.addColorStop(1, "rgba(10,12,18,0.96)");
-      fillRoundRect(ctx, innerX, innerY, innerW, innerH, 22, bg);
-      strokeRoundRect(ctx, innerX, innerY, innerW, innerH, 22, "rgba(255,255,255,0.08)", 1.2);
-
-      const boardAreaX = innerX + 10;
-      const boardAreaY = innerY + 10;
-      const boardAreaW = innerW - 20;
-      const boardAreaH = innerH - 20;
-
-      this._drawBoard(ctx, boardAreaX, boardAreaY, boardAreaW, boardAreaH);
-      this._drawMultipliers(ctx, boardAreaX, boardAreaY, boardAreaW, boardAreaH);
-      this._drawHitFx(ctx, w, h);
-
-      if (Date.now() < this._state.flashUntil) {
-        ctx.fillStyle = "rgba(255,255,255,0.07)";
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      ctx.restore();
+      try { this._engine?.stop?.(); } catch (err) {}
     },
   };
 
-  window.TonCrimePVP_SLOT = api;
+  window.TonCrimePVP = TonCrimePVPController;
 })();
