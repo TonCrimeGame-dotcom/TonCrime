@@ -640,10 +640,43 @@
       return String(match.player1_id || "") === String(userId) || String(match.player2_id || "") === String(userId);
     }
 
+    _isLiveMatchStatus(status) {
+      const s = String(status || "").trim().toLowerCase();
+      if (!s) return true;
+      return !["finished", "cancelled", "canceled", "expired", "closed"].includes(s);
+    }
+
+    _isFreshMatchForCurrentSearch(row) {
+      const startedAt = Number(this.matchStartedAt || 0);
+      if (!startedAt) return true;
+
+      const raw =
+        row?.updated_at ||
+        row?.created_at ||
+        row?.matched_at ||
+        row?.inserted_at ||
+        null;
+
+      if (!raw) return true;
+      const ts = new Date(raw).getTime();
+      if (!Number.isFinite(ts)) return true;
+      return ts >= (startedAt - 10000);
+    }
+
     _isUsableMatch(match, userId, mode, stake) {
       if (!match?.id || !this._isMatchOwnedByUser(match, userId)) return false;
+      if (!this._isLiveMatchStatus(match.status)) return false;
       if (mode && match.game_mode != null && String(match.game_mode) !== String(mode)) return false;
       if (stake != null && match.stake_yton != null && Number(match.stake_yton) !== Number(stake)) return false;
+
+      const p1 = String(match.player1_id || "");
+      const p2 = String(match.player2_id || "");
+      if (!match.is_bot_match) {
+        if (!p1 || !p2) return false;
+        if (p1 === p2) return false;
+      }
+
+      if (!this._isFreshMatchForCurrentSearch(match)) return false;
       return true;
     }
 
@@ -744,37 +777,29 @@
       const rpc = this._normalizeRpcPayload(payload);
       if (!rpc || this.rtMatchStarted || this.matchState !== "searching") return false;
 
+      const status = String(rpc.status || "").toLowerCase();
       const hasMatchSignal =
-        rpc.ok === true ||
-        rpc.status === "matched" ||
-        !!(rpc.match_id || rpc.matchId || rpc.id || rpc.match || rpc.match_row || rpc.matchRecord);
+        status === "matched" ||
+        status === "ready" ||
+        status === "playing" ||
+        !!(rpc.match_id || rpc.matchId || rpc.match || rpc.match_row || rpc.matchRecord);
 
       if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
       if (!this._isUsableMatch(match, userId, mode, stake)) {
-        const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
+        const matchId = rpc.match_id || rpc.matchId || match?.id || null;
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
         }
       }
 
-      if (this._isUsableMatch(match, userId, mode, stake)) {
-        this.rtMatchStarted = true;
-        this.onMatchFound(
-          this._buildOpponentFromMatch(match, userId),
-          this._buildMatchContext(match, userId, sceneModeId)
-        );
-        return true;
-      }
-
-      const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
-      if (!fallbackCtx?.matchId) return false;
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
 
       this.rtMatchStarted = true;
       this.onMatchFound(
-        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
-        fallbackCtx
+        this._buildOpponentFromMatch(match, userId),
+        this._buildMatchContext(match, userId, sceneModeId)
       );
       return true;
     }
@@ -876,6 +901,10 @@
           this.matchState = "menu";
           return;
         }
+
+        try {
+          await cancelBetPvp(sb, mode, stake);
+        } catch (_) {}
 
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
@@ -989,6 +1018,7 @@
 
     onMatchFound(opponent, matchRecord = null) {
       if (this.matchState !== "searching") return;
+      if (!matchRecord?.matchId) return;
 
       if (this.matchSearchTimer) { clearInterval(this.matchSearchTimer); clearTimeout(this.matchSearchTimer); }
       if (this.matchFallbackTimer) clearTimeout(this.matchFallbackTimer);
@@ -1468,7 +1498,7 @@
       try {
         const { data: queueRow } = await sb
           .from("pvp_match_queue")
-          .select("match_id, status")
+          .select("match_id, status, updated_at")
           .eq("user_id", userId)
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
@@ -1476,14 +1506,20 @@
           .limit(1)
           .maybeSingle();
 
-        if (queueRow?.match_id) {
+        const queueStatus = String(queueRow?.status || "").toLowerCase();
+        const queueLooksMatched =
+          !!queueRow?.match_id &&
+          ["matched", "ready", "playing", "active"].includes(queueStatus) &&
+          this._isFreshMatchForCurrentSearch(queueRow);
+
+        if (queueLooksMatched) {
           const { data: matchRow } = await sb
             .from("pvp_matches")
             .select("*")
             .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
+          if (this._isUsableMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1493,17 +1529,19 @@
           }
         }
 
+        const searchStartIso = new Date(Math.max(0, Number(this.matchStartedAt || Date.now()) - 10000)).toISOString();
         const { data: directMatch } = await sb
           .from("pvp_matches")
           .select("*")
           .eq("game_mode", mode)
           .eq("stake_yton", stake)
+          .gte("created_at", searchStartIso)
           .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
+        if (this._isUsableMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
