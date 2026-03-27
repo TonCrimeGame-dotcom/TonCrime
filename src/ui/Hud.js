@@ -96,8 +96,23 @@ export function startHud(store) {
           profileTab: tab,
         },
       });
-      window.dispatchEvent(new Event("tc:openProfile"));
     } catch (_) {}
+
+    let opened = false;
+    try {
+      const scenes = window.tcScenes;
+      if (scenes && typeof scenes.go === "function") {
+        scenes.go("profile");
+        opened = true;
+      }
+    } catch (_) {}
+
+    try {
+      window.dispatchEvent(new Event(tab === "wallet" ? "tc:openWallet" : "tc:openProfile"));
+      if (tab === "wallet") window.dispatchEvent(new Event("tc:openProfile"));
+    } catch (_) {}
+
+    return opened;
   }
 
   function bindClicksOnce() {
@@ -192,11 +207,16 @@ export function startHud(store) {
     elOnlineBadge.style.display = "inline-flex";
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
-    if (elLogo) elLogo.style.display = "block";
-    if (elCenter) elCenter.style.display = "flex";
+    if (elLogo) elLogo.style.display = "none";
+    if (elCenter) {
+      elCenter.style.display = "none";
+      elCenter.style.width = "0";
+      elCenter.style.padding = "0";
+    }
+    if (row) row.dataset.centerHidden = "1";
 
     const safeTop = Number(ui.safe?.y || 0);
-    const reservedTop = Math.max(72, root.offsetHeight + safeTop + 6);
+    const reservedTop = Math.max(58, root.offsetHeight + safeTop + 6);
 
     if (Math.abs(lastReservedTop - reservedTop) > 1) {
       lastReservedTop = reservedTop;
