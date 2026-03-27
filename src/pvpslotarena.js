@@ -12,6 +12,7 @@
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
   const MATCH_WATCH_MS = 700;
+  const SYNC_HEARTBEAT_MS = 900;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 17 },
@@ -787,6 +788,20 @@
     `;
   }
 
+
+  function deepCloneSafe(value) {
+    try {
+      return value == null ? value : JSON.parse(JSON.stringify(value));
+    } catch (_) {
+      return value;
+    }
+  }
+
+  function normalizeSeq(n) {
+    const num = Number(n || 0);
+    return Number.isFinite(num) ? num : 0;
+  }
+
   const api = {
     _els: null,
     _state: null,
@@ -803,6 +818,13 @@
     _lastTs: 0,
     _matchCtx: null,
     _matchWatchTimer: null,
+    _syncChannel: null,
+    _syncHeartbeat: null,
+    _syncReady: false,
+    _syncSessionId: `slot_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    _lastSentSeq: 0,
+    _lastAppliedSeq: 0,
+    _lastSyncTs: 0,
     _resultReported: false,
     onMatchFinished: null,
 
@@ -881,13 +903,14 @@
     },
 
     _setupState() {
+      const startsAsMe = this._matchCtx?.amIPlayer1 !== false;
       this._state = {
         board: makeBoard(),
         meHp: START_HP,
         enemyHp: START_HP,
         meSpins: BASE_SPINS,
         enemySpins: BASE_SPINS,
-        turn: "me",
+        turn: startsAsMe ? "me" : "enemy",
         finished: false,
         spinning: false,
         inBonus: false,
@@ -921,7 +944,183 @@
 
     setMatchContext(ctx) {
       this._matchCtx = ctx && typeof ctx === "object" ? { ...ctx } : null;
-      if (this._running) this._beginMatchWatch();
+      if (this._running) {
+        this._beginMatchWatch();
+        this._setupSync();
+      }
+    },
+
+    _isOnlineMatch() {
+      const ctx = this._matchCtx || {};
+      return !!(ctx.matchId && ctx.userId && !ctx.isBotMatch && ctx.player1Id && ctx.player2Id && window.supabase);
+    },
+
+    _isAuthoritativePeer() {
+      return !!(this._isOnlineMatch() && this._matchCtx?.amIPlayer1);
+    },
+
+    _mySideKey() {
+      return this._matchCtx?.amIPlayer1 ? "p1" : "p2";
+    },
+
+    _localTurnSide() {
+      return this._state?.turn === "me" ? this._mySideKey() : (this._mySideKey() === "p1" ? "p2" : "p1");
+    },
+
+    _clearSync() {
+      clearInterval(this._syncHeartbeat);
+      this._syncHeartbeat = null;
+      this._syncReady = false;
+      try { this._syncChannel?.unsubscribe?.(); } catch (_) {}
+      this._syncChannel = null;
+    },
+
+    _broadcast(event, payload = {}) {
+      try {
+        if (!this._syncChannel || !this._syncReady) return false;
+        this._syncChannel.send({
+          type: "broadcast",
+          event,
+          payload: {
+            ...payload,
+            matchId: this._matchCtx?.matchId || null,
+            senderId: this._matchCtx?.userId || null,
+            sessionId: this._syncSessionId,
+            sentAt: Date.now(),
+          },
+        });
+        return true;
+      } catch (_) {
+        return false;
+      }
+    },
+
+    _buildCanonicalSnapshot(reason = "sync") {
+      const s = this._state;
+      if (!s) return null;
+      this._lastSentSeq = normalizeSeq(this._lastSentSeq) + 1;
+      return {
+        seq: this._lastSentSeq,
+        reason,
+        board: cloneBoard(s.board || makeBoard()),
+        p1Hp: Number(s.meHp || 0),
+        p2Hp: Number(s.enemyHp || 0),
+        p1Spins: Number(s.meSpins || 0),
+        p2Spins: Number(s.enemySpins || 0),
+        turnOwner: s.turn === "me" ? "p1" : "p2",
+        finished: !!s.finished,
+        spinning: !!s.spinning,
+        inBonus: !!s.inBonus,
+        bonusOwner: s.bonusOwner === "me" ? "p1" : s.bonusOwner === "enemy" ? "p2" : null,
+        bonusSpinsLeft: Number(s.bonusSpinsLeft || 0),
+        bonusMultiplierBank: Number(s.bonusMultiplierBank || 0),
+        displayedMultiplier: Number(s.displayedMultiplier || 0),
+        multipliers: deepCloneSafe(s.multipliers || []),
+        tumbleIndex: Number(s.tumbleIndex || 0),
+        info: String(s.info || ""),
+        decisionEndsAt: Number(s.decisionEndsAt || 0),
+        winnerSide: s.finished ? (s.enemyHp <= 0 || (s.meHp >= s.enemyHp && s.meSpins <= 0 && s.enemySpins <= 0) ? "p1" : "p2") : null,
+      };
+    },
+
+    _broadcastState(reason = "sync") {
+      if (!this._isAuthoritativePeer()) return false;
+      const snapshot = this._buildCanonicalSnapshot(reason);
+      if (!snapshot) return false;
+      this._lastSyncTs = Date.now();
+      return this._broadcast("state", { snapshot });
+    },
+
+    _applyCanonicalSnapshot(snapshot, opts = {}) {
+      if (!snapshot || !this._state) return;
+      const seq = normalizeSeq(snapshot.seq);
+      if (!opts.force && seq && seq <= normalizeSeq(this._lastAppliedSeq)) return;
+      if (seq) this._lastAppliedSeq = seq;
+      this._lastSyncTs = Date.now();
+
+      const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
+      const mySide = amIPlayer1 ? "p1" : "p2";
+      const enemySide = amIPlayer1 ? "p2" : "p1";
+      const s = this._state;
+
+      s.board = cloneBoard(snapshot.board || makeBoard());
+      s.meHp = Number(snapshot[`${mySide}Hp`] ?? START_HP);
+      s.enemyHp = Number(snapshot[`${enemySide}Hp`] ?? START_HP);
+      s.meSpins = Number(snapshot[`${mySide}Spins`] ?? BASE_SPINS);
+      s.enemySpins = Number(snapshot[`${enemySide}Spins`] ?? BASE_SPINS);
+      s.turn = snapshot.turnOwner === mySide ? "me" : "enemy";
+      const incomingFinished = !!snapshot.finished;
+      s.finished = incomingFinished && !!opts.silentFinish;
+      s.spinning = !!snapshot.spinning;
+      s.inBonus = !!snapshot.inBonus;
+      s.bonusOwner = snapshot.bonusOwner === mySide ? "me" : snapshot.bonusOwner === enemySide ? "enemy" : null;
+      s.bonusSpinsLeft = Number(snapshot.bonusSpinsLeft || 0);
+      s.bonusMultiplierBank = Number(snapshot.bonusMultiplierBank || 0);
+      s.displayedMultiplier = Number(snapshot.displayedMultiplier || 0);
+      s.multipliers = deepCloneSafe(snapshot.multipliers || []);
+      s.tumbleIndex = Number(snapshot.tumbleIndex || 0);
+      s.info = String(snapshot.info || (s.turn === "me" ? "Sıran sende" : `${this._opponent.username || "Rakip"} sırada`));
+      s.decisionEndsAt = Number(snapshot.decisionEndsAt || 0);
+      s.markedRemove = new Set();
+      s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+      s.dropProgress = 1;
+      s.spinIntroMap = null;
+      s.spinIntroProgress = 1;
+      this._updateHud();
+      this._render();
+
+      if (snapshot.finished && !opts.silentFinish) {
+        const didWin = String(snapshot.winnerSide || "") === mySide;
+        this._finish(didWin, snapshot.info || (didWin ? "Maç sonlandı" : "Maç sonlandı"), { notify: true });
+      }
+    },
+
+    _handleSyncBroadcast(payload) {
+      const snapshot = payload?.snapshot || null;
+      if (!snapshot) return;
+      if (this._isAuthoritativePeer()) return;
+      this._applyCanonicalSnapshot(snapshot);
+    },
+
+    _handleSpinRequestBroadcast(payload) {
+      if (!this._isAuthoritativePeer() || !this._running || !this._state || this._state.finished || this._state.spinning) return;
+      const side = String(payload?.side || "");
+      const expected = this._state.turn === "me" ? "p1" : "p2";
+      if (!side || side !== expected) return;
+      clearTimeout(this._turnTimer);
+      this._turnTimer = null;
+      this._spinCurrentTurn().catch?.(() => {});
+    },
+
+    _handleSyncRequestBroadcast() {
+      if (!this._isAuthoritativePeer()) return;
+      this._broadcastState("sync_reply");
+    },
+
+    _setupSync() {
+      this._clearSync();
+      if (!this._isOnlineMatch()) return;
+      const sb = window.supabase;
+      const channelName = `toncrime-slot-sync-${this._matchCtx.matchId}`;
+      this._syncChannel = sb
+        .channel(channelName, { config: { broadcast: { self: false, ack: false } } })
+        .on("broadcast", { event: "state" }, ({ payload }) => this._handleSyncBroadcast(payload))
+        .on("broadcast", { event: "spin_request" }, ({ payload }) => this._handleSpinRequestBroadcast(payload))
+        .on("broadcast", { event: "sync_request" }, ({ payload }) => this._handleSyncRequestBroadcast(payload))
+        .subscribe((status) => {
+          if (status !== "SUBSCRIBED") return;
+          this._syncReady = true;
+          if (this._isAuthoritativePeer()) {
+            this._broadcastState("initial");
+            clearInterval(this._syncHeartbeat);
+            this._syncHeartbeat = setInterval(() => {
+              if (!this._running || this._state?.finished) return;
+              this._broadcastState("heartbeat");
+            }, SYNC_HEARTBEAT_MS);
+          } else {
+            this._broadcast("sync_request", { want: "state" });
+          }
+        });
     },
 
     resolveOpponentQuit() {
@@ -933,6 +1132,8 @@
       this.stop();
       if (!this._els) return;
       this._resultReported = false;
+      this._lastSentSeq = 0;
+      this._lastAppliedSeq = 0;
       this._setupState();
       this._hideResultOverlay();
       this._updateHud();
@@ -949,9 +1150,12 @@
       if (this._els.meName) this._els.meName.textContent = "Sen";
       if (this._els.enemyName) this._els.enemyName.textContent = this._opponent.username || "Rakip";
       this._setStatus("PvP • Slot Arena başladı");
-      this._state.info = "Sıran sende • 3 sn içinde spin başlat";
+      this._state.info = this._state.turn === "me"
+        ? "Sıran sende • 3 sn içinde spin başlat"
+        : `${this._opponent.username || "Rakip"} başlıyor`;
       this._hideResultOverlay();
       this._beginMatchWatch();
+      this._setupSync();
       this._startTurnWindow();
       this._tick(performance.now());
     },
@@ -965,6 +1169,7 @@
       clearTimeout(this._turnTimer);
       this._turnTimer = null;
       this._stopMatchWatch();
+      this._clearSync();
     },
 
     _bindEvents() {
@@ -998,6 +1203,11 @@
         if (!this._running || !this._state || this._state.turn !== "me" || this._state.spinning || this._state.finished) return;
         clearTimeout(this._turnTimer);
         this._turnTimer = null;
+        if (this._isOnlineMatch() && !this._isAuthoritativePeer()) {
+          this._broadcast("spin_request", { side: this._mySideKey() });
+          this._toast("Spin isteği gönderildi", 650);
+          return;
+        }
         await this._spinCurrentTurn();
       };
 
@@ -1193,6 +1403,27 @@
       if (!s || s.finished || s.spinning) return;
       clearTimeout(this._turnTimer);
 
+      if (this._isOnlineMatch()) {
+        if (!this._isAuthoritativePeer()) {
+          this._updateHud();
+          this._render();
+          return;
+        }
+        s.decisionEndsAt = Date.now() + PLAYER_DECISION_MS;
+        s.info = s.turn === "me"
+          ? (s.inBonus && s.bonusOwner === "me" ? `Bonus sende • 3 sn içinde spin başlat` : `Sıran sende • 3 sn içinde spin başlat`)
+          : `${this._opponent.username || "Rakip"} • 3 sn içinde spin atmalı`;
+        this._updateHud();
+        this._render();
+        this._broadcastState("turn_window");
+        this._turnTimer = setTimeout(() => {
+          if (!this._running || !this._state || this._state.spinning || this._state.finished) return;
+          this._toast(this._state.turn === "me" ? "Süre doldu • sıra rakibe geçti" : "Rakip süreyi kaçırdı", 950);
+          this._advanceTurn(true);
+        }, PLAYER_DECISION_MS + 40);
+        return;
+      }
+
       if (s.turn === "me") {
         s.decisionEndsAt = Date.now() + PLAYER_DECISION_MS;
         s.info = s.inBonus && s.bonusOwner === "me"
@@ -1240,6 +1471,7 @@
       s.info = actor === "me" ? "Spin atılıyor..." : `${this._opponent.username || "Rakip"} spin atıyor...`;
       this._updateHud();
       this._render();
+      if (this._isAuthoritativePeer()) this._broadcastState("spin_start");
 
       const inOwnedBonus = s.inBonus && s.bonusOwner === actor;
       const rollBonus = !inOwnedBonus && Math.random() < BONUS_CHANCE;
@@ -1249,6 +1481,7 @@
         forceBonus: rollBonus,
         forceCluster: rollWin,
       });
+      if (this._isAuthoritativePeer()) this._broadcastState("roll_ready");
       s.spinIntroMap = createSpinIntroMap();
       s.spinIntroProgress = 0;
       await this._spinAnimation();
@@ -1281,6 +1514,7 @@
       s.dropProgress = 1;
       this._updateHud();
       this._render();
+      if (this._isAuthoritativePeer()) this._broadcastState("spin_end");
 
       if (!this._checkFinish()) {
         this._advanceTurn();
@@ -1389,6 +1623,7 @@
           s.info = `${actor === "me" ? "Sen" : "Rakip"} bonus aldı`;
         }
 
+        if (this._isAuthoritativePeer()) this._broadcastState("tumble_hit");
         await new Promise((r) => setTimeout(r, 180));
         const tum = tumble(s.board, res.remove, {
           forceCluster: Math.random() < CHAIN_CONTINUE_CHANCE,
@@ -1397,6 +1632,7 @@
         s.markedRemove = new Set();
         s.board = tum.board;
         await this._animateDrop(tum.dropMap);
+        if (this._isAuthoritativePeer()) this._broadcastState("tumble_drop");
         await new Promise((r) => setTimeout(r, 120));
         if (this._checkFinish()) return;
       }
@@ -1457,6 +1693,7 @@
       s.info = s.turn === "me" ? "Sıran sende • 3 sn içinde spin başlat" : `${this._opponent.username || "Rakip"} sırada`;
       this._updateHud();
       this._render();
+      if (this._isAuthoritativePeer()) this._broadcastState(skipped ? "turn_skip" : "turn_advance");
       this._checkFinish();
       if (!s.finished) this._startTurnWindow();
     },
@@ -1494,6 +1731,7 @@
       this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
       this._showResultOverlay(!!win, reason);
       this._recordResult(win);
+      if (this._isAuthoritativePeer()) this._broadcastState("finish");
       if (!this._resultReported && typeof this.onMatchFinished === "function" && opts.notify !== false) {
         this._resultReported = true;
         try { this.onMatchFinished(!!win, { reason: reason || "finish" }); } catch (_) {}
