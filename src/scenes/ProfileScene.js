@@ -454,6 +454,7 @@ export class ProfileScene {
     const state = this.store.get() || {};
     const p = state.player || {};
     const safe = state?.ui?.safe ?? { x: 0, y: 0, w, h };
+    const requestedTab = String(state?.ui?.profileTab || "profile");
 
     const bg =
       getImgSafe(this.assets, "background") ||
@@ -528,7 +529,7 @@ export class ProfileScene {
     drawSlicedBarEnd(ctx, headX + headW - 68, headY + 4, 64, headH - 8, true);
 
     const title1 = "PLAYER";
-    const title2 = "PROFILE";
+    const title2 = requestedTab === "wallet" ? "WALLET" : "PROFILE";
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -561,6 +562,47 @@ export class ProfileScene {
     const level = Math.max(1, Number(p.level || 1));
     const energy = Math.max(0, Number(p.energy || 0));
     const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const walletYton = Math.max(0, Number(state.coins ?? p.coins ?? 0));
+
+    if (requestedTab === "wallet") {
+      const username = String(p.username || "Player").trim() || "Player";
+      const cardX = innerX + 14;
+      const cardY = headY + headH + 16;
+      const cardW = innerW - 28;
+      const cardH = innerH - headH - 32;
+
+      drawMetalTile(ctx, cardX, cardY, cardW, cardH, 16);
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = "900 26px system-ui";
+      ctx.fillStyle = "#f2f4f8";
+      ctx.fillText("CÜZDAN", cardX + 24, cardY + 30);
+      ctx.font = "700 13px system-ui";
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.fillText("Bakiye ve ödeme alanı", cardX + 24, cardY + 56);
+
+      drawPanelGradient(ctx, cardX + 18, cardY + 82, cardW - 36, 96, "rgba(34,30,32,0.96)", "rgba(10,12,18,0.98)", 14);
+      strokeRoundRect(ctx, cardX + 18.5, cardY + 82.5, cardW - 37, 95, 14, "rgba(255,255,255,0.08)", 1);
+      ctx.font = "800 14px system-ui";
+      ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.fillText("Mevcut Bakiye", cardX + 38, cardY + 110);
+      ctx.font = "900 34px system-ui";
+      ctx.fillStyle = "#f1c15a";
+      ctx.fillText(`${walletYton.toLocaleString("tr-TR")} YTON`, cardX + 38, cardY + 144);
+
+      drawPanelGradient(ctx, cardX + 18, cardY + 196, cardW - 36, 136, "rgba(24,26,34,0.98)", "rgba(8,10,15,0.99)", 14);
+      strokeRoundRect(ctx, cardX + 18.5, cardY + 196.5, cardW - 37, 135, 14, "rgba(255,255,255,0.07)", 1);
+      ctx.font = "800 15px system-ui";
+      ctx.fillStyle = "#f2f4f8";
+      ctx.fillText("Profil ve cüzdan yolu tekrar aktif.", cardX + 38, cardY + 224);
+      ctx.font = "700 13px system-ui";
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.fillText(`Oyuncu: ${username}`, cardX + 38, cardY + 254);
+      ctx.fillText(`Enerji: ${energy}/${energyMax}`, cardX + 38, cardY + 280);
+      ctx.fillText("Cekim/alım alanını burada genişletebiliriz.", cardX + 38, cardY + 306);
+      return;
+    }
 
     const businessesOwned = Array.isArray(state?.businesses?.owned)
       ? state.businesses.owned.length
