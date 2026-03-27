@@ -2,8 +2,12 @@
   const COLS = 6;
   const ROWS = 6;
   const START_HP = 1000;
-  const BASE_SPINS = 25;
+  const BASE_SPINS = 24;
   const BONUS_SPINS = 10;
+  const BONUS_CHANCE = 0.10;
+  const SPIN_EXPLODE_CHANCE = 0.36;
+  const BONUS_MODE_EXPLODE_CHANCE = 0.42;
+  const CHAIN_CONTINUE_CHANCE = 0.30;
   const BONUS_TRIGGER = 4;
   const MIN_CLUSTER = 8;
   const PLAYER_DECISION_MS = 3000;
@@ -69,29 +73,124 @@
     ctx.stroke();
   }
 
-  function weightedSymbol(includeBonus = true) {
-    const list = includeBonus ? ALL_SYMBOLS : PAY_SYMBOLS;
+  function weightedChoiceFrom(list) {
+    const pool = Array.isArray(list) && list.length ? list : PAY_SYMBOLS;
     let total = 0;
-    for (const id of list) total += ICONS[id].weight;
-    let roll = Math.random() * total;
-    for (const id of list) {
-      roll -= ICONS[id].weight;
+    for (const id of pool) total += Number(ICONS[id]?.weight || 1);
+    let roll = Math.random() * Math.max(1, total);
+    for (const id of pool) {
+      roll -= Number(ICONS[id]?.weight || 1);
       if (roll <= 0) return id;
     }
-    return list[list.length - 1];
+    return pool[pool.length - 1];
   }
 
-  function createCell(symbolId) {
-    return {
-      id: `slot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      type: symbolId,
-    };
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
   }
 
-  function makeBoard() {
-    return Array.from({ length: ROWS }, () =>
-      Array.from({ length: COLS }, () => createCell(weightedSymbol(true)))
-    );
+  function makeEmptyBoard() {
+    return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
+  }
+
+  function allCoords() {
+    const out = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) out.push({ r, c });
+    }
+    return out;
+  }
+
+  function takeRandom(source, count) {
+    const pool = source.slice();
+    shuffle(pool);
+    const picked = pool.slice(0, Math.max(0, count));
+    const pickedSet = new Set(picked.map((p) => `${p.r}:${p.c}`));
+    const rest = source.filter((p) => !pickedSet.has(`${p.r}:${p.c}`));
+    return { picked, rest };
+  }
+
+  function countBoardTotals(board) {
+    const counts = Object.fromEntries(PAY_SYMBOLS.map((id) => [id, 0]));
+    let bonusCount = 0;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cell = board[r]?.[c];
+        if (!cell) continue;
+        if (cell.type === 'bonus') bonusCount += 1;
+        else if (counts[cell.type] != null) counts[cell.type] += 1;
+      }
+    }
+    return { counts, bonusCount };
+  }
+
+  function chooseSafeSymbol(counts, caps) {
+    let candidates = PAY_SYMBOLS.filter((id) => (counts[id] || 0) < Number(caps[id] ?? (MIN_CLUSTER - 1)));
+    if (!candidates.length) {
+      const minCount = Math.min(...PAY_SYMBOLS.map((id) => counts[id] || 0));
+      candidates = PAY_SYMBOLS.filter((id) => (counts[id] || 0) <= minCount);
+    }
+    return weightedChoiceFrom(candidates);
+  }
+
+  function fillBoardWithPlan(board, coords, opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const { counts, bonusCount: startBonus } = countBoardTotals(board);
+    const caps = Object.fromEntries(PAY_SYMBOLS.map((id) => [id, MIN_CLUSTER - 1]));
+    let bonusCount = startBonus;
+    let remaining = coords.slice();
+
+    if (options.forceBonus && Number(bonusCount || 0) < BONUS_TRIGGER) {
+      const needBonus = Math.max(0, BONUS_TRIGGER - bonusCount);
+      if (needBonus > 0 && needBonus <= remaining.length) {
+        const { picked, rest } = takeRandom(remaining, needBonus);
+        remaining = rest;
+        for (const pos of picked) {
+          board[pos.r][pos.c] = createCell('bonus');
+          bonusCount += 1;
+        }
+      }
+    }
+
+    if (options.forceCluster) {
+      const candidates = shuffle(PAY_SYMBOLS.slice()).map((id) => {
+        const existing = Number(counts[id] || 0);
+        const maxTarget = Math.min(MIN_CLUSTER + 2, existing + remaining.length);
+        if (maxTarget < MIN_CLUSTER) return null;
+        const target = randInt(MIN_CLUSTER, maxTarget);
+        const need = target - existing;
+        if (need <= 0 || need > remaining.length) return null;
+        return { id, target, need };
+      }).filter(Boolean);
+
+      if (candidates.length) {
+        const pickedPlan = candidates[0];
+        caps[pickedPlan.id] = pickedPlan.target;
+        const taken = takeRandom(remaining, pickedPlan.need);
+        remaining = taken.rest;
+        for (const pos of taken.picked) {
+          board[pos.r][pos.c] = createCell(pickedPlan.id);
+          counts[pickedPlan.id] = Number(counts[pickedPlan.id] || 0) + 1;
+        }
+      }
+    }
+
+    for (const pos of remaining) {
+      const id = chooseSafeSymbol(counts, caps);
+      board[pos.r][pos.c] = createCell(id);
+      counts[id] = Number(counts[id] || 0) + 1;
+    }
+
+    return board;
+  }
+
+  function makeBoard(options = {}) {
+    const board = makeEmptyBoard();
+    return fillBoardWithPlan(board, allCoords(), options);
   }
 
   function cloneBoard(board) {
@@ -106,7 +205,7 @@
       for (let c = 0; c < COLS; c++) {
         const cell = board[r][c];
         if (!cell) continue;
-        if (cell.type === "bonus") {
+        if (cell.type === 'bonus') {
           bonusCount += 1;
           continue;
         }
@@ -118,7 +217,7 @@
   }
 
   function getMultiplierDrop() {
-    const count = randInt(1, 3);
+    const count = randInt(1, 2);
     const out = [];
     for (let i = 0; i < count; i++) {
       const value = choice(BONUS_MULTI_VALUES);
@@ -154,7 +253,7 @@
       if (count < MIN_CLUSTER) continue;
       const meta = ICONS[type];
       const extra = count - MIN_CLUSTER;
-      const hitDamage = meta.base * count * 0.9 + extra * meta.base * 0.55;
+      const hitDamage = meta.base * (count * 0.42 + extra * 0.18);
       damage += hitDamage;
       hits.push({ type, count, damage: hitDamage });
 
@@ -172,7 +271,7 @@
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const cell = board[r][c];
-          if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+          if (cell && cell.type === 'bonus') remove.add(`${r}:${c}`);
         }
       }
     }
@@ -181,7 +280,7 @@
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const cell = board[r][c];
-          if (cell && cell.type === "bonus") remove.add(`${r}:${c}`);
+          if (cell && cell.type === 'bonus') remove.add(`${r}:${c}`);
         }
       }
     }
@@ -189,15 +288,16 @@
     return { hits, damage, remove, bonusCount, bonusTriggered, hasAction: remove.size > 0 };
   }
 
-  function tumble(board, removeSet, allowBonus = true) {
+  function tumble(board, removeSet, options = {}) {
     const next = cloneBoard(board);
     const dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
 
     for (const key of removeSet) {
-      const [r, c] = key.split(":").map(Number);
+      const [r, c] = key.split(':').map(Number);
       if (next[r] && next[r][c]) next[r][c] = null;
     }
 
+    const emptyCoords = [];
     for (let c = 0; c < COLS; c++) {
       const stack = [];
       for (let r = ROWS - 1; r >= 0; r--) {
@@ -216,12 +316,18 @@
 
       let newCount = 0;
       while (wr >= 0) {
-        next[wr][c] = createCell(weightedSymbol(allowBonus));
+        next[wr][c] = null;
         newCount += 1;
         dropMap[wr][c] = newCount + wr + 1;
+        emptyCoords.push({ r: wr, c });
         wr -= 1;
       }
     }
+
+    fillBoardWithPlan(next, emptyCoords, {
+      forceCluster: !!options.forceCluster,
+      forceBonus: !!options.forceBonus,
+    });
 
     return { board: next, dropMap };
   }
@@ -627,7 +733,7 @@
 
           <div class="tc-cage-title-wrap tc-crush-title-wrap">
             <div class="tc-cage-neon tc-crush-neon">SLOT ARENA</div>
-            <div class="tc-cage-sub tc-crush-sub" id="tcSlotSub">6x6 tumble PvP • 4 BONUS ile free spin • 3 sn karar süresi</div>
+            <div class="tc-cage-sub tc-crush-sub" id="tcSlotSub">6x6 tumble PvP • 24 spin • 4 BONUS ile free spin</div>
           </div>
         </div>
 
@@ -636,7 +742,7 @@
             <div class="tc-cage-name tc-crush-name" id="tcSlotEnemyName">Rakip</div>
             <div class="tc-cage-hpbar tc-crush-hpbar"><div class="tc-cage-hpfill tc-crush-hpfill" id="tcSlotEnemyFill"></div></div>
             <div class="tc-cage-hptext tc-crush-hptext" id="tcSlotEnemyText">1000 / 1000</div>
-            <div class="tc-crush-chipline" id="tcSlotEnemySpins">Spin: 25</div>
+            <div class="tc-crush-chipline" id="tcSlotEnemySpins">Spin: 24</div>
           </div>
 
           <div class="tc-cage-vs tc-crush-vs" id="tcSlotTurn">VS</div>
@@ -645,7 +751,7 @@
             <div class="tc-cage-name tc-crush-name" id="tcSlotMeName">Sen</div>
             <div class="tc-cage-hpbar tc-crush-hpbar"><div class="tc-cage-hpfill tc-crush-hpfill" id="tcSlotMeFill"></div></div>
             <div class="tc-cage-hptext tc-crush-hptext" id="tcSlotMeText">1000 / 1000</div>
-            <div class="tc-crush-chipline" id="tcSlotMeSpins">Spin: 25</div>
+            <div class="tc-crush-chipline" id="tcSlotMeSpins">Spin: 24</div>
           </div>
         </div>
 
@@ -664,14 +770,14 @@
 
         <div class="tc-slot-footer">
           <div class="tc-slot-meta" id="tcSlotMetaWrap">
-            <div class="tc-slot-meta-chip" id="tcSlotChipBase">BASE 25</div>
+            <div class="tc-slot-meta-chip" id="tcSlotChipBase">BASE 24</div>
             <div class="tc-slot-meta-chip" id="tcSlotChipTimer">SPIN SÜRESİ 3</div>
             <div class="tc-slot-meta-chip" id="tcSlotChipTumble">TUMBLE 0</div>
           </div>
           <button class="tc-slot-spinbtn" id="tcSlotSpinBtn" type="button">SPIN BAŞLAT</button>
         </div>
 
-        <div class="tc-cage-rule tc-crush-rule">8+ aynı ikon anywhere = patlar • 4+ BONUS = 10 free spin • Spin tuşu için 3 sn var</div>
+        <div class="tc-cage-rule tc-crush-rule">8+ aynı ikon = patlar • BONUS şansı %10 • zincir şansı %30</div>
       </div>
     `;
   }
@@ -683,7 +789,7 @@
     _running: false,
     _locked: false,
     _raf: 0,
-    _opponent: { username: "ShadowWolf", isBot: true },
+    _opponent: { username: "ShadowWolf", isBot: false },
     _unbind: null,
     _resizeObserver: null,
     _queuedResolve: null,
@@ -803,7 +909,7 @@
     },
 
     setOpponent(opp) {
-      this._opponent = opp && opp.username ? { ...opp } : { username: choice(BOT_NAMES), isBot: true };
+      this._opponent = opp && opp.username ? { ...opp } : { username: choice(BOT_NAMES), isBot: false };
       if (this._els?.enemyName) this._els.enemyName.textContent = this._opponent.username || "Rakip";
       this._render();
     },
@@ -943,6 +1049,14 @@
       this._toastTimer = setTimeout(() => {
         if (this._els?.toast) this._els.toast.classList.remove("on");
       }, ms);
+    },
+
+    _vibrate(pattern = 40) {
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate(pattern);
+        }
+      } catch (_) {}
     },
 
     _estimatePrizeYton(win) {
@@ -1122,7 +1236,14 @@
       this._updateHud();
       this._render();
 
-      s.board = makeBoard();
+      const inOwnedBonus = s.inBonus && s.bonusOwner === actor;
+      const rollBonus = !inOwnedBonus && Math.random() < BONUS_CHANCE;
+      const rollWin = !rollBonus && Math.random() < (inOwnedBonus ? BONUS_MODE_EXPLODE_CHANCE : SPIN_EXPLODE_CHANCE);
+
+      s.board = makeBoard({
+        forceBonus: rollBonus,
+        forceCluster: rollWin,
+      });
       s.spinIntroMap = createSpinIntroMap();
       s.spinIntroProgress = 0;
       await this._spinAnimation();
@@ -1247,6 +1368,7 @@
           totalDamage += hitDamage;
           this._applyDamage(actor === "me" ? "enemy" : "me", hitDamage);
           this._spawnHitFx(res.hits, actor === "me");
+          this._vibrate(chain > 1 ? [60, 35, 60] : [45]);
           this._toast(`${this._hitSummary(res.hits)} • ${Math.round(hitDamage)} hasar`, 900);
         }
 
@@ -1263,7 +1385,10 @@
         }
 
         await new Promise((r) => setTimeout(r, 180));
-        const tum = tumble(s.board, res.remove, true);
+        const tum = tumble(s.board, res.remove, {
+          forceCluster: Math.random() < CHAIN_CONTINUE_CHANCE,
+          forceBonus: false,
+        });
         s.markedRemove = new Set();
         s.board = tum.board;
         await this._animateDrop(tum.dropMap);
