@@ -1,11 +1,11 @@
 (function () {
   const GAME_MS = 45000;
-  const ICON_LIFE_MS = 900;
-  const REMOTE_MIN_ICON_MS = 260;
-  const HOST_STATE_SYNC_MS = 120;
-  const NEXT_ICON_DELAY_MIN_MS = 120;
-  const NEXT_ICON_DELAY_MAX_MS = 260;
-  const RESOLVED_GHOST_MS = 220;
+  const ICON_LIFE_MS = 1250;
+  const REMOTE_MIN_ICON_MS = 520;
+  const HOST_STATE_SYNC_MS = 90;
+  const NEXT_ICON_DELAY_MIN_MS = 220;
+  const NEXT_ICON_DELAY_MAX_MS = 360;
+  const RESOLVED_GHOST_MS = 380;
   const START_HP = 1000;
   const FINAL_WARNING_SECONDS = 5;
   const FORFEIT_EXIT_DELAY_MS = 1450;
@@ -447,6 +447,9 @@ const DAMAGE = {
     _rtChannel: null,
     _rtSubscribed: false,
     _hostSyncTimer: 0,
+    _lastRemoteSyncSeq: 0,
+    _lastRemoteIconSeq: 0,
+    _lastRemoteResolvedSeq: 0,
     _peerSessionId: `cage_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
 
     init(opts = {}) {
@@ -560,6 +563,44 @@ const DAMAGE = {
         expiresAtEpoch: cur.expiresAtEpoch || (Date.now() + ICON_LIFE_MS),
       };
     },
+    _nextSnapshotSeq() {
+      if (!this._state) return 0;
+      this._state.snapshotSeq = Number(this._state.snapshotSeq || 0) + 1;
+      return this._state.snapshotSeq;
+    },
+
+    _rememberIconSeq(iconLike) {
+      if (!this._state) return 0;
+      const seq = Number(iconLike?.seq || this._state.currentIcon?.seq || this._state.lastIconSeq || 0);
+      if (seq > Number(this._state.lastIconSeq || 0)) this._state.lastIconSeq = seq;
+      return Number(this._state.lastIconSeq || 0);
+    },
+
+    _acceptRemoteState(snapshot) {
+      const seq = Number(snapshot?.snapshotSeq || 0);
+      if (seq && seq < Number(this._lastRemoteSyncSeq || 0)) return false;
+      if (seq) this._lastRemoteSyncSeq = seq;
+      return true;
+    },
+
+    _acceptRemoteIcon(raw) {
+      const seq = Number(raw?.seq || 0);
+      const known = Math.max(Number(this._lastRemoteIconSeq || 0), Number(this._state?.currentIcon?.seq || 0));
+      if (seq && seq < known) return false;
+      if (seq) this._lastRemoteIconSeq = seq;
+      return true;
+    },
+
+    _acceptRemoteResolvedIcon(raw) {
+      const seq = Number(raw?.seq || 0);
+      if (seq && seq < Number(this._lastRemoteResolvedSeq || 0)) return false;
+      if (seq) {
+        this._lastRemoteResolvedSeq = seq;
+        this._lastRemoteIconSeq = Math.max(Number(this._lastRemoteIconSeq || 0), seq);
+      }
+      return true;
+    },
+
 
     _applySerializedIcon(raw) {
       if (!this._state) return;
@@ -567,6 +608,7 @@ const DAMAGE = {
         this._state.currentIcon = null;
         return;
       }
+      this._lastRemoteIconSeq = Math.max(Number(this._lastRemoteIconSeq || 0), Number(raw.seq || 0));
       const nowEpoch = Date.now();
       const nowPerf = performance.now();
       const bornEpoch = Number(raw.bornAtEpoch || nowEpoch);
@@ -600,6 +642,8 @@ const DAMAGE = {
       if (!this._state) return null;
       const p1 = this._isPlayer1Local();
       return {
+        snapshotSeq: Number(this._state.snapshotSeq || 0),
+        iconSeq: Number(this._state.lastIconSeq || this._state.currentIcon?.seq || 0),
         player1Hp: Math.round(p1 ? this._state.meHp : this._state.enemyHp),
         player2Hp: Math.round(p1 ? this._state.enemyHp : this._state.meHp),
         player1Damage: Math.round(p1 ? this._state.meDamageDealt : this._state.enemyDamageDealt),
@@ -622,6 +666,7 @@ const DAMAGE = {
 
     _applyCanonicalState(snapshot, opts = {}) {
       if (!this._state || !snapshot) return;
+      if (!opts.force && !this._acceptRemoteState(snapshot)) return;
       const p1 = this._isPlayer1Local();
       this._state.meHp = Number(p1 ? snapshot.player1Hp : snapshot.player2Hp) || 0;
       this._state.enemyHp = Number(p1 ? snapshot.player2Hp : snapshot.player1Hp) || 0;
@@ -637,12 +682,14 @@ const DAMAGE = {
       this._state.endAtEpoch = Number(snapshot.endAtEpoch || (Date.now() + this._state.remaining));
       if (Object.prototype.hasOwnProperty.call(snapshot, "icon")) {
         if (snapshot.icon) {
-          this._applySerializedIcon(snapshot.icon);
+          if (this._acceptRemoteIcon(snapshot.icon)) this._applySerializedIcon(snapshot.icon);
         } else {
           const keepGhost =
             !!this._state.currentIcon?.resolvedGhost &&
             Number(this._state.currentIcon?.holdUntil || 0) > performance.now();
-          if (!keepGhost) this._applySerializedIcon(null);
+          const incomingIconSeq = Number(snapshot.iconSeq || 0);
+          const currentIconSeq = Number(this._state.currentIcon?.seq || 0);
+          if (!keepGhost && incomingIconSeq >= currentIconSeq) this._applySerializedIcon(null);
         }
       }
       if (!opts.skipFinished && snapshot.finished) {
@@ -759,6 +806,7 @@ const DAMAGE = {
 
     _broadcastStartSnapshot() {
       if (!this._state) return;
+      this._nextSnapshotSeq();
       this._broadcast("match_start", {
         endAtEpoch: Number(this._state.endAtEpoch || (Date.now() + GAME_MS)),
         state: this._canonicalStateFromLocal(),
@@ -770,6 +818,7 @@ const DAMAGE = {
       if (!this._matchCtx?.matchId || !this._isHost) return;
       this._hostSyncTimer = setInterval(() => {
         if (!this._state || this._state.finished) return;
+        this._nextSnapshotSeq();
         this._broadcast("state_sync", { state: this._canonicalStateFromLocal() });
       }, HOST_STATE_SYNC_MS);
     },
@@ -799,11 +848,12 @@ const DAMAGE = {
         case "icon_spawn":
           if (this._isHost || !this._state) break;
           this._state.waitingForHost = false;
-          this._applySerializedIcon(data.icon || null);
+          if (this._acceptRemoteIcon(data.icon || null)) this._applySerializedIcon(data.icon || null);
           break;
         case "icon_resolved":
           if (this._isHost || !this._state) break;
           this._state.waitingForHost = false;
+          if (!this._acceptRemoteResolvedIcon(data.icon || null)) break;
           if (data.state) this._applyCanonicalState(data.state || {}, { skipFinished: false });
           this._playResolvedFx(data.icon || null, data.actor || "player1");
           break;
@@ -844,6 +894,7 @@ const DAMAGE = {
 
     _broadcastStateSync(includeFinish = false) {
       if (!this._matchCtx?.matchId || !this._isHost) return;
+      this._nextSnapshotSeq();
       const snapshot = this._canonicalStateFromLocal();
       this._broadcast("state_sync", { state: snapshot });
       if (includeFinish && snapshot?.finished) {
@@ -903,6 +954,8 @@ const DAMAGE = {
 
       this._checkFinish();
       if (this._matchCtx?.matchId && this._isHost) {
+        this._rememberIconSeq(resolvedIcon);
+        this._nextSnapshotSeq();
         this._broadcast("icon_resolved", {
           icon: resolvedIcon,
           actor: this._localActorToCanonical(actorLocal),
@@ -934,6 +987,9 @@ const DAMAGE = {
       this._autoCloseTimer = null;
       this._resultRecorded = false;
 
+      this._lastRemoteSyncSeq = 0;
+      this._lastRemoteIconSeq = 0;
+      this._lastRemoteResolvedSeq = 0;
       this._state = {
         startedAt: 0,
         elapsed: 0,
@@ -969,6 +1025,8 @@ const DAMAGE = {
         enemyHealed: 0,
         meScore: 0,
         enemyScore: 0,
+        snapshotSeq: 0,
+        lastIconSeq: 0,
       };
 
       if (this._els?.meName) this._els.meName.textContent = playerName;
@@ -1167,8 +1225,10 @@ const DAMAGE = {
         hit: false,
       };
       this._state.iconSeq = this._state.currentIcon.seq;
+      this._rememberIconSeq(this._state.currentIcon);
 
       if (this._matchCtx?.matchId && this._isHost) {
+        this._nextSnapshotSeq();
         this._broadcast("icon_spawn", { icon: this._serializeIcon(this._state.currentIcon) });
         this._broadcast("state_sync", { state: this._canonicalStateFromLocal() });
       }
@@ -1674,6 +1734,16 @@ _handleTap(x, y) {
 
       this._drawParticles(ctx);
       this._drawCurrentIcon(ctx);
+
+      if (this._state.syncMode && !this._isHost && !this._state.currentIcon && !this._state.finished) {
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "800 13px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.22)";
+        ctx.fillText("Rakip hamlesi bekleniyor", w * 0.5, h * 0.5);
+        ctx.restore();
+      }
 
       if (performance.now() < this._state.hitFlashUntil) {
         ctx.fillStyle = this._state.hitFlashColor || "rgba(255,255,255,0.04)";
