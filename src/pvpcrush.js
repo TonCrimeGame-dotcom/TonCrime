@@ -136,6 +136,23 @@
     return board.map((row) => row.map((cell) => (cell ? { ...cell } : null)));
   }
 
+  function diffBoardCells(prevBoard, nextBoard) {
+    const out = [];
+    if (!Array.isArray(prevBoard) || !Array.isArray(nextBoard)) return out;
+    const rows = Math.min(prevBoard.length || 0, nextBoard.length || 0, GRID);
+    for (let r = 0; r < rows; r++) {
+      const prevRow = Array.isArray(prevBoard[r]) ? prevBoard[r] : [];
+      const nextRow = Array.isArray(nextBoard[r]) ? nextBoard[r] : [];
+      const cols = Math.min(prevRow.length || 0, nextRow.length || 0, GRID);
+      for (let c = 0; c < cols; c++) {
+        const a = prevRow[c]?.type || null;
+        const b = nextRow[c]?.type || null;
+        if (a !== b) out.push({ r, c });
+      }
+    }
+    return out;
+  }
+
   function inBounds(r, c) {
     return r >= 0 && r < GRID && c >= 0 && c < GRID;
   }
@@ -759,6 +776,10 @@
     _onlineChannel: null,
     _onlineReady: false,
     _resultRecorded: false,
+    _remoteBoardPreview: null,
+    _remoteChangedCells: [],
+    _remoteHighlightUntil: 0,
+    _remotePreviewText: "",
 
 
     _ensureAudio() {
@@ -978,8 +999,11 @@
     _applyNetworkState(netState, meta = {}) {
       if (!this._state || !netState) return;
       const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
+      const prevBoard = cloneBoard(this._state.board || []);
+      const nextBoard = cloneBoard(netState.board || this._state.board);
+      const changedCells = diffBoardCells(prevBoard, nextBoard);
 
-      this._state.board = cloneBoard(netState.board || this._state.board);
+      this._state.board = nextBoard;
       this._state.meHp = amIPlayer1 ? Number(netState.player1Hp) : Number(netState.player2Hp);
       this._state.enemyHp = amIPlayer1 ? Number(netState.player2Hp) : Number(netState.player1Hp);
       this._state.meMoves = amIPlayer1 ? Number(netState.player1Moves) : Number(netState.player2Moves);
@@ -996,6 +1020,13 @@
       this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
 
       this._locked = this._state.finished ? true : this._state.turn !== "me";
+
+      if (meta.fromRemote) {
+        this._remoteBoardPreview = cloneBoard(nextBoard);
+        this._remoteChangedCells = changedCells.slice(0, 18);
+        this._remoteHighlightUntil = Date.now() + (changedCells.length ? 1800 : 900);
+        this._remotePreviewText = meta.previewText || (changedCells.length ? `Rakip hamlesi • ${changedCells.length} hücre` : "Rakip hamlesi");
+      }
 
       if (this._state.finished) {
         const win = this._state.enemyHp <= 0 ||
@@ -1049,15 +1080,15 @@
         })
         .on("broadcast", { event: "init_state" }, ({ payload }) => {
           if (!payload?.state) return;
-          this._applyNetworkState(payload.state);
+          this._applyNetworkState(payload.state, { fromRemote: true, previewText: "Rakip tahtası senkronlandı" });
         })
         .on("broadcast", { event: "state_sync" }, ({ payload }) => {
           if (!payload?.state) return;
-          this._applyNetworkState(payload.state, { toast: payload.toast || "" });
+          this._applyNetworkState(payload.state, { toast: payload.toast || "", fromRemote: true, previewText: "Rakip hamlesi" });
         })
         .on("broadcast", { event: "finish_sync" }, ({ payload }) => {
           if (!payload?.state) return;
-          this._applyNetworkState(payload.state);
+          this._applyNetworkState(payload.state, { fromRemote: true, previewText: "Rakip son hamlesi" });
         })
         .on("broadcast", { event: "leave_match" }, () => {
           if (this._state?.finished) return;
@@ -1170,6 +1201,10 @@
       this._flashAlpha = 0;
       this._flashColor = "#ffd166";
       this._resultRecorded = false;
+      this._remoteBoardPreview = null;
+      this._remoteChangedCells = [];
+      this._remoteHighlightUntil = 0;
+      this._remotePreviewText = "";
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -1924,6 +1959,66 @@
       ctx.globalAlpha = 1;
     },
 
+    _renderRemoteHighlights(ctx) {
+      if (!this._remoteChangedCells?.length || Date.now() > this._remoteHighlightUntil) return;
+      const pulse = 0.45 + Math.sin(Date.now() * 0.012) * 0.22;
+      for (const cell of this._remoteChangedCells) {
+        const rect = this._tileRects.find((t) => t.r === cell.r && t.c === cell.c);
+        if (!rect) continue;
+        strokeRoundRect(ctx, rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6, Math.max(8, Math.floor(rect.w * 0.16)), `rgba(255,214,102,${pulse.toFixed(3)})`, 2.4);
+      }
+    },
+
+    _renderRemotePreview(ctx, w, h) {
+      if (!this._isRealtimeMatch()) return;
+      const board = this._remoteBoardPreview || this._state?.board;
+      if (!Array.isArray(board) || !board.length) return;
+
+      const panelW = clamp(Math.round(w * 0.34), 108, 156);
+      const panelH = panelW + 26;
+      const px = w - panelW - 10;
+      const py = 10;
+      const ttlActive = Date.now() <= this._remoteHighlightUntil;
+      const borderAlpha = ttlActive ? 0.72 : 0.28;
+
+      fillRoundRect(ctx, px, py, panelW, panelH, 16, 'rgba(5,10,18,0.78)');
+      strokeRoundRect(ctx, px, py, panelW, panelH, 16, `rgba(255,214,102,${borderAlpha})`, 1.6);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.font = '600 11px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Rakip Tahtası', px + 10, py + 8);
+      ctx.fillStyle = ttlActive ? 'rgba(255,214,102,0.95)' : 'rgba(184,196,214,0.86)';
+      ctx.font = '500 10px Inter, system-ui, sans-serif';
+      ctx.fillText(this._remotePreviewText || 'Canlı görünüm', px + 10, py + 22);
+      ctx.restore();
+
+      const pad = 10;
+      const miniTop = py + 38;
+      const miniSize = panelW - pad * 2;
+      const miniCell = Math.max(9, Math.floor(miniSize / GRID));
+      const actual = miniCell * GRID;
+      const bx = px + Math.floor((panelW - actual) / 2);
+      const by = miniTop;
+
+      fillRoundRect(ctx, bx - 4, by - 4, actual + 8, actual + 8, 12, 'rgba(255,255,255,0.04)');
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
+          const x = bx + c * miniCell;
+          const y = by + r * miniCell;
+          const tile = board[r]?.[c] || null;
+          const changed = this._remoteChangedCells.some((cell) => cell.r === r && cell.c === c);
+          fillRoundRect(ctx, x + 1, y + 1, miniCell - 2, miniCell - 2, Math.max(4, Math.floor(miniCell * 0.22)), changed ? 'rgba(255,214,102,0.20)' : 'rgba(255,255,255,0.05)');
+          if (tile) drawTileIcon(ctx, tile.type, x + 1, y + 1, miniCell - 2, changed, Date.now());
+          if (changed && ttlActive) {
+            strokeRoundRect(ctx, x + 1.5, y + 1.5, miniCell - 3, miniCell - 3, Math.max(4, Math.floor(miniCell * 0.22)), 'rgba(255,214,102,0.95)', 1.2);
+          }
+        }
+      }
+    },
+
     _render() {
       if (!this._els?.ctx || !this._state || !this._els?.canvas) return;
 
@@ -2020,7 +2115,9 @@
         ctx.globalAlpha = 1;
       }
 
+      this._renderRemoteHighlights(ctx);
       this._renderEffects(ctx);
+      this._renderRemotePreview(ctx, w, h);
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
