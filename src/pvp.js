@@ -498,7 +498,7 @@
           id: "arena",
           title: "Kafes Dövüşü",
           subtitle: "1v1 Kafes Dövüşü",
-          desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
+          desc: "Daha hızlı PvP modu. Kritik saldırılar.",
           open: true,
           accent: "#ff9340",
         },
