@@ -2,6 +2,9 @@
   const GAME_MS = 45000;
   const ICON_LIFE_MS = 500;
   const START_HP = 1000;
+  const FINAL_WARNING_SECONDS = 5;
+  const FORFEIT_EXIT_DELAY_MS = 1450;
+  const HEAL_SCORE_RATIO = 0.35;
 
 const DAMAGE = {
   punch: 12,
@@ -79,6 +82,37 @@ const DAMAGE = {
 
   function choice(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+
+  function safeVibrate(pattern) {
+    try {
+      if (navigator && typeof navigator.vibrate === "function") {
+        navigator.vibrate(pattern);
+      }
+    } catch (_) {}
+  }
+
+  function getPvpRuntimeState() {
+    return window.tcStore?.get?.() || {};
+  }
+
+  function getEstimatedPrizeYton() {
+    const state = getPvpRuntimeState();
+    const pvp = state?.pvp || {};
+    const explicitPrize = Math.max(0, Number(pvp.prizeYton || pvp.rewardYton || pvp.rewardCoins || 0));
+    const stake = Math.max(0, Number(pvp.entryStake || 0));
+    const fee = Math.max(0, Number(pvp.serverFee || 0));
+    if (explicitPrize > 0) return explicitPrize;
+    if (stake > 0) return Math.max(0, stake * 2 - fee);
+    return 0;
+  }
+
+  function buildResultReason(reason, meta = {}) {
+    const base = String(reason || "").trim();
+    if (meta?.forfeit && meta?.quitter === "me") return base || "Maçtan çıktın • hükmen mağlup";
+    if (meta?.forfeit && meta?.quitter === "enemy") return base || "Rakip çıktı • hükmen galip";
+    return base || (meta?.win ? "Kazandın" : "Kaybettin");
   }
 
   function ensureAudioContext() {
@@ -485,6 +519,11 @@ const DAMAGE = {
       const playerName =
         String(window.tcStore?.get?.()?.player?.username || "Sen").trim() || "Sen";
 
+      clearTimeout(this._toastTimer);
+      clearTimeout(this._autoCloseTimer);
+      this._autoCloseTimer = null;
+      this._resultRecorded = false;
+
       this._state = {
         startedAt: 0,
         elapsed: 0,
@@ -492,6 +531,11 @@ const DAMAGE = {
         meHp: START_HP,
         enemyHp: START_HP,
         finished: false,
+        winner: null,
+        finishAt: 0,
+        finishReason: "",
+        finishMeta: null,
+        resultPrizeYton: 0,
         lastTs: 0,
         playerName,
         nextSpawnAt: 0,
@@ -502,6 +546,15 @@ const DAMAGE = {
         screenFlashUntil: 0,
         screenFlashColor: "rgba(255,255,255,0.08)",
         botNextActionAt: 0,
+        lastWarningSecond: null,
+        meHits: 0,
+        enemyHits: 0,
+        meDamageDealt: 0,
+        enemyDamageDealt: 0,
+        meHealed: 0,
+        enemyHealed: 0,
+        meScore: 0,
+        enemyScore: 0,
       };
 
       if (this._els?.meName) this._els.meName.textContent = playerName;
@@ -523,6 +576,7 @@ const DAMAGE = {
       this._state.lastTs = now;
       this._state.nextSpawnAt = now + 180;
       this._state.botNextActionAt = now + randInt(340, 680);
+      this._state.lastWarningSecond = null;
 
       this._setStatus("PvP • Kafes dövüşü başladı");
       this._toast("Başladı");
@@ -535,8 +589,25 @@ const DAMAGE = {
       this._raf = 0;
     },
 
+    forfeit(side = "me", reason = "") {
+      if (!this._state || this._state.finished) return false;
+      const quitter = side === "enemy" ? "enemy" : "me";
+      const win = quitter === "enemy";
+      return this._finish(win, reason, {
+        forfeit: true,
+        quitter,
+        autoClose: quitter === "me",
+      });
+    },
+
+    resolveOpponentQuit(reason = "") {
+      return this.forfeit("enemy", reason || "Rakip çıktı • hükmen galip");
+    },
+
     backToMenu() {
       this.stop();
+      clearTimeout(this._autoCloseTimer);
+      this._autoCloseTimer = null;
 
       const wrap = document.getElementById("pvpWrap");
       const arena = document.getElementById("arena");
@@ -580,12 +651,25 @@ const DAMAGE = {
       this._state.elapsed = now - this._state.startedAt;
       this._state.remaining = clamp(GAME_MS - this._state.elapsed, 0, GAME_MS);
 
+      this._warnFinalCountdown();
       this._updateIcon(now);
       this._updateBot(now);
       this._updateParticles(dt);
       this._checkFinish();
       this._updateHud();
       this._render();
+    },
+
+    _warnFinalCountdown() {
+      const s = this._state;
+      if (!s || s.finished || s.remaining <= 0) return;
+      const sec = Math.ceil(s.remaining / 1000);
+      if (sec > FINAL_WARNING_SECONDS) return;
+      if (s.lastWarningSecond === sec) return;
+      s.lastWarningSecond = sec;
+      this._flashScreen("rgba(255,88,88,0.18)", 180);
+      safeVibrate(sec <= 2 ? [110, 45, 110] : 90);
+      this._toast(`${sec} saniye kaldı`, 420);
     },
 
     _updateIcon(now) {
@@ -638,26 +722,42 @@ const DAMAGE = {
 
       if (Math.random() < skullFailChance) {
         const skull = ICONS.find((x) => x.id === "skull");
-        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı", skull);
+        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı", skull, "enemy");
       } else if (Math.random() > missChance) {
         const attack = choice(GOOD_ICONS);
         if (attack.heal) {
           this._healEnemy(attack.damage, `${this._opponent.username} ${attack.label} kullandı`, attack);
         } else {
-          this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`, attack);
+          this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`, attack, "enemy");
         }
       }
 
       this._state.botNextActionAt = now + randInt(320, 760);
     },
 
-    _applyDamage(target, dmg, toastText, iconMeta = null) {
+    _applyDamage(target, dmg, toastText, iconMeta = null, source = null) {
       if (!this._state || this._state.finished) return;
 
+      const amount = Math.max(0, Number(dmg || 0));
       if (target === "enemy") {
-        this._state.enemyHp = clamp(this._state.enemyHp - dmg, 0, START_HP);
+        this._state.enemyHp = clamp(this._state.enemyHp - amount, 0, START_HP);
       } else {
-        this._state.meHp = clamp(this._state.meHp - dmg, 0, START_HP);
+        this._state.meHp = clamp(this._state.meHp - amount, 0, START_HP);
+      }
+
+      const actor = source || (target === "enemy" ? "me" : "enemy");
+      if (actor === "me") {
+        this._state.meHits += 1;
+        if (target === "enemy") {
+          this._state.meDamageDealt += amount;
+          this._state.meScore += amount;
+        }
+      } else {
+        this._state.enemyHits += 1;
+        if (target === "me") {
+          this._state.enemyDamageDealt += amount;
+          this._state.enemyScore += amount;
+        }
       }
 
       this._state.hitFlashUntil = performance.now() + 110;
@@ -671,7 +771,10 @@ const DAMAGE = {
     _healMe(amount, toastText, iconMeta = null) {
       if (!this._state || this._state.finished) return;
 
-      this._state.meHp = clamp(this._state.meHp + amount, 0, START_HP);
+      const heal = Math.max(0, Number(amount || 0));
+      this._state.meHp = clamp(this._state.meHp + heal, 0, START_HP);
+      this._state.meHealed += heal;
+      this._state.meScore += Math.round(heal * HEAL_SCORE_RATIO);
       this._state.hitFlashUntil = performance.now() + 110;
       this._state.hitFlashColor = iconMeta?.flash || "rgba(51,221,119,0.16)";
       this._flashScreen(iconMeta?.flash || "rgba(51,221,119,0.18)", 190);
@@ -683,7 +786,10 @@ const DAMAGE = {
     _healEnemy(amount, toastText, iconMeta = null) {
       if (!this._state || this._state.finished) return;
 
-      this._state.enemyHp = clamp(this._state.enemyHp + amount, 0, START_HP);
+      const heal = Math.max(0, Number(amount || 0));
+      this._state.enemyHp = clamp(this._state.enemyHp + heal, 0, START_HP);
+      this._state.enemyHealed += heal;
+      this._state.enemyScore += Math.round(heal * HEAL_SCORE_RATIO);
       this._state.hitFlashUntil = performance.now() + 110;
       this._state.hitFlashColor = iconMeta?.flash || "rgba(255,209,102,0.16)";
       this._flashScreen(iconMeta?.flash || "rgba(255,209,102,0.18)", 170);
@@ -870,7 +976,13 @@ const DAMAGE = {
       window.addEventListener("resize", onResize);
 
       if (close) {
-        close.onclick = () => this.backToMenu();
+        close.onclick = () => {
+          if (this._state && !this._state.finished && this._state.startedAt > 0) {
+            this.forfeit("me", "Maçtan çıktın • hükmen mağlup");
+            return;
+          }
+          this.backToMenu();
+        };
       }
 
       if (window.ResizeObserver && this._els?.stage) {
@@ -928,7 +1040,7 @@ _handleTap(x, y) {
   this._state.currentIcon = null;
 
   if (cur.bad) {
-    this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`, cur);
+    this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`, cur, "me");
     return;
   }
 
@@ -938,7 +1050,7 @@ _handleTap(x, y) {
     return;
   }
 
-  this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`, cur);
+  this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`, cur, "me");
 },
 
     _checkFinish() {
@@ -950,19 +1062,113 @@ _handleTap(x, y) {
       if (this._state.remaining <= 0) {
         if (this._state.meHp > this._state.enemyHp) return this._finish(true, "Süre bitti • HP üstünlüğü");
         if (this._state.meHp < this._state.enemyHp) return this._finish(false, "Süre bitti • Rakip önde");
-        return this._finish(true, "Süre bitti • Beraberlik");
+        if (this._state.meDamageDealt > this._state.enemyDamageDealt) return this._finish(true, "Süre bitti • Hasar üstünlüğü");
+        if (this._state.meDamageDealt < this._state.enemyDamageDealt) return this._finish(false, "Süre bitti • Rakip hasar üstünlüğü");
+        if (this._state.meScore > this._state.enemyScore) return this._finish(true, "Süre bitti • Puan üstünlüğü");
+        if (this._state.meScore < this._state.enemyScore) return this._finish(false, "Süre bitti • Rakip puan üstünlüğü");
+        return this._finish(true, "Süre bitti • Beraberlik avantajı sende");
       }
     },
 
-    _finish(win, reason) {
-      if (!this._state || this._state.finished) return;
+    _finish(win, reason, meta = {}) {
+      if (!this._state || this._state.finished) return true;
+
+      const finalReason = buildResultReason(reason, { ...meta, win });
       this._state.finished = true;
+      this._state.winner = win ? "me" : "enemy";
+      this._state.finishAt = Date.now();
+      this._state.finishReason = finalReason;
+      this._state.finishMeta = { ...meta, win };
+      this._state.resultPrizeYton = win ? getEstimatedPrizeYton() : 0;
       this._running = false;
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this._raf = 0;
 
       this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
       this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
+      this._recordResult(win, finalReason, meta);
       this._updateHud();
       this._render();
+
+      if (meta?.autoClose) {
+        clearTimeout(this._autoCloseTimer);
+        this._autoCloseTimer = setTimeout(() => this.backToMenu(), FORFEIT_EXIT_DELAY_MS);
+      }
+      return true;
+    },
+
+    _recordResult(win, reason = "", meta = {}) {
+      if (this._resultRecorded) return;
+      this._resultRecorded = true;
+
+      const store = window.tcStore;
+      const now = Date.now();
+      const opponent = this._opponent?.username || "Rakip";
+      const prizeYton = win ? getEstimatedPrizeYton() : 0;
+      const resultItem = {
+        id: `pvp_${now}`,
+        opponent,
+        result: win ? "win" : "loss",
+        mode: "cage_fight",
+        reason: String(reason || ""),
+        forfeit: !!meta?.forfeit,
+        quitter: meta?.quitter || null,
+        prizeYton,
+        meHp: Math.round(this._state?.meHp || 0),
+        enemyHp: Math.round(this._state?.enemyHp || 0),
+        meDamage: Math.round(this._state?.meDamageDealt || 0),
+        enemyDamage: Math.round(this._state?.enemyDamageDealt || 0),
+        meScore: Math.round(this._state?.meScore || 0),
+        enemyScore: Math.round(this._state?.enemyScore || 0),
+        at: now,
+      };
+
+      if (store?.get && store?.set) {
+        const state = store.get() || {};
+        const pvp = { ...(state.pvp || {}) };
+        const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
+        const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
+        const playerName = String(state?.player?.username || "Player");
+
+        pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
+        pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
+        pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 16 : -10), 0, 99999);
+        pvp.currentOpponent = opponent;
+        pvp.lastPrizeYton = prizeYton;
+        pvp.lastResultReason = resultItem.reason;
+        pvp.recentMatches = [resultItem, ...recentMatches];
+
+        const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
+        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
+        nextBoard.push({
+          id: String(state?.player?.id || "player_main"),
+          name: playerName,
+          wins: Number(pvp.wins || 0),
+          losses: Number(pvp.losses || 0),
+          rating: Number(pvp.rating || 1000),
+          score,
+          updatedAt: now,
+        });
+        nextBoard.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+        pvp.leaderboard = nextBoard.slice(0, 50);
+
+        store.set({ pvp });
+      }
+
+      const eventName = win ? "tc:pvp:win" : "tc:pvp:lose";
+      try {
+        window.dispatchEvent(new CustomEvent(eventName, { detail: resultItem }));
+      } catch (_) {
+        window.dispatchEvent(new Event(eventName));
+      }
+
+      try {
+        if (typeof this.onMatchFinished === "function") {
+          this.onMatchFinished(!!win, resultItem);
+        }
+      } catch (err) {
+        console.error("[TonCrime] pvpcage onMatchFinished error:", err);
+      }
     },
 
     _updateHud() {
@@ -986,7 +1192,13 @@ _handleTap(x, y) {
       if (this._els.timeFill) this._els.timeFill.style.transform = `scaleX(${timePct / 100})`;
       if (this._els.timerText) this._els.timerText.textContent = String(sec);
       if (this._els.sub) {
-        this._els.sub.textContent = this._state.finished ? "Maç bitti" : `${sec} saniye • ikon yakala`;
+        if (this._state.finished) {
+          this._els.sub.textContent = this._state.finishReason || "Maç bitti";
+        } else if (sec <= FINAL_WARNING_SECONDS) {
+          this._els.sub.textContent = `${sec} saniye • son uyarı`;
+        } else {
+          this._els.sub.textContent = `${sec} saniye • ikon yakala`;
+        }
       }
     },
 
@@ -1032,15 +1244,32 @@ _handleTap(x, y) {
       }
 
       if (this._state.finished) {
-        fillRoundRect(ctx, w * 0.18, h * 0.36, w * 0.64, 72, 18, "rgba(0,0,0,0.58)");
+        const boxW = w * 0.72;
+        const boxH = this._state.winner === "me" ? 118 : 102;
+        const boxX = (w - boxW) * 0.5;
+        const boxY = h * 0.34;
+        fillRoundRect(ctx, boxX, boxY, boxW, boxH, 20, "rgba(0,0,0,0.62)");
+        strokeRoundRect(ctx, boxX, boxY, boxW, boxH, 20, this._state.winner === "me" ? "rgba(88,255,150,0.32)" : "rgba(255,110,110,0.24)", 1.2);
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = "900 18px system-ui, Arial";
-        ctx.fillText(this._state.meHp >= this._state.enemyHp ? "KAZANDIN" : "KAYBETTİN", w * 0.5, h * 0.36 + 28);
+        ctx.font = "900 22px system-ui, Arial";
+        ctx.fillText(this._state.winner === "me" ? "KAZANDIN" : "KAYBETTİN", w * 0.5, boxY + 28);
+
         ctx.font = "800 12px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText(`${Math.round(this._state.meHp)} HP • ${Math.round(this._state.enemyHp)} HP`, w * 0.5, h * 0.36 + 50);
+        ctx.fillText(`${Math.round(this._state.meHp)} HP • ${Math.round(this._state.enemyHp)} HP`, w * 0.5, boxY + 50);
+        ctx.fillText(`Skor ${Math.round(this._state.meScore)} • ${Math.round(this._state.enemyScore)}`, w * 0.5, boxY + 68);
+
+        if (this._state.winner === "me" && this._state.resultPrizeYton > 0) {
+          ctx.font = "900 16px system-ui, Arial";
+          ctx.fillStyle = "rgba(120,255,170,0.96)";
+          ctx.fillText(`+${Math.round(this._state.resultPrizeYton)} YTON`, w * 0.5, boxY + 89);
+        }
+
+        ctx.font = "700 11px system-ui, Arial";
+        ctx.fillStyle = "rgba(255,255,255,0.70)";
+        ctx.fillText(this._state.finishReason || "Maç bitti", w * 0.5, boxY + boxH - 14);
       }
 
       ctx.textAlign = "left";
