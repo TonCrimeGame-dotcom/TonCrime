@@ -17,13 +17,13 @@ const DAMAGE = {
 };
 
  const ICONS = [
-  { id: "punch", emoji: "👊", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false, flash: "rgba(255,168,74,0.16)" },
-  { id: "kick", emoji: "🦵", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false, flash: "rgba(99,227,108,0.12)" },
-  { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false, flash: "rgba(124,182,255,0.14)" },
-  { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false, flash: "rgba(255,100,100,0.14)" },
-  { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true, flash: "rgba(51,221,119,0.18)" },
-  { id: "drink", emoji: "🍺", label: "İÇKİ", color: "#ffd166", damage: DAMAGE.drinkHeal, bad: false, heal: true, flash: "rgba(255,209,102,0.18)" },
-  { id: "skull", emoji: "💀", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false, flash: "rgba(255,77,109,0.20)" },
+  { id: "punch", emoji: "ğŸ‘Š", label: "YUMRUK", color: "#ffb24a", damage: DAMAGE.punch, bad: false, heal: false, flash: "rgba(255,168,74,0.16)" },
+  { id: "kick", emoji: "ğŸ¦µ", label: "TEKME", color: "#63e36c", damage: DAMAGE.kick, bad: false, heal: false, flash: "rgba(99,227,108,0.12)" },
+  { id: "slap", emoji: "ğŸ–ï¸", label: "TOKAT", color: "#7cb6ff", damage: DAMAGE.slap, bad: false, heal: false, flash: "rgba(124,182,255,0.14)" },
+  { id: "brain", emoji: "ğŸ§ ", label: "BEYÄ°N", color: "#ff6464", damage: DAMAGE.brain, bad: false, heal: false, flash: "rgba(255,100,100,0.14)" },
+  { id: "weed", emoji: "ğŸŒ¿", label: "OT", color: "#33dd77", damage: DAMAGE.weedHeal, bad: false, heal: true, flash: "rgba(51,221,119,0.18)" },
+  { id: "drink", emoji: "ğŸº", label: "Ä°Ã‡KÄ°", color: "#ffd166", damage: DAMAGE.drinkHeal, bad: false, heal: true, flash: "rgba(255,209,102,0.18)" },
+  { id: "skull", emoji: "ğŸ’€", label: "KURU KAFA", color: "#ff4d6d", damage: DAMAGE.skull, bad: true, heal: false, flash: "rgba(255,77,109,0.20)" },
 ];
 
   const GOOD_ICONS = ICONS.filter((x) => !x.bad);
@@ -110,9 +110,9 @@ const DAMAGE = {
 
   function buildResultReason(reason, meta = {}) {
     const base = String(reason || "").trim();
-    if (meta?.forfeit && meta?.quitter === "me") return base || "Maçtan çıktın • hükmen mağlup";
-    if (meta?.forfeit && meta?.quitter === "enemy") return base || "Rakip çıktı • hükmen galip";
-    return base || (meta?.win ? "Kazandın" : "Kaybettin");
+    if (meta?.forfeit && meta?.quitter === "me") return base || "MaÃ§tan Ã§Ä±ktÄ±n â€¢ hÃ¼kmen maÄŸlup";
+    if (meta?.forfeit && meta?.quitter === "enemy") return base || "Rakip Ã§Ä±ktÄ± â€¢ hÃ¼kmen galip";
+    return base || (meta?.win ? "KazandÄ±n" : "Kaybettin");
   }
 
   function ensureAudioContext() {
@@ -395,11 +395,11 @@ const DAMAGE = {
     return `
       <div class="tc-cage-root">
         <div class="tc-cage-top">
-          <button class="tc-cage-x" id="tcCageClose" type="button" aria-label="Geri">✕</button>
+          <button class="tc-cage-x" id="tcCageClose" type="button" aria-label="Geri">âœ•</button>
 
           <div class="tc-cage-title-wrap">
-            <div class="tc-cage-neon">KAFES DÖVÜŞÜ</div>
-            <div class="tc-cage-sub" id="tcCageSub">45 saniye • hızlı PvP</div>
+            <div class="tc-cage-neon">KAFES DÃ–VÃœÅÃœ</div>
+            <div class="tc-cage-sub" id="tcCageSub">45 saniye â€¢ hÄ±zlÄ± PvP</div>
           </div>
 
           <div class="tc-cage-bar-shell">
@@ -428,7 +428,7 @@ const DAMAGE = {
           <div class="tc-cage-toast" id="tcCageToast"></div>
         </div>
 
-        <div class="tc-cage-rule">💀 kuru kafa kendine vurur • 🌿 weed ve 🍺 drink can basar</div>
+        <div class="tc-cage-rule">ğŸ’€ kuru kafa kendine vurur â€¢ ğŸŒ¿ weed ve ğŸº drink can basar</div>
       </div>
     `;
   }
@@ -560,8 +560,8 @@ const DAMAGE = {
       if (this._els?.meName) this._els.meName.textContent = playerName;
       if (this._els?.enemyName) this._els.enemyName.textContent = this._opponent?.username || choice(BOT_NAMES);
 
-      this._toast("Hazır");
-      this._setStatus("PvP • Kafes dövüşü hazır");
+      this._toast("HazÄ±r");
+      this._setStatus("PvP â€¢ Kafes dÃ¶vÃ¼ÅŸÃ¼ hazÄ±r");
       this._updateHud();
       this._render();
     },
@@ -575,11 +575,11 @@ const DAMAGE = {
       this._state.startedAt = now;
       this._state.lastTs = now;
       this._state.nextSpawnAt = now + 180;
-      this._state.botNextActionAt = now + randInt(340, 680);
+      this._state.botNextActionAt = this._opponent?.isBot ? now + randInt(340, 680) : Number.POSITIVE_INFINITY;
       this._state.lastWarningSecond = null;
 
-      this._setStatus("PvP • Kafes dövüşü başladı");
-      this._toast("Başladı");
+      this._setStatus("PvP â€¢ Kafes dÃ¶vÃ¼ÅŸÃ¼ baÅŸladÄ±");
+      this._toast("BaÅŸladÄ±");
       this._loop();
     },
 
@@ -601,7 +601,7 @@ const DAMAGE = {
     },
 
     resolveOpponentQuit(reason = "") {
-      return this.forfeit("enemy", reason || "Rakip çıktı • hükmen galip");
+      return this.forfeit("enemy", reason || "Rakip Ã§Ä±ktÄ± â€¢ hÃ¼kmen galip");
     },
 
     backToMenu() {
@@ -620,8 +620,8 @@ const DAMAGE = {
         wrap.classList.remove("open");
         wrap.style.display = "none";
       }
-      if (status) status.textContent = "PvP • Hazır";
-      if (opponent) opponent.textContent = "—";
+      if (status) status.textContent = "PvP â€¢ HazÄ±r";
+      if (opponent) opponent.textContent = "â€”";
       if (spinner) spinner.classList.add("hidden");
     },
 
@@ -669,7 +669,7 @@ const DAMAGE = {
       s.lastWarningSecond = sec;
       this._flashScreen("rgba(255,88,88,0.18)", 180);
       safeVibrate(sec <= 2 ? [110, 45, 110] : 90);
-      this._toast(`${sec} saniye kaldı`, 420);
+      this._toast(`${sec} saniye kaldÄ±`, 420);
     },
 
     _updateIcon(now) {
@@ -715,18 +715,20 @@ const DAMAGE = {
     },
 
     _updateBot(now) {
-      if (!this._state || this._state.finished || now < this._state.botNextActionAt) return;
+      if (!this._state || this._state.finished) return;
+      if (!this._opponent?.isBot) return;
+      if (now < this._state.botNextActionAt) return;
 
       const missChance = 0.18;
       const skullFailChance = 0.10;
 
       if (Math.random() < skullFailChance) {
         const skull = ICONS.find((x) => x.id === "skull");
-        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastı", skull, "enemy");
+        this._applyDamage("enemy", DAMAGE.skull, "Rakip kuru kafaya bastÄ±", skull, "enemy");
       } else if (Math.random() > missChance) {
         const attack = choice(GOOD_ICONS);
         if (attack.heal) {
-          this._healEnemy(attack.damage, `${this._opponent.username} ${attack.label} kullandı`, attack);
+          this._healEnemy(attack.damage, `${this._opponent.username} ${attack.label} kullandÄ±`, attack);
         } else {
           this._applyDamage("me", attack.damage, `${this._opponent.username} ${attack.label} vurdu`, attack, "enemy");
         }
@@ -978,7 +980,7 @@ const DAMAGE = {
       if (close) {
         close.onclick = () => {
           if (this._state && !this._state.finished && this._state.startedAt > 0) {
-            this.forfeit("me", "Maçtan çıktın • hükmen mağlup");
+            this.forfeit("me", "MaÃ§tan Ã§Ä±ktÄ±n â€¢ hÃ¼kmen maÄŸlup");
             return;
           }
           this.backToMenu();
@@ -1040,33 +1042,33 @@ _handleTap(x, y) {
   this._state.currentIcon = null;
 
   if (cur.bad) {
-    this._applyDamage("me", cur.damage, `💀 Hata! -${cur.damage} HP`, cur, "me");
+    this._applyDamage("me", cur.damage, `ğŸ’€ Hata! -${cur.damage} HP`, cur, "me");
     return;
   }
 
   if (cur.heal) {
-    const healPrefix = cur.id === "drink" ? "🍺 İÇKİ" : "🌿 OT";
-    this._healMe(cur.damage, `${healPrefix} • +${cur.damage} HP`, cur);
+    const healPrefix = cur.id === "drink" ? "ğŸº Ä°Ã‡KÄ°" : "ğŸŒ¿ OT";
+    this._healMe(cur.damage, `${healPrefix} â€¢ +${cur.damage} HP`, cur);
     return;
   }
 
-  this._applyDamage("enemy", cur.damage, `${cur.label} • -${cur.damage} HP`, cur, "me");
+  this._applyDamage("enemy", cur.damage, `${cur.label} â€¢ -${cur.damage} HP`, cur, "me");
 },
 
     _checkFinish() {
       if (!this._state || this._state.finished) return;
 
-      if (this._state.enemyHp <= 0) return this._finish(true, "Rakip düştü");
-      if (this._state.meHp <= 0) return this._finish(false, "Sen düştün");
+      if (this._state.enemyHp <= 0) return this._finish(true, "Rakip dÃ¼ÅŸtÃ¼");
+      if (this._state.meHp <= 0) return this._finish(false, "Sen dÃ¼ÅŸtÃ¼n");
 
       if (this._state.remaining <= 0) {
-        if (this._state.meHp > this._state.enemyHp) return this._finish(true, "Süre bitti • HP üstünlüğü");
-        if (this._state.meHp < this._state.enemyHp) return this._finish(false, "Süre bitti • Rakip önde");
-        if (this._state.meDamageDealt > this._state.enemyDamageDealt) return this._finish(true, "Süre bitti • Hasar üstünlüğü");
-        if (this._state.meDamageDealt < this._state.enemyDamageDealt) return this._finish(false, "Süre bitti • Rakip hasar üstünlüğü");
-        if (this._state.meScore > this._state.enemyScore) return this._finish(true, "Süre bitti • Puan üstünlüğü");
-        if (this._state.meScore < this._state.enemyScore) return this._finish(false, "Süre bitti • Rakip puan üstünlüğü");
-        return this._finish(true, "Süre bitti • Beraberlik avantajı sende");
+        if (this._state.meHp > this._state.enemyHp) return this._finish(true, "SÃ¼re bitti â€¢ HP Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
+        if (this._state.meHp < this._state.enemyHp) return this._finish(false, "SÃ¼re bitti â€¢ Rakip Ã¶nde");
+        if (this._state.meDamageDealt > this._state.enemyDamageDealt) return this._finish(true, "SÃ¼re bitti â€¢ Hasar Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
+        if (this._state.meDamageDealt < this._state.enemyDamageDealt) return this._finish(false, "SÃ¼re bitti â€¢ Rakip hasar Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
+        if (this._state.meScore > this._state.enemyScore) return this._finish(true, "SÃ¼re bitti â€¢ Puan Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
+        if (this._state.meScore < this._state.enemyScore) return this._finish(false, "SÃ¼re bitti â€¢ Rakip puan Ã¼stÃ¼nlÃ¼ÄŸÃ¼");
+        return this._finish(true, "SÃ¼re bitti â€¢ Beraberlik avantajÄ± sende");
       }
     },
 
@@ -1084,8 +1086,8 @@ _handleTap(x, y) {
       if (this._raf) cancelAnimationFrame(this._raf);
       this._raf = 0;
 
-      this._setStatus(win ? "PvP • Kazandın" : "PvP • Kaybettin");
-      this._toast(win ? "Kazandın!" : "Kaybettin!", 1200);
+      this._setStatus(win ? "PvP â€¢ KazandÄ±n" : "PvP â€¢ Kaybettin");
+      this._toast(win ? "KazandÄ±n!" : "Kaybettin!", 1200);
       this._recordResult(win, finalReason, meta);
       this._updateHud();
       this._render();
@@ -1193,11 +1195,11 @@ _handleTap(x, y) {
       if (this._els.timerText) this._els.timerText.textContent = String(sec);
       if (this._els.sub) {
         if (this._state.finished) {
-          this._els.sub.textContent = this._state.finishReason || "Maç bitti";
+          this._els.sub.textContent = this._state.finishReason || "MaÃ§ bitti";
         } else if (sec <= FINAL_WARNING_SECONDS) {
-          this._els.sub.textContent = `${sec} saniye • son uyarı`;
+          this._els.sub.textContent = `${sec} saniye â€¢ son uyarÄ±`;
         } else {
-          this._els.sub.textContent = `${sec} saniye • ikon yakala`;
+          this._els.sub.textContent = `${sec} saniye â€¢ ikon yakala`;
         }
       }
     },
@@ -1254,12 +1256,12 @@ _handleTap(x, y) {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = "900 22px system-ui, Arial";
-        ctx.fillText(this._state.winner === "me" ? "KAZANDIN" : "KAYBETTİN", w * 0.5, boxY + 28);
+        ctx.fillText(this._state.winner === "me" ? "KAZANDIN" : "KAYBETTÄ°N", w * 0.5, boxY + 28);
 
         ctx.font = "800 12px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText(`${Math.round(this._state.meHp)} HP • ${Math.round(this._state.enemyHp)} HP`, w * 0.5, boxY + 50);
-        ctx.fillText(`Skor ${Math.round(this._state.meScore)} • ${Math.round(this._state.enemyScore)}`, w * 0.5, boxY + 68);
+        ctx.fillText(`${Math.round(this._state.meHp)} HP â€¢ ${Math.round(this._state.enemyHp)} HP`, w * 0.5, boxY + 50);
+        ctx.fillText(`Skor ${Math.round(this._state.meScore)} â€¢ ${Math.round(this._state.enemyScore)}`, w * 0.5, boxY + 68);
 
         if (this._state.winner === "me" && this._state.resultPrizeYton > 0) {
           ctx.font = "900 16px system-ui, Arial";
@@ -1269,7 +1271,7 @@ _handleTap(x, y) {
 
         ctx.font = "700 11px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.70)";
-        ctx.fillText(this._state.finishReason || "Maç bitti", w * 0.5, boxY + boxH - 14);
+        ctx.fillText(this._state.finishReason || "MaÃ§ bitti", w * 0.5, boxY + boxH - 14);
       }
 
       ctx.textAlign = "left";
@@ -1315,7 +1317,7 @@ _handleTap(x, y) {
         const dh = Math.max(8, ih * fit);
         ctx.drawImage(img, -dw / 2, -dh / 2 - 4, dw, dh);
       } else {
-        // PNG yok — sadece renkli daire göster, emoji/harf yok
+        // PNG yok â€” sadece renkli daire gÃ¶ster, emoji/harf yok
         const rg = ctx.createRadialGradient(0, -3, 4, 0, -3, cur.w * 0.32);
         rg.addColorStop(0, cur.color + "ee");
         rg.addColorStop(1, cur.color + "44");
