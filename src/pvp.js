@@ -149,7 +149,7 @@
   const MODE_ENERGY_COST = {
     grid: 10,
     arena: 5,
-    slotarena: 3,
+    slotarena: 15,
   };
 
   function getSelectedStakeForMode(modeId, pvpState = null) {
@@ -176,24 +176,128 @@
     return Number(MODE_ENERGY_COST[modeId] || 0);
   }
 
+  function isRpcMissingFunction(error) {
+    const code = String(error?.code || "").trim();
+    const msg = String(error?.message || "").toLowerCase();
+    return code === "PGRST202" || msg.includes("could not find the function");
+  }
+
+  function isRpcAmbiguous(error) {
+    const code = String(error?.code || "").trim();
+    const msg = String(error?.message || "").toLowerCase();
+    return code === "PGRST203" || msg.includes("could not choose the best candidate function");
+  }
+
+  async function callRpcWithFallback(supabase, names, params) {
+    const rpcNames = Array.isArray(names) ? names : [names];
+    let last = null;
+
+    for (const rpcName of rpcNames) {
+      if (!rpcName) continue;
+      const res = await supabase.rpc(rpcName, params);
+      if (!res?.error) return res;
+      last = res;
+      if (!isRpcMissingFunction(res.error) && !isRpcAmbiguous(res.error)) return res;
+    }
+
+    return last || { data: null, error: new Error("rpc_unavailable") };
+  }
+
+  async function enqueueBetPvpFallbackTable(supabase, mode, stake) {
+    try {
+      const authRes = await supabase.auth?.getUser?.();
+      const userId = authRes?.data?.user?.id || null;
+      if (!userId) {
+        return { data: null, error: { message: "auth unavailable" } };
+      }
+
+      try {
+        await supabase
+          .from("pvp_match_queue")
+          .delete()
+          .eq("user_id", userId)
+          .eq("game_mode", String(mode || ""));
+      } catch (_) {}
+
+      const payload = {
+        user_id: userId,
+        game_mode: String(mode || ""),
+        stake_yton: Number(stake || 0),
+        status: "searching",
+      };
+
+      const insertRes = await supabase
+        .from("pvp_match_queue")
+        .insert(payload)
+        .select("status, match_id")
+        .limit(1)
+        .maybeSingle();
+
+      if (!insertRes?.error) {
+        return {
+          data: insertRes.data || { status: "searching", match_id: null },
+          error: null,
+        };
+      }
+
+      return insertRes;
+    } catch (err) {
+      return { data: null, error: err };
+    }
+  }
+
   async function enqueueBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("enqueue_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
-    });
+    const params = {
+      p_mode: String(mode || ""),
+      p_stake_yton: Number(stake || 0),
+    };
+
+    const primary = await callRpcWithFallback(
+      supabase,
+      ["tc_enqueue_ranked_pvp", "enqueue_ranked_pvp"],
+      params
+    );
+
+    if (!primary?.error) return primary;
+    if (!isRpcAmbiguous(primary.error)) return primary;
+
+    return await enqueueBetPvpFallbackTable(supabase, mode, stake);
   }
 
   async function cancelBetPvp(supabase, mode, stake) {
-    return await supabase.rpc("cancel_ranked_pvp", {
-      p_mode: mode,
-      p_stake_yton: stake,
-    });
+    const params = {
+      p_mode: String(mode || ""),
+      p_stake_yton: Number(stake || 0),
+    };
+
+    const primary = await callRpcWithFallback(
+      supabase,
+      ["tc_cancel_ranked_pvp", "cancel_ranked_pvp"],
+      params
+    );
+
+    if (!primary?.error) return primary;
+
+    try {
+      const authRes = await supabase.auth?.getUser?.();
+      const userId = authRes?.data?.user?.id || null;
+      if (!userId) return primary;
+      const delRes = await supabase
+        .from("pvp_match_queue")
+        .delete()
+        .eq("user_id", userId)
+        .eq("game_mode", String(mode || ""))
+        .eq("stake_yton", Number(stake || 0));
+      return delRes?.error ? primary : { data: { status: "cancelled" }, error: null };
+    } catch (_) {
+      return primary;
+    }
   }
 
   async function tryBetMatch(supabase, userId, mode) {
-    return await supabase.rpc("try_ranked_pvp_match", {
+    return await callRpcWithFallback(supabase, ["tc_try_ranked_pvp_match", "try_ranked_pvp_match"], {
       p_user_id: userId,
-      p_mode: mode,
+      p_mode: String(mode || ""),
     });
   }
 
@@ -498,7 +602,7 @@
           id: "arena",
           title: "Kafes Dövüşü",
           subtitle: "1v1 Kafes Dövüşü",
-          desc: "Daha hızlı PvP modu. Kritik saldırılar.",
+          desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
           open: true,
           accent: "#ff9340",
         },
