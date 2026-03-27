@@ -149,7 +149,7 @@
   const MODE_ENERGY_COST = {
     grid: 10,
     arena: 5,
-    slotarena: 15,
+    slotarena: 3,
   };
 
   function getSelectedStakeForMode(modeId, pvpState = null) {
@@ -602,7 +602,7 @@
           id: "arena",
           title: "Kafes Dövüşü",
           subtitle: "1v1 Kafes Dövüşü",
-          desc: "Daha hızlı PvP modu. Kritik saldırılar, kısa maçlar ve direkt ödül.",
+          desc: "Daha hızlı PvP modu. Kritik saldırılar.",
           open: true,
           accent: "#ff9340",
         },
