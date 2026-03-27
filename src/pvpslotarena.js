@@ -13,6 +13,7 @@
   const PLAYER_DECISION_MS = 3000;
   const MATCH_WATCH_MS = 700;
   const SYNC_HEARTBEAT_MS = 900;
+  const FLOW_EXTRA_MS = 500;
 
   const ICONS = {
     weed:  { id: "weed",  emoji: "🌿", label: "OT",      color: "#35da7b", base: 12, weight: 17 },
