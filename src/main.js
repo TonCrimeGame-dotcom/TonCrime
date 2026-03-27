@@ -224,6 +224,45 @@ const initial = loaded
 const store = new Store(initial);
 window.tcStore = store;
 
+
+function syncLeaderboardSnapshot() {
+  try {
+    const s = store.get() || {};
+    const pvp = { ...(s.pvp || {}) };
+    const player = s.player || {};
+    const username = String(player.username || "Player").trim() || "Player";
+    const board = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.map((x) => ({ ...x })) : [];
+    const wins = Math.max(0, Number(pvp.wins || 0));
+    const losses = Math.max(0, Number(pvp.losses || 0));
+    const rating = Math.max(0, Number(pvp.rating || 1000));
+    const score = rating + wins * 8;
+    const entry = {
+      id: String(player.telegramId || player.id || "player_main"),
+      name: username,
+      wins,
+      losses,
+      rating,
+      score,
+      updatedAt: Date.now(),
+    };
+    const next = board.filter((x) => x && String(x.name || "") !== username);
+    next.push(entry);
+    next.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    if (JSON.stringify(next.slice(0, 50)) !== JSON.stringify(board.slice(0, 50))) {
+      store.set({
+        pvp: {
+          ...pvp,
+          leaderboard: next.slice(0, 50),
+        },
+      });
+    }
+  } catch (err) {
+    console.warn("[TonCrime] leaderboard sync failed:", err);
+  }
+}
+
+syncLeaderboardSnapshot();
+
 normalizeGlobalUi(store);
 
 window.addEventListener("resize", () => {
@@ -1049,6 +1088,7 @@ window.addEventListener("tc:openPvp", () => {
   }
 });
 
+
 window.addEventListener("tc:openProfile", () => {
   try {
     const s = store.get() || {};
@@ -1058,6 +1098,7 @@ window.addEventListener("tc:openProfile", () => {
         profileTab: "profile",
       },
     });
+    syncLeaderboardSnapshot();
     scenes.go("profile");
   } catch (err) {
     console.warn("[TonCrime] tc:openProfile açılamadı:", err);
@@ -1073,11 +1114,13 @@ window.addEventListener("tc:openWallet", () => {
         profileTab: "wallet",
       },
     });
+    syncLeaderboardSnapshot();
     scenes.go("profile");
   } catch (err) {
     console.warn("[TonCrime] tc:openWallet açılamadı:", err);
   }
 });
+
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
@@ -1105,6 +1148,7 @@ window.addEventListener("tc:pvp:win", () => {
       pvpPlayed: Number(m.pvpPlayed || 0) + 1,
     },
   });
+  syncLeaderboardSnapshot();
 });
 
 window.addEventListener("tc:pvp:lose", () => {
@@ -1116,6 +1160,7 @@ window.addEventListener("tc:pvp:lose", () => {
       pvpPlayed: Number(m.pvpPlayed || 0) + 1,
     },
   });
+  syncLeaderboardSnapshot();
 });
 
 /* ===== UI ===== */
