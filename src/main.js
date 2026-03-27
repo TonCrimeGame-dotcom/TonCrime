@@ -14,6 +14,7 @@ import { HomeScene } from "./scenes/HomeScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
+import { ProfileScene } from "./scenes/ProfileScene.js";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -994,6 +995,7 @@ scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("missions", new MissionsScene({ store, input, assets, scenes }));
 scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
+scenes.register("profile", new ProfileScene({ store, input, assets, scenes }));
 
 scenes.register(
   "coffeeshop",
@@ -1044,6 +1046,36 @@ window.addEventListener("tc:openPvp", () => {
     scenes.go("pvp");
   } catch (err) {
     console.warn("[TonCrime] tc:openPvp açılamadı:", err);
+  }
+});
+
+window.addEventListener("tc:openProfile", () => {
+  try {
+    const s = store.get() || {};
+    store.set({
+      ui: {
+        ...(s.ui || {}),
+        profileTab: "profile",
+      },
+    });
+    scenes.go("profile");
+  } catch (err) {
+    console.warn("[TonCrime] tc:openProfile açılamadı:", err);
+  }
+});
+
+window.addEventListener("tc:openWallet", () => {
+  try {
+    const s = store.get() || {};
+    store.set({
+      ui: {
+        ...(s.ui || {}),
+        profileTab: "wallet",
+      },
+    });
+    scenes.go("profile");
+  } catch (err) {
+    console.warn("[TonCrime] tc:openWallet açılamadı:", err);
   }
 });
 
