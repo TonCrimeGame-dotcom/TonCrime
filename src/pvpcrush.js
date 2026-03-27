@@ -778,6 +778,7 @@
     _resultRecorded: false,
     _remoteSwipe: null,
     _remoteSwipeUntil: 0,
+    _remoteSwapAnim: null,
 
 
     _ensureAudio() {
@@ -994,8 +995,43 @@
       };
     },
 
+    _startRemoteSwapAnimation(netState, meta = {}) {
+      if (!this._state || !meta?.move?.from || !meta?.move?.to) return false;
+      const from = { r: Number(meta.move.from.r), c: Number(meta.move.from.c) };
+      const to = { r: Number(meta.move.to.r), c: Number(meta.move.to.c) };
+      if (![from.r, from.c, to.r, to.c].every(Number.isFinite)) return false;
+      if (!this._state.board?.[from.r]?.[from.c] || !this._state.board?.[to.r]?.[to.c]) return false;
+
+      this._remoteSwapAnim = {
+        from,
+        to,
+        startAt: performance.now(),
+        duration: 150,
+        board: cloneBoard(this._state.board),
+        nextState: netState,
+        nextMeta: { ...meta, fromRemote: false, move: null },
+      };
+      this._render();
+      return true;
+    },
+
+    _tickRemoteSwapAnimation(now = performance.now()) {
+      const anim = this._remoteSwapAnim;
+      if (!anim) return false;
+      const t = clamp((now - anim.startAt) / anim.duration, 0, 1);
+      if (t < 1) return true;
+      const nextState = anim.nextState;
+      const nextMeta = anim.nextMeta || {};
+      this._remoteSwapAnim = null;
+      this._applyNetworkState(nextState, nextMeta);
+      return false;
+    },
+
     _applyNetworkState(netState, meta = {}) {
       if (!this._state || !netState) return;
+      if (meta.fromRemote && meta.move?.from && meta.move?.to && !this._remoteSwapAnim) {
+        if (this._startRemoteSwapAnimation(netState, meta)) return;
+      }
       const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
       const nextBoard = cloneBoard(netState.board || this._state.board);
 
@@ -1016,14 +1052,6 @@
       this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
 
       this._locked = this._state.finished ? true : this._state.turn !== "me";
-
-      if (meta.fromRemote && meta.move?.from && meta.move?.to) {
-        this._remoteSwipe = {
-          from: { r: Number(meta.move.from.r), c: Number(meta.move.from.c) },
-          to: { r: Number(meta.move.to.r), c: Number(meta.move.to.c) },
-        };
-        this._remoteSwipeUntil = Date.now() + 1300;
-      }
 
       if (this._state.finished) {
         const win = this._state.enemyHp <= 0 ||
@@ -1212,6 +1240,7 @@
       this._resultRecorded = false;
       this._remoteSwipe = null;
       this._remoteSwipeUntil = 0;
+      this._remoteSwapAnim = null;
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -1631,6 +1660,11 @@
           this._flashAlpha = 0;
         }
 
+        if (this._remoteSwapAnim) {
+          dirty = true;
+          this._tickRemoteSwapAnimation(now);
+        }
+
         if (dirty) this._render();
         this._animFrame = requestAnimationFrame(loop);
       };
@@ -1979,48 +2013,41 @@
       }
       ctx.globalAlpha = 1;
     },
-
-    _renderRemoteSwipe(ctx) {
-      if (!this._remoteSwipe?.from || !this._remoteSwipe?.to) return;
-      if (Date.now() > this._remoteSwipeUntil) return;
-
-      const fromRect = this._tileRects.find((t) => t.r === this._remoteSwipe.from.r && t.c === this._remoteSwipe.from.c);
-      const toRect = this._tileRects.find((t) => t.r === this._remoteSwipe.to.r && t.c === this._remoteSwipe.to.c);
+    _renderRemoteSwap(ctx) {
+      const anim = this._remoteSwapAnim;
+      if (!anim?.from || !anim?.to || !anim?.board) return;
+      const fromRect = this._tileRects.find((t) => t.r === anim.from.r && t.c === anim.from.c);
+      const toRect = this._tileRects.find((t) => t.r === anim.to.r && t.c === anim.to.c);
       if (!fromRect || !toRect) return;
+      const fromTile = anim.board?.[anim.from.r]?.[anim.from.c];
+      const toTile = anim.board?.[anim.to.r]?.[anim.to.c];
+      if (!fromTile || !toTile) return;
 
-      const pulse = 0.45 + Math.sin(Date.now() * 0.014) * 0.2;
-      const fromX = fromRect.x + fromRect.w * 0.5;
-      const fromY = fromRect.y + fromRect.h * 0.5;
-      const toX = toRect.x + toRect.w * 0.5;
-      const toY = toRect.y + toRect.h * 0.5;
-      const head = Math.max(10, Math.min(fromRect.w, fromRect.h) * 0.28);
-      const angle = Math.atan2(toY - fromY, toX - fromX);
+      const t = clamp((performance.now() - anim.startAt) / anim.duration, 0, 1);
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const mix = (a, b) => a + (b - a) * ease;
+      const pad = 2;
+      const drawMoving = (tile, src, dst) => {
+        const x = mix(src.x, dst.x);
+        const y = mix(src.y, dst.y);
+        const radius = Math.max(10, Math.floor(src.w * 0.18));
+        fillRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, "rgba(255,255,255,0.08)");
+        const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
+        const glowR = src.w * 0.4;
+        const glow = ctx.createRadialGradient(x + src.w / 2, y + src.h / 2, 2, x + src.w / 2, y + src.h / 2, glowR);
+        glow.addColorStop(0, meta.color + "66");
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x + src.w / 2, y + src.h / 2, glowR, 0, Math.PI * 2);
+        ctx.fill();
+        drawTileIcon(ctx, tile.type, x + pad, y + pad, src.w - 4, false, Date.now());
+      };
 
       ctx.save();
-      ctx.strokeStyle = `rgba(255,214,102,${(0.7 + pulse * 0.25).toFixed(3)})`;
-      ctx.lineWidth = Math.max(4, fromRect.w * 0.12);
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(fromX, fromY);
-      ctx.lineTo(toX, toY);
-      ctx.stroke();
-
-      ctx.fillStyle = `rgba(255,214,102,${(0.9 + pulse * 0.08).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.moveTo(toX, toY);
-      ctx.lineTo(
-        toX - Math.cos(angle - Math.PI / 6) * head,
-        toY - Math.sin(angle - Math.PI / 6) * head
-      );
-      ctx.lineTo(
-        toX - Math.cos(angle + Math.PI / 6) * head,
-        toY - Math.sin(angle + Math.PI / 6) * head
-      );
-      ctx.closePath();
-      ctx.fill();
-
-      strokeRoundRect(ctx, fromRect.x + 4, fromRect.y + 4, fromRect.w - 8, fromRect.h - 8, Math.max(8, Math.floor(fromRect.w * 0.18)), `rgba(255,214,102,${(0.65 + pulse * 0.2).toFixed(3)})`, 2.2);
-      strokeRoundRect(ctx, toRect.x + 4, toRect.y + 4, toRect.w - 8, toRect.h - 8, Math.max(8, Math.floor(toRect.w * 0.18)), `rgba(255,214,102,${(0.9 + pulse * 0.08).toFixed(3)})`, 2.8);
+      ctx.globalAlpha = 0.98;
+      drawMoving(fromTile, fromRect, toRect);
+      drawMoving(toTile, toRect, fromRect);
       ctx.restore();
     },
 
@@ -2084,6 +2111,12 @@
           const tile = this._state.board[r][c];
           const selected = this._selected && this._selected.r === r && this._selected.c === c;
           const radius = Math.max(10, Math.floor(cell * 0.18));
+          const hiddenByRemoteAnim = !!(
+            this._remoteSwapAnim && (
+              (this._remoteSwapAnim.from.r === r && this._remoteSwapAnim.from.c === c) ||
+              (this._remoteSwapAnim.to.r === r && this._remoteSwapAnim.to.c === c)
+            )
+          );
 
           // Zemin (tile rengi drawTileIcon içinde yönetiliyor artık)
           fillRoundRect(
@@ -2091,7 +2124,7 @@
             selected ? "rgba(255,181,74,0.18)" : "rgba(255,255,255,0.05)"
           );
 
-          if (tile) {
+          if (tile && !hiddenByRemoteAnim) {
             const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
 
             // Güçlü glow
@@ -2120,7 +2153,7 @@
         ctx.globalAlpha = 1;
       }
 
-      this._renderRemoteSwipe(ctx);
+      this._renderRemoteSwap(ctx);
       this._renderEffects(ctx);
 
       ctx.textAlign = "left";
