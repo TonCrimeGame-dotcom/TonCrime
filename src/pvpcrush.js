@@ -776,10 +776,8 @@
     _onlineChannel: null,
     _onlineReady: false,
     _resultRecorded: false,
-    _remoteBoardPreview: null,
-    _remoteChangedCells: [],
-    _remoteHighlightUntil: 0,
-    _remotePreviewText: "",
+    _remoteSwipe: null,
+    _remoteSwipeUntil: 0,
 
 
     _ensureAudio() {
@@ -999,9 +997,7 @@
     _applyNetworkState(netState, meta = {}) {
       if (!this._state || !netState) return;
       const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
-      const prevBoard = cloneBoard(this._state.board || []);
       const nextBoard = cloneBoard(netState.board || this._state.board);
-      const changedCells = diffBoardCells(prevBoard, nextBoard);
 
       this._state.board = nextBoard;
       this._state.meHp = amIPlayer1 ? Number(netState.player1Hp) : Number(netState.player2Hp);
@@ -1021,11 +1017,12 @@
 
       this._locked = this._state.finished ? true : this._state.turn !== "me";
 
-      if (meta.fromRemote) {
-        this._remoteBoardPreview = cloneBoard(nextBoard);
-        this._remoteChangedCells = changedCells.slice(0, 18);
-        this._remoteHighlightUntil = Date.now() + (changedCells.length ? 1800 : 900);
-        this._remotePreviewText = meta.previewText || (changedCells.length ? `Rakip hamlesi • ${changedCells.length} hücre` : "Rakip hamlesi");
+      if (meta.fromRemote && meta.move?.from && meta.move?.to) {
+        this._remoteSwipe = {
+          from: { r: Number(meta.move.from.r), c: Number(meta.move.from.c) },
+          to: { r: Number(meta.move.to.r), c: Number(meta.move.to.c) },
+        };
+        this._remoteSwipeUntil = Date.now() + 1300;
       }
 
       if (this._state.finished) {
@@ -1080,19 +1077,26 @@
         })
         .on("broadcast", { event: "init_state" }, ({ payload }) => {
           if (!payload?.state) return;
-          this._applyNetworkState(payload.state, { fromRemote: true, previewText: "Rakip tahtası senkronlandı" });
+          this._applyNetworkState(payload.state, { fromRemote: true });
         })
         .on("broadcast", { event: "state_sync" }, ({ payload }) => {
           if (!payload?.state) return;
-          this._applyNetworkState(payload.state, { toast: payload.toast || "", fromRemote: true, previewText: "Rakip hamlesi" });
+          this._applyNetworkState(payload.state, {
+            toast: payload.toast || "",
+            fromRemote: true,
+            move: payload.move || null,
+          });
         })
         .on("broadcast", { event: "finish_sync" }, ({ payload }) => {
           if (!payload?.state) return;
-          this._applyNetworkState(payload.state, { fromRemote: true, previewText: "Rakip son hamlesi" });
+          this._applyNetworkState(payload.state, {
+            fromRemote: true,
+            move: payload.move || null,
+          });
         })
         .on("broadcast", { event: "leave_match" }, () => {
           if (this._state?.finished) return;
-          this._finishGame(true, "Rakip ayrıldı");
+          this._finishGame(true, "Rakip çıktı • kazandın");
         });
 
       await new Promise((resolve) => {
@@ -1160,9 +1164,14 @@
     },
 
     async stop() {
-      if (this._isRealtimeMatch() && this._onlineReady && !this._state?.finished) {
+      const isForfeit = this._isRealtimeMatch() && this._onlineReady && !this._state?.finished;
+      if (isForfeit) {
         await this._broadcastOnline("leave_match", { matchId: this._matchCtx?.matchId || null });
+        this._finishGame(false, "Maçtan çıktın");
+        await this._destroyOnlineChannel();
+        return;
       }
+
       this._running = false;
       this._locked = false;
       this._selected = null;
@@ -1201,10 +1210,8 @@
       this._flashAlpha = 0;
       this._flashColor = "#ffd166";
       this._resultRecorded = false;
-      this._remoteBoardPreview = null;
-      this._remoteChangedCells = [];
-      this._remoteHighlightUntil = 0;
-      this._remotePreviewText = "";
+      this._remoteSwipe = null;
+      this._remoteSwipeUntil = 0;
 
       const board = buildFreshBoard(this._lastSignature);
       this._lastSignature = boardSignature(board);
@@ -1251,8 +1258,8 @@
       this._render();
     },
 
-    backToMenu() {
-      this.stop();
+    async backToMenu() {
+      await this.stop();
 
       const wrap = document.getElementById("pvpWrap");
       const arena = document.getElementById("arena");
@@ -1383,6 +1390,12 @@
         this._render();
       };
 
+      const onPageHide = () => {
+        if (!this._isRealtimeMatch() || !this._onlineReady || !this._running || this._state?.finished) return;
+        this._broadcastOnline("leave_match", { matchId: this._matchCtx?.matchId || null }).catch?.(() => {});
+        this._finishGame(false, "Maçtan çıktın");
+      };
+
       canvas.addEventListener("mousedown", onDown);
       canvas.addEventListener("mousemove", onMove);
       canvas.addEventListener("mouseup", onUp);
@@ -1392,6 +1405,8 @@
       canvas.addEventListener("touchend", onUp, { passive: false });
       canvas.addEventListener("touchcancel", onCancel, { passive: false });
       window.addEventListener("resize", onResize);
+      window.addEventListener("pagehide", onPageHide);
+      window.addEventListener("beforeunload", onPageHide);
 
       if (this._els?.close) {
         this._els.close.onclick = () => this.backToMenu();
@@ -1416,6 +1431,8 @@
         canvas.removeEventListener("touchend", onUp);
         canvas.removeEventListener("touchcancel", onCancel);
         window.removeEventListener("resize", onResize);
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("beforeunload", onPageHide);
         if (this._els?.close) this._els.close.onclick = null;
       };
     },
@@ -1680,7 +1697,10 @@
       if (!this._running) return;
       if (this._checkFinish()) {
         if (this._isRealtimeMatch()) {
-          await this._broadcastOnline("finish_sync", { state: this._toNetworkState() });
+          await this._broadcastOnline("finish_sync", {
+          state: this._toNetworkState(),
+          move: { from: a, to: b },
+        });
         }
         return;
       }
@@ -1688,6 +1708,7 @@
       if (this._isRealtimeMatch()) {
         await this._broadcastOnline("state_sync", {
           state: this._toNetworkState(),
+          move: { from: a, to: b },
           toast: "Rakip oynadı",
         });
         this._locked = this._state.turn !== "me";
@@ -1959,64 +1980,48 @@
       ctx.globalAlpha = 1;
     },
 
-    _renderRemoteHighlights(ctx) {
-      if (!this._remoteChangedCells?.length || Date.now() > this._remoteHighlightUntil) return;
-      const pulse = 0.45 + Math.sin(Date.now() * 0.012) * 0.22;
-      for (const cell of this._remoteChangedCells) {
-        const rect = this._tileRects.find((t) => t.r === cell.r && t.c === cell.c);
-        if (!rect) continue;
-        strokeRoundRect(ctx, rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6, Math.max(8, Math.floor(rect.w * 0.16)), `rgba(255,214,102,${pulse.toFixed(3)})`, 2.4);
-      }
-    },
+    _renderRemoteSwipe(ctx) {
+      if (!this._remoteSwipe?.from || !this._remoteSwipe?.to) return;
+      if (Date.now() > this._remoteSwipeUntil) return;
 
-    _renderRemotePreview(ctx, w, h) {
-      if (!this._isRealtimeMatch()) return;
-      const board = this._remoteBoardPreview || this._state?.board;
-      if (!Array.isArray(board) || !board.length) return;
+      const fromRect = this._tileRects.find((t) => t.r === this._remoteSwipe.from.r && t.c === this._remoteSwipe.from.c);
+      const toRect = this._tileRects.find((t) => t.r === this._remoteSwipe.to.r && t.c === this._remoteSwipe.to.c);
+      if (!fromRect || !toRect) return;
 
-      const panelW = clamp(Math.round(w * 0.34), 108, 156);
-      const panelH = panelW + 26;
-      const px = w - panelW - 10;
-      const py = 10;
-      const ttlActive = Date.now() <= this._remoteHighlightUntil;
-      const borderAlpha = ttlActive ? 0.72 : 0.28;
-
-      fillRoundRect(ctx, px, py, panelW, panelH, 16, 'rgba(5,10,18,0.78)');
-      strokeRoundRect(ctx, px, py, panelW, panelH, 16, `rgba(255,214,102,${borderAlpha})`, 1.6);
+      const pulse = 0.45 + Math.sin(Date.now() * 0.014) * 0.2;
+      const fromX = fromRect.x + fromRect.w * 0.5;
+      const fromY = fromRect.y + fromRect.h * 0.5;
+      const toX = toRect.x + toRect.w * 0.5;
+      const toY = toRect.y + toRect.h * 0.5;
+      const head = Math.max(10, Math.min(fromRect.w, fromRect.h) * 0.28);
+      const angle = Math.atan2(toY - fromY, toX - fromX);
 
       ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.font = '600 11px Inter, system-ui, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText('Rakip Tahtası', px + 10, py + 8);
-      ctx.fillStyle = ttlActive ? 'rgba(255,214,102,0.95)' : 'rgba(184,196,214,0.86)';
-      ctx.font = '500 10px Inter, system-ui, sans-serif';
-      ctx.fillText(this._remotePreviewText || 'Canlı görünüm', px + 10, py + 22);
+      ctx.strokeStyle = `rgba(255,214,102,${(0.7 + pulse * 0.25).toFixed(3)})`;
+      ctx.lineWidth = Math.max(4, fromRect.w * 0.12);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+
+      ctx.fillStyle = `rgba(255,214,102,${(0.9 + pulse * 0.08).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(
+        toX - Math.cos(angle - Math.PI / 6) * head,
+        toY - Math.sin(angle - Math.PI / 6) * head
+      );
+      ctx.lineTo(
+        toX - Math.cos(angle + Math.PI / 6) * head,
+        toY - Math.sin(angle + Math.PI / 6) * head
+      );
+      ctx.closePath();
+      ctx.fill();
+
+      strokeRoundRect(ctx, fromRect.x + 4, fromRect.y + 4, fromRect.w - 8, fromRect.h - 8, Math.max(8, Math.floor(fromRect.w * 0.18)), `rgba(255,214,102,${(0.65 + pulse * 0.2).toFixed(3)})`, 2.2);
+      strokeRoundRect(ctx, toRect.x + 4, toRect.y + 4, toRect.w - 8, toRect.h - 8, Math.max(8, Math.floor(toRect.w * 0.18)), `rgba(255,214,102,${(0.9 + pulse * 0.08).toFixed(3)})`, 2.8);
       ctx.restore();
-
-      const pad = 10;
-      const miniTop = py + 38;
-      const miniSize = panelW - pad * 2;
-      const miniCell = Math.max(9, Math.floor(miniSize / GRID));
-      const actual = miniCell * GRID;
-      const bx = px + Math.floor((panelW - actual) / 2);
-      const by = miniTop;
-
-      fillRoundRect(ctx, bx - 4, by - 4, actual + 8, actual + 8, 12, 'rgba(255,255,255,0.04)');
-      for (let r = 0; r < GRID; r++) {
-        for (let c = 0; c < GRID; c++) {
-          const x = bx + c * miniCell;
-          const y = by + r * miniCell;
-          const tile = board[r]?.[c] || null;
-          const changed = this._remoteChangedCells.some((cell) => cell.r === r && cell.c === c);
-          fillRoundRect(ctx, x + 1, y + 1, miniCell - 2, miniCell - 2, Math.max(4, Math.floor(miniCell * 0.22)), changed ? 'rgba(255,214,102,0.20)' : 'rgba(255,255,255,0.05)');
-          if (tile) drawTileIcon(ctx, tile.type, x + 1, y + 1, miniCell - 2, changed, Date.now());
-          if (changed && ttlActive) {
-            strokeRoundRect(ctx, x + 1.5, y + 1.5, miniCell - 3, miniCell - 3, Math.max(4, Math.floor(miniCell * 0.22)), 'rgba(255,214,102,0.95)', 1.2);
-          }
-        }
-      }
     },
 
     _render() {
@@ -2115,9 +2120,8 @@
         ctx.globalAlpha = 1;
       }
 
-      this._renderRemoteHighlights(ctx);
+      this._renderRemoteSwipe(ctx);
       this._renderEffects(ctx);
-      this._renderRemotePreview(ctx, w, h);
 
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
