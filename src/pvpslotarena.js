@@ -359,6 +359,17 @@
     });
   }
 
+  function hasActiveDropMap(dropMap) {
+    if (!Array.isArray(dropMap)) return false;
+    for (const row of dropMap) {
+      if (!Array.isArray(row)) continue;
+      for (const value of row) {
+        if (Number(value || 0) > 0) return true;
+      }
+    }
+    return false;
+  }
+
   function drawSymbolArt(ctx, img, meta, x, y, w, h) {
     const pad = Math.max(4, Math.floor(Math.min(w, h) * 0.08));
     const innerX = x + pad;
@@ -994,11 +1005,11 @@
         return false;
       }
     },
-
     _buildCanonicalSnapshot(reason = "sync") {
       const s = this._state;
       if (!s) return null;
       this._lastSentSeq = normalizeSeq(this._lastSentSeq) + 1;
+      const zeroMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
       return {
         seq: this._lastSentSeq,
         reason,
@@ -1019,6 +1030,11 @@
         tumbleIndex: Number(s.tumbleIndex || 0),
         info: String(s.info || ""),
         decisionEndsAt: Number(s.decisionEndsAt || 0),
+        markedRemove: Array.from(s.markedRemove || []),
+        dropMap: deepCloneSafe(s.dropMap || zeroMap),
+        dropProgress: Number(s.dropProgress ?? 1),
+        spinIntroMap: deepCloneSafe(s.spinIntroMap || null),
+        spinIntroProgress: Number(s.spinIntroProgress ?? 1),
         winnerSide: s.finished ? (s.enemyHp <= 0 || (s.meHp >= s.enemyHp && s.meSpins <= 0 && s.enemySpins <= 0) ? "p1" : "p2") : null,
       };
     },
@@ -1030,7 +1046,6 @@
       this._lastSyncTs = Date.now();
       return this._broadcast("state", { snapshot });
     },
-
     _applyCanonicalSnapshot(snapshot, opts = {}) {
       if (!snapshot || !this._state) return;
       const seq = normalizeSeq(snapshot.seq);
@@ -1061,11 +1076,26 @@
       s.tumbleIndex = Number(snapshot.tumbleIndex || 0);
       s.info = String(snapshot.info || (s.turn === "me" ? "Sıran sende" : `${this._opponent.username || "Rakip"} sırada`));
       s.decisionEndsAt = Number(snapshot.decisionEndsAt || 0);
-      s.markedRemove = new Set();
-      s.dropMap = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
-      s.dropProgress = 1;
-      s.spinIntroMap = null;
-      s.spinIntroProgress = 1;
+      s.markedRemove = new Set(snapshot.markedRemove || []);
+      s.dropMap = deepCloneSafe(snapshot.dropMap || Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0)));
+      s.dropProgress = Number(snapshot.dropProgress ?? 1);
+      s.spinIntroMap = deepCloneSafe(snapshot.spinIntroMap || null);
+      s.spinIntroProgress = Number(snapshot.spinIntroProgress ?? 1);
+
+      if (!this._isAuthoritativePeer() && snapshot.reason === "tumble_hit") {
+        const res = evaluateBoard(s.board, s.inBonus && s.bonusOwner === s.turn);
+        if (res?.remove?.length) s.markedRemove = new Set(res.remove);
+        if (res?.damage > 0) this._spawnHitFx(res.hits, s.turn === "me");
+      }
+
+      if (!this._isAuthoritativePeer() && snapshot.reason === "roll_ready" && s.spinIntroMap) {
+        this._playRemoteSpinIntro();
+      }
+
+      if (!this._isAuthoritativePeer() && snapshot.reason === "tumble_drop" && hasActiveDropMap(s.dropMap)) {
+        this._playRemoteDrop(s.dropMap);
+      }
+
       this._updateHud();
       this._render();
 
@@ -1250,6 +1280,26 @@
 
       this._els.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       return true;
+    },
+
+    _playRemoteSpinIntro() {
+      if (this._remoteSpinAnimating || !this._state?.spinIntroMap) return;
+      this._remoteSpinAnimating = true;
+      this._spinAnimation().finally(() => {
+        this._remoteSpinAnimating = false;
+        if (!this._state) return;
+        this._state.spinIntroMap = null;
+        this._state.spinIntroProgress = 1;
+        this._render();
+      });
+    },
+
+    _playRemoteDrop(dropMap) {
+      if (this._remoteDropAnimating || !hasActiveDropMap(dropMap)) return;
+      this._remoteDropAnimating = true;
+      this._animateDrop(dropMap).finally(() => {
+        this._remoteDropAnimating = false;
+      });
     },
 
     _setStatus(text) {
@@ -1442,7 +1492,7 @@
       }
     },
 
-    _queueAutoTurn(delay = 500) {
+    _queueAutoTurn(delay = 750) {
       clearTimeout(this._queuedResolve);
       this._queuedResolve = setTimeout(async () => {
         this._queuedResolve = null;
@@ -1481,9 +1531,9 @@
         forceBonus: rollBonus,
         forceCluster: rollWin,
       });
-      if (this._isAuthoritativePeer()) this._broadcastState("roll_ready");
       s.spinIntroMap = createSpinIntroMap();
       s.spinIntroProgress = 0;
+      if (this._isAuthoritativePeer()) this._broadcastState("roll_ready");
       await this._spinAnimation();
       s.spinIntroMap = null;
       s.spinIntroProgress = 1;
@@ -1505,7 +1555,7 @@
         s.bonusMultiplierBank = 0;
         s.displayedMultiplier = 0;
         s.multipliers = [];
-        await new Promise((r) => setTimeout(r, 650));
+        await new Promise((r) => setTimeout(r, 950));
       }
 
       s.spinning = false;
@@ -1524,7 +1574,7 @@
     async _spinAnimation() {
       const s = this._state;
       const start = performance.now();
-      const duration = 980;
+      const duration = 980 + FLOW_EXTRA_MS;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
@@ -1551,7 +1601,7 @@
       s.dropProgress = 0;
 
       const start = performance.now();
-      const duration = 360;
+      const duration = 520;
 
       return new Promise((resolve) => {
         const frame = (ts) => {
@@ -1589,7 +1639,7 @@
         s.flashUntil = Date.now() + 300;
         s.info = res.damage > 0 ? `${chain}. tumble • 8+ ikon patladı` : `${chain}. tumble • bonus kontrol`;
         this._render();
-        await new Promise((r) => setTimeout(r, 420));
+        await new Promise((r) => setTimeout(r, 560));
 
         if (res.damage > 0) {
           let hitDamage = res.damage;
@@ -1624,16 +1674,18 @@
         }
 
         if (this._isAuthoritativePeer()) this._broadcastState("tumble_hit");
-        await new Promise((r) => setTimeout(r, 180));
+        await new Promise((r) => setTimeout(r, 260));
         const tum = tumble(s.board, res.remove, {
           forceCluster: Math.random() < CHAIN_CONTINUE_CHANCE,
           forceBonus: false,
         });
         s.markedRemove = new Set();
         s.board = tum.board;
-        await this._animateDrop(tum.dropMap);
+        s.dropMap = tum.dropMap;
+        s.dropProgress = 0;
         if (this._isAuthoritativePeer()) this._broadcastState("tumble_drop");
-        await new Promise((r) => setTimeout(r, 120));
+        await this._animateDrop(tum.dropMap);
+        await new Promise((r) => setTimeout(r, 190));
         if (this._checkFinish()) return;
       }
 
