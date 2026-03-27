@@ -19,16 +19,13 @@
 
 .hudPanel {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.018) 100%),
-    rgba(0, 0, 0, 0.70);
-  border: 1px solid rgba(255,255,255,0.12);
+    linear-gradient(180deg, rgba(42,25,28,0.22) 0%, rgba(10,12,18,0.28) 100%),
+    rgba(0, 0, 0, 0.18);
+  border: 0;
   border-radius: 20px;
-  backdrop-filter: blur(16px) saturate(1.15);
-  -webkit-backdrop-filter: blur(16px) saturate(1.15);
-  box-shadow:
-    0 14px 36px rgba(0,0,0,0.36),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px) saturate(1.06);
+  -webkit-backdrop-filter: blur(12px) saturate(1.06);
+  box-shadow: none;
 }
 
 #hudShell {
@@ -40,7 +37,7 @@
 
 #hudRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px 150px;
+  grid-template-columns: minmax(0, 1fr) 150px;
   align-items: stretch;
   gap: 10px;
   width: 100%;
@@ -215,15 +212,7 @@
 
 /* ===== CENTER ===== */
 #hudCenter {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  align-self: stretch;
-  pointer-events: none;
-  overflow: visible;
-  padding: 0 8px;
-  position: relative;
-  left: -42px;
+  display: none !important;
 }
 
 /* ===== RIGHT ===== */
@@ -300,7 +289,7 @@
   }
 
   #hudRow {
-    grid-template-columns: minmax(0, 1fr) 78px 142px;
+    grid-template-columns: minmax(0, 1fr) 142px;
     gap: 8px;
   }
 
@@ -337,7 +326,7 @@
   }
 
   #hudRow {
-    grid-template-columns: minmax(0, 1fr) 58px 126px;
+    grid-template-columns: minmax(0, 1fr) 126px;
     gap: 7px;
   }
 
@@ -431,7 +420,7 @@
   }
 
   #hudRow {
-    grid-template-columns: minmax(0, 1fr) 50px 118px;
+    grid-template-columns: minmax(0, 1fr) 118px;
     gap: 6px;
   }
 
@@ -519,10 +508,10 @@
 
 #hudEnergyFill {
   background:
-    linear-gradient(90deg, rgba(42,170,138,0.96) 0%, rgba(118,237,206,0.98) 100%);
+    linear-gradient(90deg, rgba(184,133,58,0.96) 0%, rgba(247,200,97,0.98) 100%);
   box-shadow:
-    0 0 14px rgba(74,224,188,0.16),
-    inset 0 1px 0 rgba(220,255,245,0.16);
+    0 0 14px rgba(255,191,90,0.18),
+    inset 0 1px 0 rgba(255,248,220,0.20);
 }
 
 @media (max-width: 720px) {
@@ -546,3 +535,6 @@
     border-radius: 12px;
   }
 }
+
+
+#hudLogo { display: none !important; }
