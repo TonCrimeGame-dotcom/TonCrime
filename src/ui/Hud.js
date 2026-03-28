@@ -133,7 +133,6 @@ export function startHud(store) {
 
     try {
       window.dispatchEvent(new Event(tab === "wallet" ? "tc:openWallet" : "tc:openProfile"));
-      if (tab === "wallet") window.dispatchEvent(new Event("tc:openProfile"));
     } catch (_) {}
   }
 
