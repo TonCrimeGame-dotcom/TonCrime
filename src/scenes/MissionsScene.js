@@ -1,12 +1,13 @@
-function clamp(n, a, b) {
+
+function missionClamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function pointInRect(px, py, r) {
+function missionPointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
-function roundRectPath(ctx, x, y, w, h, r) {
+function missionRoundRectPath(ctx, x, y, w, h, r) {
   const rr = Math.max(0, Math.min(r, w * 0.5, h * 0.5));
   ctx.beginPath();
   ctx.moveTo(x + rr, y);
@@ -17,17 +18,17 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function fillRoundRect(ctx, x, y, w, h, r) {
-  roundRectPath(ctx, x, y, w, h, r);
+function missionFillRoundRect(ctx, x, y, w, h, r) {
+  missionRoundRectPath(ctx, x, y, w, h, r);
   ctx.fill();
 }
 
-function strokeRoundRect(ctx, x, y, w, h, r) {
-  roundRectPath(ctx, x, y, w, h, r);
+function missionStrokeRoundRect(ctx, x, y, w, h, r) {
+  missionRoundRectPath(ctx, x, y, w, h, r);
   ctx.stroke();
 }
 
-function drawCoverImage(ctx, img, x, y, w, h, alpha = 1) {
+function missionDrawCoverImage(ctx, img, x, y, w, h, alpha = 1) {
   if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return;
   const iw = img.naturalWidth;
   const ih = img.naturalHeight;
@@ -42,7 +43,7 @@ function drawCoverImage(ctx, img, x, y, w, h, alpha = 1) {
   ctx.globalAlpha = prev;
 }
 
-function getAssetImageSafe(assets, key) {
+function missionGetAssetImageSafe(assets, key) {
   if (!assets) return null;
   try {
     if (typeof assets.getImage === "function") {
@@ -59,18 +60,18 @@ function getAssetImageSafe(assets, key) {
   return null;
 }
 
-function fmtNum(n) {
+function missionFmtNum(n) {
   return Number(n || 0).toLocaleString("tr-TR");
 }
 
-function dayKey() {
+function missionDayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
   ).padStart(2, "0")}`;
 }
 
-function wrapLines(ctx, text, maxWidth, maxLines = 2) {
+function missionWrapLines(ctx, text, maxWidth, maxLines = 2) {
   const words = String(text || "").split(/\s+/).filter(Boolean);
   const lines = [];
   let line = "";
@@ -99,34 +100,30 @@ function wrapLines(ctx, text, maxWidth, maxLines = 2) {
   return lines;
 }
 
-function ensureMissionDefaults(store) {
+function missionEnsureDefaults(store) {
   const s = store.get() || {};
   const m = s.missions || {};
 
-  const patch = {
-    dailyAdWatched: Number(m.dailyAdWatched || 0),
-    dailyAdClaimed: !!m.dailyAdClaimed,
-
-    referrals: Number(m.referrals || 0),
-    referralClaim10: !!m.referralClaim10,
-    referralClaim100: !!m.referralClaim100,
-    referralClaim1000: !!m.referralClaim1000,
-    referralClaim5000: !!m.referralClaim5000,
-
-    pvpPlayed: Number(m.pvpPlayed || 0),
-    pvpClaimed: !!m.pvpClaimed,
-
-    energyRefillUsed: Number(m.energyRefillUsed || 0),
-    energyClaimed: !!m.energyClaimed,
-
-    telegramJoined: !!m.telegramJoined,
-    telegramClaimed: !!m.telegramClaimed,
-
-    levelClaimedAt: Number(m.levelClaimedAt || 0),
-    lastDailyKey: String(m.lastDailyKey || ""),
-  };
-
-  store.set({ missions: { ...m, ...patch } });
+  store.set({
+    missions: {
+      ...m,
+      dailyAdWatched: Number(m.dailyAdWatched || 0),
+      dailyAdClaimed: !!m.dailyAdClaimed,
+      referrals: Number(m.referrals || 0),
+      referralClaim10: !!m.referralClaim10,
+      referralClaim100: !!m.referralClaim100,
+      referralClaim1000: !!m.referralClaim1000,
+      referralClaim5000: !!m.referralClaim5000,
+      pvpPlayed: Number(m.pvpPlayed || 0),
+      pvpClaimed: !!m.pvpClaimed,
+      energyRefillUsed: Number(m.energyRefillUsed || 0),
+      energyClaimed: !!m.energyClaimed,
+      telegramJoined: !!m.telegramJoined,
+      telegramClaimed: !!m.telegramClaimed,
+      levelClaimedAt: Number(m.levelClaimedAt || 0),
+      lastDailyKey: String(m.lastDailyKey || ""),
+    },
+  });
 }
 
 export class MissionsScene {
@@ -138,9 +135,7 @@ export class MissionsScene {
 
     this.scrollY = 0;
     this.maxScroll = 0;
-
     this.dragging = false;
-    this.downX = 0;
     this.downY = 0;
     this.startScrollY = 0;
     this.moved = 0;
@@ -148,7 +143,6 @@ export class MissionsScene {
 
     this.hit = [];
     this.hitBack = null;
-
     this.toastText = "";
     this.toastUntil = 0;
 
@@ -157,10 +151,13 @@ export class MissionsScene {
   }
 
   onEnter() {
-    ensureMissionDefaults(this.store);
+    missionEnsureDefaults(this.store);
     this._ensureDailyReset();
     this.scrollY = 0;
     this.maxScroll = 0;
+    this.dragging = false;
+    this.moved = 0;
+    this.tapCandidate = false;
     this.hit = [];
     this.hitBack = null;
   }
@@ -172,10 +169,10 @@ export class MissionsScene {
     const bottomReserved = Number(s?.ui?.chatReservedBottom || 82);
 
     return {
-      x: safe.x + 12,
-      y: safe.y + topReserved + 6,
-      w: safe.w - 24,
-      h: safe.h - topReserved - bottomReserved - 12,
+      x: safe.x + 10,
+      y: safe.y + topReserved,
+      w: safe.w - 20,
+      h: safe.h - topReserved - bottomReserved - 10,
     };
   }
 
@@ -187,7 +184,7 @@ export class MissionsScene {
   _ensureDailyReset() {
     const s = this.store.get() || {};
     const m = s.missions || {};
-    const today = dayKey();
+    const today = missionDayKey();
     if (m.lastDailyKey === today) return;
 
     this.store.set({
@@ -236,7 +233,7 @@ export class MissionsScene {
     const s = this.store.get() || {};
     const p = s.player || {};
     const maxE = Math.max(1, Number(p.energyMax || 100));
-    const next = clamp(Number(p.energy || 0) + Number(n || 0), 0, maxE);
+    const next = missionClamp(Number(p.energy || 0) + Number(n || 0), 0, maxE);
 
     this.store.set({
       player: {
@@ -291,7 +288,7 @@ export class MissionsScene {
     this.store.set({
       missions: {
         ...m2,
-        dailyAdWatched: clamp(Number(m2.dailyAdWatched || 0) + 1, 0, 20),
+        dailyAdWatched: missionClamp(Number(m2.dailyAdWatched || 0) + 1, 0, 20),
       },
     });
 
@@ -390,13 +387,7 @@ export class MissionsScene {
       this._setMissions({ referralClaim10: true });
       const s2 = this.store.get() || {};
       const p2 = s2.player || {};
-      this.store.set({
-        player: {
-          ...p2,
-          weaponName: "Başlangıç Bıçağı",
-          weaponBonus: "+3%",
-        },
-      });
+      this.store.set({ player: { ...p2, weaponName: "Başlangıç Bıçağı", weaponBonus: "+3%" } });
       this._showToast("10 davet ödülü alındı");
       return;
     }
@@ -405,13 +396,7 @@ export class MissionsScene {
       this._setMissions({ referralClaim100: true });
       const s2 = this.store.get() || {};
       const p2 = s2.player || {};
-      this.store.set({
-        player: {
-          ...p2,
-          weaponName: "Orta Seviye Silah",
-          weaponBonus: "+8%",
-        },
-      });
+      this.store.set({ player: { ...p2, weaponName: "Orta Seviye Silah", weaponBonus: "+8%" } });
       this._showToast("100 davet ödülü alındı");
       return;
     }
@@ -420,13 +405,7 @@ export class MissionsScene {
       this._setMissions({ referralClaim1000: true });
       const s2 = this.store.get() || {};
       const p2 = s2.player || {};
-      this.store.set({
-        player: {
-          ...p2,
-          weaponName: "En Güçlü Silah",
-          weaponBonus: "+18%",
-        },
-      });
+      this.store.set({ player: { ...p2, weaponName: "En Güçlü Silah", weaponBonus: "+18%" } });
       this._showToast("1000 davet ödülü alındı");
       return;
     }
@@ -446,101 +425,59 @@ export class MissionsScene {
     return [
       {
         key: "ads",
-        title: `Günlük Reklam İzle (${fmtNum(m.dailyAdWatched)}/20)`,
+        title: `Günlük Reklam İzle (${missionFmtNum(m.dailyAdWatched)}/20)`,
         desc: "Her reklam +1 enerji verir. 20 reklama ulaştığında görev ödülü açılır.",
         reward: m.dailyAdClaimed ? "Ödül alındı" : "Ödül: +20 coin • +10 XP",
-        tags: ["Reklam", "Enerji"],
-        buttonLabel: m.dailyAdClaimed
-          ? "Alındı"
-          : Number(m.dailyAdWatched || 0) >= 20
-          ? "Ödülü Al"
-          : "İzle",
+        buttonLabel: m.dailyAdClaimed ? "Alındı" : Number(m.dailyAdWatched || 0) >= 20 ? "Ödülü Al" : "İzle",
         buttonKind: m.dailyAdClaimed ? "done" : Number(m.dailyAdWatched || 0) >= 20 ? "claim" : "action",
-        action: m.dailyAdClaimed
-          ? null
-          : Number(m.dailyAdWatched || 0) >= 20
-          ? "claim:dailyAd"
-          : "watchAd",
-        progress: clamp(Number(m.dailyAdWatched || 0) / 20, 0, 1),
+        action: m.dailyAdClaimed ? null : Number(m.dailyAdWatched || 0) >= 20 ? "claim:dailyAd" : "watchAd",
+        progress: missionClamp(Number(m.dailyAdWatched || 0) / 20, 0, 1),
       },
       {
         key: "invite",
-        title: `Arkadaş Davet (${fmtNum(m.referrals)})`,
-        desc: "Davet bağlantını paylaş. Davet sayısı backend bağlanınca otomatik ilerler.",
+        title: `Arkadaş Davet (${missionFmtNum(m.referrals)})`,
+        desc: "Davet bağlantını paylaş. Backend bağlı olduğunda sayı otomatik ilerler.",
         reward: "Eşikler: 10 • 100 • 1000 • 5000",
-        tags: ["Davet", "Referral"],
         buttonLabel: "Davet Et",
         buttonKind: "action",
         action: "invite",
-        progress: clamp(Number(m.referrals || 0) / 10, 0, 1),
+        progress: missionClamp(Number(m.referrals || 0) / 10, 0, 1),
       },
       {
         key: "pvp",
-        title: `PvP Oyna (${fmtNum(m.pvpPlayed)}/3)`,
-        desc: "3 maç tamamla. PvP butonu görev sayfasından direkt açılır.",
-        reward: m.pvpClaimed ? "Ödül alındı" : "              Ödül: +15 coin • +20 XP",
-        tags: ["PvP", "Maç"],
-        buttonLabel: m.pvpClaimed
-          ? "Alındı"
-          : Number(m.pvpPlayed || 0) >= 3
-          ? "Ödülü Al"
-          : "Oyna",
+        title: `PvP Oyna (${missionFmtNum(m.pvpPlayed)}/3)`,
+        desc: "3 maç tamamla. Görev ekranından direkt PvP açılabilir.",
+        reward: m.pvpClaimed ? "Ödül alındı" : "Ödül: +15 coin • +20 XP",
+        buttonLabel: m.pvpClaimed ? "Alındı" : Number(m.pvpPlayed || 0) >= 3 ? "Ödülü Al" : "Oyna",
         buttonKind: m.pvpClaimed ? "done" : Number(m.pvpPlayed || 0) >= 3 ? "claim" : "action",
-        action: m.pvpClaimed
-          ? null
-          : Number(m.pvpPlayed || 0) >= 3
-          ? "claim:pvp"
-          : "openPvp",
-        progress: clamp(Number(m.pvpPlayed || 0) / 3, 0, 1),
+        action: m.pvpClaimed ? null : Number(m.pvpPlayed || 0) >= 3 ? "claim:pvp" : "openPvp",
+        progress: missionClamp(Number(m.pvpPlayed || 0) / 3, 0, 1),
       },
       {
         key: "energy",
         title: `Enerji Doldur (${Math.min(1, Number(m.energyRefillUsed || 0))}/1)`,
-        desc: "Bir kez enerji dolumu yap. Enerji satın alma tarafı bağlanınca otomatik ilerler.",
+        desc: "Bir kez enerji dolumu yap. Sistem bağlanınca görev otomatik ilerler.",
         reward: m.energyClaimed ? "Ödül alındı" : "Ödül: +10 coin • +10 enerji",
-        tags: ["Enerji", "Bina"],
-        buttonLabel: m.energyClaimed
-          ? "Alındı"
-          : Number(m.energyRefillUsed || 0) >= 1
-          ? "Ödülü Al"
-          : "Takipte",
+        buttonLabel: m.energyClaimed ? "Alındı" : Number(m.energyRefillUsed || 0) >= 1 ? "Ödülü Al" : "Takipte",
         buttonKind: m.energyClaimed ? "done" : Number(m.energyRefillUsed || 0) >= 1 ? "claim" : "info",
-        action: m.energyClaimed
-          ? null
-          : Number(m.energyRefillUsed || 0) >= 1
-          ? "claim:energy"
-          : null,
-        progress: clamp(Number(m.energyRefillUsed || 0), 0, 1),
+        action: m.energyClaimed ? null : Number(m.energyRefillUsed || 0) >= 1 ? "claim:energy" : null,
+        progress: missionClamp(Number(m.energyRefillUsed || 0), 0, 1),
       },
       {
         key: "level",
-        title: `Level Görevi (Seviye ${fmtNum(p.level)}/55)`,
+        title: `Level Görevi (Seviye ${missionFmtNum(p.level)}/55)`,
         desc: "55 level ve üstü olduğunda ödül açılır.",
         reward: Number(m.levelClaimedAt || 0) === 55 ? "Ödül alındı" : "Ödül: +50 coin • +25 XP",
-        tags: ["Level", "XP"],
-        buttonLabel: Number(m.levelClaimedAt || 0) === 55
-          ? "Alındı"
-          : Number(p.level || 1) >= 55
-          ? "Ödülü Al"
-          : "Takipte",
-        buttonKind: Number(m.levelClaimedAt || 0) === 55
-          ? "done"
-          : Number(p.level || 1) >= 55
-          ? "claim"
-          : "info",
-        action: Number(m.levelClaimedAt || 0) === 55
-          ? null
-          : Number(p.level || 1) >= 55
-          ? "claim:level"
-          : null,
-        progress: clamp(Number(p.level || 1) / 55, 0, 1),
+        buttonLabel: Number(m.levelClaimedAt || 0) === 55 ? "Alındı" : Number(p.level || 1) >= 55 ? "Ödülü Al" : "Takipte",
+        buttonKind: Number(m.levelClaimedAt || 0) === 55 ? "done" : Number(p.level || 1) >= 55 ? "claim" : "info",
+        action: Number(m.levelClaimedAt || 0) === 55 ? null : Number(p.level || 1) >= 55 ? "claim:level" : null,
+        progress: missionClamp(Number(p.level || 1) / 55, 0, 1),
       },
       {
         key: "telegram",
         title: "Telegram Grubuna Katıl",
-        desc: "Tek butonlu akış: önce katıl, sonra aynı buton ödülü al haline döner.",
+        desc: "Önce katıl, sonra aynı butondan ödülü al.",
         reward: m.telegramClaimed ? "Ödül alındı" : "Ödül: +20 coin",
-        tags: ["Telegram", "Sosyal"],
         buttonLabel: m.telegramClaimed ? "Alındı" : m.telegramJoined ? "Al" : "Katıl",
         buttonKind: m.telegramClaimed ? "done" : m.telegramJoined ? "claim" : "telegram",
         action: m.telegramClaimed ? null : "telegram",
@@ -549,13 +486,12 @@ export class MissionsScene {
       {
         key: "refThresholds",
         title: "Davet Eşik Ödülleri",
-        desc: "Aşağıdaki ödüller davet sayısına göre açılır.",
+        desc: "Davet sayısına göre açılan ekstra ödüller.",
         reward: "10 / 100 / 1000 / 5000",
-        tags: ["Ödül", "Eşik"],
         buttonLabel: "Detay",
         buttonKind: "info",
         action: null,
-        progress: clamp(Number(m.referrals || 0) / 5000, 0, 1),
+        progress: missionClamp(Number(m.referrals || 0) / 5000, 0, 1),
         extraRows: [
           {
             text: `10 davet → ${m.referralClaim10 ? "Alındı" : "Başlangıç Bıçağı"}`,
@@ -595,61 +531,38 @@ export class MissionsScene {
 
     if (this.input.justPressed?.()) {
       this.dragging = true;
-      this.downX = px;
       this.downY = py;
       this.startScrollY = this.scrollY;
       this.moved = 0;
       this.tapCandidate = true;
     }
 
-    if (this.dragging) {
+    if (this.dragging && this.input.isDown?.()) {
       const dy = py - this.downY;
       this.moved = Math.max(this.moved, Math.abs(dy));
-
       if (this.moved > 6) {
         this.tapCandidate = false;
-        this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
+        this.scrollY = missionClamp(this.startScrollY - dy, 0, this.maxScroll);
       }
     }
 
     if (this.input.justReleased?.()) {
       const wasTap = this.tapCandidate && this.moved < 10;
       this.dragging = false;
-
       if (!wasTap) return;
 
-      if (this.hitBack && pointInRect(px, py, this.hitBack)) {
+      if (this.hitBack && missionPointInRect(px, py, this.hitBack)) {
         this.scenes.go("home");
         return;
       }
 
       for (const h of this.hit) {
-        if (!pointInRect(px, py, h.rect)) continue;
-
-        if (h.type === "watchAd") {
-          this._watchAd();
-          return;
-        }
-
-        if (h.type === "invite") {
-          this._openInvite();
-          return;
-        }
-
-        if (h.type === "telegram") {
-          this._openTelegramTask();
-          return;
-        }
-
-        if (h.type === "openPvp") {
-          this._openPvp();
-          return;
-        }
-
-        if (h.type === "claim") {
-          this._claim(h.key);
-          return;
-        }
+        if (!missionPointInRect(px, py, h.rect)) continue;
+        if (h.type === "watchAd") return this._watchAd();
+        if (h.type === "invite") return this._openInvite();
+        if (h.type === "telegram") return this._openTelegramTask();
+        if (h.type === "openPvp") return this._openPvp();
+        if (h.type === "claim") return this._claim(h.key);
       }
     }
   }
@@ -657,318 +570,305 @@ export class MissionsScene {
   render(ctx, w, h) {
     const s = this.store.get() || {};
     const safe = this._safeRect(w, h);
+    const isTiny = safe.w <= 400;
 
     const bg =
-      getAssetImageSafe(this.assets, "missions") ||
-      getAssetImageSafe(this.assets, "pvp") ||
-      getAssetImageSafe(this.assets, "background");
+      missionGetAssetImageSafe(this.assets, "missions") ||
+      missionGetAssetImageSafe(this.assets, "pvp") ||
+      missionGetAssetImageSafe(this.assets, "background");
 
+    ctx.clearRect(0, 0, w, h);
     if (bg) {
-      drawCoverImage(ctx, bg, 0, 0, w, h, 1);
+      missionDrawCoverImage(ctx, bg, 0, 0, w, h, 1);
     } else {
       ctx.fillStyle = "#0b0a0f";
       ctx.fillRect(0, 0, w, h);
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.52)";
+    const bgOverlay = ctx.createLinearGradient(0, 0, 0, h);
+    bgOverlay.addColorStop(0, "rgba(6,6,9,0.40)");
+    bgOverlay.addColorStop(0.35, "rgba(8,7,6,0.56)");
+    bgOverlay.addColorStop(1, "rgba(4,4,5,0.78)");
+    ctx.fillStyle = bgOverlay;
     ctx.fillRect(0, 0, w, h);
+
+    this.hit = [];
+    this.hitBack = null;
 
     const panelX = safe.x;
     const panelY = safe.y;
     const panelW = safe.w;
     const panelH = safe.h;
 
-    this.hit = [];
-    this.hitBack = null;
+    ctx.fillStyle = "rgba(8,8,10,0.24)";
+    missionFillRoundRect(ctx, panelX, panelY, panelW, panelH, 22);
+    ctx.strokeStyle = "rgba(255,194,96,0.22)";
+    missionStrokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 22);
 
-    ctx.fillStyle = "rgba(12,8,10,0.34)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
-    ctx.strokeStyle = "rgba(255,173,58,0.6)";
-    ctx.lineWidth = 1.2;
-    strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
+    const headerH = isTiny ? 54 : 58;
+    const infoH = isTiny ? 72 : 80;
+    const footerH = isTiny ? 44 : 48;
 
-    const headerH = 108;
-    const innerX = panelX + 14;
-    const innerW = panelW - 28;
+    const headerRect = { x: panelX + 10, y: panelY + 10, w: panelW - 20, h: headerH };
+    const infoRect = { x: panelX + 10, y: headerRect.y + headerRect.h + 10, w: panelW - 20, h: infoH };
+    const listRect = {
+      x: panelX + 10,
+      y: infoRect.y + infoRect.h + 10,
+      w: panelW - 20,
+      h: Math.max(140, panelH - headerH - infoH - footerH - 50),
+    };
+    const footerRect = {
+      x: panelX + 10,
+      y: listRect.y + listRect.h + 10,
+      w: panelW - 20,
+      h: footerH,
+    };
 
-    ctx.fillStyle = "rgba(255,255,255,0.045)";
-    fillRoundRect(ctx, innerX, panelY + 12, innerW, headerH, 18);
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, innerX, panelY + 12, innerW, headerH, 18);
+    const glassFill = "rgba(12,12,15,0.46)";
+    const glassStroke = "rgba(255,255,255,0.10)";
+
+    ctx.fillStyle = glassFill;
+    missionFillRoundRect(ctx, headerRect.x, headerRect.y, headerRect.w, headerRect.h, 20);
+    ctx.strokeStyle = glassStroke;
+    missionStrokeRoundRect(ctx, headerRect.x + 0.5, headerRect.y + 0.5, headerRect.w - 1, headerRect.h - 1, 20);
+
+    ctx.fillStyle = glassFill;
+    missionFillRoundRect(ctx, infoRect.x, infoRect.y, infoRect.w, infoRect.h, 18);
+    ctx.strokeStyle = glassStroke;
+    missionStrokeRoundRect(ctx, infoRect.x + 0.5, infoRect.y + 0.5, infoRect.w - 1, infoRect.h - 1, 18);
+
+    ctx.fillStyle = "rgba(10,10,12,0.50)";
+    missionFillRoundRect(ctx, listRect.x, listRect.y, listRect.w, listRect.h, 18);
+    ctx.strokeStyle = "rgba(255,194,96,0.18)";
+    missionStrokeRoundRect(ctx, listRect.x + 0.5, listRect.y + 0.5, listRect.w - 1, listRect.h - 1, 18);
+
+    ctx.fillStyle = glassFill;
+    missionFillRoundRect(ctx, footerRect.x, footerRect.y, footerRect.w, footerRect.h, 18);
+    ctx.strokeStyle = glassStroke;
+    missionStrokeRoundRect(ctx, footerRect.x + 0.5, footerRect.y + 0.5, footerRect.w - 1, footerRect.h - 1, 18);
+
+    const closeW = isTiny ? 44 : 48;
+    const closeH = 34;
+    const closeRect = {
+      x: headerRect.x + headerRect.w - closeW - 10,
+      y: headerRect.y + 10,
+      w: closeW,
+      h: closeH,
+    };
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    missionFillRoundRect(ctx, closeRect.x, closeRect.y, closeRect.w, closeRect.h, 12);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    missionStrokeRoundRect(ctx, closeRect.x + 0.5, closeRect.y + 0.5, closeRect.w - 1, closeRect.h - 1, 12);
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 ${isTiny ? 13 : 14}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("X", closeRect.x + closeRect.w / 2, closeRect.y + closeRect.h / 2 + 0.5);
+    this.hitBack = closeRect;
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 18px system-ui";
-    ctx.fillText("Görevler", innerX + 16, panelY + 42);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = `900 ${isTiny ? 18 : 20}px system-ui`;
+    ctx.fillText("Görevler", headerRect.x + 14, headerRect.y + 28);
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = `${isTiny ? 11 : 12}px system-ui`;
+    ctx.fillText("Günlük • sosyal • davet ödülleri", headerRect.x + 14, headerRect.y + 46);
 
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.font = "13px system-ui";
-    ctx.fillText("Günlük görevler, sosyal görevler ve davet ödülleri", innerX + 16, panelY + 65);
-
-    const backW = 92;
-    const backH = 42;
-    const backX = innerX + innerW - backW - 12;
-    const backY = panelY + 24;
-    this.hitBack = { x: backX, y: backY, w: backW, h: backH };
-
-    ctx.fillStyle = "rgba(30,28,38,0.9)";
-    fillRoundRect(ctx, backX, backY, backW, backH, 14);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, backX, backY, backW, backH, 14);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 14px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Kapat", backX + backW / 2, backY + backH / 2);
-
-    const state = this.store.get() || {};
-    const p = state.player || {};
-    const m = state.missions || {};
-
-    const chips = [
-      `LVL ${fmtNum(p.level || 1)}`,
-      `${fmtNum(p.energy || 0)}/${fmtNum(p.energyMax || 100)} EN`,
-      `${fmtNum(m.referrals || 0)} DAVET`,
-    ];
-
-    let chipX = innerX + 16;
-    const chipY = panelY + 82;
-    for (const chip of chips) {
-      ctx.font = "600 12px system-ui";
-      const tw = ctx.measureText(chip).width;
-      const cw = tw + 22;
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
-      fillRoundRect(ctx, chipX, chipY, cw, 24, 12);
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
-      strokeRoundRect(ctx, chipX, chipY, cw, 24, 12);
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(chip, chipX + cw / 2, chipY + 12);
-      chipX += cw + 8;
-    }
-
-    const contentX = panelX + 10;
-    const contentY = panelY + headerH + 20;
-    const contentW = panelW - 20;
-    const contentH = panelH - headerH - 30;
+    const p = s.player || {};
+    const m = s.missions || {};
+    const summaryLeft = infoRect.x + 14;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = `900 ${isTiny ? 14 : 15}px system-ui`;
+    ctx.fillText("Bugünkü ilerleme", summaryLeft, infoRect.y + 24);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+    ctx.fillText(`Level ${missionFmtNum(p.level || 1)} • Enerji ${missionFmtNum(p.energy || 0)}/${missionFmtNum(p.energyMax || 100)}`, summaryLeft, infoRect.y + 44);
+    ctx.fillText(`Davet ${missionFmtNum(m.referrals || 0)} • PvP ${missionFmtNum(m.pvpPlayed || 0)}/3 • Reklam ${missionFmtNum(m.dailyAdWatched || 0)}/20`, summaryLeft, infoRect.y + 61);
 
     ctx.save();
-    roundRectPath(ctx, contentX, contentY, contentW, contentH, 18);
+    missionRoundRectPath(ctx, listRect.x, listRect.y, listRect.w, listRect.h, 18);
     ctx.clip();
 
     const cards = this._cards();
-    let y = contentY + 4 - this.scrollY;
-    const gap = 14;
+    const rowGap = 8;
+    const baseRowH = isTiny ? 88 : 92;
+    let y = listRect.y + 8 - this.scrollY;
 
     for (const card of cards) {
-      const x = contentX + 4;
-      const w2 = contentW - 8;
+      const x = listRect.x + 8;
+      const w2 = listRect.w - 16;
       const hasExtra = Array.isArray(card.extraRows) && card.extraRows.length > 0;
-      const cardH = hasExtra ? 220 : 126;
+      const rowH = hasExtra ? (isTiny ? 176 : 184) : baseRowH;
 
-      if (y + cardH >= contentY - 12 && y <= contentY + contentH + 12) {
-        ctx.fillStyle = "rgba(13,10,16,0.56)";
-        fillRoundRect(ctx, x, y, w2, cardH, 20);
-        ctx.strokeStyle = "rgba(255,170,40,0.50)";
-        ctx.lineWidth = 1;
-        strokeRoundRect(ctx, x, y, w2, cardH, 20);
+      if (y + rowH >= listRect.y - 12 && y <= listRect.y + listRect.h + 12) {
+        ctx.fillStyle = "rgba(13,10,16,0.44)";
+        missionFillRoundRect(ctx, x, y, w2, rowH, 18);
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        missionStrokeRoundRect(ctx, x + 0.5, y + 0.5, w2 - 1, rowH - 1, 18);
 
         const pad = 14;
-        const btnW = 104;
+        const btnW = isTiny ? 92 : 104;
         const btnH = 42;
-        const btnX = x + w2 - btnW - 14;
+        const btnX = x + w2 - btnW - 12;
         const btnY = y + 18;
+        const textMaxW = w2 - btnW - pad * 2 - 18;
 
-        const textRightGap = 14;
-        const textMaxW = w2 - btnW - pad * 2 - textRightGap - 18;
-
-        ctx.fillStyle = "#ffffff";
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
-        ctx.font = "700 16px system-ui";
-        ctx.fillText(card.title, x + pad, y + 28);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `900 ${isTiny ? 13 : 15}px system-ui`;
+        ctx.fillText(card.title, x + pad, y + 26);
 
         ctx.fillStyle = "rgba(255,255,255,0.76)";
-        ctx.font = "13px system-ui";
-        const descLines = wrapLines(ctx, card.desc, textMaxW, 2);
+        ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+        const descLines = missionWrapLines(ctx, card.desc, textMaxW, 2);
         for (let i = 0; i < descLines.length; i++) {
-          ctx.fillText(descLines[i], x + pad, y + 50 + i * 16);
+          ctx.fillText(descLines[i], x + pad, y + 45 + i * 14);
         }
 
-        let tagX = x + pad;
-        const tagY = y + 76;
-        for (const tag of card.tags || []) {
-          ctx.font = "600 11px system-ui";
-          const tw = ctx.measureText(String(tag)).width;
-          const chipW = tw + 18;
-          ctx.fillStyle = "rgba(255,255,255,0.06)";
-          fillRoundRect(ctx, tagX, tagY, chipW, 22, 11);
-          ctx.strokeStyle = "rgba(255,255,255,0.08)";
-          strokeRoundRect(ctx, tagX, tagY, chipW, 22, 11);
-          ctx.fillStyle = "rgba(255,255,255,0.90)";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(String(tag), tagX + chipW / 2, tagY + 11);
-          tagX += chipW + 7;
-        }
+        ctx.fillStyle = "rgba(255,255,255,0.62)";
+        ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+        const rewardLines = missionWrapLines(ctx, card.reward, textMaxW, 1);
+        ctx.fillText(rewardLines[0] || "", x + pad, y + 73);
 
         const barX = x + pad;
-        const barY = y + 104;
+        const barY = y + rowH - 16;
         const barW = w2 - pad * 2;
-        const barH = 8;
-
+        const barH = 6;
         ctx.fillStyle = "rgba(255,255,255,0.08)";
-        fillRoundRect(ctx, barX, barY, barW, barH, 4);
-        ctx.fillStyle = "rgba(255,176,44,0.98)";
-        fillRoundRect(ctx, barX, barY, barW * clamp(card.progress || 0, 0, 1), barH, 4);
-
-        ctx.fillStyle = "rgba(255,255,255,0.76)";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.font = "12px system-ui";
-        ctx.fillText(card.reward, x + pad, y + 96);
+        missionFillRoundRect(ctx, barX, barY, barW, barH, 4);
+        ctx.fillStyle = "rgba(255,176,44,0.96)";
+        missionFillRoundRect(ctx, barX, barY, barW * missionClamp(card.progress || 0, 0, 1), barH, 4);
 
         let btnBg = "rgba(255,255,255,0.08)";
-        let btnStroke = "rgba(255,255,255,0.12)";
+        let btnStroke = "rgba(255,255,255,0.14)";
         let btnText = "#ffffff";
 
         if (card.buttonKind === "done") {
-          btnBg = "rgba(31,111,42,0.88)";
-          btnStroke = "rgba(102,208,120,0.45)";
-        } else if (card.buttonKind === "claim") {
-          btnBg = "rgba(255,186,59,0.18)";
-          btnStroke = "rgba(255,186,59,0.50)";
-        } else if (card.buttonKind === "telegram") {
-          btnBg = "rgba(88,160,255,0.18)";
-          btnStroke = "rgba(88,160,255,0.45)";
-        } else if (card.buttonKind === "info") {
           btnBg = "rgba(255,255,255,0.05)";
           btnStroke = "rgba(255,255,255,0.08)";
-          btnText = "rgba(255,255,255,0.55)";
+          btnText = "rgba(255,255,255,0.45)";
+        } else if (card.buttonKind === "claim" || card.buttonKind === "telegram" || card.buttonKind === "action") {
+          btnBg = "rgba(190,140,62,0.88)";
+          btnStroke = "rgba(255,214,139,0.34)";
+          btnText = "#ffffff";
         }
 
         ctx.fillStyle = btnBg;
-        fillRoundRect(ctx, btnX, btnY, btnW, btnH, 15);
+        missionFillRoundRect(ctx, btnX, btnY, btnW, btnH, 14);
         ctx.strokeStyle = btnStroke;
-        strokeRoundRect(ctx, btnX, btnY, btnW, btnH, 15);
+        missionStrokeRoundRect(ctx, btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1, 14);
         ctx.fillStyle = btnText;
-        ctx.font = "700 14px system-ui";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(card.buttonLabel, btnX + btnW / 2, btnY + btnH / 2);
+        ctx.font = `900 ${isTiny ? 12 : 13}px system-ui`;
+        ctx.fillText(card.buttonLabel, btnX + btnW / 2, btnY + btnH / 2 + 0.5);
 
         if (card.action) {
-          if (card.action === "watchAd") {
-            this.hit.push({ type: "watchAd", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
-          } else if (card.action === "invite") {
-            this.hit.push({ type: "invite", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
-          } else if (card.action === "telegram") {
-            this.hit.push({ type: "telegram", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
-          } else if (card.action === "openPvp") {
-            this.hit.push({ type: "openPvp", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
-          } else if (card.action.startsWith("claim:")) {
-            this.hit.push({
-              type: "claim",
-              key: card.action.replace("claim:", ""),
-              rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-            });
-          }
+          if (card.action === "watchAd") this.hit.push({ type: "watchAd", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
+          else if (card.action === "invite") this.hit.push({ type: "invite", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
+          else if (card.action === "telegram") this.hit.push({ type: "telegram", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
+          else if (card.action === "openPvp") this.hit.push({ type: "openPvp", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
+          else if (card.action.startsWith("claim:")) this.hit.push({ type: "claim", key: card.action.replace("claim:", ""), rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
         }
 
         if (hasExtra) {
-          let rowY = y + 122;
+          let extraY = y + 92;
           for (const row of card.extraRows) {
             const rx = x + 12;
             const rw = w2 - 24;
-            const rh = 21;
+            const rh = 24;
+            const sBtnW = 74;
+            const sBtnH = 26;
+            const sBtnX = rx + rw - sBtnW - 8;
+            const sBtnY = extraY - 1;
 
             ctx.fillStyle = "rgba(255,255,255,0.04)";
-            fillRoundRect(ctx, rx, rowY, rw, rh, 10);
+            missionFillRoundRect(ctx, rx, extraY, rw, rh, 10);
             ctx.strokeStyle = "rgba(255,255,255,0.06)";
-            strokeRoundRect(ctx, rx, rowY, rw, rh, 10);
+            missionStrokeRoundRect(ctx, rx + 0.5, extraY + 0.5, rw - 1, rh - 1, 10);
 
-            const smallBtnW = 72;
-            const smallBtnH = 25;
-            const smallBtnX = rx + rw - smallBtnW - 8;
-            const smallBtnY = rowY - 2;
-
-            ctx.fillStyle = "rgba(255,255,255,0.78)";
+            ctx.fillStyle = "rgba(255,255,255,0.82)";
             ctx.textAlign = "left";
             ctx.textBaseline = "middle";
-            ctx.font = "12px system-ui";
-            ctx.fillText(row.text, rx + 10, rowY + rh / 2);
+            ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+            const rowTextMax = rw - sBtnW - 28;
+            const rowText = missionWrapLines(ctx, row.text, rowTextMax, 1)[0] || "";
+            ctx.fillText(rowText, rx + 10, extraY + rh / 2 + 0.5);
 
             let sbg = "rgba(255,255,255,0.05)";
             let sstroke = "rgba(255,255,255,0.08)";
-            let stext = "rgba(255,255,255,0.55)";
-
-            if (row.kind === "done") {
-              sbg = "rgba(31,111,42,0.88)";
-              sstroke = "rgba(102,208,120,0.45)";
+            let stext = "rgba(255,255,255,0.45)";
+            if (row.kind === "claim") {
+              sbg = "rgba(190,140,62,0.88)";
+              sstroke = "rgba(255,214,139,0.34)";
               stext = "#ffffff";
-            } else if (row.kind === "claim") {
-              sbg = "rgba(255,186,59,0.18)";
-              sstroke = "rgba(255,186,59,0.50)";
-              stext = "#ffffff";
+            } else if (row.kind === "done") {
+              sbg = "rgba(255,255,255,0.05)";
+              sstroke = "rgba(255,255,255,0.08)";
+              stext = "rgba(255,255,255,0.45)";
             }
 
             ctx.fillStyle = sbg;
-            fillRoundRect(ctx, smallBtnX, smallBtnY, smallBtnW, smallBtnH, 12);
+            missionFillRoundRect(ctx, sBtnX, sBtnY, sBtnW, sBtnH, 12);
             ctx.strokeStyle = sstroke;
-            strokeRoundRect(ctx, smallBtnX, smallBtnY, smallBtnW, smallBtnH, 12);
+            missionStrokeRoundRect(ctx, sBtnX + 0.5, sBtnY + 0.5, sBtnW - 1, sBtnH - 1, 12);
             ctx.fillStyle = stext;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.font = "700 12px system-ui";
-            ctx.fillText(row.label, smallBtnX + smallBtnW / 2, smallBtnY + smallBtnH / 2);
+            ctx.font = `900 ${isTiny ? 10 : 11}px system-ui`;
+            ctx.fillText(row.label, sBtnX + sBtnW / 2, sBtnY + sBtnH / 2 + 0.5);
 
             if (row.action && row.action.startsWith("claim:")) {
-              this.hit.push({
-                type: "claim",
-                key: row.action.replace("claim:", ""),
-                rect: { x: smallBtnX, y: smallBtnY, w: smallBtnW, h: smallBtnH },
-              });
+              this.hit.push({ type: "claim", key: row.action.replace("claim:", ""), rect: { x: sBtnX, y: sBtnY, w: sBtnW, h: sBtnH } });
             }
 
-            rowY += 30;
+            extraY += 30;
           }
         }
       }
 
-      y += cardH + gap;
+      y += rowH + rowGap;
     }
 
-    const totalContent = y - (contentY + 4);
-    this.maxScroll = Math.max(0, totalContent - contentH + 8);
-    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+    const totalContent = y - (listRect.y + 8);
+    this.maxScroll = Math.max(0, totalContent - listRect.h + 8);
+    this.scrollY = missionClamp(this.scrollY, 0, this.maxScroll);
 
     if (this.maxScroll > 2) {
-      const trackX = contentX + contentW - 6;
-      const trackY = contentY + 8;
-      const trackH = contentH - 16;
-      const thumbH = Math.max(42, trackH * (contentH / Math.max(contentH, totalContent)));
+      const trackX = listRect.x + listRect.w - 6;
+      const trackY = listRect.y + 8;
+      const trackH = listRect.h - 16;
+      const thumbH = Math.max(42, trackH * (listRect.h / Math.max(listRect.h, totalContent)));
       const thumbY = trackY + (trackH - thumbH) * (this.scrollY / Math.max(1, this.maxScroll));
-
       ctx.fillStyle = "rgba(255,255,255,0.08)";
-      fillRoundRect(ctx, trackX, trackY, 4, trackH, 2);
+      missionFillRoundRect(ctx, trackX, trackY, 4, trackH, 2);
       ctx.fillStyle = "rgba(255,176,44,0.86)";
-      fillRoundRect(ctx, trackX, thumbY, 4, thumbH, 2);
+      missionFillRoundRect(ctx, trackX, thumbY, 4, thumbH, 2);
     }
 
     ctx.restore();
+
+    const readyCount = cards.filter((card) => card.action && (card.buttonKind === "claim" || card.buttonKind === "telegram" || card.buttonKind === "action")).length;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `900 ${isTiny ? 13 : 14}px system-ui`;
+    ctx.fillText(`Hazır görev: ${missionFmtNum(readyCount)}`, footerRect.x + 12, footerRect.y + 21);
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+    ctx.fillText(`Coin ${missionFmtNum(s.coins || 0)} • XP ${missionFmtNum((s.player || {}).xp || 0)}`, footerRect.x + 12, footerRect.y + 38);
 
     if (this.toastText && Date.now() < this.toastUntil) {
       const tw = Math.min(panelW - 36, 280);
       const th = 38;
       const tx = panelX + (panelW - tw) / 2;
       const ty = panelY + panelH - th - 10;
-
       ctx.fillStyle = "rgba(10,10,14,0.92)";
-      fillRoundRect(ctx, tx, ty, tw, th, 14);
+      missionFillRoundRect(ctx, tx, ty, tw, th, 14);
       ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, tx, ty, tw, th, 14);
+      missionStrokeRoundRect(ctx, tx, ty, tw, th, 14);
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
