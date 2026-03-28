@@ -147,6 +147,48 @@ function isDown(input) {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const BUSINESS_PRODUCTION_TOTAL = 50;
+
+function pad2(n) {
+  return String(Math.max(0, Number(n || 0))).padStart(2, "0");
+}
+
+function fmtClock(ts) {
+  const d = new Date(Number(ts || 0));
+  if (Number.isNaN(d.getTime())) return "--:--";
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function fmtDuration(ms) {
+  const safe = Math.max(0, Number(ms || 0));
+  const totalMin = Math.ceil(safe / 60000);
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours > 0) return `${hours}sa ${mins}dk`;
+  return `${Math.max(1, mins)}dk`;
+}
+
+function hashSeed(str) {
+  let h = 2166136261 >>> 0;
+  const src = String(str || "seed");
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function makeSeededRandom(seed) {
+  let a = hashSeed(seed) || 1;
+  return function rand() {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 function todayKey() {
   const d = new Date();
@@ -195,6 +237,14 @@ export class TradeScene {
 
     this.toastText = "";
     this.toastUntil = 0;
+
+    this.blackmarketBgImg = new Image();
+    this.blackmarketBgImg.src = "./src/assets/blackmarket_bg.png";
+    this.blackmarketBgImg.onerror = () => {
+      try { this.blackmarketBgImg.src = "./src/assets/BlackMarket.png"; } catch (_) {}
+    };
+
+    this.productionNotifyTimers = new Map();
   }
 
   onEnter() {
@@ -221,6 +271,9 @@ export class TradeScene {
         searchQuery: trade.searchQuery || "",
       },
     });
+
+    this._refreshBusinessProduction();
+    this._syncProductionNotifyTimers();
   }
 
   _trade() {
@@ -890,21 +943,108 @@ export class TradeScene {
         this._showToast(`+${gain} enerji`);
   }
   
-  _createPendingProduction(products = [], totalDaily = 50) {
+  _productionSeedFor(biz, startedAt) {
+    return `${String(biz?.id || "biz")}:${Number(startedAt || 0)}:${String(biz?.type || "type")}:${(biz?.products || []).map((p) => p.id).join("|")}`;
+  }
+
+  _sendProductionReadyNotification(biz, pendingTotal) {
+    try {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+
+      const title = `${biz?.name || typeLabel(biz?.type)} üretimi hazır`;
+      const body = `${fmtNum(pendingTotal)} ürün toplamanı bekliyor. Son toplama ${fmtClock(biz?.productionCollectUntilAt)}.`;
+      const tag = `trade_prod_${String(biz?.id || "biz")}_${Number(biz?.productionReadyAt || 0)}`;
+
+      try {
+        const regPromise = navigator?.serviceWorker?.ready;
+        if (regPromise && typeof regPromise.then === "function") {
+          regPromise.then((reg) => reg?.showNotification?.(title, { body, tag, silent: false })).catch(() => {
+            try { new Notification(title, { body, tag }); } catch (_) {}
+          });
+          return;
+        }
+      } catch (_) {}
+
+      try { new Notification(title, { body, tag }); } catch (_) {}
+    } catch (_) {}
+  }
+
+  _syncProductionNotifyTimers(ownedOverride = null) {
+    const owned = Array.isArray(ownedOverride) ? ownedOverride : (this.store.get().businesses?.owned || []);
+    const now = Date.now();
+    const activeIds = new Set();
+
+    for (const biz of owned) {
+      if (!biz?.id || !Array.isArray(biz.products) || !biz.products.length) continue;
+      const bizId = String(biz.id);
+      activeIds.add(bizId);
+
+      const readyAt = Number(biz.productionReadyAt || 0);
+      const collectUntilAt = Number(biz.productionCollectUntilAt || (readyAt ? readyAt + HOUR_MS : 0));
+      const timerInfo = this.productionNotifyTimers.get(bizId);
+
+      if (!readyAt || now >= collectUntilAt) {
+        if (timerInfo?.id) clearTimeout(timerInfo.id);
+        this.productionNotifyTimers.delete(bizId);
+        continue;
+      }
+
+      if (timerInfo && Number(timerInfo.readyAt || 0) === readyAt) continue;
+      if (timerInfo?.id) clearTimeout(timerInfo.id);
+
+      const delay = Math.max(1000, readyAt - now + 250);
+      const timeoutId = setTimeout(() => {
+        this.productionNotifyTimers.delete(bizId);
+        this._refreshBusinessProduction();
+      }, delay);
+
+      this.productionNotifyTimers.set(bizId, { id: timeoutId, readyAt });
+    }
+
+    for (const [bizId, info] of [...this.productionNotifyTimers.entries()]) {
+      if (activeIds.has(bizId)) continue;
+      if (info?.id) clearTimeout(info.id);
+      this.productionNotifyTimers.delete(bizId);
+    }
+  }
+
+  _getBusinessProductionStatus(biz, now = Date.now()) {
+    const readyAt = Number(biz?.productionReadyAt || 0);
+    const collectUntilAt = Number(biz?.productionCollectUntilAt || (readyAt ? readyAt + HOUR_MS : 0));
+    const pendingTotal = (biz?.pendingProduction || []).reduce((sum, row) => sum + Number(row.qty || 0), 0);
+
+    const producing = readyAt > now;
+    const ready = !producing && now <= collectUntilAt && pendingTotal > 0;
+    const missed = collectUntilAt > 0 && now > collectUntilAt;
+
+    return {
+      pendingTotal,
+      producing,
+      ready,
+      missed,
+      collectable: ready,
+      readyAt,
+      collectUntilAt,
+      timeToReady: Math.max(0, readyAt - now),
+      timeToCollectEnd: Math.max(0, collectUntilAt - now),
+    };
+  }
+
+  _createPendingProduction(products = [], totalDaily = BUSINESS_PRODUCTION_TOTAL, seedKey = "") {
     const safeProducts = (products || []).map((p) => ({ ...p }));
     if (!safeProducts.length) return [];
 
-    const per = Math.floor(totalDaily / safeProducts.length);
-    let remainder = totalDaily - per * safeProducts.length;
+    const total = Math.max(1, Number(totalDaily || BUSINESS_PRODUCTION_TOTAL));
+    const rnd = makeSeededRandom(seedKey || `${Date.now()}`);
+    const rows = safeProducts.map((p) => ({ productId: p.id, qty: 0 }));
 
-    return safeProducts.map((p) => {
-      const extra = remainder > 0 ? 1 : 0;
-      if (remainder > 0) remainder -= 1;
-      return {
-        productId: p.id,
-        qty: per + extra,
-      };
-    });
+    for (let i = 0; i < total; i++) {
+      const idx = Math.floor(rnd() * rows.length);
+      rows[idx].qty += 1;
+    }
+
+    return rows;
   }
 
   _refreshBusinessProduction() {
@@ -923,21 +1063,29 @@ export class TradeScene {
       const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
       if (!hasProducts) continue;
 
-      if (!Array.isArray(biz.pendingProduction)) {
-        biz.pendingProduction = this._createPendingProduction(
-          biz.products,
-          Number(biz.dailyProduction || 50)
-        );
-        changed = true;
-      }
+      const dailyTotal = Math.max(1, Number(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL));
 
       if (!biz.productionStartedAt) {
         biz.productionStartedAt = now;
         changed = true;
       }
 
-      if (!biz.productionExpireAt) {
-        biz.productionExpireAt = Number(biz.productionStartedAt) + DAY_MS;
+      if (!Array.isArray(biz.pendingProduction) || !biz.pendingProduction.length) {
+        biz.pendingProduction = this._createPendingProduction(
+          biz.products,
+          dailyTotal,
+          this._productionSeedFor(biz, biz.productionStartedAt)
+        );
+        changed = true;
+      }
+
+      if (!biz.productionReadyAt) {
+        biz.productionReadyAt = Number(biz.productionStartedAt) + DAY_MS;
+        changed = true;
+      }
+
+      if (!biz.productionCollectUntilAt) {
+        biz.productionCollectUntilAt = Number(biz.productionReadyAt) + HOUR_MS;
         changed = true;
       }
 
@@ -946,20 +1094,32 @@ export class TradeScene {
         0
       );
 
-      if (now >= Number(biz.productionExpireAt || 0)) {
+      if (now > Number(biz.productionCollectUntilAt || 0)) {
         if (pendingTotal > 0) {
-          biz.pendingProduction = biz.pendingProduction.map((row) => ({
-            ...row,
-            qty: 0,
-          }));
+          biz.lastMissedQty = pendingTotal;
+          biz.lastMissedAt = now;
         }
 
         biz.productionStartedAt = now;
-        biz.productionExpireAt = now + DAY_MS;
+        biz.productionReadyAt = now + DAY_MS;
+        biz.productionCollectUntilAt = biz.productionReadyAt + HOUR_MS;
+        biz.productionNotifiedAt = 0;
         biz.pendingProduction = this._createPendingProduction(
           biz.products,
-          Number(biz.dailyProduction || 50)
+          dailyTotal,
+          this._productionSeedFor(biz, biz.productionStartedAt)
         );
+        changed = true;
+        continue;
+      }
+
+      if (
+        now >= Number(biz.productionReadyAt || 0) &&
+        pendingTotal > 0 &&
+        Number(biz.productionNotifiedAt || 0) !== Number(biz.productionReadyAt || 0)
+      ) {
+        this._sendProductionReadyNotification(biz, pendingTotal);
+        biz.productionNotifiedAt = Number(biz.productionReadyAt || 0);
         changed = true;
       }
     }
@@ -972,6 +1132,8 @@ export class TradeScene {
         },
       });
     }
+
+    this._syncProductionNotifyTimers(changed ? owned : null);
   }
 
   _collectBusinessProduction(bizId) {
@@ -989,12 +1151,19 @@ export class TradeScene {
     const biz = owned.find((b) => b.id === bizId);
     if (!biz) return;
 
-    const pendingTotal = (biz.pendingProduction || []).reduce(
-      (sum, row) => sum + Number(row.qty || 0),
-      0
-    );
+    const status = this._getBusinessProductionStatus(biz, now);
 
-    if (pendingTotal <= 0) {
+    if (status.producing) {
+      this._showToast(`Üretim sürüyor • ${fmtDuration(status.timeToReady)} kaldı`);
+      return;
+    }
+
+    if (status.missed) {
+      this._showToast("Toplama süresi geçti, ürünler kayboldu");
+      return;
+    }
+
+    if (status.pendingTotal <= 0) {
       this._showToast("Toplanacak üretim yok");
       return;
     }
@@ -1010,12 +1179,15 @@ export class TradeScene {
       0
     );
 
+    biz.productionStartedAt = now;
+    biz.productionReadyAt = now + DAY_MS;
+    biz.productionCollectUntilAt = biz.productionReadyAt + HOUR_MS;
+    biz.productionNotifiedAt = 0;
     biz.pendingProduction = this._createPendingProduction(
       biz.products,
-      Number(biz.dailyProduction || 50)
+      Number(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL),
+      this._productionSeedFor(biz, biz.productionStartedAt)
     );
-    biz.productionStartedAt = now;
-    biz.productionExpireAt = now + DAY_MS;
 
     this.store.set({
       businesses: {
@@ -1024,9 +1196,10 @@ export class TradeScene {
       },
     });
 
-    this._showToast(`${fmtNum(pendingTotal)} ürün toplandı`);
+    this._syncProductionNotifyTimers(owned);
+    this._showToast(`${fmtNum(status.pendingTotal)} ürün toplandı`);
   }
-    
+
   async _sellBusinessProduct(bizId, productId) {
     const s = this.store.get();
     const businesses = (s.businesses?.owned || []).map((b) => ({
@@ -1571,7 +1744,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       w,
       120,
       "İşletmelerim",
-      `${fmtNum(businesses.length)} işletme • yönetim paneli`,
+      `${fmtNum(businesses.length)} işletme • üretim / toplama paneli`,
       "OWNER MODE",
       "🏢",
       "#4b8fff"
@@ -1582,9 +1755,15 @@ _drawButton(ctx, rect, text, style = "ghost") {
       return this._drawEmptyState(ctx, x, y, w, "🏪", "Henüz işletmen yok.");
     }
 
+    const now = Date.now();
+
     for (const biz of businesses) {
       const products = biz.products || [];
-      const cardH = 122 + products.length * 64;
+      const prod = this._getBusinessProductionStatus(biz, now);
+      const recentMiss = Number(biz.lastMissedQty || 0) > 0 && (now - Number(biz.lastMissedAt || 0)) < DAY_MS;
+      const infoLines = recentMiss ? 3 : 2;
+      const headerH = recentMiss ? 110 : 92;
+      const cardH = headerH + products.length * 64;
 
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, cardH, 20);
@@ -1599,75 +1778,90 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.font = "900 15px system-ui";
       ctx.fillText(biz.name || "İşletme", x + 48, y + 24);
 
-      const pendingCount = (biz.pendingProduction || []).reduce(
-        (sum, row) => sum + Number(row.qty || 0),
-        0
-      );
-      const remainMs = Math.max(0, Number(biz.productionExpireAt || 0) - Date.now());
-      const remainHours = Math.floor(remainMs / (60 * 60 * 1000));
-      const remainMinutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
-
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
       ctx.fillText(
-        `${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)} • Stok ${fmtNum(biz.stock)}`,
+        `${typeLabel(biz.type)} • 24 saatte rastgele ${fmtNum(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL)} üretim • Stok ${fmtNum(biz.stock)}`,
         x + 48,
         y + 46
       );
 
-      ctx.fillStyle = pendingCount > 0 ? "rgba(255,209,120,0.95)" : "rgba(255,255,255,0.48)";
       ctx.font = "11px system-ui";
-      ctx.fillText(
-        pendingCount > 0
-          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde topla`
-          : "Bekleyen üretim yok",
-        x + 48,
-        y + 64
-      );
+      if (prod.producing) {
+        ctx.fillStyle = "rgba(255,255,255,0.78)";
+        ctx.fillText(
+          `Üretim sürüyor • Hazır olmasına ${fmtDuration(prod.timeToReady)} kaldı • Saat ${fmtClock(prod.readyAt)}`,
+          x + 48,
+          y + 64
+        );
+      } else if (prod.ready) {
+        ctx.fillStyle = "rgba(255,209,120,0.95)";
+        ctx.fillText(
+          `Hazır üretim ${fmtNum(prod.pendingTotal)} • ${fmtDuration(prod.timeToCollectEnd)} içinde topla • Son ${fmtClock(prod.collectUntilAt)}`,
+          x + 48,
+          y + 64
+        );
+      } else {
+        ctx.fillStyle = "rgba(255,255,255,0.48)";
+        ctx.fillText(
+          `Bekleyen üretim yok • Yeni döngü hazır ${fmtClock(biz.productionReadyAt)}`,
+          x + 48,
+          y + 64
+        );
+      }
 
-      const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
-      this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
-      this._drawButton(ctx, collectRect, "Topla", pendingCount > 0 ? "gold" : "muted");
+      if (recentMiss) {
+        ctx.fillStyle = "rgba(255,120,120,0.90)";
+        ctx.font = "11px system-ui";
+        ctx.fillText(
+          `Kaçan üretim: ${fmtNum(biz.lastMissedQty)} ürün • Zamanında toplanmadığı için kayboldu`,
+          x + 48,
+          y + 82
+        );
+      }
 
-      let rowY = y + 82;
-for (const p of products) {
-  ctx.fillStyle = "rgba(255,255,255,0.04)";
-  fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+      const collectRect = { x: x + w - 112, y: y + 14, w: 96, h: 30 };
+      if (prod.collectable) {
+        this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
+      }
+      this._drawButton(ctx, collectRect, prod.collectable ? "Topla" : (prod.producing ? "Sürüyor" : "Kaçtı"), prod.collectable ? "gold" : "muted");
 
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
+      let rowY = y + headerH;
+      for (const p of products) {
+        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
 
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 18px system-ui";
-  ctx.fillText(p.icon || "📦", x + 22, rowY + 22);
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
 
-  ctx.font = "900 13px system-ui";
-  ctx.fillText(p.name || "Ürün", x + 48, rowY + 18);
+        ctx.fillStyle = "#fff";
+        ctx.font = "900 18px system-ui";
+        ctx.fillText(p.icon || "📦", x + 22, rowY + 22);
 
-  ctx.fillStyle = rarityColor(p.rarity);
-  ctx.font = "800 10px system-ui";
-  ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 48, rowY + 34);
+        ctx.font = "900 13px system-ui";
+        ctx.fillText(p.name || "Ürün", x + 48, rowY + 18);
 
-  ctx.fillStyle = "rgba(255,255,255,0.70)";
-  ctx.font = "11px system-ui";
-  ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 110, rowY + 34);
+        ctx.fillStyle = rarityColor(p.rarity);
+        ctx.font = "800 10px system-ui";
+        ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 48, rowY + 34);
 
-  const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
-  const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
+        ctx.fillStyle = "rgba(255,255,255,0.70)";
+        ctx.font = "11px system-ui";
+        ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 110, rowY + 34);
 
-  this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
-  this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
+        const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
+        const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
 
-  this._drawButton(ctx, useRect, "Kullan", "primary");
-  this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
+        this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
+        this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
 
-  rowY += 62;
-}
-       
-    
-      
+        this._drawButton(ctx, useRect, "Kullan", "primary");
+        this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
+
+        rowY += 62;
+      }
 
       y += cardH + 12;
     }
@@ -2018,8 +2212,9 @@ for (const p of products) {
     this.hitButtons = [];
 
     const bgImg =
-      getImgSafe(this.assets, "trade") ||
+      (this.blackmarketBgImg?.complete && this.blackmarketBgImg?.naturalWidth ? this.blackmarketBgImg : null) ||
       getImgSafe(this.assets, "blackmarket_bg") ||
+      getImgSafe(this.assets, "trade") ||
       getImgSafe(this.assets, "blackmarket") ||
       getImgSafe(this.assets, "background");
 
