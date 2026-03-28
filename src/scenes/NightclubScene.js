@@ -1,646 +1,1046 @@
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+
+function chance(prob) {
+  return Math.random() < Number(prob || 0);
 }
 
-function pointInRect(px, py, r) {
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+function ensureArray(v) {
+  return Array.isArray(v) ? v : [];
 }
 
-function roundRectPath(ctx, x, y, w, h, r) {
-  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
-function fillRoundRect(ctx, x, y, w, h, r) {
-  roundRectPath(ctx, x, y, w, h, r);
-  ctx.fill();
-}
-
-function strokeRoundRect(ctx, x, y, w, h, r) {
-  roundRectPath(ctx, x, y, w, h, r);
-  ctx.stroke();
-}
-
-function getImgSafe(assets, key) {
-  if (!assets || !key) return null;
-  if (typeof assets.getImage === "function") return assets.getImage(key) || null;
-  if (typeof assets.get === "function") return assets.get(key) || null;
-  return assets.images?.[key] || null;
-}
-
-function coverImage(ctx, img, x, y, w, h, alpha = 1) {
-  if (!img) return;
-  const iw = img.width || img.naturalWidth || 1;
-  const ih = img.height || img.naturalHeight || 1;
-  const scale = Math.max(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2;
-  const prev = ctx.globalAlpha;
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(img, dx, dy, dw, dh);
-  ctx.globalAlpha = prev;
-}
-
-function containImage(ctx, img, x, y, w, h, alpha = 1) {
-  if (!img) return;
-  const iw = img.width || img.naturalWidth || 1;
-  const ih = img.height || img.naturalHeight || 1;
-  const scale = Math.min(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2;
-  const prev = ctx.globalAlpha;
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(img, dx, dy, dw, dh);
-  ctx.globalAlpha = prev;
-}
-
-function weaponAssetPath(fileName) {
-  return fileName ? `./src/assets/${fileName}` : "";
-}
-
-function iconMsFromPct(pct, baseMs = 500) {
-  const p = clamp(Number(pct) || 0, 0, 250);
-  return Math.round(baseMs * (1 + p / 100));
-}
-
-function shortNum(n) {
-  return Number(n || 0).toLocaleString("tr-TR");
-}
-
-function fitText(ctx, text, maxW, startSize, minSize = 10, weight = 900) {
-  let size = startSize;
-  while (size > minSize) {
-    ctx.font = `${weight} ${size}px system-ui`;
-    if (ctx.measureText(text).width <= maxW) return size;
-    size -= 1;
-  }
-  return minSize;
-}
-
-const WEAPONS = [
-  { id: "glock_17", name: "Glock 17 (9×19mm)", assetFile: "glock.png", bonusPct: 18, price: 520, tier: "Yan Silah", label: "Başlangıç", accent: "#d8aa59" },
-  { id: "sig_p320", name: "SIG Sauer P320 (9×19mm)", assetFile: "sauer.png", bonusPct: 20, price: 650, tier: "Yan Silah", label: "Dengeli", accent: "#d8aa59" },
-  { id: "beretta_92fs", name: "Beretta 92FS (9×19mm)", assetFile: "baretta.png", bonusPct: 19, price: 640, tier: "Yan Silah", label: "Stabil", accent: "#d8aa59" },
-  { id: "colt_1911", name: "Colt 1911 (.45 ACP)", assetFile: "cold.png", bonusPct: 22, price: 820, tier: "Yan Silah", label: "Ağır Vuruş", accent: "#d8aa59" },
-
-  { id: "mossberg_500", name: "Mossberg 500 (12ga)", assetFile: "moss.png", bonusPct: 25, price: 480, tier: "Pompalı", label: "Yakın Menzil", accent: "#d8aa59" },
-  { id: "rem_870", name: "Remington 870 (12ga)", assetFile: "reminaton.png", bonusPct: 26, price: 520, tier: "Pompalı", label: "Yakın Menzil", accent: "#d8aa59" },
-
-  { id: "mp5", name: "HK MP5 (9×19mm)", assetFile: "mp5.png", bonusPct: 28, price: 1700, tier: "SMG", label: "Hızlı", accent: "#cf954e" },
-  { id: "ump45", name: "HK UMP45 (.45 ACP)", assetFile: "ump.png", bonusPct: 27, price: 1550, tier: "SMG", label: "Kontrollü", accent: "#cf954e" },
-
-  { id: "ar15", name: "AR-15 (5.56×45)", assetFile: "ar.png", bonusPct: 31, price: 980, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
-  { id: "ak74", name: "AK-74 (5.45×39)", assetFile: "ak74.png", bonusPct: 33, price: 1100, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
-  { id: "ak47", name: "AK-47 (7.62×39)", assetFile: "ak47.png", bonusPct: 35, price: 1200, tier: "Tüfek", label: "Güçlü", accent: "#cf954e" },
-  { id: "m4a1", name: "M4A1 (5.56×45)", assetFile: "m4a1.png", bonusPct: 34, price: 1450, tier: "Tüfek", label: "Dengeli", accent: "#cf954e" },
-
-  { id: "g3", name: "HK G3 (7.62×51)", assetFile: "g3.png", bonusPct: 38, price: 1600, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
-  { id: "scar_h", name: "FN SCAR-H (7.62×51)", assetFile: "scar.png", bonusPct: 40, price: 2800, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
-
-  { id: "svd", name: "Dragunov SVD (7.62×54R)", assetFile: "dragunov.png", bonusPct: 44, price: 2100, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
-  { id: "m24", name: "Remington M24 (7.62×51)", assetFile: "m24.png", bonusPct: 43, price: 2400, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
-
-  { id: "m79", name: "M79 (Launcher)", assetFile: "m79.png", bonusPct: 50, price: 3800, tier: "Launcher", label: "Epic", accent: "#b85d35" },
-  { id: "rpg7", name: "RPG-7 (Launcher)", assetFile: "rpg.png", bonusPct: 55, price: 4500, tier: "Launcher", label: "Epic", accent: "#b85d35" },
-
-  { id: "barrett_m82", name: "Barrett M82 (.50 BMG)", assetFile: "barrett.png", bonusPct: 60, price: 9000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
-  { id: "m134", name: "M134 Minigun (7.62×51)", assetFile: "m134.png", bonusPct: 70, price: 12000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
-];
-
-export class WeaponsScene {
-  constructor({ store, input, assets, scenes }) {
+export class NightclubScene {
+  constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
     this.input = input;
+    this.i18n = i18n;
     this.assets = assets;
     this.scenes = scenes;
 
     this.scrollY = 0;
-    this.maxScroll = 0;
-
     this.dragging = false;
     this.downY = 0;
     this.startScrollY = 0;
-    this.moved = 0;
-    this.clickCandidate = false;
+    this.justDragged = false;
+    this.maxScroll = 0;
 
-    this.hit = [];
-    this.toastText = "";
+    this.hitBuy = [];
+    this.hitPvp = null;
+    this.hitClose = null;
+
+    this.toast = "";
     this.toastUntil = 0;
-    this.weaponSpriteCache = new Map();
+
+    this._music = null;
+    this._musicUnlocked = false;
+    this._pvpStartedFromNightclub = false;
+
+    this._onFirstUserGesture = this._onFirstUserGesture.bind(this);
+    this._onPvpWin = this._onPvpWin.bind(this);
+    this._onPvpLose = this._onPvpLose.bind(this);
+
+    this._bgFallback = new Image();
+    this._bgFallback.src = "./src/asstes/nightclub_bg.png";
+    this._bgFallback.onerror = () => {
+      try {
+        if (this._bgFallback.src.includes("/src/asstes/nightclub_bg.png")) {
+          this._bgFallback.src = "./src/assets/nightclub_bg.png";
+        } else if (this._bgFallback.src.includes("/src/assets/nightclub_bg.png")) {
+          this._bgFallback.src = "./src/assets/nightclub-bg.png";
+        } else if (this._bgFallback.src.includes("/src/assets/nightclub-bg.png")) {
+          this._bgFallback.src = "./src/assets/nightclub.jpg";
+        }
+      } catch (_) {}
+    };
+
+    this._drinkImageCache = Object.create(null);
+
+    this.items = [
+      { id: "nc_alc_01", icon: "🥃", image: "./src/assets/nightclub_drinks/street_whiskey.png", name: "Street Whiskey", energy: 4, price: 12, rarity: "Sokak", marketValue: 18, desc: "Sert viski. Hızlı enerji." },
+      { id: "nc_alc_02", icon: "🍺", image: "./src/assets/nightclub_drinks/dark_lager.png", name: "Dark Lager", energy: 5, price: 14, rarity: "Sokak", marketValue: 20, desc: "Ucuz ama iş görür." },
+      { id: "nc_alc_03", icon: "🍷", image: "./src/assets/nightclub_drinks/house_red_wine.png", name: "House Red Wine", energy: 6, price: 17, rarity: "Sokak", marketValue: 24, desc: "Klasik kırmızı şarap." },
+      { id: "nc_alc_04", icon: "🍸", image: "./src/assets/nightclub_drinks/neon_martini.png", name: "Neon Martini", energy: 7, price: 20, rarity: "Sokak", marketValue: 28, desc: "Geceye uygun kokteyl." },
+      { id: "nc_alc_05", icon: "🥂", image: "./src/assets/nightclub_drinks/club_prosecco.png", name: "Club Prosecco", energy: 8, price: 23, rarity: "Kulüp", marketValue: 33, desc: "Hafif lüks enerji içkisi." },
+      { id: "nc_alc_06", icon: "🍹", image: "./src/assets/nightclub_drinks/tropical_mix.png", name: "Tropical Mix", energy: 9, price: 26, rarity: "Kulüp", marketValue: 38, desc: "Tatlı ama etkili." },
+      { id: "nc_alc_07", icon: "🥃", image: "./src/assets/nightclub_drinks/oak_reserve.png", name: "Oak Reserve", energy: 10, price: 29, rarity: "Kulüp", marketValue: 43, desc: "Meşe fıçı aromalı viski." },
+      { id: "nc_alc_08", icon: "🍾", image: "./src/assets/nightclub_drinks/velvet_champagne.png", name: "Velvet Champagne", energy: 11, price: 33, rarity: "Kulüp", marketValue: 48, desc: "Kulübün imza şampanyası." },
+      { id: "nc_alc_09", icon: "🍷", image: "./src/assets/nightclub_drinks/midnight_merlot.png", name: "Midnight Merlot", energy: 12, price: 36, rarity: "Kulüp", marketValue: 53, desc: "Koyu ve yumuşak içim." },
+      { id: "nc_alc_10", icon: "🍸", image: "./src/assets/nightclub_drinks/blue_venom.png", name: "Blue Venom", energy: 13, price: 40, rarity: "VIP", marketValue: 59, desc: "VIP katın ünlü kokteyli." },
+      { id: "nc_alc_11", icon: "🥂", image: "./src/assets/nightclub_drinks/gold_spark.png", name: "Gold Spark", energy: 14, price: 44, rarity: "VIP", marketValue: 65, desc: "Altın pullu premium köpük." },
+      { id: "nc_alc_12", icon: "🍺", image: "./src/assets/nightclub_drinks/imperial_stout.png", name: "Imperial Stout", energy: 15, price: 48, rarity: "VIP", marketValue: 71, desc: "Yoğun ve ağır bira." },
+      { id: "nc_alc_13", icon: "🥃", image: "./src/assets/nightclub_drinks/black_barrel.png", name: "Black Barrel", energy: 16, price: 52, rarity: "VIP", marketValue: 77, desc: "Yüksek dereceli viski." },
+      { id: "nc_alc_14", icon: "🍾", image: "./src/assets/nightclub_drinks/diamond_brut.png", name: "Diamond Brut", energy: 17, price: 56, rarity: "VIP", marketValue: 84, desc: "Daha sert premium köpük." },
+      { id: "nc_alc_15", icon: "🍸", image: "./src/assets/nightclub_drinks/crimson_kiss.png", name: "Crimson Kiss", energy: 18, price: 61, rarity: "Elite", marketValue: 91, desc: "Elite kokteyl serisi." },
+      { id: "nc_alc_16", icon: "🍷", image: "./src/assets/nightclub_drinks/royal_cabernet.png", name: "Royal Cabernet", energy: 19, price: 66, rarity: "Elite", marketValue: 98, desc: "Uzun yıllanmış şarap." },
+      { id: "nc_alc_17", icon: "🥂", image: "./src/assets/nightclub_drinks/imperial_rose.png", name: "Imperial Rosé", energy: 20, price: 71, rarity: "Elite", marketValue: 106, desc: "Pazar değeri yüksek." },
+      { id: "nc_alc_18", icon: "🍹", image: "./src/assets/nightclub_drinks/electric_sunset.png", name: "Electric Sunset", energy: 21, price: 76, rarity: "Elite", marketValue: 114, desc: "Nadir gece kokteyli." },
+      { id: "nc_alc_19", icon: "🥃", image: "./src/assets/nightclub_drinks/smoked_bourbon.png", name: "Smoked Bourbon", energy: 22, price: 82, rarity: "Elite", marketValue: 123, desc: "Duman aromalı bourbon." },
+      { id: "nc_alc_20", icon: "🍾", image: "./src/assets/nightclub_drinks/velour_prestige.png", name: "Velour Prestige", energy: 23, price: 88, rarity: "Legend", marketValue: 132, desc: "Legend sınıfı şampanya." },
+      { id: "nc_alc_21", icon: "🍸", image: "./src/assets/nightclub_drinks/phantom_dry.png", name: "Phantom Dry", energy: 24, price: 94, rarity: "Legend", marketValue: 141, desc: "Nadir dry martini." },
+      { id: "nc_alc_22", icon: "🥂", image: "./src/assets/nightclub_drinks/crystal_reserve.png", name: "Crystal Reserve", energy: 25, price: 101, rarity: "Legend", marketValue: 151, desc: "Saf premium seri." },
+      { id: "nc_alc_23", icon: "🥃", image: "./src/assets/nightclub_drinks/kings_cask.png", name: "King's Cask", energy: 26, price: 108, rarity: "Legend", marketValue: 162, desc: "Koleksiyonluk fıçı seçkisi." },
+      { id: "nc_alc_24", icon: "🍷", image: "./src/assets/nightclub_drinks/velvet_noir.png", name: "Velvet Noir", energy: 27, price: 115, rarity: "Legend", marketValue: 173, desc: "En pahalı kırmızı." },
+      { id: "nc_alc_25", icon: "🍾", image: "./src/assets/nightclub_drinks/obsidian_gold.png", name: "Obsidian Gold", energy: 28, price: 123, rarity: "Mythic", marketValue: 185, desc: "Çok nadir kulüp şişesi." },
+      { id: "nc_alc_26", icon: "🍸", image: "./src/assets/nightclub_drinks/night_crown.png", name: "Night Crown", energy: 29, price: 131, rarity: "Mythic", marketValue: 197, desc: "Özel menü kokteyli." },
+      { id: "nc_alc_27", icon: "🥂", image: "./src/assets/nightclub_drinks/saint_royale.png", name: "Saint Royale", energy: 30, price: 140, rarity: "Mythic", marketValue: 210, desc: "Özel etkinlik serisi." },
+      { id: "nc_alc_28", icon: "🥃", image: "./src/assets/nightclub_drinks/mafia_reserve.png", name: "Mafia Reserve", energy: 31, price: 149, rarity: "Mythic", marketValue: 224, desc: "Ağır premium viski." },
+      { id: "nc_alc_29", icon: "🍾", image: "./src/assets/nightclub_drinks/toncrime_luxe.png", name: "TonCrime Luxe", energy: 33, price: 159, rarity: "Mythic", marketValue: 239, desc: "TonCrime özel seri." },
+      { id: "nc_alc_30", icon: "🥂", image: "./src/assets/nightclub_drinks/black_diamond_brut.png", name: "Black Diamond Brut", energy: 35, price: 170, rarity: "Mythic", marketValue: 255, desc: "En üst seviye şişe." },
+    ];
   }
 
   onEnter() {
-    this._ensureWeaponsState();
-    this._syncFromEquipped();
     this.scrollY = 0;
-    this.maxScroll = 0;
     this.dragging = false;
-    this.moved = 0;
-    this.clickCandidate = false;
-    this.hit = [];
+    this.justDragged = false;
+    this.hitBuy = [];
+    this.hitPvp = null;
+    this.hitClose = null;
+
+    this._ensureState();
+    this._setupMusic();
+    this._playMusic();
+    this._bindEvents();
+
+    this._pushSystemChat(`🪩 ${this._playerName()} Nightclub'a girdi.`);
   }
 
   onExit() {
     this.dragging = false;
+    this._pauseMusic();
+    this._unbindEvents();
+    this._pushSystemChat(`🚪 ${this._playerName()} Nightclub'dan çıktı.`);
   }
 
-  _safeRect(w, h) {
-    const s = this.store.get();
-    const safe = s?.ui?.safe || { x: 0, y: 0, w, h };
-    const topReserved = Number(s?.ui?.hudReservedTop || 110);
-    const bottomReserved = Number(s?.ui?.chatReservedBottom || 82);
-
-    return {
-      x: safe.x + 10,
-      y: safe.y + topReserved,
-      w: safe.w - 20,
-      h: safe.h - topReserved - bottomReserved - 10,
-    };
-  }
-
-  _showToast(text, ms = 1500) {
-    this.toastText = String(text || "");
-    this.toastUntil = Date.now() + ms;
-  }
-
-  _getWeaponSprite(item) {
-    const fileName = item?.assetFile;
-    if (!fileName) return null;
-
-    let img = this.weaponSpriteCache.get(fileName);
-    if (img) return img;
-
-    img = new Image();
-    img.src = weaponAssetPath(fileName);
-    this.weaponSpriteCache.set(fileName, img);
-    return img;
-  }
-
-  _ensureWeaponsState() {
-    const s = this.store.get();
-    const player = s.player || {};
-    const weapons = s.weapons || {};
-
-    this.store.set({
-      player: {
-        ...player,
-        weaponName: player.weaponName || "Silah Yok",
-        weaponBonus: player.weaponBonus || "+0%",
-        weaponIconBonusPct: Number(player.weaponIconBonusPct || 0),
-        weaponIconVisibleMs: Number(player.weaponIconVisibleMs || 500),
-        weaponTickSlowFactor: Number(player.weaponTickSlowFactor || 1),
-        weaponTimeScale: Number(player.weaponTimeScale || 1),
-      },
-      weapons: {
-        owned: weapons.owned || {},
-        equippedId: weapons.equippedId || null,
-      },
-    });
-  }
-
-  _getCoins() {
-    return Number(this.store.get()?.coins || 0);
-  }
-
-  _setCoins(nextCoins) {
-    this.store.set({ coins: Math.max(0, Math.floor(Number(nextCoins) || 0)) });
-  }
-
-  _currentWeaponsState() {
-    const s = this.store.get();
-    return s.weapons || { owned: {}, equippedId: null };
-  }
-
-  _currentEquippedItem() {
-    const w = this._currentWeaponsState();
-    return WEAPONS.find((x) => x.id === w.equippedId) || null;
-  }
-
-  _applyEquippedToPlayer(itemOrNull) {
-    const s = this.store.get();
+  _ensureState() {
+    const s = this.store.get() || {};
     const p = s.player || {};
-
-    if (!itemOrNull) {
-      this.store.set({
-        player: {
-          ...p,
-          weaponName: "Silah Yok",
-          weaponBonus: "+0%",
-          weaponIconBonusPct: 0,
-          weaponIconVisibleMs: 500,
-          weaponTickSlowFactor: 1,
-          weaponTimeScale: 1,
-        },
-      });
-      return;
-    }
-
-    const pct = Number(itemOrNull.bonusPct || 0);
-    const visibleMs = iconMsFromPct(pct, 500);
-    const slowFactor = Number((1 + pct / 100).toFixed(2));
+    const nightclub = s.nightclub || {};
+    const inventory = s.inventory || {};
+    const pvp = s.pvp || {};
 
     this.store.set({
       player: {
         ...p,
-        weaponName: itemOrNull.name,
-        weaponBonus: `+%${pct}`,
-        weaponIconBonusPct: pct,
-        weaponIconVisibleMs: visibleMs,
-        weaponTickSlowFactor: slowFactor,
-        weaponTimeScale: slowFactor,
+        energy: Number(p.energy ?? 10),
+        energyMax: Number(p.energyMax ?? 100),
+      },
+      inventory: {
+        ...inventory,
+        items: Array.isArray(inventory.items) ? inventory.items : [],
+      },
+      pvp: {
+        wins: Number(pvp.wins || 0),
+        losses: Number(pvp.losses || 0),
+        rating: Number(pvp.rating || 1000),
+        currentOpponent: pvp.currentOpponent || null,
+        leaderboard: Array.isArray(pvp.leaderboard) ? pvp.leaderboard : [],
+        history: Array.isArray(pvp.history) ? pvp.history : [],
+      },
+      nightclub: {
+        totalSpent: Number(nightclub.totalSpent || 0),
+        totalBought: Number(nightclub.totalBought || 0),
+        lastRaidAt: Number(nightclub.lastRaidAt || 0),
+        raidCount: Number(nightclub.raidCount || 0),
+        inventoryBought: Number(nightclub.inventoryBought || 0),
+        pvpWins: Number(nightclub.pvpWins || 0),
+        pvpLosses: Number(nightclub.pvpLosses || 0),
+        lastPvpAt: Number(nightclub.lastPvpAt || 0),
       },
     });
   }
 
-  _syncFromEquipped() {
-    this._ensureWeaponsState();
-    this._applyEquippedToPlayer(this._currentEquippedItem());
+  _bindEvents() {
+    window.addEventListener("pointerdown", this._onFirstUserGesture, { passive: true });
+    window.addEventListener("touchstart", this._onFirstUserGesture, { passive: true });
+    window.addEventListener("tc:pvp:win", this._onPvpWin);
+    window.addEventListener("tc:pvp:lose", this._onPvpLose);
   }
 
-  _buyOrEquip(weaponId) {
-    this._ensureWeaponsState();
+  _unbindEvents() {
+    window.removeEventListener("pointerdown", this._onFirstUserGesture);
+    window.removeEventListener("touchstart", this._onFirstUserGesture);
+    window.removeEventListener("tc:pvp:win", this._onPvpWin);
+    window.removeEventListener("tc:pvp:lose", this._onPvpLose);
+  }
 
-    const s = this.store.get();
-    const weapons = s.weapons || { owned: {}, equippedId: null };
-    const item = WEAPONS.find((x) => x.id === weaponId);
-    if (!item) return;
+  _onFirstUserGesture() {
+    this._musicUnlocked = true;
+    this._playMusic();
+  }
 
-    const owned = !!weapons.owned?.[weaponId];
+  _setupMusic() {
+    if (this._music) return;
 
-    if (!owned) {
-      const coins = this._getCoins();
-      if (coins < item.price) {
-        this._showToast("Yetersiz yton");
-        return;
+    try {
+      this._music = new Audio("./src/assets/club.mp3");
+      this._music.loop = true;
+      this._music.volume = 0.38;
+      this._music.preload = "auto";
+    } catch (_) {
+      this._music = null;
+    }
+  }
+
+  _playMusic() {
+    if (!this._music) return;
+    if (!this._musicUnlocked) return;
+
+    const state = this.store.get() || {};
+    const musicEnabled = state?.settings?.music !== false;
+
+    if (!musicEnabled) return;
+
+    this._music.play().catch(() => {});
+  }
+
+  _pauseMusic() {
+    try {
+      this._music?.pause();
+    } catch (_) {}
+  }
+
+  _onPvpWin(ev) {
+    if (!this._pvpStartedFromNightclub) return;
+    this._pvpStartedFromNightclub = false;
+    this._applyPvpResult("win", ev?.detail || {});
+  }
+
+  _onPvpLose(ev) {
+    if (!this._pvpStartedFromNightclub) return;
+    this._pvpStartedFromNightclub = false;
+    this._applyPvpResult("lose", ev?.detail || {});
+  }
+
+  _applyPvpResult(result, detail = {}) {
+    const s = this.store.get() || {};
+    const pvp = s.pvp || {};
+    const nightclub = s.nightclub || {};
+    const playerName = this._playerName();
+    const opponentName = String(detail?.opponent?.username || "Rakip");
+    const now = Date.now();
+
+    const wins = Number(pvp.wins || 0) + (result === "win" ? 1 : 0);
+    const losses = Number(pvp.losses || 0) + (result === "lose" ? 1 : 0);
+    const ratingChange = result === "win" ? 14 : -10;
+    const rating = Math.max(0, Number(pvp.rating || 1000) + ratingChange);
+
+    const prevBoard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.map((x) => ({ ...x })) : [];
+    const prevHistory = Array.isArray(pvp.history) ? pvp.history.map((x) => ({ ...x })) : [];
+
+    let meEntry = prevBoard.find((x) => x.id === "player_main");
+    if (!meEntry) {
+      meEntry = {
+        id: "player_main",
+        username: playerName,
+        wins: 0,
+        losses: 0,
+        rating: Number(pvp.rating || 1000),
+        source: "nightclub",
+      };
+      prevBoard.push(meEntry);
+    }
+
+    meEntry.username = playerName;
+    meEntry.wins = wins;
+    meEntry.losses = losses;
+    meEntry.rating = rating;
+    meEntry.source = "nightclub";
+
+    prevBoard.sort((a, b) => {
+      const ratingDiff = Number(b.rating || 0) - Number(a.rating || 0);
+      if (ratingDiff !== 0) return ratingDiff;
+      return Number(b.wins || 0) - Number(a.wins || 0);
+    });
+
+    const rankedBoard = prevBoard.slice(0, 50).map((row, idx) => ({
+      ...row,
+      rank: idx + 1,
+    }));
+
+    prevHistory.unshift({
+      id: `nightclub_pvp_${now}`,
+      result,
+      opponent: opponentName,
+      ts: now,
+      source: "nightclub",
+      ratingAfter: rating,
+    });
+
+    this.store.set({
+      pvp: {
+        ...pvp,
+        wins,
+        losses,
+        rating,
+        currentOpponent: detail?.opponent || null,
+        leaderboard: rankedBoard,
+        history: prevHistory.slice(0, 30),
+      },
+      nightclub: {
+        ...nightclub,
+        pvpWins: Number(nightclub.pvpWins || 0) + (result === "win" ? 1 : 0),
+        pvpLosses: Number(nightclub.pvpLosses || 0) + (result === "lose" ? 1 : 0),
+        lastPvpAt: now,
+      },
+    });
+
+    if (result === "win") {
+      this._showToast(`🏆 PvP kazandın • ${opponentName}`, 1800);
+      this._pushSystemChat(`🏆 ${playerName}, ${opponentName} karşısında PvP kazandı.`);
+    } else {
+      this._showToast(`💥 PvP kaybettin • ${opponentName}`, 1800);
+      this._pushSystemChat(`💥 ${playerName}, ${opponentName} karşısında PvP kaybetti.`);
+    }
+  }
+
+  _playerName() {
+    const s = this.store.get() || {};
+    return String(s?.player?.username || "Player");
+  }
+
+  _safe() {
+    const s = this.store.get() || {};
+    return s?.ui?.safe || {
+      x: 0,
+      y: 0,
+      w: window.innerWidth || 390,
+      h: window.innerHeight || 844,
+    };
+  }
+
+  _showToast(text, ms = 1400) {
+    this.toast = String(text || "");
+    this.toastUntil = Date.now() + ms;
+  }
+
+  _fitText(ctx, text, maxWidth) {
+    const src = String(text || "");
+    if (!src || maxWidth <= 10) return "";
+    if (ctx.measureText(src).width <= maxWidth) return src;
+    let out = src;
+    while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) {
+      out = out.slice(0, -1);
+    }
+    return out ? out + "…" : "";
+  }
+
+  _getDrinkVisual(src) {
+    const key = String(src || "").trim();
+    if (!key) return null;
+    if (this._drinkImageCache[key]) return this._drinkImageCache[key];
+    try {
+      const img = new Image();
+      img.src = key;
+      img.onerror = () => {
+        try {
+          if (img.src.includes("/src/assets/nightclub_drinks/")) {
+            img.src = key.replace("/src/assets/nightclub_drinks/", "/src/assets/");
+          }
+        } catch (_) {}
+      };
+      this._drinkImageCache[key] = img;
+      return img;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _drawDrinkVisual(ctx, item, x, y, w, h) {
+    const img = this._getDrinkVisual(item?.image);
+    if (img?.complete && (img.naturalWidth || img.width)) {
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.04)";
+      this._fillRoundRect(ctx, x, y, w, h, 12);
+      const iw = img.naturalWidth || img.width || 1;
+      const ih = img.naturalHeight || img.height || 1;
+      const scale = Math.min((w - 8) / iw, (h - 8) / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = x + (w - dw) / 2;
+      const dy = y + (h - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
+      return;
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    this._fillRoundRect(ctx, x, y, w, h, 12);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 24px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(item?.icon || "🍾", x + w / 2, y + h / 2);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  _getBg() {
+    const directBg = this._bgFallback;
+    if (directBg?.complete && (directBg.naturalWidth || directBg.width)) return directBg;
+    if (typeof this.assets?.getImage === "function") {
+      return this.assets.getImage("nightclub_bg") || this.assets.getImage("nightclub-bg");
+    }
+    if (typeof this.assets?.get === "function") {
+      return this.assets.get("nightclub_bg") || this.assets.get("nightclub-bg");
+    }
+    if (this.assets?.images instanceof Map) {
+      const entry = this.assets.images.get("nightclub_bg") || this.assets.images.get("nightclub-bg");
+      return entry?.img || null;
+    }
+    return this.assets?.images?.nightclub_bg || this.assets?.images?.nightclub-bg || null;
+  }
+
+  _roundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  _fillRoundRect(ctx, x, y, w, h, r) {
+    this._roundRect(ctx, x, y, w, h, r);
+    ctx.fill();
+  }
+
+  _strokeRoundRect(ctx, x, y, w, h, r) {
+    this._roundRect(ctx, x, y, w, h, r);
+    ctx.stroke();
+  }
+
+  _pointInRect(px, py, r) {
+    return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
+
+  _fmt(n) {
+    return Number(n || 0).toLocaleString("tr-TR");
+  }
+
+  _rarityColor(rarity) {
+    switch (String(rarity || "").toLowerCase()) {
+      case "sokak":
+        return "#b0b6c2";
+      case "kulüp":
+        return "#7fd0ff";
+      case "vip":
+        return "#ff9ecb";
+      case "elite":
+        return "#c77dff";
+      case "legend":
+        return "#ffc86b";
+      case "mythic":
+        return "#ff6b6b";
+      default:
+        return "#ffffff";
+    }
+  }
+
+  _drawCover(ctx, img, x, y, w, h) {
+    if (!img) {
+      ctx.fillStyle = "#130b11";
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+
+    const iw = img.width || img.naturalWidth || 1;
+    const ih = img.height || img.naturalHeight || 1;
+    const scale = Math.max(w / iw, h / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = x + (w - dw) / 2;
+    const dy = y + (h - dh) / 2;
+
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+
+  _clampScroll(viewH, contentH) {
+    this.maxScroll = Math.max(0, contentH - viewH);
+    if (this.scrollY < 0) this.scrollY = 0;
+    if (this.scrollY > this.maxScroll) this.scrollY = this.maxScroll;
+  }
+
+  _escapeHtml(str) {
+    return String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  _pushSystemChat(text) {
+    const s = this.store.get() || {};
+    const chat = Array.isArray(s.chatLog) ? s.chatLog.slice(-79) : [];
+    const ts = Date.now();
+
+    chat.push({
+      id: `sys_${ts}_${Math.random().toString(36).slice(2, 7)}`,
+      type: "system",
+      username: "SYSTEM",
+      text: String(text || ""),
+      ts,
+    });
+
+    this.store.set({ chatLog: chat });
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent("tc:chat:push", {
+          detail: {
+            id: `sys_${ts}`,
+            type: "system",
+            username: "SYSTEM",
+            text: String(text || ""),
+            ts,
+          },
+        })
+      );
+    } catch (_) {}
+
+    try {
+      const el = document.getElementById("chatMessages");
+      if (el) {
+        const row = document.createElement("div");
+        row.className = "msg";
+
+        const d = new Date(ts);
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mm = String(d.getMinutes()).padStart(2, "0");
+
+        row.innerHTML = `
+          <span class="meta">${hh}:${mm}</span>
+          <span><b>SYSTEM</b> ${this._escapeHtml(String(text || ""))}</span>
+        `;
+        el.appendChild(row);
+        el.scrollTop = el.scrollHeight;
       }
+    } catch (_) {}
+  }
 
-      this._setCoins(coins - item.price);
+  _mergeInventoryItem(item) {
+    const s = this.store.get() || {};
+    const inventory = s.inventory || {};
+    const items = Array.isArray(inventory.items) ? inventory.items.map((x) => ({ ...x })) : [];
 
+    const existing = items.find(
+      (x) =>
+        String(x.name || "").toLowerCase() === String(item.name || "").toLowerCase() &&
+        String(x.rarity || "").toLowerCase() === String(item.rarity || "").toLowerCase()
+    );
+
+    if (existing) {
+      existing.qty = Number(existing.qty || 0) + Number(item.qty || 1);
+      existing.marketPrice = Math.max(Number(existing.marketPrice || 0), Number(item.marketPrice || 0));
+      existing.sellPrice = Math.max(Number(existing.sellPrice || 0), Number(item.sellPrice || 0));
+      existing.energyGain = Math.max(Number(existing.energyGain || 0), Number(item.energyGain || 0));
+    } else {
+      items.unshift({ ...item });
+    }
+
+    this.store.set({
+      inventory: {
+        ...inventory,
+        items,
+      },
+    });
+  }
+
+async _loadScriptOnce(srcList = []) {
+    const list = Array.isArray(srcList) ? srcList : [srcList];
+    for (const src of list) {
+      if (!src) continue;
+      const existing = document.querySelector(`script[data-nightclub-pvp="${src}"]`);
+      if (existing?.dataset.loaded === "1") return src;
+      try {
+        await new Promise((resolve, reject) => {
+          const el = existing || document.createElement("script");
+          if (!existing) {
+            el.src = src;
+            el.defer = true;
+            el.dataset.nightclubPvp = src;
+            document.body.appendChild(el);
+          }
+          const ok = () => {
+            el.dataset.loaded = "1";
+            resolve(src);
+          };
+          const fail = () => reject(new Error(`yüklenemedi: ${src}`));
+          el.addEventListener("load", ok, { once: true });
+          el.addEventListener("error", fail, { once: true });
+        });
+        return src;
+      } catch (_) {}
+    }
+    throw new Error("pvpcage.js yüklenemedi");
+  }
+
+  _ensurePvpShell() {
+    let layer = document.getElementById("pvpLayer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "pvpLayer";
+      layer.style.position = "fixed";
+      layer.style.left = "0";
+      layer.style.right = "0";
+      layer.style.top = "0";
+      layer.style.bottom = "0";
+      layer.style.zIndex = "7000";
+      layer.style.pointerEvents = "none";
+      document.body.appendChild(layer);
+    }
+
+    let wrap = document.getElementById("pvpWrap");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.id = "pvpWrap";
+      layer.appendChild(wrap);
+    }
+
+    wrap.style.position = "fixed";
+    wrap.style.left = "12px";
+    wrap.style.right = "12px";
+    wrap.style.top = "96px";
+    wrap.style.bottom = "64px";
+    wrap.style.zIndex = "7000";
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.borderRadius = "16px";
+    wrap.style.border = "1px solid rgba(255,255,255,0.12)";
+    wrap.style.background = "rgba(8,10,16,0.88)";
+    wrap.style.backdropFilter = "blur(12px)";
+    wrap.style.overflow = "hidden";
+    wrap.style.pointerEvents = "auto";
+
+    wrap.innerHTML = `
+      <div id="pvpHeader" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 10px 8px;border-bottom:1px solid rgba(255,255,255,0.10);flex:0 0 auto;">
+        <div id="pvpLeftHead" style="display:flex;flex-direction:column;gap:4px;">
+          <div id="pvpStatus" style="font-weight:900;font-size:13px;color:rgba(255,255,255,0.92);">PvP • Kafes Dövüşü yükleniyor...</div>
+          <div id="pvpOpponentRow" style="font-size:12px;color:rgba(255,255,255,0.80);">
+            <span id="pvpSpinner" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);border-top-color:rgba(255,255,255,0.85);vertical-align:-2px;margin-right:8px;"></span>
+            Rakip: <b id="pvpOpponent" style="color:rgba(255,255,255,0.95);">ShadowWolf</b>
+          </div>
+        </div>
+        <div class="pvpBtns" style="display:flex;gap:8px;">
+          <button class="pvpBtn" id="pvpStart" type="button" style="display:none;">Başlat</button>
+          <button class="pvpBtn" id="pvpStop" type="button" style="display:none;">Durdur</button>
+          <button class="pvpBtn" id="pvpReset" type="button" style="display:none;">Sıfırla</button>
+        </div>
+      </div>
+      <div id="pvpBars" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;flex:0 0 auto;">
+        <div>
+          <div class="pvpBar" style="height:14px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);overflow:hidden;"><div class="pvpFill" id="enemyFill" style="height:100%;width:100%;transform-origin:left center;background:rgba(255,255,255,0.65);"></div></div>
+          <div class="pvpBarLabel" style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.95);margin-top:6px;"><span>Düşman</span><span id="enemyHpText">100</span></div>
+        </div>
+        <div>
+          <div class="pvpBar" style="height:14px;border-radius:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);overflow:hidden;"><div class="pvpFill" id="meFill" style="height:100%;width:100%;transform-origin:left center;background:rgba(255,255,255,0.65);"></div></div>
+          <div class="pvpBarLabel" style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.95);margin-top:6px;"><span>Sen</span><span id="meHpText">100</span></div>
+        </div>
+      </div>
+      <div id="arena" style="position:relative;flex:1 1 auto;min-height:280px;width:calc(100% - 20px);margin:0 10px 10px;border-radius:14px;background:rgba(0,0,0,0.92);overflow:hidden;box-sizing:border-box;"></div>
+    `;
+
+    const arena = document.getElementById("arena");
+    const status = document.getElementById("pvpStatus");
+    const spinner = document.getElementById("pvpSpinner");
+    const enemyFill = document.getElementById("enemyFill");
+    const meFill = document.getElementById("meFill");
+    const enemyHpText = document.getElementById("enemyHpText");
+    const meHpText = document.getElementById("meHpText");
+
+    return { arena, status, spinner, enemyFill, meFill, enemyHpText, meHpText };
+  }
+
+  async _openPvp() {
+    try {
+      const s = this.store.get() || {};
       this.store.set({
-        weapons: {
-          owned: { ...(weapons.owned || {}), [weaponId]: true },
-          equippedId: weaponId,
+        pvp: {
+          ...(s.pvp || {}),
+          source: "nightclub",
+          selectedMode: "arena",
         },
       });
 
-      this._applyEquippedToPlayer(item);
-      this._showToast(`${item.name} satın alındı ve kuşanıldı`);
-      return;
+      const shell = this._ensurePvpShell();
+      await this._loadScriptOnce(["./src/pvpcage.js", "./pvpcage.js"]);
+
+      if (!window.TonCrimePVP_CAGE) throw new Error("TonCrimePVP_CAGE bulunamadı");
+
+      window.TonCrimePVP = window.TonCrimePVP_CAGE;
+      window.TonCrimePVP.init?.({
+        arenaId: "arena",
+        statusId: "pvpStatus",
+        enemyFillId: "enemyFill",
+        meFillId: "meFill",
+        enemyHpTextId: "enemyHpText",
+        meHpTextId: "meHpText",
+      });
+      window.TonCrimePVP.setOpponent?.({ username: "ShadowWolf", isBot: true });
+      await new Promise((r) => setTimeout(r, 120));
+      window.TonCrimePVP.start?.();
+
+      if (shell.status) shell.status.textContent = "PvP • Kafes Dövüşü başladı";
+      if (shell.spinner) shell.spinner.style.display = "none";
+      this._showToast("Kafes Dövüşü açıldı");
+      this._pushSystemChat(`⚔️ ${this._playerName()} Nightclub içinden Kafes Dövüşü başlattı.`);
+    } catch (err) {
+      console.error("[Nightclub] PvP açılamadı:", err);
+      this._showToast("PvP açılamadı", 1800);
     }
-
-    if (weapons.equippedId === weaponId) {
-      this._showToast("Bu silah zaten seçili");
-      return;
-    }
-
-    this.store.set({
-      weapons: {
-        owned: { ...(weapons.owned || {}) },
-        equippedId: weaponId,
-      },
-    });
-
-    this._applyEquippedToPlayer(item);
-    this._showToast(`${item.name} kuşanıldı`);
   }
 
-  _unequip() {
-    this._ensureWeaponsState();
+  _applyPoliceRaid(item) {
+    const s = this.store.get() || {};
+    const p = s.player || {};
+    const nightclub = s.nightclub || {};
 
-    const weapons = this._currentWeaponsState();
-    if (!weapons.equippedId) {
-      this._showToast("Zaten silah seçili değil");
-      return;
-    }
+    const energy = Number(p.energy || 0);
+    const lossEnergy = Math.max(4, Math.min(22, Math.ceil(Number(item.energy || 0) * 0.8)));
+    const lossCoins = Math.max(3, Math.floor(Number(item.price || 0) * 0.18));
 
     this.store.set({
-      weapons: {
-        owned: { ...(weapons.owned || {}) },
-        equippedId: null,
+      coins: Math.max(0, Number(s.coins || 0) - lossCoins),
+      player: {
+        ...p,
+        energy: Math.max(0, energy - lossEnergy),
+      },
+      nightclub: {
+        ...nightclub,
+        lastRaidAt: Date.now(),
+        raidCount: Number(nightclub.raidCount || 0) + 1,
       },
     });
 
-    this._applyEquippedToPlayer(null);
-    this._showToast("Silah çıkarıldı");
+    this._showToast(`🚓 Polis baskını! -${lossEnergy} enerji / -${lossCoins} yton`, 1800);
+    this._pushSystemChat(
+      `🚓 Polis baskını Nightclub'da patladı. ${this._playerName()} ${lossEnergy} enerji ve ${lossCoins} yton kaybetti.`
+    );
+  }
+
+  _buy(item) {
+    const s = this.store.get() || {};
+    const p = s.player || {};
+    const nightclub = s.nightclub || {};
+    const coins = Number(s.coins || 0);
+    const price = Number(item.price || 0);
+    const gain = Number(item.energy || 0);
+    const energy = Number(p.energy || 0);
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+
+    if (coins < price) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
+    const nextClub = {
+      ...nightclub,
+      totalSpent: Number(nightclub.totalSpent || 0) + price,
+      totalBought: Number(nightclub.totalBought || 0) + 1,
+      inventoryBought: Number(nightclub.inventoryBought || 0),
+    };
+
+    if (energy < energyMax) {
+      const nextEnergy = Math.min(energyMax, energy + gain);
+      this.store.set({
+        coins: coins - price,
+        player: {
+          ...p,
+          energy: nextEnergy,
+        },
+        nightclub: nextClub,
+      });
+
+      this._showToast(`${item.name} kullanıldı • +${nextEnergy - energy} enerji`, 1500);
+      this._pushSystemChat(`🍾 ${this._playerName()} ${item.name} satın aldı. (-${price} yton / +${nextEnergy - energy} enerji)`);
+    } else {
+      const inventoryItem = {
+        id: `inv_nightclub_${item.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        kind: "consumable",
+        icon: item.icon || "🍾",
+        name: item.name,
+        rarity: item.rarity || "Kulüp",
+        qty: 1,
+        usable: true,
+        sellable: true,
+        marketable: true,
+        energyGain: gain,
+        sellPrice: Math.max(1, Math.floor(price * 0.68)),
+        marketPrice: Number(item.marketValue || price || 0),
+        desc: item.desc || "Nightclub ürünü.",
+        source: "nightclub",
+        image: item.image || "",
+        category: "alcohol",
+        createdAt: Date.now(),
+      };
+
+      nextClub.inventoryBought += 1;
+      this.store.set({
+        coins: coins - price,
+        nightclub: nextClub,
+      });
+      this._mergeInventoryItem(inventoryItem);
+      this._showToast(`${item.name} envantere eklendi`, 1500);
+      this._pushSystemChat(`🍾 ${this._playerName()} ${item.name} satın aldı. (-${price} yton / envantere eklendi)`);
+    }
+
+    if (chance(0.20)) {
+      this._applyPoliceRaid(item);
+    }
   }
 
   update() {
-    const p = this.input.pointer || { x: 0, y: 0 };
+    const safe = this._safe();
+    const px = this.input?.pointer?.x || 0;
+    const py = this.input?.pointer?.y || 0;
 
-    if (this.input.justPressed()) {
+    const topReserved = Number(this.store.get()?.ui?.hudReservedTop || 82);
+    const bottomReserved = Number(this.store.get()?.ui?.chatReservedBottom || 82);
+
+    const panelX = safe.x + 14;
+    const panelY = safe.y + topReserved;
+    const panelW = safe.w - 28;
+    const panelH = safe.h - topReserved - bottomReserved - 10;
+
+    const listX = panelX + 10;
+    const listY = panelY + 88;
+    const listW = panelW - 20;
+    const listH = panelH - 100;
+
+    const rowH = 84;
+    const contentH = this.items.length * (rowH + 10);
+
+    this._clampScroll(listH, contentH);
+
+    if (this.input?.justPressed?.()) {
       this.dragging = true;
-      this.downY = p.y;
+      this.justDragged = false;
+      this.downY = py;
       this.startScrollY = this.scrollY;
-      this.moved = 0;
-      this.clickCandidate = true;
+      this._musicUnlocked = true;
+      this._playMusic();
     }
 
-    if (this.dragging && this.input.isDown()) {
-      const dy = p.y - this.downY;
-      this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
-      this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
+    if (this.dragging && this.input?.isDown?.()) {
+      const dy = py - this.downY;
+      if (Math.abs(dy) > 6) this.justDragged = true;
+      this.scrollY = this.startScrollY - dy;
+      this._clampScroll(listH, contentH);
     }
 
-    if (this.dragging && this.input.justReleased()) {
-      this.dragging = false;
-
-      if (!this.clickCandidate) return;
-
-      for (let i = this.hit.length - 1; i >= 0; i--) {
-        const h = this.hit[i];
-        if (!pointInRect(p.x, p.y, h.rect)) continue;
-
-        if (h.type === "back") {
+    if (this.dragging && this.input?.justReleased?.()) {
+      if (!this.justDragged) {
+        if (this._pointInRect(px, py, this.hitClose)) {
           this.scenes.go("home");
+          this.dragging = false;
+          this.justDragged = false;
           return;
         }
 
-        if (h.type === "unequip") {
-          this._unequip();
+        if (this._pointInRect(px, py, this.hitPvp)) {
+          this._openPvp();
+          this.dragging = false;
+          this.justDragged = false;
           return;
         }
 
-        if (h.type === "action") {
-          this._buyOrEquip(h.id);
-          return;
+        for (const hit of this.hitBuy) {
+          if (this._pointInRect(px, py, hit.rect)) {
+            this._buy(hit.item);
+            break;
+          }
         }
       }
+
+      this.dragging = false;
+      this.justDragged = false;
     }
   }
 
   render(ctx, w, h) {
-    const s = this.store.get();
-    const safe = this._safeRect(w, h);
-    const isMobile = safe.w <= 520;
-    const isTiny = safe.w <= 400;
-    const weaponsState = s.weapons || { owned: {}, equippedId: null };
-    const equipped = this._currentEquippedItem();
+    const safe = this._safe();
+    const bg = this._getBg();
 
-    const bg =
-      getImgSafe(this.assets, "weapons_bg") ||
-      getImgSafe(this.assets, "weapons") ||
-      getImgSafe(this.assets, "background");
+    this.hitBuy = [];
+    this.hitPvp = null;
+    this.hitClose = null;
 
-    ctx.clearRect(0, 0, w, h);
+    this._drawCover(ctx, bg, 0, 0, w, h);
 
-    if (bg) {
-      coverImage(ctx, bg, 0, 0, w, h, 1);
-    } else {
-      ctx.fillStyle = "#0b0b0f";
-      ctx.fillRect(0, 0, w, h);
-    }
-
-    const bgOverlay = ctx.createLinearGradient(0, 0, 0, h);
-    bgOverlay.addColorStop(0, "rgba(6,6,9,0.40)");
-    bgOverlay.addColorStop(0.35, "rgba(8,7,6,0.55)");
-    bgOverlay.addColorStop(1, "rgba(4,4,5,0.78)");
-    ctx.fillStyle = bgOverlay;
+    const overlay = ctx.createLinearGradient(0, 0, 0, h);
+    overlay.addColorStop(0, "rgba(8,0,14,0.40)");
+    overlay.addColorStop(1, "rgba(0,0,0,0.62)");
+    ctx.fillStyle = overlay;
     ctx.fillRect(0, 0, w, h);
 
-    this.hit = [];
+    const state = this.store.get() || {};
+    const nightclub = state.nightclub || {};
+    const pvp = state.pvp || {};
+    const coins = Number(state.coins || 0);
+    const energy = Number(state?.player?.energy || 0);
+    const energyMax = Math.max(1, Number(state?.player?.energyMax || 100));
+    const topReserved = Number(state?.ui?.hudReservedTop || 82);
+    const bottomReserved = Number(state?.ui?.chatReservedBottom || 82);
 
-    const panelX = safe.x;
-    const panelY = safe.y;
-    const panelW = safe.w;
-    const panelH = safe.h;
+    const panelX = safe.x + 14;
+    const panelY = safe.y + topReserved;
+    const panelW = safe.w - 28;
+    const panelH = safe.h - topReserved - bottomReserved - 10;
 
-    ctx.fillStyle = "rgba(8,8,10,0.24)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22);
-    ctx.strokeStyle = "rgba(255,194,96,0.22)";
-    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 22);
-
-    const headerH = isTiny ? 50 : 56;
-    const infoH = isTiny ? 74 : 82;
-    const footerH = isTiny ? 44 : 50;
-    const listGap = 8;
-
-    const headerRect = { x: panelX + 10, y: panelY + 10, w: panelW - 20, h: headerH };
-    const infoRect = { x: panelX + 10, y: headerRect.y + headerRect.h + 10, w: panelW - 20, h: infoH };
-    const listRect = {
-      x: panelX + 10,
-      y: infoRect.y + infoRect.h + 10,
-      w: panelW - 20,
-      h: Math.max(140, panelH - headerH - infoH - footerH - 50),
-    };
-    const footerRect = {
-      x: panelX + 10,
-      y: listRect.y + listRect.h + 10,
-      w: panelW - 20,
-      h: footerH,
-    };
-
-    const glassFill = "rgba(12,12,15,0.46)";
-    const glassStroke = "rgba(255,255,255,0.10)";
-
-    ctx.fillStyle = glassFill;
-    fillRoundRect(ctx, headerRect.x, headerRect.y, headerRect.w, headerRect.h, 20);
-    ctx.strokeStyle = glassStroke;
-    strokeRoundRect(ctx, headerRect.x + 0.5, headerRect.y + 0.5, headerRect.w - 1, headerRect.h - 1, 20);
-
-    ctx.fillStyle = glassFill;
-    fillRoundRect(ctx, infoRect.x, infoRect.y, infoRect.w, infoRect.h, 18);
-    ctx.strokeStyle = glassStroke;
-    strokeRoundRect(ctx, infoRect.x + 0.5, infoRect.y + 0.5, infoRect.w - 1, infoRect.h - 1, 18);
-
-    ctx.fillStyle = "rgba(10,10,12,0.50)";
-    fillRoundRect(ctx, listRect.x, listRect.y, listRect.w, listRect.h, 18);
-    ctx.strokeStyle = "rgba(255,194,96,0.18)";
-    strokeRoundRect(ctx, listRect.x + 0.5, listRect.y + 0.5, listRect.w - 1, listRect.h - 1, 18);
-
-    ctx.fillStyle = glassFill;
-    fillRoundRect(ctx, footerRect.x, footerRect.y, footerRect.w, footerRect.h, 18);
-    ctx.strokeStyle = glassStroke;
-    strokeRoundRect(ctx, footerRect.x + 0.5, footerRect.y + 0.5, footerRect.w - 1, footerRect.h - 1, 18);
-
-    const closeW = isTiny ? 44 : 48;
-    const closeH = 34;
-    const closeRect = {
-      x: headerRect.x + headerRect.w - closeW - 10,
-      y: headerRect.y + 10,
-      w: closeW,
-      h: closeH,
-    };
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, closeRect.x, closeRect.y, closeRect.w, closeRect.h, 12);
+    ctx.fillStyle = "rgba(10,8,14,0.62)";
+    this._fillRoundRect(ctx, panelX, panelY, panelW, panelH, 18);
     ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, closeRect.x + 0.5, closeRect.y + 0.5, closeRect.w - 1, closeRect.h - 1, 12);
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${isTiny ? 13 : 14}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("X", closeRect.x + closeRect.w / 2, closeRect.y + closeRect.h / 2 + 0.5);
-    this.hit.push({ type: "back", rect: closeRect });
+    ctx.lineWidth = 1;
+    this._strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 18);
 
-    const effectPct = Number(s.player?.weaponIconBonusPct || 0);
-    const effectMs = Number(s.player?.weaponIconVisibleMs || iconMsFromPct(effectPct));
-    const effectSlow = Number(s.player?.weaponTickSlowFactor || 1);
+    const titleX = panelX + 16;
+    const titleY = panelY + 30;
 
-    const unW = isTiny ? 92 : 104;
-    const infoLeft = infoRect.x + 14;
-    const infoTextMaxW = infoRect.w - unW - 40;
-    const equippedLabel = equipped ? equipped.name : "Silah seçili değil";
-    const infoTitleSize = fitText(ctx, equippedLabel, infoTextMaxW, isTiny ? 14 : 15, 11, 900);
-
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 18px system-ui";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "rgba(255,255,255,0.94)";
-    ctx.font = `900 ${infoTitleSize}px system-ui`;
-    ctx.fillText(equippedLabel, infoLeft, infoRect.y + 24);
+    ctx.fillText("Nightclub", titleX, titleY);
 
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
-    ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-    ctx.fillText(`Aktif bonus: +%${effectPct} • ikon ~${effectMs}ms`, infoLeft, infoRect.y + 44);
-    ctx.fillText(`Zaman çarpanı x${effectSlow.toFixed(2)}`, infoLeft, infoRect.y + 61);
+    const rightInfoX = panelX + panelW - 120;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#ffd36c";
+    ctx.font = "900 12px system-ui";
+    ctx.fillText(`YTON: ${this._fmt(coins)}`, rightInfoX, panelY + 24);
 
-    const unH = 34;
-    const unRect = { x: infoRect.x + infoRect.w - unW - 12, y: infoRect.y + infoRect.h / 2 - unH / 2, w: unW, h: unH };
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, unRect.x, unRect.y, unRect.w, unRect.h, 12);
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, unRect.x + 0.5, unRect.y + 0.5, unRect.w - 1, unRect.h - 1, 12);
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
+    this.hitClose = { x: panelX + panelW - 48, y: panelY + 14, w: 32, h: 32 };
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    this._fillRoundRect(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, 10);
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    this._strokeRoundRect(ctx, this.hitClose.x, this.hitClose.y, this.hitClose.w, this.hitClose.h, 10);
+    ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Silah Çıkar", unRect.x + unRect.w / 2, unRect.y + unRect.h / 2);
-    this.hit.push({ type: "unequip", rect: unRect });
+    ctx.font = "900 18px system-ui";
+    ctx.fillText("X", this.hitClose.x + this.hitClose.w / 2, this.hitClose.y + 21);
 
-    const rowGap = 8;
-    const rowH = isTiny ? 84 : 88;
-    const contentH = WEAPONS.length * rowH + (WEAPONS.length - 1) * rowGap + 20;
-    this.maxScroll = Math.max(0, contentH - listRect.h + 10);
-    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
+    this.hitPvp = { x: panelX + panelW - 126, y: panelY + 48, w: 104, h: 34 };
+    const pvpGrad = ctx.createLinearGradient(this.hitPvp.x, this.hitPvp.y, this.hitPvp.x, this.hitPvp.y + this.hitPvp.h);
+    pvpGrad.addColorStop(0, "rgba(170,34,46,0.72)");
+    pvpGrad.addColorStop(1, "rgba(104,16,24,0.82)");
+    ctx.fillStyle = pvpGrad;
+    this._fillRoundRect(ctx, this.hitPvp.x, this.hitPvp.y, this.hitPvp.w, this.hitPvp.h, 12);
+    ctx.strokeStyle = "rgba(255,180,180,0.22)";
+    this._strokeRoundRect(ctx, this.hitPvp.x, this.hitPvp.y, this.hitPvp.w, this.hitPvp.h, 12);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 13px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("⚔ PvP Saldır", this.hitPvp.x + this.hitPvp.w / 2, this.hitPvp.y + 22);
+
+    const listX = panelX + 10;
+    const listY = panelY + 88;
+    const listW = panelW - 20;
+    const listH = panelH - 100;
 
     ctx.save();
-    roundRectPath(ctx, listRect.x, listRect.y, listRect.w, listRect.h, 18);
+    this._roundRect(ctx, listX, listY, listW, listH, 16);
     ctx.clip();
 
-    let y = listRect.y + 10 - this.scrollY;
-    for (const item of WEAPONS) {
-      const owned = !!weaponsState.owned?.[item.id];
-      const active = weaponsState.equippedId === item.id;
+    const rowsBg = ctx.createLinearGradient(0, listY, 0, listY + listH);
+    rowsBg.addColorStop(0, "rgba(0,0,0,0.14)");
+    rowsBg.addColorStop(1, "rgba(0,0,0,0.28)");
+    ctx.fillStyle = rowsBg;
+    ctx.fillRect(listX, listY, listW, listH);
 
-      const rowRect = { x: listRect.x + 10, y, w: listRect.w - 20, h: rowH };
-      const rowGradient = ctx.createLinearGradient(rowRect.x, rowRect.y, rowRect.x + rowRect.w, rowRect.y + rowRect.h);
-      rowGradient.addColorStop(0, active ? "rgba(255,194,96,0.16)" : "rgba(0,0,0,0.22)");
-      rowGradient.addColorStop(1, active ? "rgba(255,140,66,0.14)" : "rgba(255,255,255,0.03)");
-      ctx.fillStyle = rowGradient;
-      fillRoundRect(ctx, rowRect.x, rowRect.y, rowRect.w, rowRect.h, 16);
-      ctx.strokeStyle = active ? "rgba(255,194,96,0.34)" : "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, rowRect.x + 0.5, rowRect.y + 0.5, rowRect.w - 1, rowRect.h - 1, 16);
+    let rowY = listY + 6 - this.scrollY;
+    const rowH = 84;
+    const gap = 10;
 
-      const artRect = { x: rowRect.x + 12, y: rowRect.y + 8, w: isTiny ? 86 : 104, h: isTiny ? 24 : 28 };
-
-      const sprite = this._getWeaponSprite(item);
-      if (sprite && (sprite.complete || sprite.naturalWidth)) {
-        containImage(ctx, sprite, artRect.x + 6, artRect.y + 3, artRect.w - 12, artRect.h - 6, 1);
-      } else {
-        ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.font = `800 ${isTiny ? 8 : 9}px system-ui`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(item.tier, artRect.x + artRect.w / 2, artRect.y + artRect.h / 2);
+    for (const item of this.items) {
+      if (rowY + rowH < listY - 20) {
+        rowY += rowH + gap;
+        continue;
       }
+      if (rowY > listY + listH + 20) break;
 
-      const btnW = isTiny ? 92 : 108;
-      const btnH = 36;
-      const btnRect = {
-        x: rowRect.x + rowRect.w - btnW - 12,
-        y: rowRect.y + rowRect.h / 2 - btnH / 2,
-        w: btnW,
-        h: btnH,
-      };
+      ctx.fillStyle = "rgba(0,0,0,0.32)";
+      this._fillRoundRect(ctx, listX + 2, rowY, listW - 4, rowH, 16);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      this._strokeRoundRect(ctx, listX + 2, rowY, listW - 4, rowH, 16);
 
-      const textMaxW = btnRect.x - (rowRect.x + 12) - 12;
-      const nameSize = fitText(ctx, item.name, textMaxW, isTiny ? 14 : 15, 11, 900);
+      const rarity = String(item.rarity || "");
+      const rColor = this._rarityColor(rarity);
 
+      const visualRect = { x: listX + 10, y: rowY + 12, w: 54, h: 60 };
+      this._drawDrinkVisual(ctx, item, visualRect.x, visualRect.y, visualRect.w, visualRect.h);
+
+      const buyRect = { x: listX + listW - 112, y: rowY + 18, w: 96, h: 40 };
+      const textX = visualRect.x + visualRect.w + 10;
+      const textMax = Math.max(84, buyRect.x - textX - 10);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 15px system-ui";
       ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = "#fff";
-      ctx.font = `900 ${nameSize}px system-ui`;
-      ctx.fillText(item.name, rowRect.x + 12, rowRect.y + 42);
+      ctx.fillText(this._fitText(ctx, item.name, textMax), textX, rowY + 22);
 
-      ctx.fillStyle = "rgba(255,255,255,0.74)";
-      ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-      ctx.fillText(`Güç: +%${item.bonusPct}  (ikon ~${iconMsFromPct(item.bonusPct)}ms)`, rowRect.x + 12, rowRect.y + 62);
-      ctx.fillText(`Fiyat: ${shortNum(item.price)} yton  •  ${item.label}`, rowRect.x + 12, rowRect.y + 78);
+      ctx.fillStyle = rColor;
+      ctx.font = "800 11px system-ui";
+      ctx.fillText(this._fitText(ctx, `Sınıf: ${rarity}`, textMax), textX, rowY + 40);
 
-      const btnGrad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
-      if (!owned) {
-        btnGrad.addColorStop(0, "rgba(174,128,56,0.95)");
-        btnGrad.addColorStop(1, "rgba(95,69,29,0.92)");
-      } else if (active) {
-        btnGrad.addColorStop(0, "rgba(100,100,110,0.92)");
-        btnGrad.addColorStop(1, "rgba(46,46,52,0.92)");
-      } else {
-        btnGrad.addColorStop(0, "rgba(88,88,96,0.92)");
-        btnGrad.addColorStop(1, "rgba(34,34,40,0.92)");
-      }
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+      ctx.font = "12px system-ui";
+      ctx.fillText(this._fitText(ctx, `+${item.energy} enerji`, textMax), textX, rowY + 58);
 
-      ctx.fillStyle = btnGrad;
-      fillRoundRect(ctx, btnRect.x, btnRect.y, btnRect.w, btnRect.h, 12);
+      ctx.fillStyle = "#ffd36c";
+      ctx.font = "12px system-ui";
+      ctx.fillText(this._fitText(ctx, `${item.price} yton`, textMax), textX, rowY + 74);
+      this.hitBuy.push({ rect: buyRect, item });
+
+      const buyGrad = ctx.createLinearGradient(buyRect.x, buyRect.y, buyRect.x, buyRect.y + buyRect.h);
+      buyGrad.addColorStop(0, "rgba(28,28,36,0.92)");
+      buyGrad.addColorStop(1, "rgba(10,10,14,0.96)");
+      ctx.fillStyle = buyGrad;
+      this._fillRoundRect(ctx, buyRect.x, buyRect.y, buyRect.w, buyRect.h, 16);
       ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      strokeRoundRect(ctx, btnRect.x + 0.5, btnRect.y + 0.5, btnRect.w - 1, btnRect.h - 1, 12);
+      this._strokeRoundRect(ctx, buyRect.x, buyRect.y, buyRect.w, buyRect.h, 16);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
+      ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(!owned ? "Satın Al" : active ? "Seçili" : "Kuşan", btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+      ctx.font = "900 14px system-ui";
+      ctx.fillText("Satın Al", buyRect.x + buyRect.w / 2, buyRect.y + 24);
 
-      this.hit.push({ type: "action", id: item.id, rect: btnRect });
-
-      y += rowH + rowGap;
+      rowY += rowH + gap;
     }
 
     ctx.restore();
 
     if (this.maxScroll > 0) {
-      const trackX = listRect.x + listRect.w - 6;
-      const trackY = listRect.y + 8;
-      const trackH = listRect.h - 16;
-      const thumbH = Math.max(40, trackH * (listRect.h / contentH));
-      const thumbY = trackY + (trackH - thumbH) * (this.scrollY / this.maxScroll);
+      const trackX = listX + listW - 5;
+      const trackY = listY + 10;
+      const trackH = listH - 20;
+      const thumbH = Math.max(40, (listH / (this.maxScroll + listH)) * trackH);
+      const ratio = this.scrollY / Math.max(1, this.maxScroll);
+      const thumbY = trackY + (trackH - thumbH) * ratio;
 
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      fillRoundRect(ctx, trackX, trackY, 4, trackH, 2);
-      ctx.fillStyle = "rgba(255,185,84,0.86)";
-      fillRoundRect(ctx, trackX, thumbY, 4, thumbH, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      this._fillRoundRect(ctx, trackX, trackY, 4, trackH, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.42)";
+      this._fillRoundRect(ctx, trackX, thumbY, 4, thumbH, 3);
     }
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = `900 ${isTiny ? 12 : 13}px system-ui`;
-    ctx.fillText(`Aktif Etki: 500ms → ${effectMs}ms  (+%${effectPct})`, footerRect.x + 12, footerRect.y + 28);
-
-    if (this.toastText && Date.now() < this.toastUntil) {
-      ctx.font = "900 12px system-ui";
-      const tw = Math.min(panelW - 40, Math.max(180, ctx.measureText(this.toastText).width + 34));
-      const th = 40;
+    if (this.toast && Date.now() < this.toastUntil) {
+      const tw = Math.min(panelW - 24, Math.max(180, ctx.measureText(this.toast).width + 36));
+      const th = 42;
       const tx = panelX + (panelW - tw) / 2;
-      const ty = footerRect.y - th - 10;
+      const ty = panelY + panelH - th - 14;
 
-      ctx.fillStyle = "rgba(0,0,0,0.82)";
-      fillRoundRect(ctx, tx, ty, tw, th, 12);
-      ctx.strokeStyle = "rgba(255,194,96,0.30)";
-      strokeRoundRect(ctx, tx + 0.5, ty + 0.5, tw - 1, th - 1, 12);
+      ctx.fillStyle = "rgba(0,0,0,0.78)";
+      this._fillRoundRect(ctx, tx, ty, tw, th, 14);
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      this._strokeRoundRect(ctx, tx, ty, tw, th, 14);
 
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 13px system-ui";
       ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2);
+      ctx.fillText(this.toast, tx + tw / 2, ty + 25);
     }
   }
 }
+
+
+export default NightclubScene;
