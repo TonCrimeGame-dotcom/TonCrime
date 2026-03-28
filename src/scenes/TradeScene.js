@@ -64,19 +64,26 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
 function fmtNum(n) {
   return Number(n || 0).toLocaleString("tr-TR");
 }
+function fitText(ctx, text, maxWidth) {
+  const src = String(text || "");
+  if (!src || maxWidth <= 8) return "";
+  if (ctx.measureText(src).width <= maxWidth) return src;
+  let out = src;
+  while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) {
+    out = out.slice(0, -1);
+  }
+  return out ? out + "…" : "";
+}
+
 
 function rarityColor(r) {
   switch (String(r || "").toLowerCase()) {
-    case "common":
-      return "#9ca3af";
-    case "rare":
-      return "#58a6ff";
-    case "epic":
-      return "#c77dff";
     case "legendary":
       return "#ffcc66";
+    case "epic":
+      return "#ffd789";
     default:
-      return "#9ca3af";
+      return "rgba(255,255,255,0.68)";
   }
 }
 
@@ -1434,11 +1441,11 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
   if (style === "primary") {
     const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(40,95,210,0.72)");
-    g.addColorStop(1, "rgba(18,54,140,0.78)");
+    g.addColorStop(0, "rgba(164,122,38,0.78)");
+    g.addColorStop(1, "rgba(104,72,18,0.84)");
     fill = g;
-    stroke = "rgba(130,175,255,0.45)";
-    txt = "#ffffff";
+    stroke = "rgba(255,214,120,0.42)";
+    txt = "#fff7e6";
   } else if (style === "gold") {
     const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
     g.addColorStop(0, "rgba(130,94,28,0.68)");
@@ -1549,7 +1556,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.fillText(icon || "📦", x + w - 63, y + h / 2);
   }
 
-  _drawMiniCard(ctx, x, y, w, h, title, text, icon, accent = "#458cff") {
+  _drawMiniCard(ctx, x, y, w, h, title, text, icon, accent = "#ffcc66") {
     const grad = ctx.createLinearGradient(x, y, x, y + h);
     grad.addColorStop(0, "rgba(10,14,20,0.34)");
     grad.addColorStop(1, "rgba(6,10,16,0.48)");
@@ -1648,7 +1655,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       deal ? `${deal.itemName} • ${fmtNum(deal.price)} yton` : "Ekonomi merkezi • vitrin • fırsatlar",
       "GÜNÜN VİTRİNİ",
       deal?.icon || "🕶️",
-      "#4b8fff"
+      "#ffcc66"
     );
     y += 140;
 
@@ -1669,7 +1676,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       "En Ucuz Mekanlar",
       cheapestShop ? `${cheapestShop.shop.name} • ${fmtNum(cheapestShop.lowest)} yton` : "Henüz veri yok",
       cheapestShop?.shop?.icon || "🏪",
-      "#62b3ff"
+      "#ffcc66"
     );
 
     this._drawMiniCard(
@@ -1747,7 +1754,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       `${fmtNum(businesses.length)} işletme • üretim / toplama paneli`,
       "OWNER MODE",
       "🏢",
-      "#4b8fff"
+      "#ffcc66"
     );
     y += 132;
 
@@ -1763,7 +1770,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       const recentMiss = Number(biz.lastMissedQty || 0) > 0 && (now - Number(biz.lastMissedAt || 0)) < DAY_MS;
       const infoLines = recentMiss ? 3 : 2;
       const headerH = recentMiss ? 110 : 92;
-      const cardH = headerH + products.length * 64;
+      const rowH = 60;
+      const cardH = headerH + products.length * (rowH + 8);
 
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, cardH, 20);
@@ -1778,10 +1786,11 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.font = "900 15px system-ui";
       ctx.fillText(biz.name || "İşletme", x + 48, y + 24);
 
+      const infoMaxW = w - 182;
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
       ctx.fillText(
-        `${typeLabel(biz.type)} • 24 saatte rastgele ${fmtNum(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL)} üretim • Stok ${fmtNum(biz.stock)}`,
+        fitText(ctx, `${typeLabel(biz.type)} • 24 saatte rastgele ${fmtNum(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL)} üretim • Stok ${fmtNum(biz.stock)}`, infoMaxW),
         x + 48,
         y + 46
       );
@@ -1790,21 +1799,21 @@ _drawButton(ctx, rect, text, style = "ghost") {
       if (prod.producing) {
         ctx.fillStyle = "rgba(255,255,255,0.78)";
         ctx.fillText(
-          `Üretim sürüyor • Hazır olmasına ${fmtDuration(prod.timeToReady)} kaldı • Saat ${fmtClock(prod.readyAt)}`,
+          fitText(ctx, `Üretim sürüyor • Hazır olmasına ${fmtDuration(prod.timeToReady)} kaldı • Saat ${fmtClock(prod.readyAt)}`, infoMaxW),
           x + 48,
           y + 64
         );
       } else if (prod.ready) {
         ctx.fillStyle = "rgba(255,209,120,0.95)";
         ctx.fillText(
-          `Hazır üretim ${fmtNum(prod.pendingTotal)} • ${fmtDuration(prod.timeToCollectEnd)} içinde topla • Son ${fmtClock(prod.collectUntilAt)}`,
+          fitText(ctx, `Hazır üretim ${fmtNum(prod.pendingTotal)} • ${fmtDuration(prod.timeToCollectEnd)} içinde topla • Son ${fmtClock(prod.collectUntilAt)}`, infoMaxW),
           x + 48,
           y + 64
         );
       } else {
         ctx.fillStyle = "rgba(255,255,255,0.48)";
         ctx.fillText(
-          `Bekleyen üretim yok • Yeni döngü hazır ${fmtClock(biz.productionReadyAt)}`,
+          fitText(ctx, `Bekleyen üretim yok • Yeni döngü hazır ${fmtClock(biz.productionReadyAt)}`, infoMaxW),
           x + 48,
           y + 64
         );
@@ -1814,7 +1823,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
         ctx.fillStyle = "rgba(255,120,120,0.90)";
         ctx.font = "11px system-ui";
         ctx.fillText(
-          `Kaçan üretim: ${fmtNum(biz.lastMissedQty)} ürün • Zamanında toplanmadığı için kayboldu`,
+          fitText(ctx, `Kaçan üretim: ${fmtNum(biz.lastMissedQty)} ürün • Zamanında toplanmadığı için kayboldu`, infoMaxW),
           x + 48,
           y + 82
         );
@@ -1829,30 +1838,27 @@ _drawButton(ctx, rect, text, style = "ghost") {
       let rowY = y + headerH;
       for (const p of products) {
         ctx.fillStyle = "rgba(255,255,255,0.04)";
-        fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+        fillRoundRect(ctx, x + 12, rowY, w - 24, rowH, 14);
         ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+        strokeRoundRect(ctx, x + 12, rowY, w - 24, rowH, 14);
 
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
 
         ctx.fillStyle = "#fff";
         ctx.font = "900 18px system-ui";
-        ctx.fillText(p.icon || "📦", x + 22, rowY + 22);
+        ctx.fillText(p.icon || "📦", x + 22, rowY + 24);
+
+        const useRect = { x: x + w - 176, y: rowY + 16, w: 68, h: 28 };
+        const sellRect = { x: x + w - 100, y: rowY + 16, w: 84, h: 28 };
+        const rowTextMaxW = Math.max(96, useRect.x - (x + 48) - 14);
 
         ctx.font = "900 13px system-ui";
-        ctx.fillText(p.name || "Ürün", x + 48, rowY + 18);
-
-        ctx.fillStyle = rarityColor(p.rarity);
-        ctx.font = "800 10px system-ui";
-        ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 48, rowY + 34);
+        ctx.fillText(fitText(ctx, p.name || "Ürün", rowTextMaxW), x + 48, rowY + 20);
 
         ctx.fillStyle = "rgba(255,255,255,0.70)";
         ctx.font = "11px system-ui";
-        ctx.fillText(`Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 110, rowY + 34);
-
-        const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
-        const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
+        ctx.fillText(fitText(ctx, `Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, rowTextMaxW), x + 48, rowY + 40);
 
         this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
         this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
@@ -1860,7 +1866,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
         this._drawButton(ctx, useRect, "Kullan", "primary");
         this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
 
-        rowY += 62;
+        rowY += rowH + 8;
       }
 
       y += cardH + 12;
@@ -1918,18 +1924,14 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.fillText(item.icon || "📦", x + 14, y + 28);
 
       ctx.font = "900 14px system-ui";
-      ctx.fillText(item.name || "Item", x + 48, y + 22);
-
-      ctx.fillStyle = rarityColor(item.rarity);
-      ctx.font = "800 10px system-ui";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), x + 48, y + 38);
+      ctx.fillText(fitText(ctx, item.name || "Item", w - 64), x + 48, y + 22);
 
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "11px system-ui";
-      ctx.fillText(`Adet ${fmtNum(item.qty)} • NPC ${fmtNum(item.sellPrice)} yton`, x + 14, y + 56);
+      ctx.fillText(fitText(ctx, `Adet ${fmtNum(item.qty)} • NPC ${fmtNum(item.sellPrice)} yton`, w - 28), x + 14, y + 52);
 
       if (item.desc) {
-        ctx.fillText(item.desc, x + 14, y + 74);
+        ctx.fillText(fitText(ctx, item.desc, w - 28), x + 14, y + 70);
       }
 
       const btnY = y + 78;
@@ -1992,7 +1994,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
     this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
 
-    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • satın al / sat", "📦", "#62b3ff");
+    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • satın al / sat", "📦", "#ffcc66");
     this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Legendary Crate", "140 yton • premium ödül", "👑", "#ffcc66");
 
     y += 124;
@@ -2072,15 +2074,16 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.textBaseline = "alphabetic";
       ctx.fillText(shop.icon || iconForType(shop.type), x + 14, y + 28);
 
+      const enterRect = { x: x + w - 108, y: y + 64, w: 94, h: 28 };
+      const shopTextMaxW = Math.max(90, enterRect.x - (x + 48) - 12);
       ctx.font = "900 14px system-ui";
-      ctx.fillText(shop.name || "Dükkan", x + 48, y + 22);
+      ctx.fillText(fitText(ctx, shop.name || "Dükkan", shopTextMaxW), x + 48, y + 22);
 
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
-      ctx.fillText(`${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"}`, x + 48, y + 42);
-      ctx.fillText(`Ürün ${fmtNum(shop.totalListings)} • Puan ${shop.rating || 0} • En düşük ${lowest ? fmtNum(lowest) : "-"}`, x + 48, y + 60);
+      ctx.fillText(fitText(ctx, `${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"}`, shopTextMaxW), x + 48, y + 42);
+      ctx.fillText(fitText(ctx, `Ürün ${fmtNum(shop.totalListings)} • Puan ${shop.rating || 0} • En düşük ${lowest ? fmtNum(lowest) : "-"}`, shopTextMaxW), x + 48, y + 60);
 
-      const enterRect = { x: x + w - 108, y: y + 64, w: 94, h: 28 };
       this.hitButtons.push({ rect: enterRect, action: "open_shop", shopId: shop.id });
       this._drawButton(ctx, enterRect, "Dükkana Gir", "primary");
 
@@ -2108,7 +2111,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       `${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"} • Puan ${shop.rating || 0}`,
       shop.online ? "ONLINE" : "OFFLINE",
       shop.icon || iconForType(shop.type),
-      "#4b8fff"
+      "#ffcc66"
     );
     y += 120;
 
@@ -2130,18 +2133,15 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.textBaseline = "alphabetic";
       ctx.fillText(item.icon || "📦", x + 14, y + 28);
 
+      const buyRect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
+      const itemTextMaxW = Math.max(90, buyRect.x - (x + 48) - 12);
       ctx.font = "900 14px system-ui";
-      ctx.fillText(item.itemName || "Ürün", x + 48, y + 22);
-
-      ctx.fillStyle = rarityColor(item.rarity);
-      ctx.font = "800 10px system-ui";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), x + 48, y + 40);
+      ctx.fillText(fitText(ctx, item.itemName || "Ürün", itemTextMaxW), x + 48, y + 22);
 
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
-      ctx.fillText(`Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`, x + 14, y + 64);
+      ctx.fillText(fitText(ctx, `Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`, w - 28), x + 14, y + 60);
 
-      const buyRect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
       this.hitButtons.push({ rect: buyRect, action: "buy_market_item", itemId: item.id, shopId: shop.id });
       this._drawButton(ctx, buyRect, "Satın Al", "gold");
 
@@ -2249,7 +2249,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.globalAlpha = 0.08;
     ctx.fillStyle = "#ff9e46";
     fillRoundRect(ctx, safe.x - 8, safe.y + 8, safe.w * 0.42, 120, 42);
-    ctx.fillStyle = "#2d68ff";
+    ctx.fillStyle = "#ffcc66";
     fillRoundRect(ctx, safe.x + safe.w - 112, safe.y + 128, 78, 78, 28);
     ctx.restore();
 
@@ -2269,7 +2269,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
 
-  this.hitBack = { x: panelX + 12, y: panelY + 10, w: 40, h: 40 };
+  this.hitBack = { x: panelX + panelW - 52, y: panelY + 10, w: 40, h: 40 };
 this._drawButton(ctx, this.hitBack, "✕", "muted");
 
     
