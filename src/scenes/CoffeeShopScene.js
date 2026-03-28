@@ -194,17 +194,23 @@ export class CoffeeShopScene {
   }
 
   _getBg() {
+    if (!this._bgImgCache) this._bgImgCache = this._loadChainedImage(COFFEESHOP_BG_PATHS);
+
+    if (this._bgImgCache && (this._bgImgCache.complete || this._bgImgCache.naturalWidth || this._bgImgCache.width)) {
+      return this._bgImgCache;
+    }
+
     if (typeof this.assets?.getImage === "function") {
-      const fromAssets = this.assets.getImage("coffeeshop_bg") || this.assets.getImage("coffeeshop");
+      const fromAssets = this.assets.getImage("coffeeshop_bg");
       if (fromAssets) return fromAssets;
     }
     if (typeof this.assets?.get === "function") {
-      const fromAssets = this.assets.get("coffeeshop_bg") || this.assets.get("coffeeshop");
+      const fromAssets = this.assets.get("coffeeshop_bg");
       if (fromAssets) return fromAssets;
     }
-    const fromMap = this.assets?.images?.coffeeshop_bg || this.assets?.images?.coffeeshop || null;
+    const fromMap = this.assets?.images?.coffeeshop_bg || null;
     if (fromMap) return fromMap;
-    if (!this._bgImgCache) this._bgImgCache = this._loadChainedImage(COFFEESHOP_BG_PATHS);
+
     return this._bgImgCache;
   }
 
