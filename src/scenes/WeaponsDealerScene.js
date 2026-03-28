@@ -49,6 +49,25 @@ function coverImage(ctx, img, x, y, w, h, alpha = 1) {
   ctx.globalAlpha = prev;
 }
 
+function containImage(ctx, img, x, y, w, h, alpha = 1) {
+  if (!img) return;
+  const iw = img.width || img.naturalWidth || 1;
+  const ih = img.height || img.naturalHeight || 1;
+  const scale = Math.min(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  const prev = ctx.globalAlpha;
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.globalAlpha = prev;
+}
+
+function weaponAssetPath(fileName) {
+  return fileName ? `./src/assets/${fileName}` : "";
+}
+
 function iconMsFromPct(pct, baseMs = 500) {
   const p = clamp(Number(pct) || 0, 0, 250);
   return Math.round(baseMs * (1 + p / 100));
@@ -69,33 +88,33 @@ function fitText(ctx, text, maxW, startSize, minSize = 10, weight = 900) {
 }
 
 const WEAPONS = [
-  { id: "glock_17", name: "Glock 17 (9×19mm)", bonusPct: 18, price: 520, tier: "Yan Silah", label: "Başlangıç", accent: "#d8aa59" },
-  { id: "sig_p320", name: "SIG Sauer P320 (9×19mm)", bonusPct: 20, price: 650, tier: "Yan Silah", label: "Dengeli", accent: "#d8aa59" },
-  { id: "beretta_92fs", name: "Beretta 92FS (9×19mm)", bonusPct: 19, price: 640, tier: "Yan Silah", label: "Stabil", accent: "#d8aa59" },
-  { id: "colt_1911", name: "Colt 1911 (.45 ACP)", bonusPct: 22, price: 820, tier: "Yan Silah", label: "Ağır Vuruş", accent: "#d8aa59" },
+  { id: "glock_17", name: "Glock 17 (9×19mm)", assetFile: "glock.png", bonusPct: 18, price: 520, tier: "Yan Silah", label: "Başlangıç", accent: "#d8aa59" },
+  { id: "sig_p320", name: "SIG Sauer P320 (9×19mm)", assetFile: "sauer.png", bonusPct: 20, price: 650, tier: "Yan Silah", label: "Dengeli", accent: "#d8aa59" },
+  { id: "beretta_92fs", name: "Beretta 92FS (9×19mm)", assetFile: "baretta.png", bonusPct: 19, price: 640, tier: "Yan Silah", label: "Stabil", accent: "#d8aa59" },
+  { id: "colt_1911", name: "Colt 1911 (.45 ACP)", assetFile: "cold.png", bonusPct: 22, price: 820, tier: "Yan Silah", label: "Ağır Vuruş", accent: "#d8aa59" },
 
-  { id: "mossberg_500", name: "Mossberg 500 (12ga)", bonusPct: 25, price: 480, tier: "Pompalı", label: "Yakın Menzil", accent: "#d8aa59" },
-  { id: "rem_870", name: "Remington 870 (12ga)", bonusPct: 26, price: 520, tier: "Pompalı", label: "Yakın Menzil", accent: "#d8aa59" },
+  { id: "mossberg_500", name: "Mossberg 500 (12ga)", assetFile: "moss.png", bonusPct: 25, price: 480, tier: "Pompalı", label: "Yakın Menzil", accent: "#d8aa59" },
+  { id: "rem_870", name: "Remington 870 (12ga)", assetFile: "reminaton.png", bonusPct: 26, price: 520, tier: "Pompalı", label: "Yakın Menzil", accent: "#d8aa59" },
 
-  { id: "mp5", name: "HK MP5 (9×19mm)", bonusPct: 28, price: 1700, tier: "SMG", label: "Hızlı", accent: "#cf954e" },
-  { id: "ump45", name: "HK UMP45 (.45 ACP)", bonusPct: 27, price: 1550, tier: "SMG", label: "Kontrollü", accent: "#cf954e" },
+  { id: "mp5", name: "HK MP5 (9×19mm)", assetFile: "mp5.png", bonusPct: 28, price: 1700, tier: "SMG", label: "Hızlı", accent: "#cf954e" },
+  { id: "ump45", name: "HK UMP45 (.45 ACP)", assetFile: "ump.png", bonusPct: 27, price: 1550, tier: "SMG", label: "Kontrollü", accent: "#cf954e" },
 
-  { id: "ar15", name: "AR-15 (5.56×45)", bonusPct: 31, price: 980, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
-  { id: "ak74", name: "AK-74 (5.45×39)", bonusPct: 33, price: 1100, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
-  { id: "ak47", name: "AK-47 (7.62×39)", bonusPct: 35, price: 1200, tier: "Tüfek", label: "Güçlü", accent: "#cf954e" },
-  { id: "m4a1", name: "M4A1 (5.56×45)", bonusPct: 34, price: 1450, tier: "Tüfek", label: "Dengeli", accent: "#cf954e" },
+  { id: "ar15", name: "AR-15 (5.56×45)", assetFile: "ar.png", bonusPct: 31, price: 980, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
+  { id: "ak74", name: "AK-74 (5.45×39)", assetFile: null, bonusPct: 33, price: 1100, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
+  { id: "ak47", name: "AK-47 (7.62×39)", assetFile: null, bonusPct: 35, price: 1200, tier: "Tüfek", label: "Güçlü", accent: "#cf954e" },
+  { id: "m4a1", name: "M4A1 (5.56×45)", assetFile: "m4a1.png", bonusPct: 34, price: 1450, tier: "Tüfek", label: "Dengeli", accent: "#cf954e" },
 
-  { id: "g3", name: "HK G3 (7.62×51)", bonusPct: 38, price: 1600, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
-  { id: "scar_h", name: "FN SCAR-H (7.62×51)", bonusPct: 40, price: 2800, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
+  { id: "g3", name: "HK G3 (7.62×51)", assetFile: "g3.png", bonusPct: 38, price: 1600, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
+  { id: "scar_h", name: "FN SCAR-H (7.62×51)", assetFile: "scar.png", bonusPct: 40, price: 2800, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
 
-  { id: "svd", name: "Dragunov SVD (7.62×54R)", bonusPct: 44, price: 2100, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
-  { id: "m24", name: "Remington M24 (7.62×51)", bonusPct: 43, price: 2400, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
+  { id: "svd", name: "Dragunov SVD (7.62×54R)", assetFile: null, bonusPct: 44, price: 2100, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
+  { id: "m24", name: "Remington M24 (7.62×51)", assetFile: "m24.png", bonusPct: 43, price: 2400, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
 
-  { id: "m79", name: "M79 (Launcher)", bonusPct: 50, price: 3800, tier: "Launcher", label: "Epic", accent: "#b85d35" },
-  { id: "rpg7", name: "RPG-7 (Launcher)", bonusPct: 55, price: 4500, tier: "Launcher", label: "Epic", accent: "#b85d35" },
+  { id: "m79", name: "M79 (Launcher)", assetFile: null, bonusPct: 50, price: 3800, tier: "Launcher", label: "Epic", accent: "#b85d35" },
+  { id: "rpg7", name: "RPG-7 (Launcher)", assetFile: "rpg.png", bonusPct: 55, price: 4500, tier: "Launcher", label: "Epic", accent: "#b85d35" },
 
-  { id: "barrett_m82", name: "Barrett M82 (.50 BMG)", bonusPct: 60, price: 9000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
-  { id: "m134", name: "M134 Minigun (7.62×51)", bonusPct: 70, price: 12000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
+  { id: "barrett_m82", name: "Barrett M82 (.50 BMG)", assetFile: "barrett.png", bonusPct: 60, price: 9000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
+  { id: "m134", name: "M134 Minigun (7.62×51)", assetFile: null, bonusPct: 70, price: 12000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
 ];
 
 export class WeaponsScene {
@@ -117,6 +136,7 @@ export class WeaponsScene {
     this.hit = [];
     this.toastText = "";
     this.toastUntil = 0;
+    this.weaponSpriteCache = new Map();
   }
 
   onEnter() {
@@ -151,6 +171,19 @@ export class WeaponsScene {
   _showToast(text, ms = 1500) {
     this.toastText = String(text || "");
     this.toastUntil = Date.now() + ms;
+  }
+
+  _getWeaponSprite(item) {
+    const fileName = item?.assetFile;
+    if (!fileName) return null;
+
+    let img = this.weaponSpriteCache.get(fileName);
+    if (img) return img;
+
+    img = new Image();
+    img.src = weaponAssetPath(fileName);
+    this.weaponSpriteCache.set(fileName, img);
+    return img;
   }
 
   _ensureWeaponsState() {
@@ -507,16 +540,22 @@ export class WeaponsScene {
       ctx.strokeStyle = active ? "rgba(255,194,96,0.34)" : "rgba(255,255,255,0.10)";
       strokeRoundRect(ctx, rowRect.x + 0.5, rowRect.y + 0.5, rowRect.w - 1, rowRect.h - 1, 16);
 
-      const tagRect = { x: rowRect.x + 12, y: rowRect.y + 10, w: isTiny ? 76 : 86, h: 20 };
-      ctx.fillStyle = `${item.accent}33`;
-      fillRoundRect(ctx, tagRect.x, tagRect.y, tagRect.w, tagRect.h, 11);
-      ctx.strokeStyle = `${item.accent}88`;
-      strokeRoundRect(ctx, tagRect.x + 0.5, tagRect.y + 0.5, tagRect.w - 1, tagRect.h - 1, 11);
-      ctx.fillStyle = "#fff";
-      ctx.font = `800 ${isTiny ? 9 : 10}px system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(item.tier, tagRect.x + tagRect.w / 2, tagRect.y + tagRect.h / 2);
+      const artRect = { x: rowRect.x + 12, y: rowRect.y + 8, w: isTiny ? 86 : 104, h: isTiny ? 24 : 28 };
+      ctx.fillStyle = "rgba(255,255,255,0.03)";
+      fillRoundRect(ctx, artRect.x, artRect.y, artRect.w, artRect.h, 12);
+      ctx.strokeStyle = `${item.accent}66`;
+      strokeRoundRect(ctx, artRect.x + 0.5, artRect.y + 0.5, artRect.w - 1, artRect.h - 1, 12);
+
+      const sprite = this._getWeaponSprite(item);
+      if (sprite && (sprite.complete || sprite.naturalWidth)) {
+        containImage(ctx, sprite, artRect.x + 6, artRect.y + 3, artRect.w - 12, artRect.h - 6, 1);
+      } else {
+        ctx.fillStyle = "rgba(255,255,255,0.78)";
+        ctx.font = `800 ${isTiny ? 8 : 9}px system-ui`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(item.tier, artRect.x + artRect.w / 2, artRect.y + artRect.h / 2);
+      }
 
       const btnW = isTiny ? 92 : 108;
       const btnH = 36;
@@ -534,12 +573,12 @@ export class WeaponsScene {
       ctx.textBaseline = "alphabetic";
       ctx.fillStyle = "#fff";
       ctx.font = `900 ${nameSize}px system-ui`;
-      ctx.fillText(item.name, rowRect.x + 12, rowRect.y + 40);
+      ctx.fillText(item.name, rowRect.x + 12, rowRect.y + 42);
 
       ctx.fillStyle = "rgba(255,255,255,0.74)";
       ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-      ctx.fillText(`Güç: +%${item.bonusPct}  (ikon ~${iconMsFromPct(item.bonusPct)}ms)`, rowRect.x + 12, rowRect.y + 60);
-      ctx.fillText(`Fiyat: ${shortNum(item.price)} yton  •  ${item.label}`, rowRect.x + 12, rowRect.y + 76);
+      ctx.fillText(`Güç: +%${item.bonusPct}  (ikon ~${iconMsFromPct(item.bonusPct)}ms)`, rowRect.x + 12, rowRect.y + 62);
+      ctx.fillText(`Fiyat: ${shortNum(item.price)} yton  •  ${item.label}`, rowRect.x + 12, rowRect.y + 78);
 
       const btnGrad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
       if (!owned) {
