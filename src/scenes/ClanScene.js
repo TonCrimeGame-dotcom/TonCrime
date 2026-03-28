@@ -1,5 +1,9 @@
 import { ClanSystem } from "../clan/ClanSystem.js";
 
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
 function rr(ctx, x, y, w, h, r) {
   const radius = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
@@ -10,61 +14,110 @@ function rr(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
 }
-function fillRR(ctx, x, y, w, h, r, color) {
-  ctx.fillStyle = color;
+
+function fillRR(ctx, x, y, w, h, r, fill) {
   rr(ctx, x, y, w, h, r);
+  ctx.fillStyle = fill;
   ctx.fill();
 }
-function strokeRR(ctx, x, y, w, h, r, color, line = 1) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = line;
+
+function strokeRR(ctx, x, y, w, h, r, stroke, lw = 1) {
   rr(ctx, x, y, w, h, r);
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = lw;
   ctx.stroke();
 }
-function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-function fmtNum(n) { return Number(n || 0).toLocaleString("tr-TR"); }
-function getPointer(input) { return input?.pointer || input?.p || input?.mouse || input?.state?.pointer || { x: 0, y: 0 }; }
-function canvasCssSize(canvas) {
-  const rect = canvas?.getBoundingClientRect?.();
-  if (rect && rect.width > 0 && rect.height > 0) return { w: Math.round(rect.width), h: Math.round(rect.height) };
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  return {
-    w: Math.max(1, Math.round((canvas?.width || 1) / dpr)),
-    h: Math.max(1, Math.round((canvas?.height || 1) / dpr)),
-  };
+
+function fitFont(size, weight = 500) {
+  return `${weight} ${size}px Arial`;
 }
+
+function fmtNum(n) {
+  return Number(n || 0).toLocaleString("tr-TR");
+}
+
+function getPointer(input) {
+  return input?.pointer || input?.p || input?.mouse || input?.state?.pointer || { x: 0, y: 0 };
+}
+
 function justPressed(input) {
   if (typeof input?.justPressed === "function") return !!input.justPressed();
-  if (typeof input?.isJustPressed === "function") return !!input.isJustPressed("pointer") || !!input.isJustPressed("mouseLeft") || !!input.isJustPressed("touch");
+  if (typeof input?.isJustPressed === "function") {
+    return !!input.isJustPressed("pointer") || !!input.isJustPressed("mouseLeft") || !!input.isJustPressed("touch");
+  }
   return !!input?._justPressed || !!input?.mousePressed;
 }
+
 function justReleased(input) {
   if (typeof input?.justReleased === "function") return !!input.justReleased();
   return !!input?._justReleased;
 }
-function getRoleLabel(role) {
-  if (role === "leader") return "Kurucu";
-  if (role === "co_leader") return "Kurucu Yrd.";
-  if (role === "officer") return "Subay";
-  return "Üye";
+
+function canvasCssSize(canvas) {
+  const rect = canvas?.getBoundingClientRect?.();
+  if (rect?.width > 0 && rect?.height > 0) {
+    return { w: Math.round(rect.width), h: Math.round(rect.height) };
+  }
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  return {
+    w: Math.max(1, Math.round((canvas?.width || window.innerWidth) / dpr)),
+    h: Math.max(1, Math.round((canvas?.height || window.innerHeight) / dpr)),
+  };
 }
-function timeLeftText(pending) {
-  if (!pending) return "";
-  const remain = Math.max(0, (Number(pending.requestedAt || 0) + Number(pending.acceptAfterMs || 0)) - Date.now());
-  const sec = Math.ceil(remain / 1000);
-  return `${sec}s`;
-}
-function fitFont(base, mobile, min = 14) { return `${mobile ? Math.max(min, Math.floor(base * 0.72)) : base}px Arial`; }
-function fitBold(base, mobile, min = 15) { return `bold ${mobile ? Math.max(min, Math.floor(base * 0.72)) : base}px Arial`; }
-function textLine(ctx, text, x, y, maxWidth) {
+
+function textFit(ctx, text, x, y, maxWidth) {
   const value = String(text || "");
   if (!maxWidth || ctx.measureText(value).width <= maxWidth) {
     ctx.fillText(value, x, y);
     return;
   }
   let t = value;
-  while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) t = t.slice(0, -1);
-  ctx.fillText(t + "…", x, y);
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1);
+  ctx.fillText(`${t}…`, x, y);
+}
+
+function wrapText(ctx, text, maxWidth, maxLines = 3) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  for (let i = 0; i < words.length; i += 1) {
+    const next = line ? `${line} ${words[i]}` : words[i];
+    if (!line || ctx.measureText(next).width <= maxWidth) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = words[i];
+    }
+    if (lines.length >= maxLines) break;
+  }
+
+  if (line && lines.length < maxLines) lines.push(line);
+
+  if (lines.length === maxLines && words.length) {
+    const original = lines[maxLines - 1] || "";
+    let t = original;
+    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1);
+    lines[maxLines - 1] = `${t}…`;
+  }
+
+  return lines;
+}
+
+function getRoleLabel(role) {
+  if (role === "leader") return "Kurucu";
+  if (role === "co_leader") return "Yardımcı";
+  if (role === "officer") return "Subay";
+  return "Üye";
+}
+
+function timeLeftText(pending) {
+  if (!pending) return "";
+  const remain = Math.max(0, (Number(pending.requestedAt || 0) + Number(pending.acceptAfterMs || 0)) - Date.now());
+  const sec = Math.ceil(remain / 1000);
+  if (sec < 60) return `${sec} sn`;
+  const min = Math.ceil(sec / 60);
+  return `${min} dk`;
 }
 
 export class ClanScene {
@@ -74,17 +127,19 @@ export class ClanScene {
     this.i18n = i18n;
     this.assets = assets;
     this.scenes = scenes;
+
     this.buttons = [];
-    this.searchFocused = false;
-    this.inviteFocused = false;
+    this.layout = null;
+    this.tab = "overview";
     this.search = "";
     this.inviteName = "";
-    this.tab = "overview";
-    this.layout = null;
+    this.searchFocused = false;
+    this.inviteFocused = false;
+
     this.scrollY = 0;
     this.scrollMax = 0;
-    this._dragScroll = null;
     this.scrollArea = null;
+    this._dragScroll = null;
   }
 
   onEnter() {
@@ -96,94 +151,154 @@ export class ClanScene {
     this.scrollMax = 0;
     this._dragScroll = null;
   }
-  onExit() { this.unbindKeyboard(); }
+
+  onExit() {
+    this.unbindKeyboard();
+  }
 
   bindKeyboard() {
     this._onKey = (e) => {
       if (this.searchFocused) {
-        if (e.key === "Backspace") { this.search = this.search.slice(0, -1); this.writeDirectorySearch(); return; }
-        if (e.key.length === 1) { this.search = (this.search + e.key).slice(0, 22); this.writeDirectorySearch(); return; }
+        if (e.key === "Backspace") {
+          this.search = this.search.slice(0, -1);
+          this.writeDirectorySearch();
+          return;
+        }
+        if (e.key.length === 1) {
+          this.search = (this.search + e.key).slice(0, 24);
+          this.writeDirectorySearch();
+          return;
+        }
       }
+
       if (this.inviteFocused) {
-        if (e.key === "Backspace") { this.inviteName = this.inviteName.slice(0, -1); return; }
-        if (e.key === "Enter") { ClanSystem.createInvite(this.store, this.inviteName); this.inviteName = ""; return; }
-        if (e.key.length === 1) this.inviteName = (this.inviteName + e.key).slice(0, 18);
+        if (e.key === "Backspace") {
+          this.inviteName = this.inviteName.slice(0, -1);
+          return;
+        }
+        if (e.key === "Enter") {
+          ClanSystem.createInvite(this.store, this.inviteName);
+          this.inviteName = "";
+          return;
+        }
+        if (e.key.length === 1) {
+          this.inviteName = (this.inviteName + e.key).slice(0, 18);
+        }
       }
     };
     window.addEventListener("keydown", this._onKey);
   }
+
   unbindKeyboard() {
-    if (this._onKey) {
-      window.removeEventListener("keydown", this._onKey);
-      this._onKey = null;
-    }
+    if (!this._onKey) return;
+    window.removeEventListener("keydown", this._onKey);
+    this._onKey = null;
   }
 
   writeDirectorySearch() {
     const s = this.store.get();
-    const cd = { ...(s.clanDirectory || {}) };
-    const player = { ...(cd.player || {}) };
+    const clanDirectory = { ...(s.clanDirectory || {}) };
+    const player = { ...(clanDirectory.player || {}) };
     player.search = this.search;
-    cd.player = player;
-    this.store.set({ clanDirectory: cd });
+    clanDirectory.player = player;
+    this.store.set({ clanDirectory });
   }
 
-  getState() { return this.store?.get ? this.store.get() : {}; }
+  getState() {
+    return this.store?.get ? this.store.get() : {};
+  }
+
+  getBackgroundImage() {
+    return (
+      (typeof this.assets?.getImage === "function" && (this.assets.getImage("clan_bg") || this.assets.getImage("clan"))) ||
+      this.assets?.images?.clan_bg ||
+      this.assets?.images?.clan ||
+      null
+    );
+  }
 
   getLayout(ctx) {
     const size = canvasCssSize(ctx.canvas);
     const w = size.w;
     const h = size.h;
-    const mobile = w < 760;
-    const s = this.store?.get?.() || {};
-    const safe = s.ui?.safe || { x: 0, y: 0, w, h };
-    const hudTop = Number(s.ui?.hudReservedTop || (mobile ? 82 : 96));
-    const chatBottom = Number(s.ui?.chatReservedBottom || (mobile ? 72 : 88));
-    const pad = mobile ? 10 : Math.max(14, Math.floor(w * 0.035));
-    const gap = mobile ? 10 : 16;
-    const top = Math.max(safe.y + 8, safe.y + hudTop + 8);
-    const bottomPad = Math.max(chatBottom + 8, Math.max(0, h - (safe.y + safe.h)) + chatBottom);
+    const state = this.getState();
+    const safe = state.ui?.safe || { x: 0, y: 0, w, h };
+    const mobile = safe.w < 760;
+    const hudTop = Number(state.ui?.hudReservedTop || (mobile ? 84 : 96));
+    const chatBottom = Number(state.ui?.chatReservedBottom || (mobile ? 74 : 88));
+    const side = mobile ? 10 : Math.max(16, Math.floor(safe.w * 0.03));
+    const top = Math.max(safe.y + 8, safe.y + hudTop + 6);
+    const bottom = safe.y + safe.h - Math.max(8, chatBottom - 8);
+    const panelX = safe.x + side;
+    const panelY = top;
+    const panelW = safe.w - side * 2;
+    const panelH = Math.max(320, bottom - top);
+    const headerH = mobile ? 148 : 154;
+    const heroH = mobile ? 150 : 170;
+    const contentY = panelY + headerH + heroH + 14;
+    const contentH = panelY + panelH - contentY - 14;
 
-    if (mobile) {
-      const leftX = safe.x + pad;
-      const leftY = top;
-      const leftW = safe.w - pad * 2;
-      const leftH = 248;
-      const rightX = leftX;
-      const rightY = leftY + leftH + gap;
-      const rightW = leftW;
-      const rightH = Math.max(180, safe.y + safe.h - rightY - bottomPad + 4);
-      return { mobile, w, h, pad, gap, top, bottomPad, leftX, leftY, leftW, leftH, rightX, rightY, rightW, rightH };
-    }
-
-    const leftX = safe.x + pad;
-    const leftY = top;
-    const leftW = Math.min(320, safe.w * 0.34);
-    const leftH = safe.h - (top - safe.y) - bottomPad;
-    const rightX = leftX + leftW + gap;
-    const rightY = top;
-    const rightW = safe.w - (rightX - safe.x) - pad;
-    const rightH = leftH;
-    return { mobile, w, h, pad, gap, top, bottomPad, leftX, leftY, leftW, leftH, rightX, rightY, rightW, rightH };
+    return {
+      mobile,
+      w,
+      h,
+      safe,
+      panelX,
+      panelY,
+      panelW,
+      panelH,
+      headerH,
+      heroH,
+      contentY,
+      contentH,
+      pad: mobile ? 14 : 18,
+    };
   }
 
   drawBackground(ctx, w, h) {
-    const img =
-      (typeof this.assets?.getImage === "function" ? this.assets.getImage("clan_bg") : null) ||
-      this.assets?.images?.clan_bg ||
-      this.assets?.images?.clan ||
-      null;
-    if (img) {
-      const scale = Math.max(w / (img.width || 1), h / (img.height || 1));
-      const dw = (img.width || 1) * scale;
-      const dh = (img.height || 1) * scale;
-      ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    const bg = this.getBackgroundImage();
+    if (bg?.width && bg?.height) {
+      const scale = Math.max(w / bg.width, h / bg.height);
+      const dw = bg.width * scale;
+      const dh = bg.height * scale;
+      ctx.drawImage(bg, (w - dw) / 2, (h - dh) / 2, dw, dh);
     } else {
-      ctx.fillStyle = "#061124";
+      ctx.fillStyle = "#130a08";
       ctx.fillRect(0, 0, w, h);
     }
-    ctx.fillStyle = "rgba(2,7,18,0.16)";
+
+    const topShade = ctx.createLinearGradient(0, 0, 0, h);
+    topShade.addColorStop(0, "rgba(8,5,4,0.22)");
+    topShade.addColorStop(0.5, "rgba(18,9,5,0.12)");
+    topShade.addColorStop(1, "rgba(6,3,2,0.28)");
+    ctx.fillStyle = topShade;
     ctx.fillRect(0, 0, w, h);
+  }
+
+  beginScrollArea(ctx, x, y, w, h, contentH) {
+    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
+    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
+    this.scrollArea = { x, y, w, h };
+    ctx.save();
+    rr(ctx, x, y, w, h, 18);
+    ctx.clip();
+  }
+
+  endScrollArea(ctx) {
+    ctx.restore();
+  }
+
+  drawScrollBar(ctx) {
+    if (!this.scrollArea || this.scrollMax <= 0) return;
+    const { x, y, w, h } = this.scrollArea;
+    const trackX = x + w - 5;
+    const trackY = y + 8;
+    const trackH = h - 16;
+    const thumbH = Math.max(36, Math.floor((h / (h + this.scrollMax)) * trackH));
+    const travel = Math.max(0, trackH - thumbH);
+    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
+    fillRR(ctx, trackX, trackY, 3, trackH, 3, "rgba(255,255,255,0.10)");
+    fillRR(ctx, trackX, thumbY, 3, thumbH, 3, "rgba(245,195,111,0.88)");
   }
 
   update() {
@@ -213,8 +328,10 @@ export class ClanScene {
     }
 
     if (!pressed) return;
+
     this.searchFocused = false;
     this.inviteFocused = false;
+
     for (const btn of this.buttons) {
       if (px >= btn.x && px <= btn.x + btn.w && py >= btn.y && py <= btn.y + btn.h) {
         btn.onClick?.();
@@ -223,45 +340,18 @@ export class ClanScene {
     }
   }
 
-  estimateDiscoveryContentHeight(directory, h) {
-    if (!this.layout?.mobile) return h;
-    const clans = ClanSystem.browseClans(this.store, this.search);
-    const inbox = directory?.player?.inbox || [];
-    let contentH = 140 + Math.max(1, clans.length) * 98 + 24;
-    if (inbox.length) contentH += 102;
-    return Math.max(h, contentH);
-  }
+  estimateContentHeight(clan, directory, layout) {
+    if (!clan) {
+      const clans = ClanSystem.browseClans(this.store, this.search);
+      const inbox = directory?.player?.inbox || [];
+      return 120 + (inbox.length ? 112 : 0) + Math.max(1, clans.length) * (layout.mobile ? 118 : 108) + 40;
+    }
 
-  estimateClanTabContentHeight(clan, viewportH) {
-    if (!this.layout?.mobile) return viewportH;
-    if (this.tab === "overview") return Math.max(viewportH, 470);
-    if (this.tab === "members") return Math.max(viewportH, 16 + Math.max(1, clan.members.length) * 80 + 12);
-    if (this.tab === "manage") return Math.max(viewportH, 260 + Math.max(1, clan.members.length) * 60 + 84);
-    if (this.tab === "log") return Math.max(viewportH, 16 + Math.max(1, (clan.logs || []).length) * 56 + 12);
-    return viewportH;
-  }
-
-  beginScrollArea(ctx, x, y, w, h, contentH) {
-    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
-    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
-    this.scrollArea = { x, y, w, h };
-    ctx.save();
-    rr(ctx, x, y, w, h, 16);
-    ctx.clip();
-  }
-  endScrollArea(ctx) { ctx.restore(); }
-
-  drawScrollBar(ctx) {
-    const area = this.scrollArea;
-    if (!area || !(this.scrollMax > 0)) return;
-    const trackX = area.x + area.w - 6;
-    const trackY = area.y + 8;
-    const trackH = area.h - 16;
-    const thumbH = Math.max(28, Math.floor((area.h / (area.h + this.scrollMax)) * trackH));
-    const travel = Math.max(0, trackH - thumbH);
-    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
-    fillRR(ctx, trackX, trackY, 3, trackH, 2, "rgba(255,255,255,0.12)");
-    fillRR(ctx, trackX, thumbY, 3, thumbH, 2, "rgba(255,255,255,0.42)");
+    if (this.tab === "overview") return layout.mobile ? 470 : 410;
+    if (this.tab === "members") return 20 + Math.max(1, clan.members.length) * (layout.mobile ? 82 : 74) + 20;
+    if (this.tab === "manage") return 180 + Math.max(1, clan.members.length) * (layout.mobile ? 60 : 58) + 32;
+    if (this.tab === "log") return 20 + Math.max(1, (clan.logs || []).length) * (layout.mobile ? 58 : 54) + 20;
+    return 420;
   }
 
   render(ctx) {
@@ -269,419 +359,546 @@ export class ClanScene {
     const clan = ClanSystem.getClan(this.store);
     const directory = ClanSystem.getDirectory(this.store);
     const L = this.layout = this.getLayout(ctx);
+
     this.buttons = [];
     this.scrollArea = null;
 
     this.drawBackground(ctx, L.w, L.h);
+    this.drawShell(ctx, state, clan, directory, L);
+  }
 
-    const closeSize = L.mobile ? 36 : 42;
+  drawShell(ctx, state, clan, directory, L) {
+    const x = L.panelX;
+    const y = L.panelY;
+    const w = L.panelW;
+    const h = L.panelH;
+    const pad = L.pad;
+
+    fillRR(ctx, x, y, w, h, 24, "rgba(18,11,8,0.18)");
+    strokeRR(ctx, x, y, w, h, 24, "rgba(243,187,102,0.62)", 1.8);
+
+    const gloss = ctx.createLinearGradient(x, y, x, y + h);
+    gloss.addColorStop(0, "rgba(255,255,255,0.07)");
+    gloss.addColorStop(1, "rgba(255,255,255,0.02)");
+    fillRR(ctx, x + 1, y + 1, w - 2, h - 2, 23, gloss);
+
+    const closeSize = L.mobile ? 38 : 42;
     const closeBtn = {
-      x: L.w - closeSize - 10,
-      y: Math.max(72, L.top - (L.mobile ? 18 : 10)),
+      x: x + w - pad - closeSize,
+      y: y + 14,
       w: closeSize,
       h: closeSize,
       onClick: () => this.scenes?.go?.("home"),
     };
     this.buttons.push(closeBtn);
-    fillRR(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(0,0,0,0.40)");
+
+    fillRR(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(12,12,14,0.42)");
     strokeRR(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(255,255,255,0.14)", 1);
-    ctx.fillStyle = "#fff";
-    ctx.font = `bold ${L.mobile ? 22 : 24}px Arial`;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = fitFont(L.mobile ? 26 : 28, 700);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("X", closeBtn.x + closeBtn.w / 2, closeBtn.y + closeBtn.h / 2 + 1);
+    ctx.fillText("×", closeBtn.x + closeBtn.w / 2, closeBtn.y + closeBtn.h / 2 + 1);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
 
-    fillRR(ctx, L.leftX, L.leftY, L.leftW, L.leftH, L.mobile ? 18 : 26, "rgba(7,18,45,0.42)");
-    fillRR(ctx, L.rightX, L.rightY, L.rightW, L.rightH, L.mobile ? 18 : 26, "rgba(9,22,55,0.44)");
-    strokeRR(ctx, L.leftX, L.leftY, L.leftW, L.leftH, L.mobile ? 18 : 26, "rgba(75,126,220,0.58)", 2);
-    strokeRR(ctx, L.rightX, L.rightY, L.rightW, L.rightH, L.mobile ? 18 : 26, "rgba(75,126,220,0.58)", 2);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = fitFont(L.mobile ? 20 : 24, 700);
+    ctx.fillText("CLAN", x + pad, y + 34);
 
-    this.drawLeftRail(ctx, L.leftX, L.leftY, L.leftW, L.leftH, state, clan, directory);
-    if (!clan) this.drawDiscovery(ctx, L.rightX, L.rightY, L.rightW, L.rightH, state, directory);
-    else this.drawClanView(ctx, L.rightX, L.rightY, L.rightW, L.rightH, state, clan);
+    ctx.fillStyle = "rgba(255,220,170,0.86)";
+    ctx.font = fitFont(L.mobile ? 12 : 14, 500);
+    ctx.fillText("TonCrime clan ağı", x + pad, y + 56);
+
+    this.drawHero(ctx, state, clan, directory, L);
+    this.drawTabs(ctx, clan, L);
+
+    const viewportX = x + 10;
+    const viewportY = L.contentY;
+    const viewportW = w - 20;
+    const viewportH = L.contentH;
+    const contentH = this.estimateContentHeight(clan, directory, L);
+
+    this.beginScrollArea(ctx, viewportX, viewportY, viewportW, viewportH, contentH);
+
+    const drawY = viewportY - this.scrollY;
+    if (!clan) this.drawDiscovery(ctx, state, directory, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
+    else this.drawClanContent(ctx, state, clan, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
+
+    this.endScrollArea(ctx);
+    this.drawScrollBar(ctx);
   }
 
-  drawLeftRail(ctx, x, y, w, h, state, clan, directory) {
+  drawHero(ctx, state, clan, directory, L) {
+    const x = L.panelX + L.pad;
+    const y = L.panelY + 70;
+    const w = L.panelW - L.pad * 2;
+    const h = L.heroH;
     const player = state.player || {};
     const pending = directory?.player?.pendingRequest || null;
-    const mobile = !!this.layout?.mobile;
-    const px = mobile ? 14 : 18;
-    const titleX = x + (mobile ? 18 : 22);
 
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(28, mobile, 18);
-    ctx.fillText("CLAN", titleX, y + (mobile ? 30 : 40));
-    ctx.fillStyle = "#8fb3ff";
-    ctx.font = fitFont(16, mobile, 12);
-    ctx.fillText("Tam entegre clan ağı", titleX, y + (mobile ? 50 : 64));
+    fillRR(ctx, x, y, w, h, 22, "rgba(10,12,16,0.28)");
+    strokeRR(ctx, x, y, w, h, 22, "rgba(255,193,111,0.42)", 1.2);
 
-    const card1H = mobile ? 84 : 116;
-    fillRR(ctx, x + px, y + (mobile ? 64 : 86), w - px * 2, card1H, mobile ? 16 : 22, "rgba(19,39,82,0.72)");
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(22, mobile, 16);
-    textLine(ctx, player.username || player.name || "Player", x + px + 16, y + (mobile ? 90 : 122), w - px * 2 - 32);
-    ctx.fillStyle = "#9fc2ff";
-    ctx.font = fitFont(18, mobile, 12);
-    ctx.fillText(`Seviye ${player.level || 1}`, x + px + 16, y + (mobile ? 112 : 148));
-    ctx.fillText(`Bakiye ${fmtNum(state.coins)} yTon`, x + px + 16, y + (mobile ? 132 : 174));
-
-    const card2Y = y + (mobile ? 156 : 222);
-    const card2H = mobile ? 84 : 128;
-    fillRR(ctx, x + px, card2Y, w - px * 2, card2H, mobile ? 16 : 22, clan ? "rgba(21,70,45,0.72)" : "rgba(26,36,66,0.70)");
-    ctx.fillStyle = clan ? "#7cf2a8" : "#dbe8ff";
-    ctx.font = fitBold(20, mobile, 15);
-    ctx.fillText(clan ? "Clan Avantajları Aktif" : "Clan Avantajları", x + px + 16, card2Y + (mobile ? 24 : 32));
-    ctx.font = fitFont(16, mobile, 11);
-    const lines = clan
-      ? ["• Bina koruması açık", "• Ödül paylaşımı aktif", "• Davet ekranı açık"]
-      : ["• Seviye 10'da clan kur", "• Başvuru gönder", "• Kabulde koruma açılır"];
-    lines.forEach((line, i) => ctx.fillText(line, x + px + 16, card2Y + (mobile ? 46 : 62) + i * (mobile ? 16 : 24)));
-
-    let actionBottom = y + h - (mobile ? 52 : 60);
-    if (pending && !clan && mobile) {
-      const infoY = y + h - 96;
-      ctx.fillStyle = "#ffd6a5";
-      ctx.font = fitFont(14, true, 11);
-      textLine(ctx, `Bekleyen: ${pending.clanName} • ${timeLeftText(pending)}`, x + 16, infoY, w - 32);
-      const cancelBtn = { x: x + 14, y: y + h - 70, w: w - 28, h: 34, onClick: () => ClanSystem.cancelJoinRequest(this.store) };
-      this.buttons.push(cancelBtn);
-      fillRR(ctx, cancelBtn.x, cancelBtn.y, cancelBtn.w, cancelBtn.h, 12, "rgba(112,54,58,0.88)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(15, true, 12);
-      ctx.fillText("Başvuruyu İptal Et", cancelBtn.x + 16, cancelBtn.y + 21);
-      actionBottom = cancelBtn.y - 8;
-    }
+    const leftPad = 16;
+    const rightBtnW = L.mobile ? Math.min(148, w * 0.42) : 158;
+    const titleMaxW = Math.max(120, w - leftPad * 2 - rightBtnW - 16);
 
     if (clan) {
-      const leaveBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 36 : 42, onClick: () => ClanSystem.leaveClan(this.store) };
+      ctx.fillStyle = "rgba(255,255,255,0.98)";
+      ctx.font = fitFont(L.mobile ? 18 : 22, 700);
+      textFit(ctx, `${clan.logo || "👑"} ${clan.name}`, x + leftPad, y + 28, titleMaxW);
+
+      ctx.fillStyle = "rgba(255,213,156,0.82)";
+      ctx.font = fitFont(L.mobile ? 11 : 13, 500);
+      textFit(ctx, `[${clan.tag}] Koruma aktif • Paylaşım açık`, x + leftPad, y + 48, titleMaxW);
+
+      const playerCardY = y + (L.mobile ? 64 : 70);
+      const cardGap = 10;
+      const smallW = Math.floor((w - leftPad * 2 - cardGap) / 2);
+      const smallH = 58;
+
+      this.drawMiniInfo(ctx, x + leftPad, playerCardY, smallW, smallH, "Oyuncu", player.username || player.name || "Player", `Seviye ${player.level || 1}`);
+      this.drawMiniInfo(ctx, x + leftPad + smallW + cardGap, playerCardY, smallW, smallH, "Bakiye", `${fmtNum(state.coins)} yTon`, `${clan.members.length}/${clan.limits?.members || clan.members.length} üye`);
+
+      const leaveBtn = {
+        x: x + w - rightBtnW - 14,
+        y: y + 18,
+        w: rightBtnW,
+        h: 38,
+        onClick: () => ClanSystem.leaveClan(this.store),
+      };
       this.buttons.push(leaveBtn);
-      fillRR(ctx, leaveBtn.x, leaveBtn.y, leaveBtn.w, leaveBtn.h, 14, "rgba(95,37,49,0.90)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, mobile, 13);
-      ctx.fillText("Clandan Ayrıl", leaveBtn.x + 20, leaveBtn.y + (mobile ? 22 : 27));
+      fillRR(ctx, leaveBtn.x, leaveBtn.y, leaveBtn.w, leaveBtn.h, 14, "rgba(255,255,255,0.09)");
+      strokeRR(ctx, leaveBtn.x, leaveBtn.y, leaveBtn.w, leaveBtn.h, 14, "rgba(255,255,255,0.16)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = fitFont(L.mobile ? 13 : 14, 700);
+      ctx.fillText("Clandan Ayrıl", leaveBtn.x + 18, leaveBtn.y + 24);
     } else {
-      const createBtn = { x: x + px, y: actionBottom, w: w - px * 2, h: mobile ? 36 : 42, onClick: () => this.scenes?.go?.("clan_create") };
+      ctx.fillStyle = "rgba(255,255,255,0.98)";
+      ctx.font = fitFont(L.mobile ? 18 : 22, 700);
+      textFit(ctx, player.username || player.name || "Player", x + leftPad, y + 28, titleMaxW);
+
+      ctx.fillStyle = "rgba(255,213,156,0.82)";
+      ctx.font = fitFont(L.mobile ? 11 : 13, 500);
+      textFit(ctx, `Seviye ${player.level || 1} • ${fmtNum(state.coins)} yTon`, x + leftPad, y + 48, titleMaxW);
+
+      this.drawMiniInfo(ctx, x + leftPad, y + (L.mobile ? 64 : 70), Math.floor((w - leftPad * 2 - 10) / 2), 58, "Clan Avantajı", "Koruma / paylaşım", "Kabul sonrası aktif");
+      this.drawMiniInfo(ctx, x + leftPad + Math.floor((w - leftPad * 2 - 10) / 2) + 10, y + (L.mobile ? 64 : 70), Math.floor((w - leftPad * 2 - 10) / 2), 58, "Başvuru", pending ? pending.clanName : "Aktif değil", pending ? `${timeLeftText(pending)} kaldı` : "İstediğin clan'a gönder");
+
+      const createBtn = {
+        x: x + w - rightBtnW - 14,
+        y: y + 18,
+        w: rightBtnW,
+        h: 38,
+        onClick: () => this.scenes?.go?.("clan_create"),
+      };
       this.buttons.push(createBtn);
-      fillRR(ctx, createBtn.x, createBtn.y, createBtn.w, createBtn.h, 14, Number(player.level || 1) >= 10 ? "rgba(31,140,94,0.92)" : "rgba(56,66,93,0.92)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, mobile, 12);
-      ctx.fillText(Number(player.level || 1) >= 10 ? "Clan Kur • 50 yTon" : "Seviye 10'da Açılır", createBtn.x + 14, createBtn.y + (mobile ? 22 : 27));
-    }
-  }
+      fillRR(ctx, createBtn.x, createBtn.y, createBtn.w, createBtn.h, 14, Number(player.level || 1) >= 10 ? "rgba(243,187,102,0.18)" : "rgba(255,255,255,0.07)");
+      strokeRR(ctx, createBtn.x, createBtn.y, createBtn.w, createBtn.h, 14, "rgba(243,187,102,0.42)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = fitFont(L.mobile ? 13 : 14, 700);
+      ctx.fillText(Number(player.level || 1) >= 10 ? "Clan Kur • 50 yTon" : "Seviye 10'da Açılır", createBtn.x + 14, createBtn.y + 24);
 
-  drawDiscovery(ctx, x, y, w, h, state, directory) {
-    const player = state.player || {};
-    const clans = ClanSystem.browseClans(this.store, this.search);
-    const inbox = directory?.player?.inbox || [];
-    const mobile = !!this.layout?.mobile;
-
-    if (mobile) {
-      const viewportY = y + 12;
-      const viewportH = h - 24;
-      this.beginScrollArea(ctx, x + 8, viewportY, w - 16, viewportH, this.estimateDiscoveryContentHeight(directory, viewportH));
-      y -= this.scrollY;
-    } else {
-      this.scrollArea = null;
-      this.scrollMax = 0;
-      this.scrollY = 0;
-    }
-
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(30, mobile, 18);
-    ctx.fillText("Clan Ara ve Başvur", x + 18, y + (mobile ? 28 : 42));
-    ctx.fillStyle = "#9ebfff";
-    ctx.font = fitFont(18, mobile, 11);
-    if (mobile) {
-      ctx.fillText("Seviye 10'a kadar başvuru gönder.", x + 18, y + 50);
-      ctx.fillText("Kabul gelince koruma açılır.", x + 18, y + 66);
-    } else {
-      ctx.fillText("Seviye 10'a kadar clan kurulmaz. Oyuncu clan arar, başvuru gönderir ve kabul bekler.", x + 24, y + 72);
-    }
-
-    const searchRect = { x: x + 18, y: y + (mobile ? 80 : 94), w: w - 36, h: mobile ? 40 : 48, onClick: () => { this.searchFocused = true; } };
-    this.buttons.push(searchRect);
-    fillRR(ctx, searchRect.x, searchRect.y, searchRect.w, searchRect.h, 16, this.searchFocused ? "rgba(23,55,107,0.88)" : "rgba(18,40,74,0.84)");
-    strokeRR(ctx, searchRect.x, searchRect.y, searchRect.w, searchRect.h, 16, "rgba(75,126,220,0.86)", 2);
-    ctx.fillStyle = "#dbe8ff";
-    ctx.font = fitFont(18, mobile, 12);
-    textLine(ctx, this.search || "Clan adı veya tag ile ara...", searchRect.x + 14, searchRect.y + (mobile ? 25 : 30), searchRect.w - 28);
-
-    let cy = y + (mobile ? 132 : 158);
-    if (inbox.length) {
-      const boxH = mobile ? 92 : 86;
-      fillRR(ctx, x + 18, cy, w - 36, boxH, 18, "rgba(20,42,76,0.82)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(20, mobile, 14);
-      ctx.fillText("Gelen Davet", x + 32, cy + (mobile ? 22 : 28));
-      const inv = inbox[0];
-      ctx.font = fitFont(18, mobile, 11);
-      ctx.fillStyle = "#b6d0ff";
-      textLine(ctx, `${inv.logo || "👑"} ${inv.clanName} [${inv.clanTag}]`, x + 32, cy + (mobile ? 42 : 56), w - 170);
-      const btnY = mobile ? cy + 54 : cy + 22;
-      const acceptBtn = { x: x + w - (mobile ? 156 : 220), y: btnY, w: mobile ? 56 : 86, h: 30, onClick: () => ClanSystem.acceptInboxInvite(this.store, inv.id) };
-      const rejectBtn = { x: x + w - (mobile ? 90 : 124), y: btnY, w: mobile ? 56 : 86, h: 30, onClick: () => ClanSystem.declineInboxInvite(this.store, inv.id) };
-      this.buttons.push(acceptBtn, rejectBtn);
-      fillRR(ctx, acceptBtn.x, acceptBtn.y, acceptBtn.w, acceptBtn.h, 12, "rgba(28,141,94,0.95)");
-      fillRR(ctx, rejectBtn.x, rejectBtn.y, rejectBtn.w, rejectBtn.h, 12, "rgba(105,51,65,0.95)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(16, mobile, 11);
-      ctx.fillText("Kabul", acceptBtn.x + (mobile ? 10 : 18), acceptBtn.y + 20);
-      ctx.fillText("Reddet", rejectBtn.x + (mobile ? 8 : 18), rejectBtn.y + 20);
-      cy += boxH + 10;
-    }
-
-    const visibleClans = mobile ? clans : clans.slice(0, 5);
-    const rowH = mobile ? 88 : 92;
-    visibleClans.forEach((clan, idx) => {
-      const rowY = cy + idx * (rowH + 10);
-      fillRR(ctx, x + 18, rowY, w - 36, rowH, 18, "rgba(18,37,66,0.84)");
-      strokeRR(ctx, x + 18, rowY, w - 36, rowH, 18, "rgba(75,126,220,0.48)", 1);
-
-      const canJoin = Number(player.level || 1) >= Number(clan.minLevel || 1);
-      const btnW = mobile ? 82 : 120;
-      const btnH = mobile ? 30 : 40;
-      const btnX = x + w - btnW - (mobile ? 24 : 48);
-      const btnY = rowY + (mobile ? 48 : 26);
-
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(22, mobile, 15);
-      textLine(ctx, `${clan.logo || "👑"} ${clan.name}`, x + 32, rowY + (mobile ? 22 : 30), btnX - (x + 32) - 8);
-      ctx.fillStyle = "#9fc2ff";
-      ctx.font = fitFont(17, mobile, 11);
-      textLine(ctx, `[${clan.tag}] Güç ${fmtNum(clan.power)} Üye ${clan.members}/${clan.memberCap}`, x + 32, rowY + (mobile ? 40 : 56), btnX - (x + 32) - 8);
-      if (mobile) {
-        textLine(ctx, `Giriş ${clan.minLevel}`, x + 32, rowY + 58, btnX - (x + 32) - 8);
-        textLine(ctx, `${clan.description}`, x + 32, rowY + 74, btnX - (x + 32) - 8);
-      } else {
-        textLine(ctx, `Giriş ${clan.minLevel} • ${clan.description}`, x + 32, rowY + 78, w - 36 - 24 - btnW - 30);
+      if (pending) {
+        const cancelBtn = {
+          x: x + w - rightBtnW - 14,
+          y: y + 64,
+          w: rightBtnW,
+          h: 32,
+          onClick: () => ClanSystem.cancelJoinRequest(this.store),
+        };
+        this.buttons.push(cancelBtn);
+        fillRR(ctx, cancelBtn.x, cancelBtn.y, cancelBtn.w, cancelBtn.h, 12, "rgba(255,255,255,0.07)");
+        strokeRR(ctx, cancelBtn.x, cancelBtn.y, cancelBtn.w, cancelBtn.h, 12, "rgba(255,255,255,0.14)", 1);
+        ctx.fillStyle = "rgba(255,237,210,0.96)";
+        ctx.font = fitFont(L.mobile ? 12 : 13, 700);
+        ctx.fillText("Başvuruyu İptal Et", cancelBtn.x + 14, cancelBtn.y + 21);
       }
-
-      const btn = { x: btnX, y: btnY, w: btnW, h: btnH, onClick: () => ClanSystem.requestJoinClan(this.store, clan.id) };
-      this.buttons.push(btn);
-      fillRR(ctx, btn.x, btn.y, btn.w, btn.h, 12, canJoin ? "rgba(31,140,94,0.95)" : "rgba(85,64,74,0.95)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, mobile, 11);
-      ctx.fillText(canJoin ? "Başvur" : "Yetmez", btn.x + (mobile ? 12 : 18), btn.y + (mobile ? 20 : 25));
-    });
-
-    if (!visibleClans.length) {
-      fillRR(ctx, x + 18, cy, w - 36, 72, 18, "rgba(18,37,66,0.84)");
-      ctx.fillStyle = "#dbe8ff";
-      ctx.font = fitBold(20, mobile, 13);
-      ctx.fillText("Aramana uygun clan bulunamadı.", x + 32, cy + 42);
-    }
-
-    if (mobile) {
-      this.endScrollArea(ctx);
-      this.drawScrollBar(ctx);
     }
   }
 
-  drawClanView(ctx, x, y, w, h, state, clan) {
-    const mobile = !!this.layout?.mobile;
-    const tabs = mobile
-      ? [{ id: "overview", label: "Genel" }, { id: "members", label: "Üyeler" }, { id: "manage", label: "Yönet" }, { id: "log", label: "Log" }]
-      : [{ id: "overview", label: "Genel" }, { id: "members", label: "Üyeler" }, { id: "manage", label: "Yönetim" }, { id: "log", label: "Log" }];
+  drawMiniInfo(ctx, x, y, w, h, label, value, sub) {
+    fillRR(ctx, x, y, w, h, 16, "rgba(255,255,255,0.05)");
+    strokeRR(ctx, x, y, w, h, 16, "rgba(255,255,255,0.10)", 1);
+    ctx.fillStyle = "rgba(255,213,156,0.78)";
+    ctx.font = fitFont(11, 500);
+    textFit(ctx, label, x + 12, y + 18, w - 24);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = fitFont(16, 700);
+    textFit(ctx, value, x + 12, y + 36, w - 24);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = fitFont(11, 500);
+    textFit(ctx, sub, x + 12, y + 52, w - 24);
+  }
 
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(30, mobile, 18);
-    textLine(ctx, `${clan.logo || "👑"} ${clan.name}`, x + 18, y + (mobile ? 28 : 42), w - 36);
-    ctx.fillStyle = "#9ebfff";
-    ctx.font = fitFont(18, mobile, 11);
-    ctx.fillText(`[${clan.tag}] Koruma aktif • Paylaşım açık`, x + 18, y + (mobile ? 50 : 70));
+  drawTabs(ctx, clan, L) {
+    if (!clan) return;
 
-    let tx = x + 18;
-    const tabY = y + (mobile ? 64 : 92);
-    const tabGap = 8;
-    const tabW = mobile ? Math.floor((w - 36 - tabGap * 3) / 4) : 124;
-    tabs.forEach((tab) => {
+    const tabs = [
+      { id: "overview", label: "Genel" },
+      { id: "members", label: "Üyeler" },
+      { id: "manage", label: "Yönet" },
+      { id: "log", label: "Log" },
+    ];
+
+    const x = L.panelX + L.pad;
+    const y = L.panelY + L.headerH + L.heroH - 6;
+    const w = L.panelW - L.pad * 2;
+    const gap = 8;
+    const tabW = Math.floor((w - gap * (tabs.length - 1)) / tabs.length);
+
+    tabs.forEach((tab, index) => {
+      const tx = x + index * (tabW + gap);
+      const btn = {
+        x: tx,
+        y,
+        w: tabW,
+        h: L.mobile ? 36 : 40,
+        onClick: () => {
+          this.tab = tab.id;
+          this.scrollY = 0;
+        },
+      };
+      this.buttons.push(btn);
       const active = this.tab === tab.id;
-      const btn = { x: tx, y: tabY, w: tabW, h: mobile ? 34 : 40, onClick: () => { this.tab = tab.id; this.scrollY = 0; } };
-      this.buttons.push(btn);
-      fillRR(ctx, btn.x, btn.y, btn.w, btn.h, 14, active ? "rgba(28,90,181,0.95)" : "rgba(19,40,76,0.86)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(17, mobile, 11);
-      textLine(ctx, tab.label, btn.x + (mobile ? 8 : 24), btn.y + (mobile ? 22 : 24), btn.w - (mobile ? 16 : 30));
-      tx += tabW + tabGap;
+      fillRR(ctx, tx, y, tabW, btn.h, 14, active ? "rgba(243,187,102,0.20)" : "rgba(255,255,255,0.05)");
+      strokeRR(ctx, tx, y, tabW, btn.h, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.10)", 1);
+      ctx.fillStyle = active ? "rgba(255,248,236,0.98)" : "rgba(255,255,255,0.82)";
+      ctx.font = fitFont(L.mobile ? 12 : 13, 700);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(tab.label, tx + tabW / 2, y + btn.h / 2 + 1);
     });
 
-    const contentY = tabY + (mobile ? 44 : 58);
-    const contentH = h - (contentY - y);
-    if (mobile) {
-      const viewportY = contentY;
-      const viewportH = Math.max(80, h - (viewportY - y) - 10);
-      this.beginScrollArea(ctx, x + 8, viewportY, w - 16, viewportH, this.estimateClanTabContentHeight(clan, viewportH));
-      const sy = contentY - this.scrollY;
-      if (this.tab === "overview") this.drawOverviewTab(ctx, x, sy, w, contentH, state, clan);
-      if (this.tab === "members") this.drawMembersTab(ctx, x, sy, w, contentH, state, clan);
-      if (this.tab === "manage") this.drawManageTab(ctx, x, sy, w, contentH, state, clan);
-      if (this.tab === "log") this.drawLogTab(ctx, x, sy, w, contentH, state, clan);
-      this.endScrollArea(ctx);
-      this.drawScrollBar(ctx);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  drawSectionTitle(ctx, title, sub, x, y, w) {
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = fitFont(18, 700);
+    textFit(ctx, title, x, y, w);
+    if (!sub) return;
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = fitFont(12, 500);
+    textFit(ctx, sub, x, y + 18, w);
+  }
+
+  drawCard(ctx, x, y, w, h) {
+    fillRR(ctx, x, y, w, h, 18, "rgba(10,12,16,0.28)");
+    strokeRR(ctx, x, y, w, h, 18, "rgba(255,255,255,0.10)", 1);
+  }
+
+  drawDiscovery(ctx, state, directory, x, y, w, h, L) {
+    const player = state.player || {};
+    const inbox = directory?.player?.inbox || [];
+    const clans = ClanSystem.browseClans(this.store, this.search);
+
+    this.drawSectionTitle(ctx, "Clan Ara", "Arka plan görünür kaldı, liste daha sade ve okunaklı.", x + 8, y + 20, w - 16);
+
+    const searchY = y + 42;
+    const searchRect = {
+      x: x + 8,
+      y: searchY,
+      w: w - 16,
+      h: 42,
+      onClick: () => { this.searchFocused = true; },
+    };
+    this.buttons.push(searchRect);
+    fillRR(ctx, searchRect.x, searchRect.y, searchRect.w, searchRect.h, 16, this.searchFocused ? "rgba(243,187,102,0.14)" : "rgba(255,255,255,0.05)");
+    strokeRR(ctx, searchRect.x, searchRect.y, searchRect.w, searchRect.h, 16, this.searchFocused ? "rgba(243,187,102,0.48)" : "rgba(255,255,255,0.10)", 1);
+    ctx.fillStyle = this.search ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.52)";
+    ctx.font = fitFont(13, 500);
+    textFit(ctx, this.search || "Clan adı veya tag ile ara...", searchRect.x + 14, searchRect.y + 26, searchRect.w - 28);
+
+    let cy = searchRect.y + 56;
+
+    if (inbox.length) {
+      const invite = inbox[0];
+      const boxH = L.mobile ? 102 : 96;
+      this.drawCard(ctx, x + 8, cy, w - 16, boxH);
+      this.drawSectionTitle(ctx, "Gelen Davet", `${invite.logo || "👑"} ${invite.clanName} [${invite.clanTag}]`, x + 22, cy + 22, w - 200);
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = fitFont(12, 500);
+      textFit(ctx, `Gönderen ${invite.from || "Clan"}`, x + 22, cy + 58, w - 220);
+
+      const acceptBtn = { x: x + w - 164, y: cy + boxH - 44, w: 70, h: 30, onClick: () => ClanSystem.acceptInboxInvite(this.store, invite.id) };
+      const rejectBtn = { x: x + w - 86, y: cy + boxH - 44, w: 70, h: 30, onClick: () => ClanSystem.declineInboxInvite(this.store, invite.id) };
+      this.buttons.push(acceptBtn, rejectBtn);
+      fillRR(ctx, acceptBtn.x, acceptBtn.y, acceptBtn.w, acceptBtn.h, 12, "rgba(243,187,102,0.18)");
+      fillRR(ctx, rejectBtn.x, rejectBtn.y, rejectBtn.w, rejectBtn.h, 12, "rgba(255,255,255,0.07)");
+      strokeRR(ctx, acceptBtn.x, acceptBtn.y, acceptBtn.w, acceptBtn.h, 12, "rgba(243,187,102,0.42)", 1);
+      strokeRR(ctx, rejectBtn.x, rejectBtn.y, rejectBtn.w, rejectBtn.h, 12, "rgba(255,255,255,0.14)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = fitFont(12, 700);
+      ctx.fillText("Kabul", acceptBtn.x + 16, acceptBtn.y + 20);
+      ctx.fillText("Reddet", rejectBtn.x + 14, rejectBtn.y + 20);
+      cy += boxH + 12;
+    }
+
+    if (!clans.length) {
+      this.drawCard(ctx, x + 8, cy, w - 16, 72);
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = fitFont(15, 700);
+      ctx.fillText("Uygun clan bulunamadı", x + 22, cy + 32);
+      ctx.fillStyle = "rgba(255,255,255,0.66)";
+      ctx.font = fitFont(12, 500);
+      ctx.fillText("Başka bir arama dene.", x + 22, cy + 52);
       return;
     }
 
-    this.scrollArea = null;
-    this.scrollMax = 0;
-    this.scrollY = 0;
-    if (this.tab === "overview") this.drawOverviewTab(ctx, x, contentY, w, contentH, state, clan);
-    if (this.tab === "members") this.drawMembersTab(ctx, x, contentY, w, contentH, state, clan);
-    if (this.tab === "manage") this.drawManageTab(ctx, x, contentY, w, contentH, state, clan);
-    if (this.tab === "log") this.drawLogTab(ctx, x, contentY, w, contentH, state, clan);
+    clans.forEach((item, index) => {
+      const rowH = L.mobile ? 106 : 96;
+      const rowY = cy + index * (rowH + 12);
+      this.drawCard(ctx, x + 8, rowY, w - 16, rowH);
+
+      const btnW = L.mobile ? 86 : 94;
+      const btnH = 34;
+      const btnX = x + w - btnW - 18;
+      const btnY = rowY + rowH - btnH - 14;
+      const canJoin = Number(player.level || 1) >= Number(item.minLevel || 1);
+      const joinBtn = {
+        x: btnX,
+        y: btnY,
+        w: btnW,
+        h: btnH,
+        onClick: () => ClanSystem.requestJoinClan(this.store, item.id),
+      };
+      this.buttons.push(joinBtn);
+
+      ctx.fillStyle = "rgba(255,255,255,0.98)";
+      ctx.font = fitFont(16, 700);
+      textFit(ctx, `${item.logo || "👑"} ${item.name}`, x + 22, rowY + 26, w - btnW - 54);
+      ctx.fillStyle = "rgba(255,213,156,0.78)";
+      ctx.font = fitFont(12, 500);
+      textFit(ctx, `[${item.tag}] • Güç ${fmtNum(item.power)} • Üye ${item.members}/${item.memberCap}`, x + 22, rowY + 46, w - btnW - 54);
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.font = fitFont(12, 500);
+      const descLines = wrapText(ctx, `${item.description} • Giriş seviye ${item.minLevel}`, w - btnW - 54, 2);
+      descLines.forEach((line, li) => ctx.fillText(line, x + 22, rowY + 66 + li * 16));
+
+      fillRR(ctx, btnX, btnY, btnW, btnH, 12, canJoin ? "rgba(243,187,102,0.18)" : "rgba(255,255,255,0.06)");
+      strokeRR(ctx, btnX, btnY, btnW, btnH, 12, canJoin ? "rgba(243,187,102,0.42)" : "rgba(255,255,255,0.12)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = fitFont(12, 700);
+      ctx.fillText(canJoin ? "Başvur" : "Yetmez", btnX + 20, btnY + 22);
+    });
   }
 
-  drawStatCard(ctx, x, y, w, h, title, value, sub, mobile = false) {
-    fillRR(ctx, x, y, w, h, mobile ? 16 : 20, "rgba(19,40,74,0.80)");
-    ctx.fillStyle = "#9fc2ff";
-    ctx.font = fitFont(17, mobile, 11);
-    textLine(ctx, title, x + 14, y + (mobile ? 18 : 24), w - 28);
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(28, mobile, 15);
-    textLine(ctx, value, x + 14, y + (mobile ? 40 : 56), w - 28);
-    ctx.fillStyle = "#7fc9a0";
-    ctx.font = fitFont(16, mobile, 10);
-    textLine(ctx, sub, x + 14, y + (mobile ? 58 : 82), w - 28);
+  drawClanContent(ctx, state, clan, x, y, w, h, L) {
+    if (this.tab === "overview") this.drawOverviewTab(ctx, clan, x, y, w, L);
+    if (this.tab === "members") this.drawMembersTab(ctx, clan, x, y, w, L);
+    if (this.tab === "manage") this.drawManageTab(ctx, clan, x, y, w, L);
+    if (this.tab === "log") this.drawLogTab(ctx, clan, x, y, w, L);
   }
 
-  drawOverviewTab(ctx, x, y, w, h, state, clan) {
-    const mobile = !!this.layout?.mobile;
-    if (mobile) {
-      const innerX = x + 10;
-      const innerW = w - 20;
-      const gap = 8;
-      const cardW = Math.floor((innerW - gap) / 2);
-      const cardH = 68;
-      this.drawStatCard(ctx, innerX, y + 6, cardW, cardH, "Lvl", `${clan.level}`, `${fmtNum(clan.xp)} XP`, true);
-      this.drawStatCard(ctx, innerX + cardW + gap, y + 6, cardW, cardH, "Kasa", `${fmtNum(clan.bank)}$`, `+${fmtNum(clan.dailyIncome)}/gün`, true);
-      this.drawStatCard(ctx, innerX, y + 82, cardW, cardH, "Üye", `${clan.members.length}/${clan.limits.members}`, "Koruma açık", true);
-      this.drawStatCard(ctx, innerX + cardW + gap, y + 82, cardW, cardH, "Güç", fmtNum(clan.power), "Global hazır", true);
-
-      fillRR(ctx, innerX, y + 158, innerW, 82, 16, "rgba(19,40,74,0.80)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, true, 13);
-      ctx.fillText("Açıklama", innerX + 14, y + 180);
-      ctx.fillStyle = "#dbe8ff";
-      ctx.font = fitFont(14, true, 10);
-      textLine(ctx, clan.description || "Açıklama yok", innerX + 14, y + 202, innerW - 28);
-      textLine(ctx, "CoffeeShop + NightClub koruması aktif.", innerX + 14, y + 220, innerW - 28);
-
-      fillRR(ctx, innerX, y + 250, innerW, 98, 16, "rgba(19,40,74,0.80)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, true, 13);
-      ctx.fillText("Boss Bölümü", innerX + 14, y + 272);
-      const boss = ClanSystem.getBossSpinStatus(this.store);
-      ctx.fillStyle = "#dbe8ff";
-      ctx.font = fitFont(14, true, 10);
-      textLine(ctx, `Durum: ${boss?.bossStatus || "idle"} • HP ${fmtNum(boss?.bossHp || 0)}/${fmtNum(boss?.bossMaxHp || 0)}`, innerX + 14, y + 294, innerW - 28);
-      textLine(ctx, `Spin: ${boss?.spinsLeft || 0} • Enerji ${boss?.energyPerSpin || 0}`, innerX + 14, y + 314, innerW - 28);
-      const startBtn = { x: innerX, y: y + 320, w: innerW, h: 28, onClick: () => ClanSystem.startBossRaid(this.store) };
-      this.buttons.push(startBtn);
-      fillRR(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, 12, "rgba(107,74,219,0.92)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(14, true, 11);
-      ctx.fillText("Boss Sezonu Başlat", startBtn.x + 14, startBtn.y + 19);
-      return;
-    }
-    const gap = 14;
-    const cardW = Math.floor((w - gap * 3) / 2);
-    this.drawStatCard(ctx, x + 12, y + 10, cardW, 96, "Clan Level", `${clan.level}`, `${fmtNum(clan.xp)} / ${fmtNum(clan.xpNext)} XP`);
-    this.drawStatCard(ctx, x + 12 + cardW + gap, y + 10, cardW, 96, "Clan Kasası", `${fmtNum(clan.bank)}$`, `Günlük gelir ${fmtNum(clan.dailyIncome)}$`);
-    this.drawStatCard(ctx, x + 12, y + 120, cardW, 96, "Üye Sayısı", `${clan.members.length}/${clan.limits.members}`, "Binalar korunuyor");
-    this.drawStatCard(ctx, x + 12 + cardW + gap, y + 120, cardW, 96, "Clan Gücü", fmtNum(clan.power), "Global açılışa hazır");
+  drawStatCard(ctx, x, y, w, h, label, value, sub) {
+    this.drawCard(ctx, x, y, w, h);
+    ctx.fillStyle = "rgba(255,213,156,0.78)";
+    ctx.font = fitFont(12, 500);
+    textFit(ctx, label, x + 14, y + 22, w - 28);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = fitFont(17, 700);
+    textFit(ctx, value, x + 14, y + 46, w - 28);
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = fitFont(11, 500);
+    textFit(ctx, sub, x + 14, y + 64, w - 28);
   }
 
-  drawMembersTab(ctx, x, y, w, h, state, clan) {
-    const mobile = !!this.layout?.mobile;
-    let cy = y + 8;
-    const visibleMembers = mobile ? clan.members : clan.members.slice(0, 6);
-    visibleMembers.forEach((m) => {
-      const rowH = mobile ? 70 : 74;
-      fillRR(ctx, x + 10, cy, w - 20, rowH, 18, "rgba(19,40,74,0.80)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(20, mobile, 13);
-      textLine(ctx, m.name, x + 22, cy + 24, w - 180);
-      ctx.fillStyle = "#9fc2ff";
-      ctx.font = fitFont(17, mobile, 10);
-      textLine(ctx, `${getRoleLabel(m.role)} • Lv ${m.level} • Güç ${fmtNum(m.power)}`, x + 22, cy + 44, w - 190);
-      ctx.fillStyle = "#7ce8a4";
-      ctx.fillText(`Pay %${m.rewardShare || 0}`, x + 22, cy + (mobile ? 60 : 52));
-      if (m.id !== "player_main") {
-        const promoteBtn = { x: x + w - (mobile ? 150 : 250), y: cy + 14, w: mobile ? 64 : 92, h: mobile ? 28 : 34, onClick: () => ClanSystem.promoteMember(this.store, m.id, "co_leader") };
-        const kickBtn = { x: x + w - (mobile ? 78 : 148), y: cy + 14, w: mobile ? 56 : 92, h: mobile ? 28 : 34, onClick: () => ClanSystem.kickMember(this.store, m.id) };
+  drawOverviewTab(ctx, clan, x, y, w, L) {
+    this.drawSectionTitle(ctx, "Clan Özeti", "PVP ekranındaki sıcak tonlara geçirildi.", x + 8, y + 20, w - 16);
+
+    const gap = 10;
+    const cardW = Math.floor((w - 16 - gap) / 2);
+    const row1Y = y + 40;
+    const row2Y = row1Y + 84;
+
+    this.drawStatCard(ctx, x + 8, row1Y, cardW, 74, "Seviye", `${clan.level}`, `${fmtNum(clan.xp)} XP`);
+    this.drawStatCard(ctx, x + 8 + cardW + gap, row1Y, cardW, 74, "Kasa", `${fmtNum(clan.bank)}$`, `+${fmtNum(clan.dailyIncome)}/gün`);
+    this.drawStatCard(ctx, x + 8, row2Y, cardW, 74, "Üyeler", `${clan.members.length}/${clan.limits?.members || clan.members.length}`, "Koruma aktif");
+    this.drawStatCard(ctx, x + 8 + cardW + gap, row2Y, cardW, 74, "Güç", fmtNum(clan.power), "Global hazır");
+
+    const aboutY = row2Y + 88;
+    this.drawCard(ctx, x + 8, aboutY, w - 16, 88);
+    this.drawSectionTitle(ctx, "Açıklama", null, x + 22, aboutY + 20, w - 44);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = fitFont(12, 500);
+    const aboutLines = wrapText(ctx, clan.description || "Açıklama yok", w - 44, 3);
+    aboutLines.forEach((line, li) => ctx.fillText(line, x + 22, aboutY + 46 + li * 16));
+
+    const boss = ClanSystem.getBossSpinStatus(this.store);
+    const bossY = aboutY + 102;
+    this.drawCard(ctx, x + 8, bossY, w - 16, 122);
+    this.drawSectionTitle(ctx, "Boss Bölümü", `Durum: ${boss?.bossStatus || "idle"}`, x + 22, bossY + 20, w - 180);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = fitFont(12, 500);
+    ctx.fillText(`HP ${fmtNum(boss?.bossHp || 0)} / ${fmtNum(boss?.bossMaxHp || 0)}`, x + 22, bossY + 50);
+    ctx.fillText(`Spin ${boss?.spinsLeft || 0} • Enerji ${boss?.energyPerSpin || 0}`, x + 22, bossY + 68);
+
+    const raidBtn = {
+      x: x + 22,
+      y: bossY + 82,
+      w: Math.min(190, w - 44),
+      h: 30,
+      onClick: () => ClanSystem.startBossRaid(this.store),
+    };
+    this.buttons.push(raidBtn);
+    fillRR(ctx, raidBtn.x, raidBtn.y, raidBtn.w, raidBtn.h, 12, "rgba(243,187,102,0.18)");
+    strokeRR(ctx, raidBtn.x, raidBtn.y, raidBtn.w, raidBtn.h, 12, "rgba(243,187,102,0.42)", 1);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = fitFont(12, 700);
+    ctx.fillText("Boss Sezonu Başlat", raidBtn.x + 16, raidBtn.y + 20);
+  }
+
+  drawMembersTab(ctx, clan, x, y, w, L) {
+    this.drawSectionTitle(ctx, "Üyeler", "Yazılar üst üste binmeden daha geniş satırlar.", x + 8, y + 20, w - 16);
+    let cy = y + 40;
+
+    clan.members.forEach((member) => {
+      const rowH = L.mobile ? 74 : 68;
+      this.drawCard(ctx, x + 8, cy, w - 16, rowH);
+
+      ctx.fillStyle = "rgba(255,255,255,0.98)";
+      ctx.font = fitFont(15, 700);
+      textFit(ctx, member.name, x + 20, cy + 24, w - 180);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = fitFont(11, 500);
+      textFit(ctx, `${getRoleLabel(member.role)} • Lv ${member.level} • Güç ${fmtNum(member.power)} • Pay %${member.rewardShare || 0}`, x + 20, cy + 44, w - 180);
+
+      if (member.id !== "player_main") {
+        const promoteBtn = {
+          x: x + w - 154,
+          y: cy + 18,
+          w: 64,
+          h: 28,
+          onClick: () => ClanSystem.promoteMember(this.store, member.id, "co_leader"),
+        };
+        const kickBtn = {
+          x: x + w - 82,
+          y: cy + 18,
+          w: 56,
+          h: 28,
+          onClick: () => ClanSystem.kickMember(this.store, member.id),
+        };
         this.buttons.push(promoteBtn, kickBtn);
-        fillRR(ctx, promoteBtn.x, promoteBtn.y, promoteBtn.w, promoteBtn.h, 12, "rgba(39,103,200,0.92)");
-        fillRR(ctx, kickBtn.x, kickBtn.y, kickBtn.w, kickBtn.h, 12, "rgba(109,53,66,0.92)");
-        ctx.fillStyle = "#fff";
-        ctx.font = fitBold(15, mobile, 10);
-        ctx.fillText(mobile ? "Yrd." : "Yardımcı", promoteBtn.x + (mobile ? 12 : 14), promoteBtn.y + (mobile ? 18 : 22));
-        ctx.fillText("Çıkar", kickBtn.x + (mobile ? 10 : 24), kickBtn.y + (mobile ? 18 : 22));
+        fillRR(ctx, promoteBtn.x, promoteBtn.y, promoteBtn.w, promoteBtn.h, 11, "rgba(255,255,255,0.07)");
+        fillRR(ctx, kickBtn.x, kickBtn.y, kickBtn.w, kickBtn.h, 11, "rgba(255,255,255,0.07)");
+        strokeRR(ctx, promoteBtn.x, promoteBtn.y, promoteBtn.w, promoteBtn.h, 11, "rgba(255,255,255,0.14)", 1);
+        strokeRR(ctx, kickBtn.x, kickBtn.y, kickBtn.w, kickBtn.h, 11, "rgba(255,255,255,0.14)", 1);
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.font = fitFont(11, 700);
+        ctx.fillText("Yükselt", promoteBtn.x + 10, promoteBtn.y + 18);
+        ctx.fillText("At", kickBtn.x + 20, kickBtn.y + 18);
       }
-      cy += rowH + 8;
+
+      cy += rowH + 10;
     });
   }
 
-  drawManageTab(ctx, x, y, w, h, state, clan) {
-    const mobile = !!this.layout?.mobile;
-    fillRR(ctx, x + 10, y + 8, w - 20, mobile ? 92 : 108, mobile ? 16 : 20, "rgba(19,40,74,0.80)");
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(22, mobile, 14);
-    ctx.fillText("Davet Gönder", x + 22, y + 30);
-    ctx.fillStyle = "#9fc2ff";
-    ctx.font = fitFont(17, mobile, 10);
-    ctx.fillText(mobile ? "Kurucu yardımcısı davet atabilir." : "Oyuncu adı yaz ve davet gönder. Kurucu yardımcısı davet atabilir.", x + 22, y + (mobile ? 48 : 66));
-    const inputRect = { x: x + 22, y: y + (mobile ? 56 : 78), w: mobile ? w - 124 : w - 210, h: mobile ? 28 : 34, onClick: () => { this.inviteFocused = true; } };
-    const sendBtn = { x: x + w - (mobile ? 94 : 164), y: y + (mobile ? 56 : 78), w: mobile ? 72 : 124, h: mobile ? 28 : 34, onClick: () => { ClanSystem.createInvite(this.store, this.inviteName); this.inviteName = ""; } };
+  drawManageTab(ctx, clan, x, y, w, L) {
+    this.drawSectionTitle(ctx, "Yönetim", "Mavi/yeşil/bordo yerine sıcak cam panel düzeni.", x + 8, y + 20, w - 16);
+
+    this.drawCard(ctx, x + 8, y + 40, w - 16, 108);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = fitFont(15, 700);
+    ctx.fillText("Davet Gönder", x + 22, y + 66);
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.font = fitFont(12, 500);
+    ctx.fillText("Oyuncu adı yaz ve clan daveti gönder.", x + 22, y + 86);
+
+    const inputRect = {
+      x: x + 22,
+      y: y + 98,
+      w: w - 148,
+      h: 34,
+      onClick: () => { this.inviteFocused = true; },
+    };
+    const sendBtn = {
+      x: x + w - 116,
+      y: y + 98,
+      w: 88,
+      h: 34,
+      onClick: () => {
+        ClanSystem.createInvite(this.store, this.inviteName);
+        this.inviteName = "";
+      },
+    };
     this.buttons.push(inputRect, sendBtn);
-    fillRR(ctx, inputRect.x, inputRect.y, inputRect.w, inputRect.h, 12, this.inviteFocused ? "rgba(23,55,107,0.92)" : "rgba(16,32,64,0.86)");
-    fillRR(ctx, sendBtn.x, sendBtn.y, sendBtn.w, sendBtn.h, 12, "rgba(31,140,94,0.95)");
-    ctx.fillStyle = "#fff";
-    ctx.font = fitFont(17, mobile, 11);
-    textLine(ctx, this.inviteName || "Oyuncu adı...", inputRect.x + 10, inputRect.y + (mobile ? 19 : 22), inputRect.w - 20);
-    ctx.fillText(mobile ? "Davet" : "Davet At", sendBtn.x + (mobile ? 12 : 25), sendBtn.y + (mobile ? 19 : 22));
 
-    let cy = y + (mobile ? 106 : 136);
-    ctx.fillStyle = "#fff";
-    ctx.font = fitBold(22, mobile, 14);
-    ctx.fillText("Ödül Paylaşımı", x + 22, cy + 6);
-    cy += 14;
+    fillRR(ctx, inputRect.x, inputRect.y, inputRect.w, inputRect.h, 12, this.inviteFocused ? "rgba(243,187,102,0.12)" : "rgba(255,255,255,0.05)");
+    strokeRR(ctx, inputRect.x, inputRect.y, inputRect.w, inputRect.h, 12, this.inviteFocused ? "rgba(243,187,102,0.40)" : "rgba(255,255,255,0.10)", 1);
+    fillRR(ctx, sendBtn.x, sendBtn.y, sendBtn.w, sendBtn.h, 12, "rgba(243,187,102,0.18)");
+    strokeRR(ctx, sendBtn.x, sendBtn.y, sendBtn.w, sendBtn.h, 12, "rgba(243,187,102,0.42)", 1);
 
-    const visibleMembers = mobile ? clan.members : clan.members.slice(0, 5);
-    visibleMembers.forEach((m) => {
-      const rowH = mobile ? 50 : 56;
-      fillRR(ctx, x + 10, cy, w - 20, rowH, 16, "rgba(19,40,74,0.80)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, mobile, 11);
-      textLine(ctx, `${m.name} • ${getRoleLabel(m.role)}`, x + 22, cy + 20, w - 120);
-      ctx.fillStyle = "#9fc2ff";
-      ctx.font = fitFont(18, mobile, 10);
-      ctx.fillText(`Pay %${m.rewardShare || 0}`, x + 22, cy + 38);
-      const minusBtn = { x: x + w - (mobile ? 88 : 132), y: cy + 10, w: 28, h: 26, onClick: () => ClanSystem.setMemberRewardShare(this.store, m.id, clamp(Number(m.rewardShare || 0) - 1, 0, 25)) };
-      const plusBtn = { x: x + w - (mobile ? 50 : 84), y: cy + 10, w: 28, h: 26, onClick: () => ClanSystem.setMemberRewardShare(this.store, m.id, clamp(Number(m.rewardShare || 0) + 1, 0, 25)) };
+    ctx.fillStyle = this.inviteName ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.50)";
+    ctx.font = fitFont(12, 500);
+    textFit(ctx, this.inviteName || "Oyuncu adı...", inputRect.x + 12, inputRect.y + 22, inputRect.w - 24);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = fitFont(12, 700);
+    ctx.fillText("Davet At", sendBtn.x + 16, sendBtn.y + 22);
+
+    let cy = y + 160;
+    clan.members.forEach((member) => {
+      const rowH = 52;
+      this.drawCard(ctx, x + 8, cy, w - 16, rowH);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = fitFont(13, 700);
+      textFit(ctx, `${member.name} • ${getRoleLabel(member.role)}`, x + 20, cy + 22, w - 160);
+      ctx.fillStyle = "rgba(255,255,255,0.66)";
+      ctx.font = fitFont(11, 500);
+      ctx.fillText(`Pay %${member.rewardShare || 0}`, x + 20, cy + 40);
+
+      const minusBtn = {
+        x: x + w - 94,
+        y: cy + 12,
+        w: 28,
+        h: 28,
+        onClick: () => ClanSystem.setMemberRewardShare(this.store, member.id, clamp(Number(member.rewardShare || 0) - 1, 0, 25)),
+      };
+      const plusBtn = {
+        x: x + w - 54,
+        y: cy + 12,
+        w: 28,
+        h: 28,
+        onClick: () => ClanSystem.setMemberRewardShare(this.store, member.id, clamp(Number(member.rewardShare || 0) + 1, 0, 25)),
+      };
       this.buttons.push(minusBtn, plusBtn);
-      fillRR(ctx, minusBtn.x, minusBtn.y, minusBtn.w, minusBtn.h, 10, "rgba(62,78,116,0.95)");
-      fillRR(ctx, plusBtn.x, plusBtn.y, plusBtn.w, plusBtn.h, 10, "rgba(39,103,200,0.95)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitBold(18, mobile, 12);
-      ctx.fillText("-", minusBtn.x + 10, minusBtn.y + 18);
-      ctx.fillText("+", plusBtn.x + 8, plusBtn.y + 18);
+      fillRR(ctx, minusBtn.x, minusBtn.y, minusBtn.w, minusBtn.h, 10, "rgba(255,255,255,0.06)");
+      fillRR(ctx, plusBtn.x, plusBtn.y, plusBtn.w, plusBtn.h, 10, "rgba(243,187,102,0.16)");
+      strokeRR(ctx, minusBtn.x, minusBtn.y, minusBtn.w, minusBtn.h, 10, "rgba(255,255,255,0.12)", 1);
+      strokeRR(ctx, plusBtn.x, plusBtn.y, plusBtn.w, plusBtn.h, 10, "rgba(243,187,102,0.36)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = fitFont(16, 700);
+      ctx.fillText("-", minusBtn.x + 10, minusBtn.y + 19);
+      ctx.fillText("+", plusBtn.x + 8, plusBtn.y + 19);
+
       cy += rowH + 8;
     });
   }
 
-  drawLogTab(ctx, x, y, w, h, state, clan) {
-    const mobile = !!this.layout?.mobile;
-    const logs = mobile ? (clan.logs || []) : (clan.logs || []).slice(0, 7);
-    let cy = y + 8;
+  drawLogTab(ctx, clan, x, y, w, L) {
+    this.drawSectionTitle(ctx, "Log", "Daha rahat okunan kısa satırlar.", x + 8, y + 20, w - 16);
+    let cy = y + 40;
+    const logs = clan.logs || [];
+
+    if (!logs.length) {
+      this.drawCard(ctx, x + 8, cy, w - 16, 64);
+      ctx.fillStyle = "rgba(255,255,255,0.86)";
+      ctx.font = fitFont(14, 700);
+      ctx.fillText("Henüz log yok", x + 22, cy + 28);
+      return;
+    }
+
     logs.forEach((log) => {
-      const rowH = mobile ? 48 : 56;
-      fillRR(ctx, x + 10, cy, w - 20, rowH, 16, "rgba(19,40,74,0.80)");
-      ctx.fillStyle = "#fff";
-      ctx.font = fitFont(17, mobile, 10);
-      textLine(ctx, log.text || "-", x + 22, cy + (mobile ? 20 : 24), w - 44);
-      ctx.fillStyle = "#8fb3ff";
-      ctx.fillText(String(log.type || "system").toUpperCase(), x + 22, cy + (mobile ? 38 : 44));
+      const rowH = L.mobile ? 54 : 50;
+      this.drawCard(ctx, x + 8, cy, w - 16, rowH);
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = fitFont(12, 500);
+      textFit(ctx, log.text || "-", x + 18, cy + 24, w - 120);
+      ctx.fillStyle = "rgba(255,213,156,0.72)";
+      ctx.font = fitFont(10, 700);
+      ctx.fillText(String(log.type || "system").toUpperCase(), x + 18, cy + 42);
       cy += rowH + 8;
     });
   }
