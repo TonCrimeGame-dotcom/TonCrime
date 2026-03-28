@@ -806,3 +806,27 @@
     margin-left: auto !important;
   }
 }
+
+
+/* ===== TONCRIME HUD NUDGE RIGHT ===== */
+#hudRight {
+  transform: translateX(10px) !important;
+}
+
+@media (max-width: 980px) {
+  #hudRight {
+    transform: translateX(8px) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #hudRight {
+    transform: translateX(12px) !important;
+  }
+}
+
+@media (max-width: 420px) {
+  #hudRight {
+    transform: translateX(10px) !important;
+  }
+}
