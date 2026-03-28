@@ -655,8 +655,8 @@ export class TradeScene {
     const rewards = this._buildCrateRewards(kind);
     const winIndex = Math.floor(Math.random() * rewards.length);
     const repeated = [];
-    for (let r = 0; r < 18; r++) repeated.push(rewards[r % rewards.length]);
-    const landingIndex = 10 + winIndex;
+    for (let r = 0; r < 48; r++) repeated.push(rewards[r % rewards.length]);
+    const landingIndex = 24 + winIndex;
 
     this.lootAnim = {
       kind: "crate",
@@ -767,9 +767,9 @@ export class TradeScene {
 
     ctx.fillStyle = "#ffe8b0";
     ctx.beginPath();
-    ctx.moveTo(cx, cy - radius - 22);
-    ctx.lineTo(cx - 16, cy - radius + 10);
-    ctx.lineTo(cx + 16, cy - radius + 10);
+    ctx.moveTo(cx - 16, cy - radius - 18);
+    ctx.lineTo(cx + 16, cy - radius - 18);
+    ctx.lineTo(cx, cy - radius + 12);
     ctx.closePath();
     ctx.fill();
 
@@ -795,9 +795,9 @@ export class TradeScene {
     const cellW = 108;
     const gap = 12;
     const step = cellW + gap;
-    const targetOffset = anim.winIndex * step - (stripW / 2 - cellW / 2);
-    const extraOffset = step * 8;
-    const offset = (targetOffset + extraOffset) * progress;
+    const finalOffset = anim.winIndex * step - (stripW / 2 - cellW / 2);
+    const initialOffset = finalOffset + step * 12;
+    const offset = initialOffset + (finalOffset - initialOffset) * progress;
 
     ctx.fillStyle = "rgba(6,10,16,0.94)";
     fillRoundRect(ctx, viewX, viewY, stripW, stripH, 20);
@@ -814,13 +814,23 @@ export class TradeScene {
       const cardY = viewY + 10;
       if (cardX + cellW < viewX - 10 || cardX > viewX + stripW + 10) continue;
 
+      const isWinner = i === anim.winIndex;
       const g = ctx.createLinearGradient(cardX, cardY, cardX, cardY + stripH - 20);
-      g.addColorStop(0, i === anim.winIndex ? "rgba(166,122,38,0.96)" : "rgba(54,38,14,0.92)");
-      g.addColorStop(1, i === anim.winIndex ? "rgba(104,72,18,0.96)" : "rgba(28,20,8,0.94)");
+      g.addColorStop(0, isWinner ? "rgba(182,136,42,0.98)" : "rgba(72,50,18,0.94)");
+      g.addColorStop(1, isWinner ? "rgba(116,80,20,0.98)" : "rgba(34,24,10,0.96)");
       ctx.fillStyle = g;
       fillRoundRect(ctx, cardX, cardY, cellW, stripH - 20, 16);
-      ctx.strokeStyle = i === anim.winIndex ? "rgba(255,230,170,0.46)" : "rgba(255,255,255,0.12)";
+      ctx.strokeStyle = isWinner ? "rgba(255,230,170,0.62)" : "rgba(255,255,255,0.14)";
       strokeRoundRect(ctx, cardX, cardY, cellW, stripH - 20, 16);
+
+      if (isWinner) {
+        ctx.save();
+        ctx.shadowColor = "rgba(255,214,120,0.42)";
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = "rgba(255,228,170,0.52)";
+        strokeRoundRect(ctx, cardX + 2, cardY + 2, cellW - 4, stripH - 24, 14);
+        ctx.restore();
+      }
 
       ctx.fillStyle = "#fff8ea";
       ctx.font = "900 28px system-ui";
@@ -833,7 +843,7 @@ export class TradeScene {
     ctx.restore();
 
     ctx.fillStyle = "rgba(255,214,120,0.92)";
-    fillRoundRect(ctx, viewX + stripW / 2 - 4, viewY - 8, 8, stripH + 16, 4);
+    fillRoundRect(ctx, viewX + stripW / 2 - 3, viewY - 10, 6, stripH + 20, 3);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 18px system-ui";
@@ -843,6 +853,14 @@ export class TradeScene {
     ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = "12px system-ui";
     ctx.fillText(progress < 1 ? "Sandık akışı dönüyor..." : `Kazanılan: ${anim.reward?.label || "Ödül"}`, panelX + panelW / 2, panelY + 64);
+
+    if (progress >= 1 && anim.reward) {
+      ctx.fillStyle = "#fff5dd";
+      ctx.font = "900 28px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(anim.reward.icon || "🎁", panelX + panelW / 2, viewY + stripH + 26);
+    }
   }
 
   _drawLootOverlay(ctx, panelX, panelY, panelW, panelH) {
