@@ -100,21 +100,21 @@ const WEAPONS = [
   { id: "ump45", name: "HK UMP45 (.45 ACP)", assetFile: "ump.png", bonusPct: 27, price: 1550, tier: "SMG", label: "Kontrollü", accent: "#cf954e" },
 
   { id: "ar15", name: "AR-15 (5.56×45)", assetFile: "ar.png", bonusPct: 31, price: 980, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
-  { id: "ak74", name: "AK-74 (5.45×39)", assetFile: null, bonusPct: 33, price: 1100, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
-  { id: "ak47", name: "AK-47 (7.62×39)", assetFile: null, bonusPct: 35, price: 1200, tier: "Tüfek", label: "Güçlü", accent: "#cf954e" },
+  { id: "ak74", name: "AK-74 (5.45×39)", assetFile: "ak74.png", bonusPct: 33, price: 1100, tier: "Tüfek", label: "Orta Seviye", accent: "#cf954e" },
+  { id: "ak47", name: "AK-47 (7.62×39)", assetFile: "ak47.png", bonusPct: 35, price: 1200, tier: "Tüfek", label: "Güçlü", accent: "#cf954e" },
   { id: "m4a1", name: "M4A1 (5.56×45)", assetFile: "m4a1.png", bonusPct: 34, price: 1450, tier: "Tüfek", label: "Dengeli", accent: "#cf954e" },
 
   { id: "g3", name: "HK G3 (7.62×51)", assetFile: "g3.png", bonusPct: 38, price: 1600, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
   { id: "scar_h", name: "FN SCAR-H (7.62×51)", assetFile: "scar.png", bonusPct: 40, price: 2800, tier: "Ağır Tüfek", label: "Yüksek Bonus", accent: "#c98244" },
 
-  { id: "svd", name: "Dragunov SVD (7.62×54R)", assetFile: null, bonusPct: 44, price: 2100, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
+  { id: "svd", name: "Dragunov SVD (7.62×54R)", assetFile: "dragunov.png", bonusPct: 44, price: 2100, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
   { id: "m24", name: "Remington M24 (7.62×51)", assetFile: "m24.png", bonusPct: 43, price: 2400, tier: "Keskin Nişancı", label: "Premium", accent: "#c46f3d" },
 
-  { id: "m79", name: "M79 (Launcher)", assetFile: null, bonusPct: 50, price: 3800, tier: "Launcher", label: "Epic", accent: "#b85d35" },
+  { id: "m79", name: "M79 (Launcher)", assetFile: "m79.png", bonusPct: 50, price: 3800, tier: "Launcher", label: "Epic", accent: "#b85d35" },
   { id: "rpg7", name: "RPG-7 (Launcher)", assetFile: "rpg.png", bonusPct: 55, price: 4500, tier: "Launcher", label: "Epic", accent: "#b85d35" },
 
   { id: "barrett_m82", name: "Barrett M82 (.50 BMG)", assetFile: "barrett.png", bonusPct: 60, price: 9000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
-  { id: "m134", name: "M134 Minigun (7.62×51)", assetFile: null, bonusPct: 70, price: 12000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
+  { id: "m134", name: "M134 Minigun (7.62×51)", assetFile: "m134.png", bonusPct: 70, price: 12000, tier: "Heavy", label: "Legend", accent: "#ad4d2f" },
 ];
 
 export class WeaponsScene {
@@ -541,10 +541,6 @@ export class WeaponsScene {
       strokeRoundRect(ctx, rowRect.x + 0.5, rowRect.y + 0.5, rowRect.w - 1, rowRect.h - 1, 16);
 
       const artRect = { x: rowRect.x + 12, y: rowRect.y + 8, w: isTiny ? 86 : 104, h: isTiny ? 24 : 28 };
-      ctx.fillStyle = "rgba(255,255,255,0.03)";
-      fillRoundRect(ctx, artRect.x, artRect.y, artRect.w, artRect.h, 12);
-      ctx.strokeStyle = `${item.accent}66`;
-      strokeRoundRect(ctx, artRect.x + 0.5, artRect.y + 0.5, artRect.w - 1, artRect.h - 1, 12);
 
       const sprite = this._getWeaponSprite(item);
       if (sprite && (sprite.complete || sprite.naturalWidth)) {
