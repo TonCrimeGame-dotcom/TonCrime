@@ -68,38 +68,6 @@ function fitText(ctx, text, maxW, startSize, minSize = 10, weight = 900) {
   return minSize;
 }
 
-function wrapLines(ctx, text, maxW, maxLines = 2) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-
-  const lines = [];
-  let line = "";
-
-  for (let i = 0; i < words.length; i++) {
-    const candidate = line ? `${line} ${words[i]}` : words[i];
-    if (!line || ctx.measureText(candidate).width <= maxW) {
-      line = candidate;
-      continue;
-    }
-
-    lines.push(line);
-    line = words[i];
-
-    if (lines.length === maxLines - 1) {
-      let tail = line;
-      for (let j = i + 1; j < words.length; j++) tail += ` ${words[j]}`;
-      while (ctx.measureText(`${tail}…`).width > maxW && tail.length > 1) {
-        tail = tail.slice(0, -1).trimEnd();
-      }
-      lines.push(words.length > i + 1 ? `${tail}…` : tail);
-      return lines;
-    }
-  }
-
-  if (line) lines.push(line);
-  return lines.slice(0, maxLines);
-}
-
 const WEAPONS = [
   { id: "glock_17", name: "Glock 17 (9×19mm)", bonusPct: 18, price: 520, tier: "Yan Silah", label: "Başlangıç", accent: "#d8aa59" },
   { id: "sig_p320", name: "SIG Sauer P320 (9×19mm)", bonusPct: 20, price: 650, tier: "Yan Silah", label: "Dengeli", accent: "#d8aa59" },
@@ -419,10 +387,10 @@ export class WeaponsScene {
     ctx.strokeStyle = "rgba(255,194,96,0.22)";
     strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 22);
 
-    const headerH = isTiny ? 112 : 122;
-    const infoH = isTiny ? 66 : (isMobile ? 74 : 84);
-    const footerH = isTiny ? 58 : 64;
-    const listGap = 10;
+    const headerH = isTiny ? 50 : 56;
+    const infoH = isTiny ? 74 : 82;
+    const footerH = isTiny ? 44 : 50;
+    const listGap = 8;
 
     const headerRect = { x: panelX + 10, y: panelY + 10, w: panelW - 20, h: headerH };
     const infoRect = { x: panelX + 10, y: headerRect.y + headerRect.h + 10, w: panelW - 20, h: infoH };
@@ -462,100 +430,48 @@ export class WeaponsScene {
     ctx.strokeStyle = glassStroke;
     strokeRoundRect(ctx, footerRect.x + 0.5, footerRect.y + 0.5, footerRect.w - 1, footerRect.h - 1, 18);
 
-    const backW = isTiny ? 76 : 84;
-    const backH = 34;
-    const backRect = { x: headerRect.x + 10, y: headerRect.y + 10, w: backW, h: backH };
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, backRect.x, backRect.y, backRect.w, backRect.h, 12);
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    strokeRoundRect(ctx, backRect.x + 0.5, backRect.y + 0.5, backRect.w - 1, backRect.h - 1, 12);
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Geri", backRect.x + backRect.w / 2, backRect.y + backRect.h / 2);
-    this.hit.push({ type: "back", rect: backRect });
-
-    const coinW = isTiny ? 92 : 112;
-    const coinH = 34;
-    const coinRect = {
-      x: headerRect.x + headerRect.w - coinW - 10,
+    const closeW = isTiny ? 44 : 48;
+    const closeH = 34;
+    const closeRect = {
+      x: headerRect.x + headerRect.w - closeW - 10,
       y: headerRect.y + 10,
-      w: coinW,
-      h: coinH,
+      w: closeW,
+      h: closeH,
     };
-    ctx.fillStyle = "rgba(0,0,0,0.34)";
-    fillRoundRect(ctx, coinRect.x, coinRect.y, coinRect.w, coinRect.h, 12);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, coinRect.x + 0.5, coinRect.y + 0.5, coinRect.w - 1, coinRect.h - 1, 12);
-    ctx.fillStyle = "#fff";
-    ctx.font = `900 ${isTiny ? 11 : 12}px system-ui`;
-    ctx.fillText(`${shortNum(s.coins || 0)} yton`, coinRect.x + coinRect.w / 2, coinRect.y + coinRect.h / 2);
-
-    const titleX = backRect.x;
-    const titleY = headerRect.y + 58;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = `900 ${isTiny ? 18 : 22}px system-ui`;
-    ctx.fillText("PvP • Silah Seç", titleX, titleY);
-
-    ctx.fillStyle = "rgba(255,255,255,0.76)";
-    ctx.font = `${isTiny ? 11 : 12}px system-ui`;
-    const headerTextMaxW = headerRect.w - 24;
-    const headerDescLines = wrapLines(
-      ctx,
-      "Silah bonusu tüm PvP ikon sürelerini yavaşlatır ve avantaj sağlar.",
-      headerTextMaxW,
-      isTiny ? 2 : 1
-    );
-    const headerLineH = isTiny ? 14 : 15;
-    for (let i = 0; i < headerDescLines.length; i++) {
-      ctx.fillText(headerDescLines[i], titleX, titleY + 24 + i * headerLineH);
-    }
-
-    const heroTag1 = { x: titleX, y: titleY + 34 + headerDescLines.length * headerLineH, w: isTiny ? 104 : 116, h: 28 };
-    const heroTag2 = { x: heroTag1.x + heroTag1.w + 8, y: heroTag1.y, w: isTiny ? 132 : 156, h: 28 };
     ctx.fillStyle = "rgba(255,255,255,0.08)";
-    fillRoundRect(ctx, heroTag1.x, heroTag1.y, heroTag1.w, heroTag1.h, 14);
-    fillRoundRect(ctx, heroTag2.x, heroTag2.y, heroTag2.w, heroTag2.h, 14);
-    ctx.strokeStyle = "rgba(255,255,255,0.11)";
-    strokeRoundRect(ctx, heroTag1.x + 0.5, heroTag1.y + 0.5, heroTag1.w - 1, heroTag1.h - 1, 14);
-    strokeRoundRect(ctx, heroTag2.x + 0.5, heroTag2.y + 0.5, heroTag2.w - 1, heroTag2.h - 1, 14);
+    fillRoundRect(ctx, closeRect.x, closeRect.y, closeRect.w, closeRect.h, 12);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    strokeRoundRect(ctx, closeRect.x + 0.5, closeRect.y + 0.5, closeRect.w - 1, closeRect.h - 1, 12);
     ctx.fillStyle = "#fff";
-    ctx.font = `800 ${isTiny ? 10 : 11}px system-ui`;
+    ctx.font = `900 ${isTiny ? 13 : 14}px system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("PvP merkezi", heroTag1.x + heroTag1.w / 2, heroTag1.y + heroTag1.h / 2);
-    ctx.fillText("İkon süresi yavaşlatma", heroTag2.x + heroTag2.w / 2, heroTag2.y + heroTag2.h / 2);
+    ctx.fillText("X", closeRect.x + closeRect.w / 2, closeRect.y + closeRect.h / 2 + 0.5);
+    this.hit.push({ type: "back", rect: closeRect });
 
     const effectPct = Number(s.player?.weaponIconBonusPct || 0);
     const effectMs = Number(s.player?.weaponIconVisibleMs || iconMsFromPct(effectPct));
     const effectSlow = Number(s.player?.weaponTickSlowFactor || 1);
 
     const unW = isTiny ? 92 : 104;
-    const unH = 34;
-    const unRect = { x: infoRect.x + infoRect.w - unW - 12, y: infoRect.y + infoRect.h / 2 - unH / 2, w: unW, h: unH };
-    const infoTextX = infoRect.x + 14;
-    const infoTextMaxW = Math.max(120, unRect.x - infoTextX - 12);
+    const infoLeft = infoRect.x + 14;
+    const infoTextMaxW = infoRect.w - unW - 40;
+    const equippedLabel = equipped ? equipped.name : "Silah seçili değil";
+    const infoTitleSize = fitText(ctx, equippedLabel, infoTextMaxW, isTiny ? 14 : 15, 11, 900);
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "rgba(255,255,255,0.94)";
-    const equippedTitle = equipped ? equipped.name : "Silah seçili değil";
-    const equippedTitleSize = fitText(ctx, equippedTitle, infoTextMaxW, isTiny ? 14 : 15, 11, 900);
-    ctx.font = `900 ${equippedTitleSize}px system-ui`;
-    ctx.fillText(equippedTitle, infoTextX, infoRect.y + 24);
+    ctx.font = `900 ${infoTitleSize}px system-ui`;
+    ctx.fillText(equippedLabel, infoLeft, infoRect.y + 24);
 
     ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-    const infoLine = `Aktif bonus: +%${effectPct} • ikon ~${effectMs}ms • zaman x${effectSlow.toFixed(2)}`;
-    const infoLines = wrapLines(ctx, infoLine, infoTextMaxW, isTiny ? 2 : 1);
-    const infoBaseY = infoRect.y + (isTiny ? 42 : 46);
-    const infoLineH = isTiny ? 13 : 14;
-    for (let i = 0; i < infoLines.length; i++) {
-      ctx.fillText(infoLines[i], infoTextX, infoBaseY + i * infoLineH);
-    }
+    ctx.fillText(`Aktif bonus: +%${effectPct} • ikon ~${effectMs}ms`, infoLeft, infoRect.y + 44);
+    ctx.fillText(`Zaman çarpanı x${effectSlow.toFixed(2)}`, infoLeft, infoRect.y + 61);
+
+    const unH = 34;
+    const unRect = { x: infoRect.x + infoRect.w - unW - 12, y: infoRect.y + infoRect.h / 2 - unH / 2, w: unW, h: unH };
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     fillRoundRect(ctx, unRect.x, unRect.y, unRect.w, unRect.h, 12);
     ctx.strokeStyle = "rgba(255,255,255,0.14)";
@@ -567,8 +483,8 @@ export class WeaponsScene {
     ctx.fillText("Silah Çıkar", unRect.x + unRect.w / 2, unRect.y + unRect.h / 2);
     this.hit.push({ type: "unequip", rect: unRect });
 
-    const rowGap = 10;
-    const rowH = isTiny ? 108 : 112;
+    const rowGap = 8;
+    const rowH = isTiny ? 84 : 88;
     const contentH = WEAPONS.length * rowH + (WEAPONS.length - 1) * rowGap + 20;
     this.maxScroll = Math.max(0, contentH - listRect.h + 10);
     this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
@@ -591,7 +507,7 @@ export class WeaponsScene {
       ctx.strokeStyle = active ? "rgba(255,194,96,0.34)" : "rgba(255,255,255,0.10)";
       strokeRoundRect(ctx, rowRect.x + 0.5, rowRect.y + 0.5, rowRect.w - 1, rowRect.h - 1, 16);
 
-      const tagRect = { x: rowRect.x + 12, y: rowRect.y + 12, w: isTiny ? 78 : 88, h: 22 };
+      const tagRect = { x: rowRect.x + 12, y: rowRect.y + 10, w: isTiny ? 76 : 86, h: 20 };
       ctx.fillStyle = `${item.accent}33`;
       fillRoundRect(ctx, tagRect.x, tagRect.y, tagRect.w, tagRect.h, 11);
       ctx.strokeStyle = `${item.accent}88`;
@@ -618,12 +534,12 @@ export class WeaponsScene {
       ctx.textBaseline = "alphabetic";
       ctx.fillStyle = "#fff";
       ctx.font = `900 ${nameSize}px system-ui`;
-      ctx.fillText(item.name, rowRect.x + 12, rowRect.y + 52);
+      ctx.fillText(item.name, rowRect.x + 12, rowRect.y + 40);
 
       ctx.fillStyle = "rgba(255,255,255,0.74)";
-      ctx.font = `${isTiny ? 11 : 12}px system-ui`;
-      ctx.fillText(`Güç: +%${item.bonusPct}  (ikon ~${iconMsFromPct(item.bonusPct)}ms)`, rowRect.x + 12, rowRect.y + 76);
-      ctx.fillText(`Fiyat: ${shortNum(item.price)} yton  •  ${item.label}`, rowRect.x + 12, rowRect.y + 96);
+      ctx.font = `${isTiny ? 10 : 11}px system-ui`;
+      ctx.fillText(`Güç: +%${item.bonusPct}  (ikon ~${iconMsFromPct(item.bonusPct)}ms)`, rowRect.x + 12, rowRect.y + 60);
+      ctx.fillText(`Fiyat: ${shortNum(item.price)} yton  •  ${item.label}`, rowRect.x + 12, rowRect.y + 76);
 
       const btnGrad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
       if (!owned) {
@@ -671,13 +587,8 @@ export class WeaponsScene {
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = `900 ${isTiny ? 13 : 14}px system-ui`;
-    ctx.fillText(`Aktif Etki: 500ms → ${effectMs}ms  (+%${effectPct})`, footerRect.x + 12, footerRect.y + 26);
-
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = `${isTiny ? 10 : 12}px system-ui`;
-    const footerText = isTiny ? "Mobil kaydırma aktif." : "PvP sahnesi mantığı gibi panel + kart düzeni kullanıldı. Mobil kaydırma aktif.";
-    ctx.fillText(footerText, footerRect.x + 12, footerRect.y + 48);
+    ctx.font = `900 ${isTiny ? 12 : 13}px system-ui`;
+    ctx.fillText(`Aktif Etki: 500ms → ${effectMs}ms  (+%${effectPct})`, footerRect.x + 12, footerRect.y + 28);
 
     if (this.toastText && Date.now() < this.toastUntil) {
       ctx.font = "900 12px system-ui";
