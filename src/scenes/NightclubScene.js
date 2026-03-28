@@ -54,36 +54,36 @@ export class NightclubScene {
     this._drinkImageCache = Object.create(null);
 
     this.items = [
-      { id: "nc_alc_01", icon: "🥃", image: "./src/assets/nightclub_drinks/street_whiskey.png", name: "Street Whiskey", energy: 4, price: 12, rarity: "Sokak", marketValue: 18, desc: "Sert viski. Hızlı enerji." },
-      { id: "nc_alc_02", icon: "🍺", image: "./src/assets/nightclub_drinks/dark_lager.png", name: "Dark Lager", energy: 5, price: 14, rarity: "Sokak", marketValue: 20, desc: "Ucuz ama iş görür." },
-      { id: "nc_alc_03", icon: "🍷", image: "./src/assets/nightclub_drinks/house_red_wine.png", name: "House Red Wine", energy: 6, price: 17, rarity: "Sokak", marketValue: 24, desc: "Klasik kırmızı şarap." },
-      { id: "nc_alc_04", icon: "🍸", image: "./src/assets/nightclub_drinks/neon_martini.png", name: "Neon Martini", energy: 7, price: 20, rarity: "Sokak", marketValue: 28, desc: "Geceye uygun kokteyl." },
-      { id: "nc_alc_05", icon: "🥂", image: "./src/assets/nightclub_drinks/club_prosecco.png", name: "Club Prosecco", energy: 8, price: 23, rarity: "Kulüp", marketValue: 33, desc: "Hafif lüks enerji içkisi." },
-      { id: "nc_alc_06", icon: "🍹", image: "./src/assets/nightclub_drinks/tropical_mix.png", name: "Tropical Mix", energy: 9, price: 26, rarity: "Kulüp", marketValue: 38, desc: "Tatlı ama etkili." },
-      { id: "nc_alc_07", icon: "🥃", image: "./src/assets/nightclub_drinks/oak_reserve.png", name: "Oak Reserve", energy: 10, price: 29, rarity: "Kulüp", marketValue: 43, desc: "Meşe fıçı aromalı viski." },
-      { id: "nc_alc_08", icon: "🍾", image: "./src/assets/nightclub_drinks/velvet_champagne.png", name: "Velvet Champagne", energy: 11, price: 33, rarity: "Kulüp", marketValue: 48, desc: "Kulübün imza şampanyası." },
-      { id: "nc_alc_09", icon: "🍷", image: "./src/assets/nightclub_drinks/midnight_merlot.png", name: "Midnight Merlot", energy: 12, price: 36, rarity: "Kulüp", marketValue: 53, desc: "Koyu ve yumuşak içim." },
-      { id: "nc_alc_10", icon: "🍸", image: "./src/assets/nightclub_drinks/blue_venom.png", name: "Blue Venom", energy: 13, price: 40, rarity: "VIP", marketValue: 59, desc: "VIP katın ünlü kokteyli." },
-      { id: "nc_alc_11", icon: "🥂", image: "./src/assets/nightclub_drinks/gold_spark.png", name: "Gold Spark", energy: 14, price: 44, rarity: "VIP", marketValue: 65, desc: "Altın pullu premium köpük." },
-      { id: "nc_alc_12", icon: "🍺", image: "./src/assets/nightclub_drinks/imperial_stout.png", name: "Imperial Stout", energy: 15, price: 48, rarity: "VIP", marketValue: 71, desc: "Yoğun ve ağır bira." },
-      { id: "nc_alc_13", icon: "🥃", image: "./src/assets/nightclub_drinks/black_barrel.png", name: "Black Barrel", energy: 16, price: 52, rarity: "VIP", marketValue: 77, desc: "Yüksek dereceli viski." },
-      { id: "nc_alc_14", icon: "🍾", image: "./src/assets/nightclub_drinks/diamond_brut.png", name: "Diamond Brut", energy: 17, price: 56, rarity: "VIP", marketValue: 84, desc: "Daha sert premium köpük." },
-      { id: "nc_alc_15", icon: "🍸", image: "./src/assets/nightclub_drinks/crimson_kiss.png", name: "Crimson Kiss", energy: 18, price: 61, rarity: "Elite", marketValue: 91, desc: "Elite kokteyl serisi." },
-      { id: "nc_alc_16", icon: "🍷", image: "./src/assets/nightclub_drinks/royal_cabernet.png", name: "Royal Cabernet", energy: 19, price: 66, rarity: "Elite", marketValue: 98, desc: "Uzun yıllanmış şarap." },
-      { id: "nc_alc_17", icon: "🥂", image: "./src/assets/nightclub_drinks/imperial_rose.png", name: "Imperial Rosé", energy: 20, price: 71, rarity: "Elite", marketValue: 106, desc: "Pazar değeri yüksek." },
-      { id: "nc_alc_18", icon: "🍹", image: "./src/assets/nightclub_drinks/electric_sunset.png", name: "Electric Sunset", energy: 21, price: 76, rarity: "Elite", marketValue: 114, desc: "Nadir gece kokteyli." },
-      { id: "nc_alc_19", icon: "🥃", image: "./src/assets/nightclub_drinks/smoked_bourbon.png", name: "Smoked Bourbon", energy: 22, price: 82, rarity: "Elite", marketValue: 123, desc: "Duman aromalı bourbon." },
-      { id: "nc_alc_20", icon: "🍾", image: "./src/assets/nightclub_drinks/velour_prestige.png", name: "Velour Prestige", energy: 23, price: 88, rarity: "Legend", marketValue: 132, desc: "Legend sınıfı şampanya." },
-      { id: "nc_alc_21", icon: "🍸", image: "./src/assets/nightclub_drinks/phantom_dry.png", name: "Phantom Dry", energy: 24, price: 94, rarity: "Legend", marketValue: 141, desc: "Nadir dry martini." },
-      { id: "nc_alc_22", icon: "🥂", image: "./src/assets/nightclub_drinks/crystal_reserve.png", name: "Crystal Reserve", energy: 25, price: 101, rarity: "Legend", marketValue: 151, desc: "Saf premium seri." },
-      { id: "nc_alc_23", icon: "🥃", image: "./src/assets/nightclub_drinks/kings_cask.png", name: "King's Cask", energy: 26, price: 108, rarity: "Legend", marketValue: 162, desc: "Koleksiyonluk fıçı seçkisi." },
-      { id: "nc_alc_24", icon: "🍷", image: "./src/assets/nightclub_drinks/velvet_noir.png", name: "Velvet Noir", energy: 27, price: 115, rarity: "Legend", marketValue: 173, desc: "En pahalı kırmızı." },
-      { id: "nc_alc_25", icon: "🍾", image: "./src/assets/nightclub_drinks/obsidian_gold.png", name: "Obsidian Gold", energy: 28, price: 123, rarity: "Mythic", marketValue: 185, desc: "Çok nadir kulüp şişesi." },
-      { id: "nc_alc_26", icon: "🍸", image: "./src/assets/nightclub_drinks/night_crown.png", name: "Night Crown", energy: 29, price: 131, rarity: "Mythic", marketValue: 197, desc: "Özel menü kokteyli." },
-      { id: "nc_alc_27", icon: "🥂", image: "./src/assets/nightclub_drinks/saint_royale.png", name: "Saint Royale", energy: 30, price: 140, rarity: "Mythic", marketValue: 210, desc: "Özel etkinlik serisi." },
-      { id: "nc_alc_28", icon: "🥃", image: "./src/assets/nightclub_drinks/mafia_reserve.png", name: "Mafia Reserve", energy: 31, price: 149, rarity: "Mythic", marketValue: 224, desc: "Ağır premium viski." },
-      { id: "nc_alc_29", icon: "🍾", image: "./src/assets/nightclub_drinks/toncrime_luxe.png", name: "TonCrime Luxe", energy: 33, price: 159, rarity: "Mythic", marketValue: 239, desc: "TonCrime özel seri." },
-      { id: "nc_alc_30", icon: "🥂", image: "./src/assets/nightclub_drinks/black_diamond_brut.png", name: "Black Diamond Brut", energy: 35, price: 170, rarity: "Mythic", marketValue: 255, desc: "En üst seviye şişe." },
+      { id: "nc_alc_01", icon: "🥃", image: "./src/assets/street.png", name: "Street Whiskey", energy: 4, price: 12, rarity: "Sokak", marketValue: 18, desc: "Sert viski. Hızlı enerji." },
+      { id: "nc_alc_02", icon: "🍺", image: "./src/assets/dark.png", name: "Dark Lager", energy: 5, price: 14, rarity: "Sokak", marketValue: 20, desc: "Ucuz ama iş görür." },
+      { id: "nc_alc_03", icon: "🍷", image: "./src/assets/house.png", name: "House Red Wine", energy: 6, price: 17, rarity: "Sokak", marketValue: 24, desc: "Klasik kırmızı şarap." },
+      { id: "nc_alc_04", icon: "🍸", image: "./src/assets/neon.png", name: "Neon Martini", energy: 7, price: 20, rarity: "Sokak", marketValue: 28, desc: "Geceye uygun kokteyl." },
+      { id: "nc_alc_05", icon: "🥂", image: "./src/assets/club.png", name: "Club Prosecco", energy: 8, price: 23, rarity: "Kulüp", marketValue: 33, desc: "Hafif lüks enerji içkisi." },
+      { id: "nc_alc_06", icon: "🍹", image: "./src/assets/tropical.png", name: "Tropical Mix", energy: 9, price: 26, rarity: "Kulüp", marketValue: 38, desc: "Tatlı ama etkili." },
+      { id: "nc_alc_07", icon: "🥃", image: "./src/assets/oak.png", name: "Oak Reserve", energy: 10, price: 29, rarity: "Kulüp", marketValue: 43, desc: "Meşe fıçı aromalı viski." },
+      { id: "nc_alc_08", icon: "🍾", image: "./src/assets/velvet.png", name: "Velvet Champagne", energy: 11, price: 33, rarity: "Kulüp", marketValue: 48, desc: "Kulübün imza şampanyası." },
+      { id: "nc_alc_09", icon: "🍷", image: "./src/assets/midnight.png", name: "Midnight Merlot", energy: 12, price: 36, rarity: "Kulüp", marketValue: 53, desc: "Koyu ve yumuşak içim." },
+      { id: "nc_alc_10", icon: "🍸", image: "./src/assets/blue.png", name: "Blue Venom", energy: 13, price: 40, rarity: "VIP", marketValue: 59, desc: "VIP katın ünlü kokteyli." },
+      { id: "nc_alc_11", icon: "🥂", image: "./src/assets/gold.png", name: "Gold Spark", energy: 14, price: 44, rarity: "VIP", marketValue: 65, desc: "Altın pullu premium köpük." },
+      { id: "nc_alc_12", icon: "🍺", image: "./src/assets/dark.png", name: "Imperial Stout", energy: 15, price: 48, rarity: "VIP", marketValue: 71, desc: "Yoğun ve ağır bira." },
+      { id: "nc_alc_13", icon: "🥃", image: "./src/assets/blackbarrel.png", name: "Black Barrel", energy: 16, price: 52, rarity: "VIP", marketValue: 77, desc: "Yüksek dereceli viski." },
+      { id: "nc_alc_14", icon: "🍾", image: "./src/assets/club.png", name: "Diamond Brut", energy: 17, price: 56, rarity: "VIP", marketValue: 84, desc: "Daha sert premium köpük." },
+      { id: "nc_alc_15", icon: "🍸", image: "./src/assets/kiss.png", name: "Crimson Kiss", energy: 18, price: 61, rarity: "Elite", marketValue: 91, desc: "Elite kokteyl serisi." },
+      { id: "nc_alc_16", icon: "🍷", image: "./src/assets/house.png", name: "Royal Cabernet", energy: 19, price: 66, rarity: "Elite", marketValue: 98, desc: "Uzun yıllanmış şarap." },
+      { id: "nc_alc_17", icon: "🥂", image: "./src/assets/rose.png", name: "Imperial Rosé", energy: 20, price: 71, rarity: "Elite", marketValue: 106, desc: "Pazar değeri yüksek." },
+      { id: "nc_alc_18", icon: "🍹", image: "./src/assets/sunset.png", name: "Electric Sunset", energy: 21, price: 76, rarity: "Elite", marketValue: 114, desc: "Nadir gece kokteyli." },
+      { id: "nc_alc_19", icon: "🥃", image: "./src/assets/smoked.png", name: "Smoked Bourbon", energy: 22, price: 82, rarity: "Elite", marketValue: 123, desc: "Duman aromalı bourbon." },
+      { id: "nc_alc_20", icon: "🍾", image: "./src/assets/prestige.png", name: "Velour Prestige", energy: 23, price: 88, rarity: "Legend", marketValue: 132, desc: "Legend sınıfı şampanya." },
+      { id: "nc_alc_21", icon: "🍸", image: "./src/assets/phantom.png", name: "Phantom Dry", energy: 24, price: 94, rarity: "Legend", marketValue: 141, desc: "Nadir dry martini." },
+      { id: "nc_alc_22", icon: "🥂", image: "./src/assets/saint.png", name: "Crystal Reserve", energy: 25, price: 101, rarity: "Legend", marketValue: 151, desc: "Saf premium seri." },
+      { id: "nc_alc_23", icon: "🥃", image: "./src/assets/king.png", name: "King's Cask", energy: 26, price: 108, rarity: "Legend", marketValue: 162, desc: "Koleksiyonluk fıçı seçkisi." },
+      { id: "nc_alc_24", icon: "🍷", image: "./src/assets/velvet.png", name: "Velvet Noir", energy: 27, price: 115, rarity: "Legend", marketValue: 173, desc: "En pahalı kırmızı." },
+      { id: "nc_alc_25", icon: "🍾", image: "./src/assets/obsidian.png", name: "Obsidian Gold", energy: 28, price: 123, rarity: "Mythic", marketValue: 185, desc: "Çok nadir kulüp şişesi." },
+      { id: "nc_alc_26", icon: "🍸", image: "./src/assets/night.png", name: "Night Crown", energy: 29, price: 131, rarity: "Mythic", marketValue: 197, desc: "Özel menü kokteyli." },
+      { id: "nc_alc_27", icon: "🥂", image: "./src/assets/saint.png", name: "Saint Royale", energy: 30, price: 140, rarity: "Mythic", marketValue: 210, desc: "Özel etkinlik serisi." },
+      { id: "nc_alc_28", icon: "🥃", image: "./src/assets/mafia.png", name: "Mafia Reserve", energy: 31, price: 149, rarity: "Mythic", marketValue: 224, desc: "Ağır premium viski." },
+      { id: "nc_alc_29", icon: "🍾", image: "./src/assets/luxe.png", name: "TonCrime Luxe", energy: 33, price: 159, rarity: "Mythic", marketValue: 239, desc: "TonCrime özel seri." },
+      { id: "nc_alc_30", icon: "🥂", image: "./src/assets/obsidian.png", name: "Black Diamond Brut", energy: 35, price: 170, rarity: "Mythic", marketValue: 255, desc: "En üst seviye şişe." },
     ];
   }
 
@@ -332,8 +332,18 @@ export class NightclubScene {
       img.src = key;
       img.onerror = () => {
         try {
-          if (img.src.includes("/src/assets/nightclub_drinks/")) {
-            img.src = key.replace("/src/assets/nightclub_drinks/", "/src/assets/");
+          if (img.src.includes("/src/assets/")) {
+            const candidate = key.replace("/src/assets/", "/src/assets/nightclub_drinks/");
+            if (candidate !== key && !img.__tcTriedAlt) {
+              img.__tcTriedAlt = true;
+              img.src = candidate;
+            }
+          } else if (img.src.includes("/src/assets/nightclub_drinks/")) {
+            const candidate = key.replace("/src/assets/nightclub_drinks/", "/src/assets/");
+            if (candidate !== key && !img.__tcTriedAlt) {
+              img.__tcTriedAlt = true;
+              img.src = candidate;
+            }
           }
         } catch (_) {}
       };
