@@ -146,8 +146,8 @@ export class MissionsScene {
     this.toastText = "";
     this.toastUntil = 0;
 
-    this.telegramUrl = "https://t.me/TONCRIME";
-    this.inviteUrl = "https://t.me/share/url?url=https://t.me/TONCRIME_BOT";
+    this.telegramUrl = "https://t.me/TonCrimeEu";
+    this.inviteUrl = "https://t.me/share/url?url=https://t.me/TonCrimeEu";
   }
 
   onEnter() {
