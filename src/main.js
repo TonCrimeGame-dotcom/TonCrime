@@ -12,7 +12,7 @@ import * as BootSceneModule from "./scenes/BootScene.js";
 import { IntroScene } from "./scenes/IntroScene.js";
 import { HomeScene } from "./scenes/HomeScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
-import { NightclubScene } from "./scenes/NightclubScene.js";
+import * as NightclubSceneModule from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js";
 import { ProfileScene } from "./scenes/ProfileScene.js";
 
@@ -29,6 +29,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
+const NightclubScene = NightclubSceneModule.NightclubScene || NightclubSceneModule.default;
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
