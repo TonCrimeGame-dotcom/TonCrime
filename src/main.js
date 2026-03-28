@@ -224,7 +224,6 @@ const initial = loaded
 const store = new Store(initial);
 window.tcStore = store;
 
-
 function syncLeaderboardSnapshot() {
   try {
     const s = store.get() || {};
@@ -1034,7 +1033,6 @@ scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("missions", new MissionsScene({ store, input, assets, scenes }));
 scenes.register("trade", new TradeScene({ store, input, i18n, assets, scenes }));
-scenes.register("profile", new ProfileScene({ store, input, assets, scenes }));
 
 scenes.register(
   "coffeeshop",
@@ -1068,6 +1066,8 @@ if (typeof window.PvpScene === "function") {
   scenes.register("pvp", new MissionsScene({ store, input, assets, scenes }));
 }
 
+scenes.register("profile", new ProfileScene({ store, input, assets, scenes }));
+
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
 
 scenes.register(
@@ -1087,7 +1087,6 @@ window.addEventListener("tc:openPvp", () => {
     console.warn("[TonCrime] tc:openPvp açılamadı:", err);
   }
 });
-
 
 window.addEventListener("tc:openProfile", () => {
   try {
@@ -1120,7 +1119,6 @@ window.addEventListener("tc:openWallet", () => {
     console.warn("[TonCrime] tc:openWallet açılamadı:", err);
   }
 });
-
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
