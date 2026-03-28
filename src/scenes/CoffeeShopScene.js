@@ -34,6 +34,46 @@ const ITEMS = [
   { id: "dam_crown", name: "Dam Crown", price: 80, energy: 35, rarity: "legendary", icon: "🌿" },
 ];
 
+
+const COFFEESHOP_BG_PATHS = [
+  "./src/assets/coffeeshop_bg.png",
+  "./src/assets/coffeeshop.jpg",
+  "./src/assets/coffeeshop-bg.png",
+];
+
+const ITEM_IMAGE_PATHS = {
+  amnesia_haze: ["./src/assets/amnesia.png"],
+  white_widow: ["./src/assets/white.png"],
+  northern_lights: ["./src/assets/northern.png"],
+  super_skunk: ["./src/assets/skunk.png"],
+  purple_haze: ["./src/assets/purple.png"],
+  orange_bud: ["./src/assets/mimosa.png", "./src/assets/amsterdam.png", "./src/assets/amnesia.png"],
+  blue_dream: ["./src/assets/blue.png"],
+  gelato: ["./src/assets/gelato.png"],
+  gorilla_glue: ["./src/assets/gorilla.png"],
+  green_crack: ["./src/assets/green.png"],
+  ak47: ["./src/assets/ak-47.png"],
+  super_silver: ["./src/assets/white.png", "./src/assets/diamond.png", "./src/assets/ghost.png"],
+  jack_herer: ["./src/assets/jack.png"],
+  og_kush: ["./src/assets/og.png"],
+  girl_scout: ["./src/assets/girl.png"],
+  sour_diesel: ["./src/assets/diesel.png"],
+  zkittlez: ["./src/assets/rainbow.png"],
+  wedding_cake: ["./src/assets/gelato.png", "./src/assets/girl.png", "./src/assets/choco.png"],
+  banana_kush: ["./src/assets/banana.png"],
+  mimosa: ["./src/assets/mimosa.png"],
+  choco_haze: ["./src/assets/choco.png"],
+  rainbow_belts: ["./src/assets/rainbow.png"],
+  moon_rocks: ["./src/assets/diamond.png", "./src/assets/platinum.png", "./src/assets/white.png"],
+  ice_hash: ["./src/assets/diamond.png", "./src/assets/white.png", "./src/assets/platinum.png"],
+  amsterdam_gold: ["./src/assets/amsterdam.png"],
+  black_tuna: ["./src/assets/tuna.png"],
+  platinum_kush: ["./src/assets/platinum.png"],
+  ghost_train: ["./src/assets/ghost.png"],
+  diamond_resin: ["./src/assets/diamond.png"],
+  dam_crown: ["./src/assets/dam.png", "./src/assets/crown.png"],
+};
+
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 function pointInRect(px, py, r) { return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
 function fmtNum(n) { return Number(n || 0).toLocaleString("tr-TR"); }
@@ -69,6 +109,9 @@ export class CoffeeShopScene {
 
     this._pvpBound = false;
     this._pendingFightId = null;
+
+    this._assetImgCache = new Map();
+    this._bgImgCache = null;
   }
 
   onEnter() {
@@ -125,10 +168,44 @@ export class CoffeeShopScene {
     return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
   }
 
+  _loadChainedImage(paths = []) {
+    const list = Array.isArray(paths) ? paths.filter(Boolean) : [paths].filter(Boolean);
+    const key = list.join("|");
+    if (!key) return null;
+    if (this._assetImgCache.has(key)) return this._assetImgCache.get(key);
+
+    const img = new Image();
+    let idx = 0;
+    const tryNext = () => {
+      if (idx >= list.length) return;
+      img.src = list[idx++];
+    };
+    img.onerror = () => {
+      if (idx < list.length) tryNext();
+    };
+    tryNext();
+    this._assetImgCache.set(key, img);
+    return img;
+  }
+
+  _getItemImage(item) {
+    const paths = ITEM_IMAGE_PATHS[String(item?.id || "")] || [];
+    return this._loadChainedImage(paths);
+  }
+
   _getBg() {
-    if (typeof this.assets?.getImage === "function") return this.assets.getImage("coffeeshop_bg") || this.assets.getImage("coffeeshop_bg");
-    if (typeof this.assets?.get === "function") return this.assets.get("coffeeshop_bg") || this.assets.get("coffeeshop_bg");
-    return this.assets?.images?.coffeeshop_bg || this.assets?.images?.coffeeshop || null;
+    if (typeof this.assets?.getImage === "function") {
+      const fromAssets = this.assets.getImage("coffeeshop_bg") || this.assets.getImage("coffeeshop");
+      if (fromAssets) return fromAssets;
+    }
+    if (typeof this.assets?.get === "function") {
+      const fromAssets = this.assets.get("coffeeshop_bg") || this.assets.get("coffeeshop");
+      if (fromAssets) return fromAssets;
+    }
+    const fromMap = this.assets?.images?.coffeeshop_bg || this.assets?.images?.coffeeshop || null;
+    if (fromMap) return fromMap;
+    if (!this._bgImgCache) this._bgImgCache = this._loadChainedImage(COFFEESHOP_BG_PATHS);
+    return this._bgImgCache;
   }
 
   _drawCover(ctx, img, x, y, w, h) {
@@ -145,6 +222,28 @@ export class CoffeeShopScene {
     const dx = x + (w - dw) / 2;
     const dy = y + (h - dh) / 2;
     ctx.drawImage(img, dx, dy, dw, dh);
+  }
+
+
+  _drawItemThumb(ctx, img, x, y, size) {
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    this._fillRoundRect(ctx, x, y, size, size, 12);
+
+    if (img && (img.complete || img.naturalWidth || img.width)) {
+      ctx.save();
+      this._roundRect(ctx, x, y, size, size, 12);
+      ctx.clip();
+
+      const iw = img.naturalWidth || img.width || 1;
+      const ih = img.naturalHeight || img.height || 1;
+      const scale = Math.min((size - 8) / iw, (size - 8) / ih);
+      const dw = Math.max(1, iw * scale);
+      const dh = Math.max(1, ih * scale);
+      const dx = x + (size - dw) * 0.5;
+      const dy = y + (size - dh) * 0.5;
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
+    }
   }
 
   _roundRect(ctx, x, y, w, h, r) {
@@ -265,6 +364,7 @@ export class CoffeeShopScene {
         id: `inv_coffee_${item.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         kind: "consumable",
         icon: item.icon || "🌿",
+        image: (ITEM_IMAGE_PATHS[String(item.id || "")] || [])[0] || "",
         name: item.name,
         rarity: item.rarity || "common",
         qty: 1,
@@ -673,26 +773,25 @@ export class CoffeeShopScene {
       const rarity = String(item.rarity || "");
       const rColor = this._rarityColor(rarity);
 
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "900 24px system-ui";
-      ctx.textAlign = "left";
-      ctx.fillText(item.icon || "🌿", listX + 14, rowY + 26);
+      const itemImg = this._getItemImage(item);
+      this._drawItemThumb(ctx, itemImg, listX + 12, rowY + 12, 56);
 
       ctx.fillStyle = "#ffffff";
       ctx.font = "900 15px system-ui";
-      ctx.fillText(item.name, listX + 50, rowY + 22);
+      ctx.textAlign = "left";
+      ctx.fillText(item.name, listX + 78, rowY + 22);
 
       ctx.fillStyle = rColor;
       ctx.font = "800 11px system-ui";
-      ctx.fillText(`Sınıf: ${rarity}`, listX + 50, rowY + 40);
+      ctx.fillText(`Sınıf: ${rarity}`, listX + 78, rowY + 40);
 
       ctx.fillStyle = "rgba(255,255,255,0.88)";
       ctx.font = "12px system-ui";
-      ctx.fillText(`+${item.energy} enerji`, listX + 50, rowY + 58);
+      ctx.fillText(`+${item.energy} enerji`, listX + 78, rowY + 58);
 
       ctx.fillStyle = "#ffd36c";
       ctx.font = "12px system-ui";
-      ctx.fillText(`${item.price} yton`, listX + 150, rowY + 58);
+      ctx.fillText(`${item.price} yton`, listX + 182, rowY + 58);
 
       const buyRect = { x: listX + listW - 112, y: rowY + 18, w: 96, h: 40 };
       this.hitBuy.push({ rect: buyRect, item });
