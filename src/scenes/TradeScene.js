@@ -75,6 +75,32 @@ function fitText(ctx, text, maxWidth) {
   return out ? out + "…" : "";
 }
 
+function wrapTextToLines(ctx, text, maxWidth, maxLines = 2) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (!line || ctx.measureText(test).width <= maxWidth) {
+      line = test;
+      continue;
+    }
+    lines.push(line);
+    line = word;
+    if (lines.length >= maxLines - 1) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  if (words.join(" ") !== lines.join(" ") && lines.length) {
+    lines[lines.length - 1] = fitText(ctx, lines[lines.length - 1], maxWidth);
+  }
+  return lines.slice(0, maxLines);
+}
+
+function easeOutCubic(t) {
+  const x = clamp(Number(t || 0), 0, 1);
+  return 1 - Math.pow(1 - x, 3);
+}
 
 function rarityColor(r) {
   switch (String(r || "").toLowerCase()) {
@@ -252,6 +278,7 @@ export class TradeScene {
     };
 
     this.productionNotifyTimers = new Map();
+    this.lootAnim = null;
   }
 
   onEnter() {
@@ -263,6 +290,7 @@ export class TradeScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
+    this.lootAnim = null;
 
     this.store.set({
       trade: {
@@ -482,182 +510,349 @@ export class TradeScene {
     return shop;
   }
 
-  _doFreeSpin() {
-    if (!this._isFreeSpinReady()) {
-      this._showToast("Günlük ücretsiz çark kullanıldı");
-      return;
-    }
+  _vibrate(pattern) {
+    try {
+      if (navigator?.vibrate) navigator.vibrate(pattern);
+    } catch (_) {}
+  }
 
-    const rewards = [
-      { type: "coins", amount: 25, text: "+25 yton" },
-      { type: "coins", amount: 60, text: "+60 yton" },
-      { type: "energy", amount: 15, text: "+15 enerji" },
-      {
-        type: "item",
-        text: "Mystery Crate kazandın",
-        item: {
-          id: "crate_" + Date.now(),
-          kind: "rare",
-          icon: "📦",
-          name: "Mystery Crate",
-          rarity: "rare",
-          qty: 1,
-          usable: false,
-          sellable: true,
-          marketable: true,
-          sellPrice: 45,
-          marketPrice: 60,
-          desc: "Sandık ödülü.",
-        },
-      },
-    ];
+  _makeLootItem(kind, name, icon, rarity, extras = {}) {
+    return {
+      id: `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      kind,
+      icon,
+      name,
+      rarity,
+      qty: 1,
+      usable: false,
+      sellable: true,
+      marketable: true,
+      sellPrice: Number(extras.sellPrice || 40),
+      marketPrice: Number(extras.marketPrice || 55),
+      desc: extras.desc || "Özel loot ödülü.",
+      ...extras,
+    };
+  }
 
-    const reward = rewards[Math.floor(Math.random() * rewards.length)];
+  _grantLootReward(reward, meta = {}) {
     const s = this.store.get();
+    const tradePatch = {};
+    if (meta.markFreeSpin) tradePatch.lastFreeSpinDay = todayKey();
 
     if (reward.type === "coins") {
       this.store.set({
-        coins: Number(s.coins || 0) + Number(reward.amount || 0),
-        trade: {
-          ...(s.trade || {}),
-          lastFreeSpinDay: todayKey(),
-        },
+        coins: Number(s.coins || 0) + Number(reward.amount || 0) - Number(meta.cost || 0),
+        ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
       });
     } else if (reward.type === "energy") {
       const p = { ...(s.player || {}) };
       p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
       this.store.set({
+        coins: Number(s.coins || 0) - Number(meta.cost || 0),
         player: p,
-        trade: {
-          ...(s.trade || {}),
-          lastFreeSpinDay: todayKey(),
-        },
+        ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
       });
-    } else {
+    } else if (reward.type === "item") {
       const items = (s.inventory?.items || []).map((x) => ({ ...x }));
       const existing = items.find((x) => x.name === reward.item.name);
-      if (existing) existing.qty = Number(existing.qty || 0) + 1;
+      if (existing) existing.qty = Number(existing.qty || 0) + Number(reward.item.qty || 1);
       else items.unshift({ ...reward.item });
-
       this.store.set({
-        inventory: {
-          ...(s.inventory || {}),
-          items,
-        },
-        trade: {
-          ...(s.trade || {}),
-          lastFreeSpinDay: todayKey(),
-        },
+        coins: Number(s.coins || 0) - Number(meta.cost || 0),
+        inventory: { ...(s.inventory || {}), items },
+        ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
       });
     }
 
-    this._showToast(reward.text, 1600);
+    this._showToast(reward.text || reward.label || "Ödül kazanıldı", 1900);
+    this._vibrate([60, 40, 120]);
   }
 
-  _doPremiumSpin() {
-    const s = this.store.get();
-    const cost = 90;
+  _buildWheelRewards(premium = false) {
+    if (premium) {
+      return [
+        { key: "coins_180", type: "coins", amount: 180, icon: "💰", label: "+180 yton", text: "+180 yton" },
+        { key: "energy_30", type: "energy", amount: 30, icon: "⚡", label: "+30 enerji", text: "+30 enerji" },
+        { key: "pass", type: "item", icon: "👑", label: "Golden Pass", text: "Golden Pass kazandın", item: this._makeLootItem("rare", "Golden Pass", "👑", "legendary", { marketable: false, sellPrice: 250, desc: "Nadir etkinlik ürünü." }) },
+        { key: "coins_120", type: "coins", amount: 120, icon: "💸", label: "+120 yton", text: "+120 yton" },
+        { key: "energy_20", type: "energy", amount: 20, icon: "⚡", label: "+20 enerji", text: "+20 enerji" },
+        { key: "premium_crate", type: "item", icon: "📦", label: "Premium Sandık", text: "Premium Sandık kazandın", item: this._makeLootItem("rare", "Premium Sandık", "📦", "legendary", { sellPrice: 120, marketPrice: 160, desc: "Premium loot kasası." }) },
+      ];
+    }
+    return [
+      { key: "coins_25", type: "coins", amount: 25, icon: "💰", label: "+25 yton", text: "+25 yton" },
+      { key: "coins_60", type: "coins", amount: 60, icon: "💸", label: "+60 yton", text: "+60 yton" },
+      { key: "energy_15", type: "energy", amount: 15, icon: "⚡", label: "+15 enerji", text: "+15 enerji" },
+      { key: "crate", type: "item", icon: "📦", label: "Mystery Crate", text: "Mystery Crate kazandın", item: this._makeLootItem("rare", "Mystery Crate", "📦", "rare", { usable: false, sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." }) },
+      { key: "coins_40", type: "coins", amount: 40, icon: "💵", label: "+40 yton", text: "+40 yton" },
+      { key: "energy_10", type: "energy", amount: 10, icon: "⚡", label: "+10 enerji", text: "+10 enerji" },
+    ];
+  }
 
-    if (Number(s.coins || 0) < cost) {
+  _buildCrateRewards(kind) {
+    if (kind === "legendary") {
+      return [
+        { key: "coins_220", type: "coins", amount: 220, icon: "💰", label: "+220 yton", text: "+220 yton" },
+        { key: "energy_35", type: "energy", amount: 35, icon: "⚡", label: "+35 enerji", text: "+35 enerji" },
+        { key: "pass", type: "item", icon: "👑", label: "Golden Pass", text: "Golden Pass çıktı", item: this._makeLootItem("rare", "Golden Pass", "👑", "legendary", { marketable: false, sellPrice: 250, desc: "Nadir etkinlik ürünü." }) },
+        { key: "champagne", type: "item", icon: "🍾", label: "Premium Champagne", text: "Premium Champagne çıktı", item: this._makeLootItem("goods", "Premium Champagne", "🍾", "legendary", { usable: true, energyGain: 30, sellPrice: 120, marketPrice: 170, desc: "Premium enerji ürünü." }) },
+        { key: "coins_160", type: "coins", amount: 160, icon: "💸", label: "+160 yton", text: "+160 yton" },
+      ];
+    }
+    return [
+      { key: "coins_80", type: "coins", amount: 80, icon: "💰", label: "+80 yton", text: "+80 yton" },
+      { key: "energy_18", type: "energy", amount: 18, icon: "⚡", label: "+18 enerji", text: "+18 enerji" },
+      { key: "whiskey", type: "item", icon: "🥃", label: "Black Whiskey", text: "Black Whiskey çıktı", item: this._makeLootItem("consumable", "Black Whiskey", "🥃", "rare", { usable: true, energyGain: 14, sellPrice: 40, marketPrice: 55, desc: "Enerji veren özel içki." }) },
+      { key: "crate", type: "item", icon: "📦", label: "Mystery Crate", text: "Mystery Crate çıktı", item: this._makeLootItem("rare", "Mystery Crate", "📦", "rare", { sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." }) },
+      { key: "coins_55", type: "coins", amount: 55, icon: "💵", label: "+55 yton", text: "+55 yton" },
+    ];
+  }
+
+  _startWheelSpin(premium = false) {
+    const s = this.store.get();
+    const cost = premium ? 90 : 0;
+    if (!premium && !this._isFreeSpinReady()) {
+      this._showToast("Günlük ücretsiz çark kullanıldı");
+      return;
+    }
+    if (premium && Number(s.coins || 0) < cost) {
       this._showToast("Premium çark için yetersiz yton");
       return;
     }
 
-    const rewards = [
-      { type: "coins", amount: 180, text: "+180 yton" },
-      { type: "energy", amount: 30, text: "+30 enerji" },
-      {
-        type: "item",
-        text: "Golden Pass kazandın",
-        item: {
-          id: "gold_pass_" + Date.now(),
-          kind: "rare",
-          icon: "👑",
-          name: "Golden Pass",
-          rarity: "legendary",
-          qty: 1,
-          usable: false,
-          sellable: true,
-          marketable: false,
-          sellPrice: 250,
-          marketPrice: 0,
-          desc: "Nadir etkinlik ürünü.",
-        },
-      },
-    ];
+    const rewards = this._buildWheelRewards(premium);
+    const winIndex = Math.floor(Math.random() * rewards.length);
+    const segmentAngle = (Math.PI * 2) / rewards.length;
+    const pointerAngle = -Math.PI / 2;
+    const targetCenter = (winIndex + 0.5) * segmentAngle;
+    const extraSpins = 5 + Math.floor(Math.random() * 3);
+    const targetRotation = (Math.PI * 2 * extraSpins) + (pointerAngle - targetCenter);
 
-    const reward = rewards[Math.floor(Math.random() * rewards.length)];
-
-    if (reward.type === "coins") {
-      this.store.set({
-        coins: Number(s.coins || 0) - cost + Number(reward.amount || 0),
-      });
-    } else if (reward.type === "energy") {
-      const p = { ...(s.player || {}) };
-      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
-      this.store.set({
-        coins: Number(s.coins || 0) - cost,
-        player: p,
-      });
-    } else {
-      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-      const existing = items.find((x) => x.name === reward.item.name);
-      if (existing) existing.qty = Number(existing.qty || 0) + 1;
-      else items.unshift({ ...reward.item });
-
-      this.store.set({
-        coins: Number(s.coins || 0) - cost,
-        inventory: {
-          ...(s.inventory || {}),
-          items,
-        },
-      });
-    }
-
-    this._showToast(reward.text, 1600);
+    this.lootAnim = {
+      kind: "wheel",
+      premium,
+      cost,
+      rewards,
+      winIndex,
+      reward: rewards[winIndex],
+      startAt: Date.now(),
+      duration: premium ? 4200 : 3600,
+      targetRotation,
+      lastPulseAt: 0,
+      resolved: false,
+      finalShownAt: 0,
+    };
+    this._vibrate([25, 30, 30]);
   }
 
-  _buyCrate(kind) {
+  _startCrateRoll(kind) {
     const s = this.store.get();
     const cost = kind === "legendary" ? 140 : 65;
-    const rarity = kind === "legendary" ? "legendary" : "rare";
-    const name = kind === "legendary" ? "Legendary Crate" : "Mystery Crate";
-
     if (Number(s.coins || 0) < cost) {
       this._showToast("Yetersiz yton");
       return;
     }
+    const rewards = this._buildCrateRewards(kind);
+    const winIndex = Math.floor(Math.random() * rewards.length);
+    const repeated = [];
+    for (let r = 0; r < 18; r++) repeated.push(rewards[r % rewards.length]);
+    const landingIndex = 10 + winIndex;
 
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const existing = items.find((x) => x.name === name);
+    this.lootAnim = {
+      kind: "crate",
+      crateKind: kind,
+      cost,
+      rewards: repeated,
+      baseRewards: rewards,
+      winIndex: landingIndex,
+      reward: rewards[winIndex],
+      startAt: Date.now(),
+      duration: kind === "legendary" ? 3600 : 3000,
+      lastPulseAt: 0,
+      resolved: false,
+      finalShownAt: 0,
+    };
+    this._vibrate([20, 20, 20, 20]);
+  }
 
-    if (existing) existing.qty = Number(existing.qty || 0) + 1;
-    else {
-      items.unshift({
-        id: "crate_buy_" + Date.now(),
-        kind: "rare",
-        icon: "📦",
-        name,
-        rarity,
-        qty: 1,
-        usable: false,
-        sellable: true,
-        marketable: true,
-        sellPrice: Math.floor(cost * 0.65),
-        marketPrice: cost + 15,
-        desc: "Sandık ürünü.",
-      });
+  _doFreeSpin() {
+    this._startWheelSpin(false);
+  }
+
+  _doPremiumSpin() {
+    this._startWheelSpin(true);
+  }
+
+  _buyCrate(kind) {
+    this._startCrateRoll(kind);
+  }
+
+  _updateLootAnimation() {
+    if (!this.lootAnim) return;
+    const anim = this.lootAnim;
+    const now = Date.now();
+    const elapsed = now - Number(anim.startAt || now);
+    const progress = clamp(elapsed / Math.max(1, Number(anim.duration || 1)), 0, 1);
+
+    if (progress < 1) {
+      const pulseGap = anim.kind === "wheel" ? 220 : 140;
+      if (now - Number(anim.lastPulseAt || 0) >= pulseGap) {
+        anim.lastPulseAt = now;
+        this._vibrate(anim.kind === "wheel" ? 14 : 10);
+      }
+      return;
     }
 
-    this.store.set({
-      coins: Number(s.coins || 0) - cost,
-      inventory: {
-        ...(s.inventory || {}),
-        items,
-      },
-    });
+    if (!anim.resolved) {
+      anim.resolved = true;
+      anim.finalShownAt = now;
+      this._grantLootReward(anim.reward, { cost: anim.cost, markFreeSpin: anim.kind === "wheel" && !anim.premium });
+      this._vibrate([120, 60, 160]);
+      return;
+    }
 
-    this._showToast(`${name} satın alındı`);
+    if (now - Number(anim.finalShownAt || now) > 1350) {
+      this.lootAnim = null;
+    }
+  }
+
+  _drawWheelLootOverlay(ctx, panelX, panelY, panelW, panelH) {
+    const anim = this.lootAnim;
+    if (!anim) return;
+    const now = Date.now();
+    const progress = easeOutCubic((now - anim.startAt) / anim.duration);
+    const cx = panelX + panelW * 0.5;
+    const cy = panelY + panelH * 0.52;
+    const radius = Math.min(panelW, panelH) * 0.24;
+    const rotation = anim.targetRotation * progress;
+    const segments = anim.rewards;
+    const seg = (Math.PI * 2) / segments.length;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+
+    for (let i = 0; i < segments.length; i++) {
+      const start = -Math.PI / 2 + i * seg;
+      const end = start + seg;
+      const fill = i % 2 === 0 ? "rgba(184,132,38,0.94)" : "rgba(112,76,18,0.94)";
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, radius, start, end);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,231,180,0.38)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      const mid = start + seg * 0.5;
+      ctx.save();
+      ctx.rotate(mid);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff8e8";
+      ctx.font = "900 20px system-ui";
+      ctx.fillText(segments[i].icon || "🎁", radius * 0.66, 0);
+      ctx.font = "800 11px system-ui";
+      ctx.fillText(fitText(ctx, segments[i].label || "Ödül", 76), radius * 0.44, 0);
+      ctx.restore();
+    }
+
+    ctx.fillStyle = "rgba(18,12,6,0.96)";
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = "#ffe8b0";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - radius - 22);
+    ctx.lineTo(cx - 16, cy - radius + 10);
+    ctx.lineTo(cx + 16, cy - radius + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(anim.premium ? "Premium Çark" : "Günlük Çark", cx, panelY + 42);
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(progress < 1 ? "Çark dönüyor..." : `Kazanılan: ${anim.reward?.label || "Ödül"}`, cx, panelY + 64);
+  }
+
+  _drawCrateLootOverlay(ctx, panelX, panelY, panelW, panelH) {
+    const anim = this.lootAnim;
+    if (!anim) return;
+    const now = Date.now();
+    const progress = easeOutCubic((now - anim.startAt) / anim.duration);
+    const stripW = Math.min(panelW - 48, 420);
+    const stripH = 120;
+    const viewX = panelX + (panelW - stripW) / 2;
+    const viewY = panelY + panelH * 0.46 - stripH / 2;
+    const cellW = 108;
+    const gap = 12;
+    const step = cellW + gap;
+    const targetOffset = anim.winIndex * step - (stripW / 2 - cellW / 2);
+    const extraOffset = step * 8;
+    const offset = (targetOffset + extraOffset) * progress;
+
+    ctx.fillStyle = "rgba(6,10,16,0.94)";
+    fillRoundRect(ctx, viewX, viewY, stripW, stripH, 20);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    strokeRoundRect(ctx, viewX, viewY, stripW, stripH, 20);
+
+    ctx.save();
+    roundRectPath(ctx, viewX, viewY, stripW, stripH, 20);
+    ctx.clip();
+
+    for (let i = 0; i < anim.rewards.length; i++) {
+      const item = anim.rewards[i];
+      const cardX = viewX + i * step - offset;
+      const cardY = viewY + 10;
+      if (cardX + cellW < viewX - 10 || cardX > viewX + stripW + 10) continue;
+
+      const g = ctx.createLinearGradient(cardX, cardY, cardX, cardY + stripH - 20);
+      g.addColorStop(0, i === anim.winIndex ? "rgba(166,122,38,0.96)" : "rgba(54,38,14,0.92)");
+      g.addColorStop(1, i === anim.winIndex ? "rgba(104,72,18,0.96)" : "rgba(28,20,8,0.94)");
+      ctx.fillStyle = g;
+      fillRoundRect(ctx, cardX, cardY, cellW, stripH - 20, 16);
+      ctx.strokeStyle = i === anim.winIndex ? "rgba(255,230,170,0.46)" : "rgba(255,255,255,0.12)";
+      strokeRoundRect(ctx, cardX, cardY, cellW, stripH - 20, 16);
+
+      ctx.fillStyle = "#fff8ea";
+      ctx.font = "900 28px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(item.icon || "🎁", cardX + cellW / 2, cardY + 32);
+      ctx.font = "800 11px system-ui";
+      ctx.fillText(fitText(ctx, item.label || "Ödül", cellW - 16), cardX + cellW / 2, cardY + 66);
+    }
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255,214,120,0.92)";
+    fillRoundRect(ctx, viewX + stripW / 2 - 4, viewY - 8, 8, stripH + 16, 4);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(anim.crateKind === "legendary" ? "Legendary Crate" : "Mystery Crate", panelX + panelW / 2, panelY + 42);
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
+    ctx.font = "12px system-ui";
+    ctx.fillText(progress < 1 ? "Sandık akışı dönüyor..." : `Kazanılan: ${anim.reward?.label || "Ödül"}`, panelX + panelW / 2, panelY + 64);
+  }
+
+  _drawLootOverlay(ctx, panelX, panelY, panelW, panelH) {
+    if (!this.lootAnim) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.56)";
+    fillRoundRect(ctx, panelX + 12, panelY + 12, panelW - 24, panelH - 24, 24);
+    ctx.restore();
+    if (this.lootAnim.kind === "wheel") this._drawWheelLootOverlay(ctx, panelX, panelY, panelW, panelH);
+    else this._drawCrateLootOverlay(ctx, panelX, panelY, panelW, panelH);
   }
 
   _useInventoryItem(itemId) {
@@ -1338,6 +1533,14 @@ export class TradeScene {
   }
 
   update() {
+    this._updateLootAnimation();
+
+    if (this.lootAnim) {
+      this.dragging = false;
+      this.clickCandidate = false;
+      return;
+    }
+
     const pointer = getPointer(this.input);
     const px = Number(pointer?.x || 0);
     const py = Number(pointer?.y || 0);
@@ -1470,10 +1673,10 @@ _drawButton(ctx, rect, text, style = "ghost") {
   strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
 
   ctx.fillStyle = txt;
-  ctx.font = "800 12px system-ui";
+  ctx.font = rect.w < 84 ? "800 11px system-ui" : "800 12px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+  ctx.fillText(fitText(ctx, text, rect.w - 12), rect.x + rect.w / 2, rect.y + rect.h / 2);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
@@ -1522,10 +1725,12 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.lineWidth = 1;
     strokeRoundRect(ctx, x, y, w, h, 24);
 
+    const iconBox = { x: x + w - 96, y: y + 16, w: 66, h: 66 };
+
     ctx.save();
     ctx.globalAlpha = 0.14;
     ctx.fillStyle = glow;
-    fillRoundRect(ctx, x + w - 96, y + 16, 66, 66, 22);
+    fillRoundRect(ctx, iconBox.x, iconBox.y, iconBox.w, iconBox.h, 22);
     ctx.restore();
 
     ctx.fillStyle = "rgba(255,210,120,0.13)";
@@ -1537,23 +1742,28 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.font = "800 10px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(badge || "GÜNÜN VİTRİNİ", x + 68, y + 26);
+    ctx.fillText(fitText(ctx, badge || "GÜNÜN VİTRİNİ", 90), x + 68, y + 26);
 
+    const textMaxW = Math.max(90, iconBox.x - (x + 16) - 14);
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = "900 16px system-ui";
-    ctx.fillText(title, x + 16, y + 58);
+    ctx.fillText(fitText(ctx, title, textMaxW), x + 16, y + 58);
 
     ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = "12px system-ui";
-    ctx.fillText(desc, x + 16, y + 81);
+    const lines = wrapTextToLines(ctx, desc, textMaxW, 2);
+    const baseY = y + 80;
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], x + 16, baseY + i * 16);
+    }
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 30px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(icon || "📦", x + w - 63, y + h / 2);
+    ctx.fillText(icon || "📦", iconBox.x + iconBox.w / 2, iconBox.y + iconBox.h / 2 + 1);
   }
 
   _drawMiniCard(ctx, x, y, w, h, title, text, icon, accent = "#ffcc66") {
@@ -1566,25 +1776,37 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.strokeStyle = "rgba(255,255,255,0.09)";
     strokeRoundRect(ctx, x, y, w, h, 20);
 
+    const iconBox = { x: x + w - 54, y: y + 14, w: 38, h: 38 };
     ctx.save();
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = accent;
-    fillRoundRect(ctx, x + w - 56, y + 14, 40, 40, 14);
+    fillRoundRect(ctx, iconBox.x, iconBox.y, iconBox.w, iconBox.h, 14);
     ctx.restore();
 
+    const textMaxW = Math.max(72, iconBox.x - (x + 14) - 10);
     ctx.fillStyle = "#fff";
-    ctx.font = "900 14px system-ui";
+    ctx.font = "900 12px system-ui";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(title, x + 14, y + 24);
+    const titleLines = wrapTextToLines(ctx, title, textMaxW, 2);
+    ctx.fillText(titleLines[0] || "", x + 14, y + 22);
+    if (titleLines[1]) ctx.fillText(titleLines[1], x + 14, y + 38);
 
     ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(text, x + 14, y + 48);
+    ctx.font = "11px system-ui";
+    const descLines = wrapTextToLines(ctx, text, textMaxW, 2);
+    const descTop = titleLines[1] ? y + 58 : y + 48;
+    if (descLines[0]) ctx.fillText(descLines[0], x + 14, descTop);
+    if (descLines[1]) ctx.fillText(descLines[1], x + 14, descTop + 14);
 
     ctx.fillStyle = "#fff";
-    ctx.font = "900 24px system-ui";
-    ctx.fillText(icon, x + w - 42, y + 38);
+    ctx.font = "900 22px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(icon, iconBox.x + iconBox.w / 2, iconBox.y + iconBox.h / 2 + 1);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
   }
 
   _drawSectionTitle(ctx, x, y, title, sub) {
@@ -1698,7 +1920,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     this.hitButtons.push({ rect: rect3, action: "go_tab", value: "loot" });
     this.hitButtons.push({ rect: rect4, action: "free_spin" });
 
-    this._drawMiniCard(ctx, rect3.x, rect3.y, rect3.w, rect3.h, "Sandık Fırsatları", "Mystery Crate • Premium sandıklar", "📦", "#c77dff");
+    this._drawMiniCard(ctx, rect3.x, rect3.y, rect3.w, rect3.h, "Sandık Fırsatları", "Mystery Crate • Premium sandıklar", "📦", "#ffcc66");
     this._drawMiniCard(
       ctx,
       rect4.x,
@@ -1708,7 +1930,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       "Günlük Çark",
       this._isFreeSpinReady() ? "Hazır • şimdi çevir" : "Bugün kullanıldı",
       this._isFreeSpinReady() ? "🎰" : "⏳",
-      this._isFreeSpinReady() ? "#46d799" : "#94a3b8"
+      "#ffcc66"
     );
 
     y += 126;
@@ -1969,22 +2191,22 @@ _drawButton(ctx, rect, text, style = "ghost") {
       x,
       y,
       w,
-      124,
+      132,
       "Sandık & Çark",
-      this._isFreeSpinReady() ? "Günlük ücretsiz çark hazır" : "Premium loot sistemi aktif",
-      "PREMIUM LOOT",
+      this._isFreeSpinReady() ? "Günlük çark hazır • dokun ve çevir" : "Premium çark ve sandık açılışları aktif",
+      "LOOT MODE",
       "🎰",
-      "#c77dff"
+      "#ffcc66"
     );
 
-    const freeRect = { x: x + 14, y: y + 76, w: 116, h: 34 };
-    const premiumRect = { x: x + 138, y: y + 76, w: 122, h: 34 };
+    const freeRect = { x: x + 14, y: y + 82, w: 124, h: 34 };
+    const premiumRect = { x: x + 146, y: y + 82, w: 124, h: 34 };
     this.hitButtons.push({ rect: freeRect, action: "free_spin" });
     this.hitButtons.push({ rect: premiumRect, action: "premium_spin" });
-    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Ücretsiz Çevir" : "Yarın Açılır", this._isFreeSpinReady() ? "primary" : "muted");
+    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Ücretsiz Çevir" : "Yarın Hazır", this._isFreeSpinReady() ? "primary" : "muted");
     this._drawButton(ctx, premiumRect, "Premium Çark", "gold");
 
-    y += 136;
+    y += 146;
 
     const gap = 10;
     const colW = Math.floor((w - gap) / 2);
@@ -1994,26 +2216,27 @@ _drawButton(ctx, rect, text, style = "ghost") {
     this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
     this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
 
-    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • satın al / sat", "📦", "#ffcc66");
-    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Legendary Crate", "140 yton • premium ödül", "👑", "#ffcc66");
+    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • animasyonlu açılış", "📦", "#ffcc66");
+    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Legendary Crate", "140 yton • yüksek ödül havuzu", "👑", "#ffcc66");
 
     y += 124;
 
     ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, x, y, w, 96, 18);
+    fillRoundRect(ctx, x, y, w, 116, 18);
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, x, y, w, 96, 18);
+    strokeRoundRect(ctx, x, y, w, 116, 18);
 
     ctx.fillStyle = "#fff";
     ctx.font = "900 14px system-ui";
-    ctx.fillText("Ödül Havuzu", x + 14, y + 24);
+    ctx.fillText("Animasyon Bilgisi", x + 14, y + 24);
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    ctx.fillText("💰 YTON   ⚡ Enerji   📦 Mystery Crate   👑 Golden Pass", x + 14, y + 54);
-    ctx.fillText("Sonraki aşamada burada animasyonlu loot ekranı olacak.", x + 14, y + 74);
+    ctx.fillText("• Çark gerçek teker gibi döner ve ödülde durur", x + 14, y + 52);
+    ctx.fillText("• Sandık tek sıra akış ile kayar ve ödülde kilitlenir", x + 14, y + 70);
+    ctx.fillText("• Mobil cihazlarda titreşim desteği otomatik denenir", x + 14, y + 88);
 
-    y += 108;
+    y += 128;
     return y;
   }
 
@@ -2364,6 +2587,10 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
       sg.addColorStop(1, "rgba(255,132,58,0.78)");
       ctx.fillStyle = sg;
       fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
+    }
+
+    if (this.lootAnim) {
+      this._drawLootOverlay(ctx, panelX, panelY, panelW, panelH);
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
