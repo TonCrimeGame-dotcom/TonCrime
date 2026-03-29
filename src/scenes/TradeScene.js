@@ -1,37 +1,5 @@
 import { supabase } from "../supabase.js";
 
-const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
-function safeGetLocalStorage(key) {
-  try { return localStorage.getItem(key) || ""; } catch { return ""; }
-}
-function safeSetLocalStorage(key, value) {
-  try { localStorage.setItem(key, value); } catch {}
-}
-function randomProfilePart() {
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID().replaceAll("-", "");
-    }
-  } catch {}
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
-}
-function getTelegramWebAppUser() {
-  try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
-}
-function getRuntimeProfileKey(store = null) {
-  const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
-  if (fromStore) return fromStore;
-  const tgUser = getTelegramWebAppUser();
-  const tgId = String(tgUser?.id || "").trim();
-  if (tgId) return tgId;
-  let guestKey = safeGetLocalStorage(PROFILE_KEY_STORAGE).trim();
-  if (!guestKey) {
-    guestKey = `guest_${randomProfilePart()}`;
-    safeSetLocalStorage(PROFILE_KEY_STORAGE, guestKey);
-  }
-  return guestKey;
-}
-
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
@@ -65,66 +33,18 @@ function fmtNum(n) {
   return Number(n || 0).toLocaleString("tr-TR");
 }
 
-function getWalletYton(state = {}) {
-  return Number(state?.wallet?.yton || 0);
-}
-
-function patchWalletYton(state = {}, nextYton = 0) {
-  return {
-    wallet: {
-      ...(state.wallet || {}),
-      yton: Number(nextYton || 0),
-    },
-    coins: Number(nextYton || 0),
-  };
-}
-
-function fitText(ctx, text, maxWidth) {
-  const src = String(text || "");
-  if (!src || maxWidth <= 8) return "";
-  if (ctx.measureText(src).width <= maxWidth) return src;
-  let out = src;
-  while (out.length > 1 && ctx.measureText(out + "…").width > maxWidth) {
-    out = out.slice(0, -1);
-  }
-  return out ? out + "…" : "";
-}
-
-function wrapTextToLines(ctx, text, maxWidth, maxLines = 2) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-  const lines = [];
-  let line = "";
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (!line || ctx.measureText(test).width <= maxWidth) {
-      line = test;
-      continue;
-    }
-    lines.push(line);
-    line = word;
-    if (lines.length >= maxLines - 1) break;
-  }
-  if (line && lines.length < maxLines) lines.push(line);
-  if (words.join(" ") !== lines.join(" ") && lines.length) {
-    lines[lines.length - 1] = fitText(ctx, lines[lines.length - 1], maxWidth);
-  }
-  return lines.slice(0, maxLines);
-}
-
-function easeOutCubic(t) {
-  const x = clamp(Number(t || 0), 0, 1);
-  return 1 - Math.pow(1 - x, 3);
-}
-
 function rarityColor(r) {
   switch (String(r || "").toLowerCase()) {
+    case "common":
+      return "#9ca3af";
+    case "rare":
+      return "#58a6ff";
+    case "epic":
+      return "#c77dff";
     case "legendary":
       return "#ffcc66";
-    case "epic":
-      return "#ffd789";
     default:
-      return "rgba(255,255,255,0.68)";
+      return "#9ca3af";
   }
 }
 
@@ -195,48 +115,6 @@ function isDown(input) {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
-const BUSINESS_PRODUCTION_TOTAL = 50;
-
-function pad2(n) {
-  return String(Math.max(0, Number(n || 0))).padStart(2, "0");
-}
-
-function fmtClock(ts) {
-  const d = new Date(Number(ts || 0));
-  if (Number.isNaN(d.getTime())) return "--:--";
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-function fmtDuration(ms) {
-  const safe = Math.max(0, Number(ms || 0));
-  const totalMin = Math.ceil(safe / 60000);
-  const hours = Math.floor(totalMin / 60);
-  const mins = totalMin % 60;
-  if (hours > 0) return `${hours}sa ${mins}dk`;
-  return `${Math.max(1, mins)}dk`;
-}
-
-function hashSeed(str) {
-  let h = 2166136261 >>> 0;
-  const src = String(str || "seed");
-  for (let i = 0; i < src.length; i++) {
-    h ^= src.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function makeSeededRandom(seed) {
-  let a = hashSeed(seed) || 1;
-  return function rand() {
-    a |= 0;
-    a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function todayKey() {
   const d = new Date();
@@ -262,6 +140,31 @@ function getImgSafe(assets, key) {
     return null;
   }
 }
+
+function textFit(ctx, text, x, y, maxWidth) {
+  const value = String(text || "");
+  if (!maxWidth || ctx.measureText(value).width <= maxWidth) {
+    ctx.fillText(value, x, y);
+    return;
+  }
+  let out = value;
+  while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) out = out.slice(0, -1);
+  ctx.fillText(`${out}…`, x, y);
+}
+
+function drawCoverImage(ctx, img, x, y, w, h) {
+  if (!img || !img.complete || !(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) return false;
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) * 0.5;
+  const dy = y + (h - dh) * 0.5;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
+}
+
 export class TradeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -285,15 +188,7 @@ export class TradeScene {
 
     this.toastText = "";
     this.toastUntil = 0;
-
-    this.blackmarketBgImg = new Image();
-    this.blackmarketBgImg.src = "./src/assets/blackmarket_bg.png";
-    this.blackmarketBgImg.onerror = () => {
-      try { this.blackmarketBgImg.src = "./src/assets/BlackMarket.png"; } catch (_) {}
-    };
-
-    this.productionNotifyTimers = new Map();
-    this.lootAnim = null;
+    this.runtimeImages = new Map();
   }
 
   onEnter() {
@@ -305,7 +200,6 @@ export class TradeScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
-    this.lootAnim = null;
 
     this.store.set({
       trade: {
@@ -319,11 +213,16 @@ export class TradeScene {
         view: trade.view || "main",
         lastFreeSpinDay: trade.lastFreeSpinDay || "",
         searchQuery: trade.searchQuery || "",
+        lootWheel: trade.lootWheel || {
+          mode: "free",
+          selectedIndex: 0,
+          rotation: 0,
+          reward: null,
+          updatedAt: 0,
+        },
+        crateReveal: trade.crateReveal || null,
       },
     });
-
-    this._refreshBusinessProduction();
-    this._syncProductionNotifyTimers();
   }
 
   _trade() {
@@ -352,6 +251,551 @@ export class TradeScene {
       w: safe.w - 20,
       h: safe.h - topReserved - bottomReserved - 10,
     };
+  }
+
+
+  _runtimeImage(src) {
+    const key = String(src || "").trim();
+    if (!key) return null;
+    if (!this.runtimeImages.has(key)) {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = key;
+      this.runtimeImages.set(key, img);
+    }
+    const img = this.runtimeImages.get(key);
+    if (!img || img._failed) return null;
+    return img;
+  }
+
+  _businessArt(type) {
+    switch (String(type || "").toLowerCase()) {
+      case "nightclub":
+        return { imageKey: "nightclub", imageSrc: "./src/assets/nightclub.jpg" };
+      case "coffeeshop":
+        return { imageKey: "coffeeshop", imageSrc: "./src/assets/coffeeshop.jpg" };
+      case "brothel":
+        return { imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg" };
+      case "blackmarket":
+        return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
+      default:
+        return null;
+    }
+  }
+
+  _itemArt(input = {}, fallbackType = "") {
+    if (!input) return this._businessArt(fallbackType);
+    const imageKey = input.imageKey || input.artKey || input.key || "";
+    const imageSrc = input.imageSrc || input.artSrc || input.src || "";
+    if (imageKey || imageSrc) return { imageKey, imageSrc };
+
+    const typeArt = this._businessArt(input.type || fallbackType);
+    if (typeArt && !input.itemName && !input.name) return typeArt;
+
+    const raw = `${input.itemName || ""} ${input.name || ""} ${input.label || ""}`.toLowerCase();
+    if (/(whiskey|champagne|drink|night whiskey|black whiskey|club champagne)/.test(raw)) {
+      return { imageSrc: "./src/assets/drink.png" };
+    }
+    if (/(white widow|og kush|moon rocks|weed|kush)/.test(raw)) {
+      return { imageSrc: "./src/assets/weed.png" };
+    }
+    if (/(vip companion|deluxe service|vip girl|companion|service)/.test(raw)) {
+      return { imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg" };
+    }
+    if (/(golden pass|vip pass|pass)/.test(raw)) {
+      return { imageSrc: "./src/assets/bonus.png" };
+    }
+    if (/(crate|sandık)/.test(raw)) {
+      return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
+    }
+    return typeArt;
+  }
+
+  _resolveArtImage(art, fallbackType = "") {
+    const spec = this._itemArt(art, fallbackType);
+    if (!spec) return null;
+    const assetImg = spec.imageKey ? getImgSafe(this.assets, spec.imageKey) : null;
+    if (assetImg) return assetImg;
+    return spec.imageSrc ? this._runtimeImage(spec.imageSrc) : null;
+  }
+
+  _drawArtThumb(ctx, x, y, w, h, art, fallbackLabel = "", fallbackType = "") {
+    const img = this._resolveArtImage(art, fallbackType);
+    const r = Math.max(10, Math.min(18, Math.floor(Math.min(w, h) * 0.22)));
+
+    ctx.save();
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.clip();
+
+    const bg = ctx.createLinearGradient(x, y, x, y + h);
+    bg.addColorStop(0, "rgba(255,190,90,0.22)");
+    bg.addColorStop(1, "rgba(22,12,8,0.54)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y, w, h);
+
+    if (!drawCoverImage(ctx, img, x, y, w, h)) {
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#fff4d6";
+      ctx.font = `800 ${Math.max(12, Math.floor(h * 0.24))}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const label = String(fallbackLabel || art?.itemName || art?.name || art?.label || "TC").trim();
+      const short = label.length <= 9 ? label : label.slice(0, 8);
+      ctx.fillText(short, x + w / 2, y + h / 2);
+    }
+
+    ctx.restore();
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, x, y, w, h, r);
+  }
+
+  _rewardRotation(index, total) {
+    const slice = (Math.PI * 2) / Math.max(1, total);
+    return -Math.PI / 2 - ((index + 0.5) * slice);
+  }
+
+  _freeSpinRewards() {
+    return [
+      {
+        id: "free_yton_25",
+        type: "coins",
+        amount: 25,
+        text: "+25 yton",
+        label: "+25 YTON",
+        accent: "#ffca5c",
+      },
+      {
+        id: "free_yton_60",
+        type: "coins",
+        amount: 60,
+        text: "+60 yton",
+        label: "+60 YTON",
+        accent: "#ffb04b",
+      },
+      {
+        id: "free_energy_15",
+        type: "energy",
+        amount: 15,
+        text: "+15 enerji",
+        label: "+15 ENERJİ",
+        accent: "#60d0ff",
+      },
+      {
+        id: "free_whiskey",
+        type: "item",
+        text: "Black Whiskey kazandın",
+        label: "BLACK WHISKEY",
+        accent: "#f2a657",
+        imageSrc: "./src/assets/drink.png",
+        item: {
+          id: "spin_whiskey_" + Date.now(),
+          kind: "consumable",
+          icon: "🥃",
+          imageSrc: "./src/assets/drink.png",
+          name: "Black Whiskey",
+          rarity: "common",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 8,
+          sellPrice: 20,
+          marketPrice: 28,
+          desc: "Gece kulübü içeceği.",
+        },
+      },
+      {
+        id: "free_weed",
+        type: "item",
+        text: "White Widow kazandın",
+        label: "WHITE WIDOW",
+        accent: "#4ade80",
+        imageSrc: "./src/assets/weed.png",
+        item: {
+          id: "spin_weed_" + Date.now(),
+          kind: "goods",
+          icon: "🌿",
+          imageSrc: "./src/assets/weed.png",
+          name: "White Widow",
+          rarity: "rare",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 12,
+          sellPrice: 22,
+          marketPrice: 36,
+          desc: "Coffeeshop ürünü.",
+        },
+      },
+      {
+        id: "free_crate",
+        type: "item",
+        text: "Mystery Crate kazandın",
+        label: "MYSTERY CRATE",
+        accent: "#c77dff",
+        imageKey: "blackmarket",
+        item: {
+          id: "crate_" + Date.now(),
+          kind: "rare",
+          icon: "📦",
+          imageKey: "blackmarket",
+          imageSrc: "./src/assets/BlackMarket.png",
+          name: "Mystery Crate",
+          rarity: "rare",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: true,
+          sellPrice: 45,
+          marketPrice: 60,
+          desc: "Sandık ödülü.",
+        },
+      },
+    ];
+  }
+
+  _premiumSpinRewards() {
+    return [
+      {
+        id: "premium_yton_180",
+        type: "coins",
+        amount: 180,
+        text: "+180 yton",
+        label: "+180 YTON",
+        accent: "#ffca5c",
+      },
+      {
+        id: "premium_energy_30",
+        type: "energy",
+        amount: 30,
+        text: "+30 enerji",
+        label: "+30 ENERJİ",
+        accent: "#60d0ff",
+      },
+      {
+        id: "premium_gold_pass",
+        type: "item",
+        text: "Golden Pass kazandın",
+        label: "GOLDEN PASS",
+        accent: "#ffd45b",
+        imageSrc: "./src/assets/bonus.png",
+        item: {
+          id: "gold_pass_" + Date.now(),
+          kind: "rare",
+          icon: "👑",
+          imageSrc: "./src/assets/bonus.png",
+          name: "Golden Pass",
+          rarity: "legendary",
+          qty: 1,
+          usable: false,
+          sellable: true,
+          marketable: false,
+          sellPrice: 250,
+          marketPrice: 0,
+          desc: "Nadir etkinlik ürünü.",
+        },
+      },
+      {
+        id: "premium_service",
+        type: "item",
+        text: "Deluxe Service kazandın",
+        label: "DELUXE SERVICE",
+        accent: "#ff8aa8",
+        imageKey: "xxx",
+        item: {
+          id: "premium_service_" + Date.now(),
+          kind: "girls",
+          icon: "🌹",
+          imageKey: "xxx",
+          imageSrc: "./src/assets/xxx.jpg",
+          name: "Deluxe Service",
+          rarity: "legendary",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 24,
+          sellPrice: 110,
+          marketPrice: 160,
+          desc: "En üst seviye brothel ürünü.",
+        },
+      },
+      {
+        id: "premium_champagne",
+        type: "item",
+        text: "Premium Champagne kazandın",
+        label: "PREMIUM CHAMPAGNE",
+        accent: "#f2a657",
+        imageSrc: "./src/assets/drink.png",
+        item: {
+          id: "premium_champ_" + Date.now(),
+          kind: "consumable",
+          icon: "🍾",
+          imageSrc: "./src/assets/drink.png",
+          name: "Premium Champagne",
+          rarity: "rare",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 14,
+          sellPrice: 34,
+          marketPrice: 44,
+          desc: "Premium kulüp içkisi.",
+        },
+      },
+      {
+        id: "premium_vip",
+        type: "item",
+        text: "VIP Companion kazandın",
+        label: "VIP COMPANION",
+        accent: "#ff8aa8",
+        imageKey: "xxx",
+        item: {
+          id: "premium_vip_" + Date.now(),
+          kind: "girls",
+          icon: "💋",
+          imageKey: "xxx",
+          imageSrc: "./src/assets/xxx.jpg",
+          name: "VIP Companion",
+          rarity: "epic",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 22,
+          sellPrice: 70,
+          marketPrice: 95,
+          desc: "Yüksek enerji itemi.",
+        },
+      },
+    ];
+  }
+
+  _crateRewards(kind) {
+    if (kind === "legendary") {
+      return [
+        { id: "crate_l_yton", type: "coins", amount: 120, text: "+120 yton", label: "+120 YTON", accent: "#ffca5c" },
+        { id: "crate_l_energy", type: "energy", amount: 26, text: "+26 enerji", label: "+26 ENERJİ", accent: "#60d0ff" },
+        { id: "crate_l_goldpass", type: "item", text: "Golden Pass çıktı", label: "GOLDEN PASS", accent: "#ffd45b", imageSrc: "./src/assets/bonus.png", item: { id: "crate_goldpass_" + Date.now(), kind: "rare", icon: "👑", imageSrc: "./src/assets/bonus.png", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik ürünü." } },
+        { id: "crate_l_service", type: "item", text: "Deluxe Service çıktı", label: "DELUXE SERVICE", accent: "#ff8aa8", imageKey: "xxx", item: { id: "crate_service_" + Date.now(), kind: "girls", icon: "🌹", imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg", name: "Deluxe Service", rarity: "legendary", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 30, sellPrice: 120, marketPrice: 160, desc: "En üst seviye ürün." } },
+        { id: "crate_l_champ", type: "item", text: "Premium Champagne çıktı", label: "PREMIUM CHAMPAGNE", accent: "#f2a657", imageSrc: "./src/assets/drink.png", item: { id: "crate_champ_" + Date.now(), kind: "consumable", icon: "🍾", imageSrc: "./src/assets/drink.png", name: "Premium Champagne", rarity: "rare", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 14, sellPrice: 34, marketPrice: 44, desc: "Daha iyi enerji verir." } },
+      ];
+    }
+    return [
+      { id: "crate_m_yton", type: "coins", amount: 80, text: "+80 yton", label: "+80 YTON", accent: "#ffca5c" },
+      { id: "crate_m_energy", type: "energy", amount: 18, text: "+18 enerji", label: "+18 ENERJİ", accent: "#60d0ff" },
+      { id: "crate_m_whiskey", type: "item", text: "Black Whiskey çıktı", label: "BLACK WHISKEY", accent: "#f2a657", imageSrc: "./src/assets/drink.png", item: { id: "crate_whiskey_" + Date.now(), kind: "consumable", icon: "🥃", imageSrc: "./src/assets/drink.png", name: "Black Whiskey", rarity: "common", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 8, sellPrice: 18, marketPrice: 27, desc: "Hızlı enerji ürünü." } },
+      { id: "crate_m_weed", type: "item", text: "White Widow çıktı", label: "WHITE WIDOW", accent: "#4ade80", imageSrc: "./src/assets/weed.png", item: { id: "crate_weed_" + Date.now(), kind: "goods", icon: "🍁", imageSrc: "./src/assets/weed.png", name: "White Widow", rarity: "rare", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 12, sellPrice: 22, marketPrice: 36, desc: "Enerji için kullanılabilir." } },
+      { id: "crate_m_vip", type: "item", text: "VIP Companion çıktı", label: "VIP COMPANION", accent: "#ff8aa8", imageKey: "xxx", item: { id: "crate_vip_" + Date.now(), kind: "girls", icon: "💋", imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg", name: "VIP Companion", rarity: "epic", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 22, sellPrice: 65, marketPrice: 95, desc: "Yüksek enerji itemi." } },
+    ];
+  }
+
+  _grantReward(reward, opts = {}) {
+    const s = this.store.get();
+    const cost = Math.max(0, Number(opts.cost || 0));
+    const nextPatch = { coins: Math.max(0, Number(s.coins || 0) - cost) };
+
+    if (reward.type === "coins") {
+      nextPatch.coins = Math.max(0, nextPatch.coins + Number(reward.amount || 0));
+    } else if (reward.type === "energy") {
+      const p = { ...(s.player || {}) };
+      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
+      nextPatch.player = p;
+    } else if (reward.type === "item" && reward.item) {
+      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+      const itemDef = { ...reward.item };
+      const existing = items.find((x) => String(x.name || "").toLowerCase() === String(itemDef.name || "").toLowerCase());
+      if (existing) existing.qty = Number(existing.qty || 0) + Number(itemDef.qty || 1);
+      else items.unshift(itemDef);
+      nextPatch.inventory = {
+        ...(s.inventory || {}),
+        items,
+      };
+    }
+
+    if (opts.markFreeSpin) {
+      nextPatch.trade = {
+        ...(s.trade || {}),
+        lastFreeSpinDay: todayKey(),
+      };
+    }
+
+    this.store.set(nextPatch);
+  }
+
+  _setWheelResult(mode, pool, selectedIndex, reward) {
+    const rotation = this._rewardRotation(selectedIndex, pool.length);
+    this._setTrade({
+      lootWheel: {
+        mode,
+        selectedIndex,
+        rotation,
+        reward: {
+          ...reward,
+          item: reward.item ? { ...reward.item } : null,
+        },
+        updatedAt: Date.now(),
+      },
+    });
+  }
+
+  _setCrateReveal(kind, pool, selectedIndex, reward) {
+    this._setTrade({
+      crateReveal: {
+        kind,
+        pool: pool.map((entry) => ({
+          ...entry,
+          item: entry.item ? { ...entry.item } : null,
+        })),
+        selectedIndex,
+        reward: reward ? { ...reward, item: reward.item ? { ...reward.item } : null } : null,
+        updatedAt: Date.now(),
+      },
+    });
+  }
+
+  _drawRewardCard(ctx, x, y, w, h, reward, highlight = false) {
+    const accent = reward?.accent || "#f3b35b";
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, highlight ? "rgba(255,201,110,0.28)" : "rgba(10,14,20,0.42)");
+    grad.addColorStop(1, highlight ? "rgba(98,52,10,0.34)" : "rgba(6,10,16,0.52)");
+    ctx.fillStyle = grad;
+    fillRoundRect(ctx, x, y, w, h, 20);
+    ctx.strokeStyle = highlight ? "rgba(255,216,134,0.78)" : "rgba(255,255,255,0.10)";
+    ctx.lineWidth = highlight ? 1.4 : 1;
+    strokeRoundRect(ctx, x, y, w, h, 20);
+
+    this._drawArtThumb(ctx, x + 12, y + 12, 56, 56, reward?.item || reward, reward?.label || reward?.text || "ÖDÜL");
+
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "900 14px system-ui";
+    textFit(ctx, reward?.label || reward?.text || "Ödül", x + 78, y + 28, w - 90);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "12px system-ui";
+    textFit(ctx, reward?.text || "", x + 78, y + 48, w - 90);
+
+    if (highlight) {
+      ctx.fillStyle = accent;
+      fillRoundRect(ctx, x + w - 64, y + 12, 46, 22, 11);
+      ctx.fillStyle = "#251506";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "900 10px system-ui";
+      ctx.fillText("KAZANILDI", x + w - 41, y + 23);
+    }
+  }
+
+  _drawWheel(ctx, x, y, w, trade) {
+    const wheelState = trade.lootWheel || {};
+    const mode = wheelState.mode === "premium" ? "premium" : "free";
+    const pool = mode === "premium" ? this._premiumSpinRewards() : this._freeSpinRewards();
+    const selectedIndex = Number.isFinite(Number(wheelState.selectedIndex)) ? Number(wheelState.selectedIndex) : 0;
+    const rotation = Number.isFinite(Number(wheelState.rotation)) ? Number(wheelState.rotation) : this._rewardRotation(selectedIndex, pool.length);
+
+    const boxH = 324;
+    this.drawCard(ctx, x, y, w, boxH);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 16px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(mode === "premium" ? "Premium Çark" : "Günlük Çark", x + 16, y + 28);
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = "12px system-ui";
+    ctx.fillText("Okun gösterdiği dilim ile verilen ödül birebir aynıdır.", x + 16, y + 48);
+
+    const cx = x + w / 2;
+    const cy = y + 140;
+    const radius = Math.min(98, Math.floor(Math.min(w * 0.32, 98)));
+    const slice = (Math.PI * 2) / pool.length;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    for (let i = 0; i < pool.length; i += 1) {
+      const start = rotation + i * slice;
+      const end = start + slice;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, radius, start, end);
+      ctx.closePath();
+      ctx.fillStyle = i % 2 === 0 ? "rgba(193,136,44,0.95)" : "rgba(129,87,24,0.95)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,240,208,0.52)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      if (i === selectedIndex) {
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = "#fff2cf";
+        ctx.fill();
+        ctx.restore();
+      }
+
+      const mid = start + slice / 2;
+      ctx.save();
+      ctx.rotate(mid);
+      const reward = pool[i];
+      this._drawArtThumb(ctx, radius * 0.40, -18, 34, 34, reward.item || reward, reward.label || reward.text || "ÖDÜL");
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 10px system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const label = String(reward.label || reward.text || "").replace(/\+/g, "").slice(0, 12);
+      ctx.fillText(label, radius * 0.58, 28);
+      ctx.restore();
+    }
+
+    ctx.fillStyle = "rgba(20,12,6,0.92)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = "#f8df9d";
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 74);
+    ctx.lineTo(cx - 14, y + 48);
+    ctx.lineTo(cx + 14, y + 48);
+    ctx.closePath();
+    ctx.fill();
+
+    const reward = wheelState.reward || pool[selectedIndex] || pool[0];
+    this._drawRewardCard(ctx, x + 14, y + 212, w - 28, 84, reward, true);
+    return boxH;
+  }
+
+  _drawCrateReveal(ctx, x, y, w, reveal) {
+    if (!reveal?.pool?.length) return 0;
+    const cards = reveal.pool.slice(0, 3);
+    const selectedIndex = Math.max(0, Math.min(cards.length - 1, Number(reveal.selectedIndex || 0)));
+    const cardGap = 10;
+    const cardW = Math.floor((w - cardGap * 2) / 3);
+
+    this.drawCard(ctx, x, y, w, 166);
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 16px system-ui";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(reveal.kind === "legendary" ? "Legendary Sandık Açıldı" : "Mystery Sandık Açıldı", x + 16, y + 28);
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.font = "12px system-ui";
+    ctx.fillText("Parlayan kart verilen ödüldür.", x + 16, y + 48);
+
+    for (let i = 0; i < cards.length; i += 1) {
+      const rx = x + 14 + i * (cardW + cardGap);
+      const reward = cards[i];
+      this._drawRewardCard(ctx, rx, y + 58, cardW, 94, reward, i === selectedIndex);
+    }
+    return 166;
   }
 
   _showToast(text, ms = 1400) {
@@ -440,7 +884,12 @@ export class TradeScene {
     return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
   }
   _getTelegramId() {
-    return String(getRuntimeProfileKey(this.store) || "").trim();
+    const s = this.store.get();
+    return String(
+      s?.player?.telegramId ||
+      window.Telegram?.WebApp?.initDataUnsafe?.user?.id ||
+      ""
+    ).trim();
   }
 
   async _getProfileId() {
@@ -474,10 +923,13 @@ export class TradeScene {
   }
 
   _mapBusinessRowToUi(row, playerName) {
+    const art = this._businessArt(row.business_type);
     return {
       id: String(row.id),
       type: row.business_type,
       icon: iconForType(row.business_type),
+      imageKey: art?.imageKey || "",
+      imageSrc: art?.imageSrc || "",
       name: row.name || typeLabel(row.business_type),
       ownerId: String(row.owner_id || ""),
       ownerName: String(playerName || "Player"),
@@ -504,6 +956,10 @@ export class TradeScene {
     const shop = {
       id: playerShopId,
       businessId: "player_market",
+      type: "blackmarket",
+      icon: "🕶️",
+      imageKey: "blackmarket",
+      imageSrc: "./src/assets/BlackMarket.png",
       name: `${playerName} Market`,
       ownerId: "player_main",
       ownerName: playerName,
@@ -525,370 +981,55 @@ export class TradeScene {
     return shop;
   }
 
-  _vibrate(pattern) {
-    try {
-      if (navigator?.vibrate) navigator.vibrate(pattern);
-    } catch (_) {}
-  }
-
-  _makeLootItem(kind, name, icon, rarity, extras = {}) {
-    return {
-      id: `${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      kind,
-      icon,
-      name,
-      rarity,
-      qty: 1,
-      usable: false,
-      sellable: true,
-      marketable: true,
-      sellPrice: Number(extras.sellPrice || 40),
-      marketPrice: Number(extras.marketPrice || 55),
-      desc: extras.desc || "Özel loot ödülü.",
-      ...extras,
-    };
-  }
-
-  _grantLootReward(reward, meta = {}) {
-    const s = this.store.get();
-    const tradePatch = {};
-    if (meta.markFreeSpin) tradePatch.lastFreeSpinDay = todayKey();
-
-    if (reward.type === "coins") {
-      const nextYton = getWalletYton(s) + Number(reward.amount || 0) - Number(meta.cost || 0);
-      this.store.set({
-        ...patchWalletYton(s, nextYton),
-        ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
-      });
-    } else if (reward.type === "energy") {
-      const p = { ...(s.player || {}) };
-      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
-      const nextYton = getWalletYton(s) - Number(meta.cost || 0);
-      this.store.set({
-        ...patchWalletYton(s, nextYton),
-        player: p,
-        ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
-      });
-    } else if (reward.type === "item") {
-      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-      const existing = items.find((x) => x.name === reward.item.name);
-      if (existing) existing.qty = Number(existing.qty || 0) + Number(reward.item.qty || 1);
-      else items.unshift({ ...reward.item });
-      const nextYton = getWalletYton(s) - Number(meta.cost || 0);
-      this.store.set({
-        ...patchWalletYton(s, nextYton),
-        inventory: { ...(s.inventory || {}), items },
-        ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
-      });
-    }
-
-    this._showToast(reward.text || reward.label || "Ödül kazanıldı", 1900);
-    this._vibrate([60, 40, 120]);
-  }
-
-  _buildWheelRewards(premium = false) {
-    if (premium) {
-      return [
-        { key: "coins_180", type: "coins", amount: 180, icon: "💰", label: "+180 yton", text: "+180 yton" },
-        { key: "energy_30", type: "energy", amount: 30, icon: "⚡", label: "+30 enerji", text: "+30 enerji" },
-        { key: "pass", type: "item", icon: "👑", label: "Golden Pass", text: "Golden Pass kazandın", item: this._makeLootItem("rare", "Golden Pass", "👑", "legendary", { marketable: false, sellPrice: 250, desc: "Nadir etkinlik ürünü." }) },
-        { key: "coins_120", type: "coins", amount: 120, icon: "💸", label: "+120 yton", text: "+120 yton" },
-        { key: "energy_20", type: "energy", amount: 20, icon: "⚡", label: "+20 enerji", text: "+20 enerji" },
-        { key: "premium_crate", type: "item", icon: "📦", label: "Premium Sandık", text: "Premium Sandık kazandın", item: this._makeLootItem("rare", "Premium Sandık", "📦", "legendary", { sellPrice: 120, marketPrice: 160, desc: "Premium loot kasası." }) },
-      ];
-    }
-    return [
-      { key: "coins_25", type: "coins", amount: 25, icon: "💰", label: "+25 yton", text: "+25 yton" },
-      { key: "coins_60", type: "coins", amount: 60, icon: "💸", label: "+60 yton", text: "+60 yton" },
-      { key: "energy_15", type: "energy", amount: 15, icon: "⚡", label: "+15 enerji", text: "+15 enerji" },
-      { key: "crate", type: "item", icon: "📦", label: "Mystery Crate", text: "Mystery Crate kazandın", item: this._makeLootItem("rare", "Mystery Crate", "📦", "rare", { usable: false, sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." }) },
-      { key: "coins_40", type: "coins", amount: 40, icon: "💵", label: "+40 yton", text: "+40 yton" },
-      { key: "energy_10", type: "energy", amount: 10, icon: "⚡", label: "+10 enerji", text: "+10 enerji" },
-    ];
-  }
-
-  _buildCrateRewards(kind) {
-    if (kind === "legendary") {
-      return [
-        { key: "coins_220", type: "coins", amount: 220, icon: "💰", label: "+220 yton", text: "+220 yton" },
-        { key: "energy_35", type: "energy", amount: 35, icon: "⚡", label: "+35 enerji", text: "+35 enerji" },
-        { key: "pass", type: "item", icon: "👑", label: "Golden Pass", text: "Golden Pass çıktı", item: this._makeLootItem("rare", "Golden Pass", "👑", "legendary", { marketable: false, sellPrice: 250, desc: "Nadir etkinlik ürünü." }) },
-        { key: "champagne", type: "item", icon: "🍾", label: "Premium Champagne", text: "Premium Champagne çıktı", item: this._makeLootItem("goods", "Premium Champagne", "🍾", "legendary", { usable: true, energyGain: 30, sellPrice: 120, marketPrice: 170, desc: "Premium enerji ürünü." }) },
-        { key: "coins_160", type: "coins", amount: 160, icon: "💸", label: "+160 yton", text: "+160 yton" },
-      ];
-    }
-    return [
-      { key: "coins_80", type: "coins", amount: 80, icon: "💰", label: "+80 yton", text: "+80 yton" },
-      { key: "energy_18", type: "energy", amount: 18, icon: "⚡", label: "+18 enerji", text: "+18 enerji" },
-      { key: "whiskey", type: "item", icon: "🥃", label: "Black Whiskey", text: "Black Whiskey çıktı", item: this._makeLootItem("consumable", "Black Whiskey", "🥃", "rare", { usable: true, energyGain: 14, sellPrice: 40, marketPrice: 55, desc: "Enerji veren özel içki." }) },
-      { key: "crate", type: "item", icon: "📦", label: "Mystery Crate", text: "Mystery Crate çıktı", item: this._makeLootItem("rare", "Mystery Crate", "📦", "rare", { sellPrice: 45, marketPrice: 60, desc: "Sandık ödülü." }) },
-      { key: "coins_55", type: "coins", amount: 55, icon: "💵", label: "+55 yton", text: "+55 yton" },
-    ];
-  }
-
-  _startWheelSpin(premium = false) {
-    const s = this.store.get();
-    const cost = premium ? 90 : 0;
-    if (!premium && !this._isFreeSpinReady()) {
+  _doFreeSpin() {
+    if (!this._isFreeSpinReady()) {
       this._showToast("Günlük ücretsiz çark kullanıldı");
       return;
     }
-    if (premium && getWalletYton(s) < cost) {
+
+    const pool = this._freeSpinRewards();
+    const selectedIndex = Math.floor(Math.random() * pool.length);
+    const reward = pool[selectedIndex];
+
+    this._grantReward(reward, { markFreeSpin: true });
+    this._setWheelResult("free", pool, selectedIndex, reward);
+    this._showToast(reward.text, 1600);
+  }
+
+  _doPremiumSpin() {
+    const s = this.store.get();
+    const cost = 90;
+
+    if (Number(s.coins || 0) < cost) {
       this._showToast("Premium çark için yetersiz yton");
       return;
     }
 
-    const rewards = this._buildWheelRewards(premium);
-    const winIndex = Math.floor(Math.random() * rewards.length);
-    const segmentAngle = (Math.PI * 2) / rewards.length;
-    const pointerAngle = -Math.PI / 2;
-    const targetCenter = (winIndex + 0.5) * segmentAngle;
-    const extraSpins = 5 + Math.floor(Math.random() * 3);
-    const targetRotation = (Math.PI * 2 * extraSpins) + (pointerAngle - targetCenter);
+    const pool = this._premiumSpinRewards();
+    const selectedIndex = Math.floor(Math.random() * pool.length);
+    const reward = pool[selectedIndex];
 
-    this.lootAnim = {
-      kind: "wheel",
-      premium,
-      cost,
-      rewards,
-      winIndex,
-      reward: rewards[winIndex],
-      startAt: Date.now(),
-      duration: premium ? 4200 : 3600,
-      targetRotation,
-      lastPulseAt: 0,
-      resolved: false,
-      finalShownAt: 0,
-    };
-    this._vibrate([25, 30, 30]);
-  }
-
-  _startCrateRoll(kind) {
-    const s = this.store.get();
-    const cost = kind === "legendary" ? 140 : 65;
-    if (getWalletYton(s) < cost) {
-      this._showToast("Yetersiz yton");
-      return;
-    }
-    const rewards = this._buildCrateRewards(kind);
-    const winIndex = Math.floor(Math.random() * rewards.length);
-    const repeated = [];
-    for (let r = 0; r < 48; r++) repeated.push(rewards[r % rewards.length]);
-    const landingIndex = 24 + winIndex;
-
-    this.lootAnim = {
-      kind: "crate",
-      crateKind: kind,
-      cost,
-      rewards: repeated,
-      baseRewards: rewards,
-      winIndex: landingIndex,
-      reward: rewards[winIndex],
-      startAt: Date.now(),
-      duration: kind === "legendary" ? 3600 : 3000,
-      lastPulseAt: 0,
-      resolved: false,
-      finalShownAt: 0,
-    };
-    this._vibrate([20, 20, 20, 20]);
-  }
-
-  _doFreeSpin() {
-    this._startWheelSpin(false);
-  }
-
-  _doPremiumSpin() {
-    this._startWheelSpin(true);
+    this._grantReward(reward, { cost });
+    this._setWheelResult("premium", pool, selectedIndex, reward);
+    this._showToast(reward.text, 1600);
   }
 
   _buyCrate(kind) {
-    this._startCrateRoll(kind);
-  }
+    const s = this.store.get();
+    const cost = kind === "legendary" ? 140 : 65;
 
-  _updateLootAnimation() {
-    if (!this.lootAnim) return;
-    const anim = this.lootAnim;
-    const now = Date.now();
-    const elapsed = now - Number(anim.startAt || now);
-    const progress = clamp(elapsed / Math.max(1, Number(anim.duration || 1)), 0, 1);
-
-    if (progress < 1) {
-      const pulseGap = anim.kind === "wheel" ? 220 : 140;
-      if (now - Number(anim.lastPulseAt || 0) >= pulseGap) {
-        anim.lastPulseAt = now;
-        this._vibrate(anim.kind === "wheel" ? 14 : 10);
-      }
+    if (Number(s.coins || 0) < cost) {
+      this._showToast("Yetersiz yton");
       return;
     }
 
-    if (!anim.resolved) {
-      anim.resolved = true;
-      anim.finalShownAt = now;
-      this._grantLootReward(anim.reward, { cost: anim.cost, markFreeSpin: anim.kind === "wheel" && !anim.premium });
-      this._vibrate([120, 60, 160]);
-      return;
-    }
+    const pool = this._crateRewards(kind);
+    const selectedIndex = Math.floor(Math.random() * pool.length);
+    const reward = pool[selectedIndex];
 
-    if (now - Number(anim.finalShownAt || now) > 1350) {
-      this.lootAnim = null;
-    }
-  }
-
-  _drawWheelLootOverlay(ctx, panelX, panelY, panelW, panelH) {
-    const anim = this.lootAnim;
-    if (!anim) return;
-    const now = Date.now();
-    const progress = easeOutCubic((now - anim.startAt) / anim.duration);
-    const cx = panelX + panelW * 0.5;
-    const cy = panelY + panelH * 0.52;
-    const radius = Math.min(panelW, panelH) * 0.24;
-    const rotation = anim.targetRotation * progress;
-    const segments = anim.rewards;
-    const seg = (Math.PI * 2) / segments.length;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(rotation);
-
-    for (let i = 0; i < segments.length; i++) {
-      const start = -Math.PI / 2 + i * seg;
-      const end = start + seg;
-      const fill = i % 2 === 0 ? "rgba(184,132,38,0.94)" : "rgba(112,76,18,0.94)";
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, start, end);
-      ctx.closePath();
-      ctx.fillStyle = fill;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,231,180,0.38)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      const mid = start + seg * 0.5;
-      ctx.save();
-      ctx.rotate(mid);
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "#fff8e8";
-      ctx.font = "900 20px system-ui";
-      ctx.fillText(segments[i].icon || "🎁", radius * 0.66, 0);
-      ctx.font = "800 11px system-ui";
-      ctx.fillText(fitText(ctx, segments[i].label || "Ödül", 76), radius * 0.44, 0);
-      ctx.restore();
-    }
-
-    ctx.fillStyle = "rgba(18,12,6,0.96)";
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    ctx.fillStyle = "#ffe8b0";
-    ctx.beginPath();
-    ctx.moveTo(cx - 16, cy - radius - 18);
-    ctx.lineTo(cx + 16, cy - radius - 18);
-    ctx.lineTo(cx, cy - radius + 12);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 18px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(anim.premium ? "Premium Çark" : "Günlük Çark", cx, panelY + 42);
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(progress < 1 ? "Çark dönüyor..." : `Kazanılan: ${anim.reward?.label || "Ödül"}`, cx, panelY + 64);
-  }
-
-  _drawCrateLootOverlay(ctx, panelX, panelY, panelW, panelH) {
-    const anim = this.lootAnim;
-    if (!anim) return;
-    const now = Date.now();
-    const progress = easeOutCubic((now - anim.startAt) / anim.duration);
-    const stripW = Math.min(panelW - 48, 420);
-    const stripH = 120;
-    const viewX = panelX + (panelW - stripW) / 2;
-    const viewY = panelY + panelH * 0.46 - stripH / 2;
-    const cellW = 108;
-    const gap = 12;
-    const step = cellW + gap;
-    const finalOffset = anim.winIndex * step - (stripW / 2 - cellW / 2);
-    const initialOffset = finalOffset + step * 12;
-    const offset = initialOffset + (finalOffset - initialOffset) * progress;
-
-    ctx.fillStyle = "rgba(6,10,16,0.94)";
-    fillRoundRect(ctx, viewX, viewY, stripW, stripH, 20);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    strokeRoundRect(ctx, viewX, viewY, stripW, stripH, 20);
-
-    ctx.save();
-    roundRectPath(ctx, viewX, viewY, stripW, stripH, 20);
-    ctx.clip();
-
-    for (let i = 0; i < anim.rewards.length; i++) {
-      const item = anim.rewards[i];
-      const cardX = viewX + i * step - offset;
-      const cardY = viewY + 10;
-      if (cardX + cellW < viewX - 10 || cardX > viewX + stripW + 10) continue;
-
-      const isWinner = i === anim.winIndex;
-      const g = ctx.createLinearGradient(cardX, cardY, cardX, cardY + stripH - 20);
-      g.addColorStop(0, isWinner ? "rgba(182,136,42,0.98)" : "rgba(72,50,18,0.94)");
-      g.addColorStop(1, isWinner ? "rgba(116,80,20,0.98)" : "rgba(34,24,10,0.96)");
-      ctx.fillStyle = g;
-      fillRoundRect(ctx, cardX, cardY, cellW, stripH - 20, 16);
-      ctx.strokeStyle = isWinner ? "rgba(255,230,170,0.62)" : "rgba(255,255,255,0.14)";
-      strokeRoundRect(ctx, cardX, cardY, cellW, stripH - 20, 16);
-
-      if (isWinner) {
-        ctx.save();
-        ctx.shadowColor = "rgba(255,214,120,0.42)";
-        ctx.shadowBlur = 18;
-        ctx.strokeStyle = "rgba(255,228,170,0.52)";
-        strokeRoundRect(ctx, cardX + 2, cardY + 2, cellW - 4, stripH - 24, 14);
-        ctx.restore();
-      }
-
-      ctx.fillStyle = "#fff8ea";
-      ctx.font = "900 28px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(item.icon || "🎁", cardX + cellW / 2, cardY + 32);
-      ctx.font = "800 11px system-ui";
-      ctx.fillText(fitText(ctx, item.label || "Ödül", cellW - 16), cardX + cellW / 2, cardY + 66);
-    }
-    ctx.restore();
-
-    ctx.fillStyle = "rgba(255,214,120,0.92)";
-    fillRoundRect(ctx, viewX + stripW / 2 - 3, viewY - 10, 6, stripH + 20, 3);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 18px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(anim.crateKind === "legendary" ? "Legendary Crate" : "Mystery Crate", panelX + panelW / 2, panelY + 42);
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(progress < 1 ? "Sandık akışı dönüyor..." : `Kazanılan: ${anim.reward?.label || "Ödül"}`, panelX + panelW / 2, panelY + 64);
-
-    if (progress >= 1 && anim.reward) {
-      ctx.fillStyle = "#fff5dd";
-      ctx.font = "900 28px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(anim.reward.icon || "🎁", panelX + panelW / 2, viewY + stripH + 26);
-    }
-  }
-
-  _drawLootOverlay(ctx, panelX, panelY, panelW, panelH) {
-    if (!this.lootAnim) return;
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.56)";
-    fillRoundRect(ctx, panelX + 12, panelY + 12, panelW - 24, panelH - 24, 24);
-    ctx.restore();
-    if (this.lootAnim.kind === "wheel") this._drawWheelLootOverlay(ctx, panelX, panelY, panelW, panelH);
-    else this._drawCrateLootOverlay(ctx, panelX, panelY, panelW, panelH);
+    this._grantReward(reward, { cost });
+    this._setCrateReveal(kind, pool, selectedIndex, reward);
+    this._showToast(reward.text, 1600);
   }
 
   _useInventoryItem(itemId) {
@@ -956,9 +1097,8 @@ export class TradeScene {
     if (item.qty <= 0) items.splice(idx, 1);
     else items[idx] = item;
 
-    const nextYton = getWalletYton(s) + gain;
     this.store.set({
-      ...patchWalletYton(s, nextYton),
+      coins: Number(s.coins || 0) + gain,
       inventory: {
         ...(s.inventory || {}),
         items,
@@ -1062,6 +1202,8 @@ export class TradeScene {
           businessId: String(marketBusiness.id),
           type: "blackmarket",
           icon: "🕶️",
+          imageKey: "blackmarket",
+          imageSrc: "./src/assets/BlackMarket.png",
           name: marketBusiness.name || "Black Market",
           ownerId: String(profileId),
           ownerName: String(state2.player?.username || "Player"),
@@ -1077,6 +1219,8 @@ export class TradeScene {
         id: String(row?.id || "listing_" + Date.now()),
         shopId: shop.id,
         icon: item.icon || "📦",
+        imageKey: item.imageKey || "",
+        imageSrc: item.imageSrc || "",
         itemName: item.name,
         rarity: item.rarity || "common",
         stock: qty,
@@ -1111,6 +1255,74 @@ export class TradeScene {
     }
   }
 
+  _buyMarketItem(shopId, itemId) {
+    const s = this.store.get();
+    const listings = (s.market?.listings || []).map((x) => ({ ...x }));
+    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
+    const idx = listings.findIndex((x) => String(x.id) === String(itemId) && String(x.shopId) === String(shopId));
+    if (idx < 0) {
+      this._showToast("Ürün bulunamadı");
+      return;
+    }
+
+    const listing = listings[idx];
+    const price = Number(listing.price || 0);
+    if (Number(s.coins || 0) < price) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+    if (Number(listing.stock || 0) <= 0) {
+      this._showToast("Stok tükendi");
+      return;
+    }
+
+    listing.stock = Math.max(0, Number(listing.stock || 0) - 1);
+    if (listing.stock <= 0) listings.splice(idx, 1);
+    else listings[idx] = listing;
+
+    const existing = items.find((x) => String(x.name || "").toLowerCase() === String(listing.itemName || "").toLowerCase());
+    if (existing) existing.qty = Number(existing.qty || 0) + 1;
+    else {
+      items.unshift({
+        id: "market_buy_" + Date.now(),
+        kind: listing.usable ? "consumable" : "goods",
+        icon: listing.icon || "📦",
+        imageKey: listing.imageKey || "",
+        imageSrc: listing.imageSrc || "",
+        name: listing.itemName,
+        rarity: listing.rarity || "common",
+        qty: 1,
+        usable: !!listing.usable,
+        sellable: true,
+        marketable: true,
+        energyGain: Number(listing.energyGain || 0),
+        sellPrice: Math.max(1, Math.floor(price * 0.7)),
+        marketPrice: price,
+        desc: listing.desc || "Pazardan alındı.",
+      });
+    }
+
+    const shops = (s.market?.shops || []).map((x) => ({ ...x }));
+    for (const shop of shops) {
+      shop.totalListings = listings.filter((x) => x.shopId === shop.id).length;
+    }
+
+    this.store.set({
+      coins: Math.max(0, Number(s.coins || 0) - price),
+      inventory: {
+        ...(s.inventory || {}),
+        items,
+      },
+      market: {
+        ...(s.market || {}),
+        shops,
+        listings,
+      },
+    });
+
+    this._showToast(`${listing.itemName || "Ürün"} satın alındı`);
+  }
+
   _ensureBusinessShop(biz) {
     const s = this.store.get();
     const targetId = "shop_from_" + biz.id;
@@ -1122,6 +1334,8 @@ export class TradeScene {
       businessId: biz.id,
       type: biz.type,
       icon: biz.icon || iconForType(biz.type),
+      imageKey: biz.imageKey || this._businessArt(biz.type)?.imageKey || "",
+      imageSrc: biz.imageSrc || this._businessArt(biz.type)?.imageSrc || "",
       name: biz.name,
       ownerId: String(biz.ownerId || s.player?.id || "player_main"),
       ownerName: String(biz.ownerName || s.player?.username || "Player"),
@@ -1182,108 +1396,21 @@ export class TradeScene {
         this._showToast(`+${gain} enerji`);
   }
   
-  _productionSeedFor(biz, startedAt) {
-    return `${String(biz?.id || "biz")}:${Number(startedAt || 0)}:${String(biz?.type || "type")}:${(biz?.products || []).map((p) => p.id).join("|")}`;
-  }
-
-  _sendProductionReadyNotification(biz, pendingTotal) {
-    try {
-      if (!("Notification" in window)) return;
-      if (Notification.permission !== "granted") return;
-
-      const title = `${biz?.name || typeLabel(biz?.type)} üretimi hazır`;
-      const body = `${fmtNum(pendingTotal)} ürün toplamanı bekliyor. Son toplama ${fmtClock(biz?.productionCollectUntilAt)}.`;
-      const tag = `trade_prod_${String(biz?.id || "biz")}_${Number(biz?.productionReadyAt || 0)}`;
-
-      try {
-        const regPromise = navigator?.serviceWorker?.ready;
-        if (regPromise && typeof regPromise.then === "function") {
-          regPromise.then((reg) => reg?.showNotification?.(title, { body, tag, silent: false })).catch(() => {
-            try { new Notification(title, { body, tag }); } catch (_) {}
-          });
-          return;
-        }
-      } catch (_) {}
-
-      try { new Notification(title, { body, tag }); } catch (_) {}
-    } catch (_) {}
-  }
-
-  _syncProductionNotifyTimers(ownedOverride = null) {
-    const owned = Array.isArray(ownedOverride) ? ownedOverride : (this.store.get().businesses?.owned || []);
-    const now = Date.now();
-    const activeIds = new Set();
-
-    for (const biz of owned) {
-      if (!biz?.id || !Array.isArray(biz.products) || !biz.products.length) continue;
-      const bizId = String(biz.id);
-      activeIds.add(bizId);
-
-      const readyAt = Number(biz.productionReadyAt || 0);
-      const collectUntilAt = Number(biz.productionCollectUntilAt || (readyAt ? readyAt + HOUR_MS : 0));
-      const timerInfo = this.productionNotifyTimers.get(bizId);
-
-      if (!readyAt || now >= collectUntilAt) {
-        if (timerInfo?.id) clearTimeout(timerInfo.id);
-        this.productionNotifyTimers.delete(bizId);
-        continue;
-      }
-
-      if (timerInfo && Number(timerInfo.readyAt || 0) === readyAt) continue;
-      if (timerInfo?.id) clearTimeout(timerInfo.id);
-
-      const delay = Math.max(1000, readyAt - now + 250);
-      const timeoutId = setTimeout(() => {
-        this.productionNotifyTimers.delete(bizId);
-        this._refreshBusinessProduction();
-      }, delay);
-
-      this.productionNotifyTimers.set(bizId, { id: timeoutId, readyAt });
-    }
-
-    for (const [bizId, info] of [...this.productionNotifyTimers.entries()]) {
-      if (activeIds.has(bizId)) continue;
-      if (info?.id) clearTimeout(info.id);
-      this.productionNotifyTimers.delete(bizId);
-    }
-  }
-
-  _getBusinessProductionStatus(biz, now = Date.now()) {
-    const readyAt = Number(biz?.productionReadyAt || 0);
-    const collectUntilAt = Number(biz?.productionCollectUntilAt || (readyAt ? readyAt + HOUR_MS : 0));
-    const pendingTotal = (biz?.pendingProduction || []).reduce((sum, row) => sum + Number(row.qty || 0), 0);
-
-    const producing = readyAt > now;
-    const ready = !producing && now <= collectUntilAt && pendingTotal > 0;
-    const missed = collectUntilAt > 0 && now > collectUntilAt;
-
-    return {
-      pendingTotal,
-      producing,
-      ready,
-      missed,
-      collectable: ready,
-      readyAt,
-      collectUntilAt,
-      timeToReady: Math.max(0, readyAt - now),
-      timeToCollectEnd: Math.max(0, collectUntilAt - now),
-    };
-  }
-
-  _createPendingProduction(products = [], totalDaily = BUSINESS_PRODUCTION_TOTAL, seedKey = "") {
+  _createPendingProduction(products = [], totalDaily = 50) {
     const safeProducts = (products || []).map((p) => ({ ...p }));
     if (!safeProducts.length) return [];
 
-    const total = Math.max(1, Number(totalDaily || BUSINESS_PRODUCTION_TOTAL));
-    const rnd = makeSeededRandom(seedKey || `${Date.now()}`);
-    const rows = safeProducts.map((p) => ({ productId: p.id, qty: 0 }));
+    const per = Math.floor(totalDaily / safeProducts.length);
+    let remainder = totalDaily - per * safeProducts.length;
 
-    for (let i = 0; i < total; i++) {
-      const idx = Math.floor(rnd() * rows.length);
-      rows[idx].qty += 1;
-    }
-
-    return rows;
+    return safeProducts.map((p) => {
+      const extra = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder -= 1;
+      return {
+        productId: p.id,
+        qty: per + extra,
+      };
+    });
   }
 
   _refreshBusinessProduction() {
@@ -1302,29 +1429,21 @@ export class TradeScene {
       const hasProducts = Array.isArray(biz.products) && biz.products.length > 0;
       if (!hasProducts) continue;
 
-      const dailyTotal = Math.max(1, Number(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL));
+      if (!Array.isArray(biz.pendingProduction)) {
+        biz.pendingProduction = this._createPendingProduction(
+          biz.products,
+          Number(biz.dailyProduction || 50)
+        );
+        changed = true;
+      }
 
       if (!biz.productionStartedAt) {
         biz.productionStartedAt = now;
         changed = true;
       }
 
-      if (!Array.isArray(biz.pendingProduction) || !biz.pendingProduction.length) {
-        biz.pendingProduction = this._createPendingProduction(
-          biz.products,
-          dailyTotal,
-          this._productionSeedFor(biz, biz.productionStartedAt)
-        );
-        changed = true;
-      }
-
-      if (!biz.productionReadyAt) {
-        biz.productionReadyAt = Number(biz.productionStartedAt) + DAY_MS;
-        changed = true;
-      }
-
-      if (!biz.productionCollectUntilAt) {
-        biz.productionCollectUntilAt = Number(biz.productionReadyAt) + HOUR_MS;
+      if (!biz.productionExpireAt) {
+        biz.productionExpireAt = Number(biz.productionStartedAt) + DAY_MS;
         changed = true;
       }
 
@@ -1333,32 +1452,20 @@ export class TradeScene {
         0
       );
 
-      if (now > Number(biz.productionCollectUntilAt || 0)) {
+      if (now >= Number(biz.productionExpireAt || 0)) {
         if (pendingTotal > 0) {
-          biz.lastMissedQty = pendingTotal;
-          biz.lastMissedAt = now;
+          biz.pendingProduction = biz.pendingProduction.map((row) => ({
+            ...row,
+            qty: 0,
+          }));
         }
 
         biz.productionStartedAt = now;
-        biz.productionReadyAt = now + DAY_MS;
-        biz.productionCollectUntilAt = biz.productionReadyAt + HOUR_MS;
-        biz.productionNotifiedAt = 0;
+        biz.productionExpireAt = now + DAY_MS;
         biz.pendingProduction = this._createPendingProduction(
           biz.products,
-          dailyTotal,
-          this._productionSeedFor(biz, biz.productionStartedAt)
+          Number(biz.dailyProduction || 50)
         );
-        changed = true;
-        continue;
-      }
-
-      if (
-        now >= Number(biz.productionReadyAt || 0) &&
-        pendingTotal > 0 &&
-        Number(biz.productionNotifiedAt || 0) !== Number(biz.productionReadyAt || 0)
-      ) {
-        this._sendProductionReadyNotification(biz, pendingTotal);
-        biz.productionNotifiedAt = Number(biz.productionReadyAt || 0);
         changed = true;
       }
     }
@@ -1371,8 +1478,6 @@ export class TradeScene {
         },
       });
     }
-
-    this._syncProductionNotifyTimers(changed ? owned : null);
   }
 
   _collectBusinessProduction(bizId) {
@@ -1390,19 +1495,12 @@ export class TradeScene {
     const biz = owned.find((b) => b.id === bizId);
     if (!biz) return;
 
-    const status = this._getBusinessProductionStatus(biz, now);
+    const pendingTotal = (biz.pendingProduction || []).reduce(
+      (sum, row) => sum + Number(row.qty || 0),
+      0
+    );
 
-    if (status.producing) {
-      this._showToast(`Üretim sürüyor • ${fmtDuration(status.timeToReady)} kaldı`);
-      return;
-    }
-
-    if (status.missed) {
-      this._showToast("Toplama süresi geçti, ürünler kayboldu");
-      return;
-    }
-
-    if (status.pendingTotal <= 0) {
+    if (pendingTotal <= 0) {
       this._showToast("Toplanacak üretim yok");
       return;
     }
@@ -1418,15 +1516,12 @@ export class TradeScene {
       0
     );
 
-    biz.productionStartedAt = now;
-    biz.productionReadyAt = now + DAY_MS;
-    biz.productionCollectUntilAt = biz.productionReadyAt + HOUR_MS;
-    biz.productionNotifiedAt = 0;
     biz.pendingProduction = this._createPendingProduction(
       biz.products,
-      Number(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL),
-      this._productionSeedFor(biz, biz.productionStartedAt)
+      Number(biz.dailyProduction || 50)
     );
+    biz.productionStartedAt = now;
+    biz.productionExpireAt = now + DAY_MS;
 
     this.store.set({
       businesses: {
@@ -1435,10 +1530,9 @@ export class TradeScene {
       },
     });
 
-    this._syncProductionNotifyTimers(owned);
-    this._showToast(`${fmtNum(status.pendingTotal)} ürün toplandı`);
+    this._showToast(`${fmtNum(pendingTotal)} ürün toplandı`);
   }
-
+    
   async _sellBusinessProduct(bizId, productId) {
     const s = this.store.get();
     const businesses = (s.businesses?.owned || []).map((b) => ({
@@ -1520,6 +1614,8 @@ export class TradeScene {
           businessId: bizId,
           type: biz.type,
           icon: biz.icon || iconForType(biz.type),
+          imageKey: biz.imageKey || this._businessArt(biz.type)?.imageKey || "",
+          imageSrc: biz.imageSrc || this._businessArt(biz.type)?.imageSrc || "",
           name: biz.name,
           ownerId: String(biz.ownerId || ""),
           ownerName: String(biz.ownerName || state2.player?.username || "Player"),
@@ -1535,6 +1631,8 @@ export class TradeScene {
         id: String(row?.id || "listing_" + Date.now()),
         shopId: shop.id,
         icon: product.icon || "📦",
+        imageKey: product.imageKey || "",
+        imageSrc: product.imageSrc || "",
         itemName: product.name,
         rarity: product.rarity || "common",
         stock: qty,
@@ -1570,14 +1668,6 @@ export class TradeScene {
   }
 
   update() {
-    this._updateLootAnimation();
-
-    if (this.lootAnim) {
-      this.dragging = false;
-      this.clickCandidate = false;
-      return;
-    }
-
     const pointer = getPointer(this.input);
     const px = Number(pointer?.x || 0);
     const py = Number(pointer?.y || 0);
@@ -1681,11 +1771,11 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
   if (style === "primary") {
     const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(164,122,38,0.78)");
-    g.addColorStop(1, "rgba(104,72,18,0.84)");
+    g.addColorStop(0, "rgba(40,95,210,0.72)");
+    g.addColorStop(1, "rgba(18,54,140,0.78)");
     fill = g;
-    stroke = "rgba(255,214,120,0.42)";
-    txt = "#fff7e6";
+    stroke = "rgba(130,175,255,0.45)";
+    txt = "#ffffff";
   } else if (style === "gold") {
     const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
     g.addColorStop(0, "rgba(130,94,28,0.68)");
@@ -1710,10 +1800,10 @@ _drawButton(ctx, rect, text, style = "ghost") {
   strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
 
   ctx.fillStyle = txt;
-  ctx.font = rect.w < 84 ? "800 11px system-ui" : "800 12px system-ui";
+  ctx.font = "800 12px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(fitText(ctx, text, rect.w - 12), rect.x + rect.w / 2, rect.y + rect.h / 2);
+  ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
@@ -1751,7 +1841,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.fillText(text || "Mekan veya ürün ara", x + 42, y + 23);
   }
 
-  _drawHeroCard(ctx, x, y, w, h, title, desc, badge, icon, glow = "#ff9e46") {
+  _drawHeroCard(ctx, x, y, w, h, title, desc, badge, art, glow = "#ff9e46") {
     const grad = ctx.createLinearGradient(x, y, x, y + h);
     grad.addColorStop(0, "rgba(8,12,18,0.42)");
     grad.addColorStop(1, "rgba(4,8,14,0.56)");
@@ -1762,12 +1852,10 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.lineWidth = 1;
     strokeRoundRect(ctx, x, y, w, h, 24);
 
-    const iconBox = { x: x + w - 96, y: y + 16, w: 66, h: 66 };
-
     ctx.save();
     ctx.globalAlpha = 0.14;
     ctx.fillStyle = glow;
-    fillRoundRect(ctx, iconBox.x, iconBox.y, iconBox.w, iconBox.h, 22);
+    fillRoundRect(ctx, x + w - 108, y + 14, 78, 78, 24);
     ctx.restore();
 
     ctx.fillStyle = "rgba(255,210,120,0.13)";
@@ -1779,31 +1867,22 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.font = "800 10px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(fitText(ctx, badge || "GÜNÜN VİTRİNİ", 90), x + 68, y + 26);
+    ctx.fillText(badge || "GÜNÜN VİTRİNİ", x + 68, y + 26);
 
-    const textMaxW = Math.max(90, iconBox.x - (x + 16) - 14);
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = "900 16px system-ui";
-    ctx.fillText(fitText(ctx, title, textMaxW), x + 16, y + 58);
+    textFit(ctx, title, x + 16, y + 58, w - 120);
 
     ctx.fillStyle = "rgba(255,255,255,0.74)";
     ctx.font = "12px system-ui";
-    const lines = wrapTextToLines(ctx, desc, textMaxW, 2);
-    const baseY = y + 80;
-    for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], x + 16, baseY + i * 16);
-    }
+    textFit(ctx, desc, x + 16, y + 81, w - 120);
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 30px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(icon || "📦", iconBox.x + iconBox.w / 2, iconBox.y + iconBox.h / 2 + 1);
+    this._drawArtThumb(ctx, x + w - 92, y + 18, 62, 62, art, title);
   }
 
-  _drawMiniCard(ctx, x, y, w, h, title, text, icon, accent = "#ffcc66") {
+  _drawMiniCard(ctx, x, y, w, h, title, text, art, accent = "#458cff") {
     const grad = ctx.createLinearGradient(x, y, x, y + h);
     grad.addColorStop(0, "rgba(10,14,20,0.34)");
     grad.addColorStop(1, "rgba(6,10,16,0.48)");
@@ -1813,37 +1892,33 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.strokeStyle = "rgba(255,255,255,0.09)";
     strokeRoundRect(ctx, x, y, w, h, 20);
 
-    const iconBox = { x: x + w - 54, y: y + 14, w: 38, h: 38 };
     ctx.save();
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = accent;
-    fillRoundRect(ctx, iconBox.x, iconBox.y, iconBox.w, iconBox.h, 14);
+    fillRoundRect(ctx, x + w - 64, y + 14, 48, 48, 16);
     ctx.restore();
 
-    const textMaxW = Math.max(72, iconBox.x - (x + 14) - 10);
     ctx.fillStyle = "#fff";
-    ctx.font = "900 12px system-ui";
+    ctx.font = "900 14px system-ui";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    const titleLines = wrapTextToLines(ctx, title, textMaxW, 2);
-    ctx.fillText(titleLines[0] || "", x + 14, y + 22);
-    if (titleLines[1]) ctx.fillText(titleLines[1], x + 14, y + 38);
+    textFit(ctx, title, x + 14, y + 24, w - 78);
 
     ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "11px system-ui";
-    const descLines = wrapTextToLines(ctx, text, textMaxW, 2);
-    const descTop = titleLines[1] ? y + 58 : y + 48;
-    if (descLines[0]) ctx.fillText(descLines[0], x + 14, descTop);
-    if (descLines[1]) ctx.fillText(descLines[1], x + 14, descTop + 14);
+    ctx.font = "12px system-ui";
+    textFit(ctx, text, x + 14, y + 48, w - 78);
 
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 22px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(icon, iconBox.x + iconBox.w / 2, iconBox.y + iconBox.h / 2 + 1);
+    this._drawArtThumb(ctx, x + w - 56, y + 14, 40, 40, art, title);
+  }
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+  drawCard(ctx, x, y, w, h) {
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, "rgba(10,14,20,0.36)");
+    grad.addColorStop(1, "rgba(6,10,16,0.52)");
+    ctx.fillStyle = grad;
+    fillRoundRect(ctx, x, y, w, h, 20);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    strokeRoundRect(ctx, x, y, w, h, 20);
   }
 
   _drawSectionTitle(ctx, x, y, title, sub) {
@@ -1913,8 +1988,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       "Black Market Hub",
       deal ? `${deal.itemName} • ${fmtNum(deal.price)} yton` : "Ekonomi merkezi • vitrin • fırsatlar",
       "GÜNÜN VİTRİNİ",
-      deal?.icon || "🕶️",
-      "#ffcc66"
+      deal || { type: "blackmarket", imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
+      "#4b8fff"
     );
     y += 140;
 
@@ -1934,8 +2009,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       rect1.h,
       "En Ucuz Mekanlar",
       cheapestShop ? `${cheapestShop.shop.name} • ${fmtNum(cheapestShop.lowest)} yton` : "Henüz veri yok",
-      cheapestShop?.shop?.icon || "🏪",
-      "#ffcc66"
+      cheapestShop?.shop || { type: "blackmarket", imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
+      "#62b3ff"
     );
 
     this._drawMiniCard(
@@ -1946,7 +2021,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       rect2.h,
       "En Popüler Mekanlar",
       popularShop ? `${popularShop.name} • ${popularShop.rating || 0} puan` : "Henüz veri yok",
-      popularShop?.icon || "🔥",
+      popularShop || { type: popularShop?.type || "brothel" },
       "#ffcc66"
     );
 
@@ -1957,7 +2032,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     this.hitButtons.push({ rect: rect3, action: "go_tab", value: "loot" });
     this.hitButtons.push({ rect: rect4, action: "free_spin" });
 
-    this._drawMiniCard(ctx, rect3.x, rect3.y, rect3.w, rect3.h, "Sandık Fırsatları", "Mystery Crate • Premium sandıklar", "📦", "#ffcc66");
+    this._drawMiniCard(ctx, rect3.x, rect3.y, rect3.w, rect3.h, "Sandık Fırsatları", "Mystery Crate • Premium sandıklar", { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" }, "#c77dff");
     this._drawMiniCard(
       ctx,
       rect4.x,
@@ -1966,8 +2041,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       rect4.h,
       "Günlük Çark",
       this._isFreeSpinReady() ? "Hazır • şimdi çevir" : "Bugün kullanıldı",
-      this._isFreeSpinReady() ? "🎰" : "⏳",
-      "#ffcc66"
+      this._isFreeSpinReady() ? { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" } : { imageSrc: "./src/assets/bonus.png" },
+      this._isFreeSpinReady() ? "#46d799" : "#94a3b8"
     );
 
     y += 126;
@@ -2010,10 +2085,10 @@ _drawButton(ctx, rect, text, style = "ghost") {
       w,
       120,
       "İşletmelerim",
-      `${fmtNum(businesses.length)} işletme • üretim / toplama paneli`,
+      `${fmtNum(businesses.length)} işletme • yönetim paneli`,
       "OWNER MODE",
-      "🏢",
-      "#ffcc66"
+      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
+      "#4b8fff"
     );
     y += 132;
 
@@ -2021,112 +2096,91 @@ _drawButton(ctx, rect, text, style = "ghost") {
       return this._drawEmptyState(ctx, x, y, w, "🏪", "Henüz işletmen yok.");
     }
 
-    const now = Date.now();
-
     for (const biz of businesses) {
       const products = biz.products || [];
-      const prod = this._getBusinessProductionStatus(biz, now);
-      const recentMiss = Number(biz.lastMissedQty || 0) > 0 && (now - Number(biz.lastMissedAt || 0)) < DAY_MS;
-      const infoLines = recentMiss ? 3 : 2;
-      const headerH = recentMiss ? 110 : 92;
-      const rowH = 60;
-      const cardH = headerH + products.length * (rowH + 8);
+      const cardH = 122 + products.length * 64;
 
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, cardH, 20);
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
       strokeRoundRect(ctx, x, y, w, cardH, 20);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(biz.icon || iconForType(biz.type), x + 14, y + 28);
-      ctx.font = "900 15px system-ui";
-      ctx.fillText(biz.name || "İşletme", x + 48, y + 24);
+      this._drawArtThumb(ctx, x + 14, y + 14, 56, 56, biz, biz.name || "İşletme", biz.type);
 
-      const infoMaxW = w - 182;
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 15px system-ui";
+      textFit(ctx, biz.name || "İşletme", x + 82, y + 24, w - 190);
+
+      const pendingCount = (biz.pendingProduction || []).reduce(
+        (sum, row) => sum + Number(row.qty || 0),
+        0
+      );
+      const remainMs = Math.max(0, Number(biz.productionExpireAt || 0) - Date.now());
+      const remainHours = Math.floor(remainMs / (60 * 60 * 1000));
+      const remainMinutes = Math.floor((remainMs % (60 * 60 * 1000)) / (60 * 1000));
+
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
       ctx.fillText(
-        fitText(ctx, `${typeLabel(biz.type)} • 24 saatte rastgele ${fmtNum(biz.dailyProduction || BUSINESS_PRODUCTION_TOTAL)} üretim • Stok ${fmtNum(biz.stock)}`, infoMaxW),
-        x + 48,
+        `${typeLabel(biz.type)} • Günlük üretim ${fmtNum(biz.dailyProduction)} • Stok ${fmtNum(biz.stock)}`,
+        x + 82,
         y + 46
       );
 
+      ctx.fillStyle = pendingCount > 0 ? "rgba(255,209,120,0.95)" : "rgba(255,255,255,0.48)";
       ctx.font = "11px system-ui";
-      if (prod.producing) {
-        ctx.fillStyle = "rgba(255,255,255,0.78)";
-        ctx.fillText(
-          fitText(ctx, `Üretim sürüyor • Hazır olmasına ${fmtDuration(prod.timeToReady)} kaldı • Saat ${fmtClock(prod.readyAt)}`, infoMaxW),
-          x + 48,
-          y + 64
-        );
-      } else if (prod.ready) {
-        ctx.fillStyle = "rgba(255,209,120,0.95)";
-        ctx.fillText(
-          fitText(ctx, `Hazır üretim ${fmtNum(prod.pendingTotal)} • ${fmtDuration(prod.timeToCollectEnd)} içinde topla • Son ${fmtClock(prod.collectUntilAt)}`, infoMaxW),
-          x + 48,
-          y + 64
-        );
-      } else {
-        ctx.fillStyle = "rgba(255,255,255,0.48)";
-        ctx.fillText(
-          fitText(ctx, `Bekleyen üretim yok • Yeni döngü hazır ${fmtClock(biz.productionReadyAt)}`, infoMaxW),
-          x + 48,
-          y + 64
-        );
-      }
+      ctx.fillText(
+        pendingCount > 0
+          ? `Hazır üretim ${fmtNum(pendingCount)} • ${remainHours}s ${remainMinutes}d içinde topla`
+          : "Bekleyen üretim yok",
+        x + 82,
+        y + 64
+      );
 
-      if (recentMiss) {
-        ctx.fillStyle = "rgba(255,120,120,0.90)";
-        ctx.font = "11px system-ui";
-        ctx.fillText(
-          fitText(ctx, `Kaçan üretim: ${fmtNum(biz.lastMissedQty)} ürün • Zamanında toplanmadığı için kayboldu`, infoMaxW),
-          x + 48,
-          y + 82
-        );
-      }
+      const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
+      this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
+      this._drawButton(ctx, collectRect, "Topla", pendingCount > 0 ? "gold" : "muted");
 
-      const collectRect = { x: x + w - 112, y: y + 14, w: 96, h: 30 };
-      if (prod.collectable) {
-        this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
-      }
-      this._drawButton(ctx, collectRect, prod.collectable ? "Topla" : (prod.producing ? "Sürüyor" : "Kaçtı"), prod.collectable ? "gold" : "muted");
+      let rowY = y + 82;
+for (const p of products) {
+  ctx.fillStyle = "rgba(255,255,255,0.04)";
+  fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
 
-      let rowY = y + headerH;
-      for (const p of products) {
-        ctx.fillStyle = "rgba(255,255,255,0.04)";
-        fillRoundRect(ctx, x + 12, rowY, w - 24, rowH, 14);
-        ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        strokeRoundRect(ctx, x + 12, rowY, w - 24, rowH, 14);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
 
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
+  this._drawArtThumb(ctx, x + 18, rowY + 9, 38, 38, p, p.name || "Ürün", biz.type);
 
-        ctx.fillStyle = "#fff";
-        ctx.font = "900 18px system-ui";
-        ctx.fillText(p.icon || "📦", x + 22, rowY + 24);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 13px system-ui";
+  textFit(ctx, p.name || "Ürün", x + 66, rowY + 18, w - 250);
 
-        const useRect = { x: x + w - 176, y: rowY + 16, w: 68, h: 28 };
-        const sellRect = { x: x + w - 100, y: rowY + 16, w: 84, h: 28 };
-        const rowTextMaxW = Math.max(96, useRect.x - (x + 48) - 14);
+  ctx.fillStyle = rarityColor(p.rarity);
+  ctx.font = "800 10px system-ui";
+  ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 66, rowY + 34);
 
-        ctx.font = "900 13px system-ui";
-        ctx.fillText(fitText(ctx, p.name || "Ürün", rowTextMaxW), x + 48, rowY + 20);
+  ctx.fillStyle = "rgba(255,255,255,0.70)";
+  ctx.font = "11px system-ui";
+  textFit(ctx, `Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, x + 128, rowY + 34, w - 270);
 
-        ctx.fillStyle = "rgba(255,255,255,0.70)";
-        ctx.font = "11px system-ui";
-        ctx.fillText(fitText(ctx, `Stok ${fmtNum(p.qty)} • Taban ${fmtNum(p.price)} yton`, rowTextMaxW), x + 48, rowY + 40);
+  const useRect = { x: x + w - 170, y: rowY + 12, w: 66, h: 28 };
+  const sellRect = { x: x + w - 96, y: rowY + 12, w: 78, h: 28 };
 
-        this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
-        this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
+  this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
+  this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
 
-        this._drawButton(ctx, useRect, "Kullan", "primary");
-        this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
+  this._drawButton(ctx, useRect, "Kullan", "primary");
+  this._drawButton(ctx, sellRect, "Satışa Koy", "gold");
 
-        rowY += rowH + 8;
-      }
+  rowY += 62;
+}
+       
+    
+      
 
       y += cardH + 12;
     }
@@ -2176,21 +2230,24 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
       strokeRoundRect(ctx, x, y, w, 108, 18);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(item.icon || "📦", x + 14, y + 28);
+      this._drawArtThumb(ctx, x + 14, y + 14, 52, 52, item, item.name || "Item");
 
+      ctx.fillStyle = "#fff";
       ctx.font = "900 14px system-ui";
-      ctx.fillText(fitText(ctx, item.name || "Item", w - 64), x + 48, y + 22);
+      textFit(ctx, item.name || "Item", x + 78, y + 22, w - 92);
+
+      ctx.fillStyle = rarityColor(item.rarity);
+      ctx.font = "800 10px system-ui";
+      ctx.fillText(String(item.rarity || "common").toUpperCase(), x + 78, y + 38);
 
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "11px system-ui";
-      ctx.fillText(fitText(ctx, `Adet ${fmtNum(item.qty)} • NPC ${fmtNum(item.sellPrice)} yton`, w - 28), x + 14, y + 52);
+      textFit(ctx, `Adet ${fmtNum(item.qty)} • NPC ${fmtNum(item.sellPrice)} yton`, x + 78, y + 56, w - 96);
 
       if (item.desc) {
-        ctx.fillText(fitText(ctx, item.desc, w - 28), x + 14, y + 70);
+        textFit(ctx, item.desc, x + 78, y + 74, w - 96);
       }
 
       const btnY = y + 78;
@@ -2223,57 +2280,81 @@ _drawButton(ctx, rect, text, style = "ghost") {
   }
 
   _renderLoot(ctx, x, y, w) {
+    const trade = this._trade();
+
     this._drawHeroCard(
       ctx,
       x,
       y,
       w,
-      132,
+      124,
       "Sandık & Çark",
-      this._isFreeSpinReady() ? "Günlük çark hazır • dokun ve çevir" : "Premium çark ve sandık açılışları aktif",
-      "LOOT MODE",
-      "🎰",
-      "#ffcc66"
+      this._isFreeSpinReady() ? "Günlük ücretsiz çark hazır" : "Premium loot sistemi aktif",
+      "PREMIUM LOOT",
+      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
+      "#c77dff"
     );
 
-    const freeRect = { x: x + 14, y: y + 82, w: 124, h: 34 };
-    const premiumRect = { x: x + 146, y: y + 82, w: 124, h: 34 };
+    const freeRect = { x: x + 14, y: y + 76, w: 116, h: 34 };
+    const premiumRect = { x: x + 138, y: y + 76, w: 122, h: 34 };
     this.hitButtons.push({ rect: freeRect, action: "free_spin" });
     this.hitButtons.push({ rect: premiumRect, action: "premium_spin" });
-    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Ücretsiz Çevir" : "Yarın Hazır", this._isFreeSpinReady() ? "primary" : "muted");
+    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? "Ücretsiz Çevir" : "Yarın Açılır", this._isFreeSpinReady() ? "primary" : "muted");
     this._drawButton(ctx, premiumRect, "Premium Çark", "gold");
 
-    y += 146;
+    y += 138;
+
+    y += this._drawWheel(ctx, x, y, w, trade) + 14;
 
     const gap = 10;
     const colW = Math.floor((w - gap) / 2);
-
     const c1 = { x, y, w: colW, h: 112 };
     const c2 = { x: x + colW + gap, y, w: colW, h: 112 };
     this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
     this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
 
-    this._drawMiniCard(ctx, c1.x, c1.y, c1.w, c1.h, "Mystery Crate", "65 yton • animasyonlu açılış", "📦", "#ffcc66");
-    this._drawMiniCard(ctx, c2.x, c2.y, c2.w, c2.h, "Legendary Crate", "140 yton • yüksek ödül havuzu", "👑", "#ffcc66");
+    this._drawMiniCard(
+      ctx,
+      c1.x,
+      c1.y,
+      c1.w,
+      c1.h,
+      "Mystery Crate",
+      "65 yton • satın al ve anında aç",
+      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
+      "#62b3ff"
+    );
+    this._drawMiniCard(
+      ctx,
+      c2.x,
+      c2.y,
+      c2.w,
+      c2.h,
+      "Legendary Crate",
+      "140 yton • premium ödül havuzu",
+      { imageSrc: "./src/assets/bonus.png" },
+      "#ffcc66"
+    );
 
-    y += 124;
+    y += 126;
 
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, x, y, w, 116, 18);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    strokeRoundRect(ctx, x, y, w, 116, 18);
+    if (trade.crateReveal) {
+      y += this._drawCrateReveal(ctx, x, y, w, trade.crateReveal) + 14;
+    }
 
+    this.drawCard(ctx, x, y, w, 94);
     ctx.fillStyle = "#fff";
     ctx.font = "900 14px system-ui";
-    ctx.fillText("Animasyon Bilgisi", x + 14, y + 24);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Ödül Havuzu", x + 14, y + 24);
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    ctx.fillText("• Çark gerçek teker gibi döner ve ödülde durur", x + 14, y + 52);
-    ctx.fillText("• Sandık tek sıra akış ile kayar ve ödülde kilitlenir", x + 14, y + 70);
-    ctx.fillText("• Mobil cihazlarda titreşim desteği otomatik denenir", x + 14, y + 88);
+    ctx.fillText("YTON • Enerji • Black Whiskey • White Widow • VIP Companion • Golden Pass", x + 14, y + 52);
+    ctx.fillText("Gösterilen kart ve verilen ödül aynı veri kaynağını kullanır.", x + 14, y + 72);
 
-    y += 128;
+    y += 108;
     return y;
   }
 
@@ -2328,22 +2409,20 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
       strokeRoundRect(ctx, x, y, w, 102, 18);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(shop.icon || iconForType(shop.type), x + 14, y + 28);
+      this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, shop, shop.name || "Dükkan", shop.type);
 
-      const enterRect = { x: x + w - 108, y: y + 64, w: 94, h: 28 };
-      const shopTextMaxW = Math.max(90, enterRect.x - (x + 48) - 12);
+      ctx.fillStyle = "#fff";
       ctx.font = "900 14px system-ui";
-      ctx.fillText(fitText(ctx, shop.name || "Dükkan", shopTextMaxW), x + 48, y + 22);
+      textFit(ctx, shop.name || "Dükkan", x + 80, y + 22, w - 188);
 
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
-      ctx.fillText(fitText(ctx, `${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"}`, shopTextMaxW), x + 48, y + 42);
-      ctx.fillText(fitText(ctx, `Ürün ${fmtNum(shop.totalListings)} • Puan ${shop.rating || 0} • En düşük ${lowest ? fmtNum(lowest) : "-"}`, shopTextMaxW), x + 48, y + 60);
+      textFit(ctx, `${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"}`, x + 80, y + 42, w - 188);
+      textFit(ctx, `Ürün ${fmtNum(shop.totalListings)} • Puan ${shop.rating || 0} • En düşük ${lowest ? fmtNum(lowest) : "-"}`, x + 80, y + 60, w - 188);
 
+      const enterRect = { x: x + w - 108, y: y + 64, w: 94, h: 28 };
       this.hitButtons.push({ rect: enterRect, action: "open_shop", shopId: shop.id });
       this._drawButton(ctx, enterRect, "Dükkana Gir", "primary");
 
@@ -2370,8 +2449,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       shop.name || "Dükkan",
       `${typeLabel(shop.type)} • Sahip ${shop.ownerName || "?"} • Puan ${shop.rating || 0}`,
       shop.online ? "ONLINE" : "OFFLINE",
-      shop.icon || iconForType(shop.type),
-      "#ffcc66"
+      shop,
+      "#4b8fff"
     );
     y += 120;
 
@@ -2387,21 +2466,23 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
       strokeRoundRect(ctx, x, y, w, 102, 18);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(item.icon || "📦", x + 14, y + 28);
+      this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, item, item.itemName || "Ürün", shop.type);
 
-      const buyRect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
-      const itemTextMaxW = Math.max(90, buyRect.x - (x + 48) - 12);
+      ctx.fillStyle = "#fff";
       ctx.font = "900 14px system-ui";
-      ctx.fillText(fitText(ctx, item.itemName || "Ürün", itemTextMaxW), x + 48, y + 22);
+      textFit(ctx, item.itemName || "Ürün", x + 80, y + 22, w - 180);
+
+      ctx.fillStyle = rarityColor(item.rarity);
+      ctx.font = "800 10px system-ui";
+      ctx.fillText(String(item.rarity || "common").toUpperCase(), x + 80, y + 40);
 
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
-      ctx.fillText(fitText(ctx, `Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`, w - 28), x + 14, y + 60);
+      textFit(ctx, `Stok ${fmtNum(item.stock)} • Fiyat ${fmtNum(item.price)} yton`, x + 80, y + 60, w - 180);
 
+      const buyRect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
       this.hitButtons.push({ rect: buyRect, action: "buy_market_item", itemId: item.id, shopId: shop.id });
       this._drawButton(ctx, buyRect, "Satın Al", "gold");
 
@@ -2409,6 +2490,89 @@ _drawButton(ctx, rect, text, style = "ghost") {
     }
 
     return y;
+  }
+
+  _buyBusiness(businessType) {
+    const defs = {
+      nightclub: {
+        price: 1000,
+        name: "Nightclub",
+        theme: "neon",
+        icon: "🌃",
+        imageKey: "nightclub",
+        imageSrc: "./src/assets/nightclub.jpg",
+        products: [
+          { id: `biz_${Date.now()}_whiskey`, icon: "🥃", imageSrc: "./src/assets/drink.png", name: "Black Whiskey", rarity: "common", qty: 8, price: 28, energyGain: 8, desc: "Gece kulübü ürünü." },
+          { id: `biz_${Date.now()}_champ`, icon: "🍾", imageSrc: "./src/assets/drink.png", name: "Premium Champagne", rarity: "rare", qty: 4, price: 44, energyGain: 14, desc: "Premium içki." },
+        ],
+      },
+      coffeeshop: {
+        price: 850,
+        name: "Coffeeshop",
+        theme: "green",
+        icon: "🌿",
+        imageKey: "coffeeshop",
+        imageSrc: "./src/assets/coffeeshop.jpg",
+        products: [
+          { id: `biz_${Date.now()}_weed`, icon: "🍁", imageSrc: "./src/assets/weed.png", name: "White Widow", rarity: "rare", qty: 10, price: 36, energyGain: 12, desc: "Coffeeshop ürünü." },
+        ],
+      },
+      brothel: {
+        price: 1200,
+        name: "Genel Ev",
+        theme: "red",
+        icon: "💋",
+        imageKey: "xxx",
+        imageSrc: "./src/assets/xxx.jpg",
+        products: [
+          { id: `biz_${Date.now()}_vip`, icon: "🌹", imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg", name: "VIP Companion", rarity: "epic", qty: 5, price: 95, energyGain: 22, desc: "Yüksek enerji itemi." },
+        ],
+      },
+    };
+
+    const def = defs[businessType];
+    if (!def) return;
+
+    const s = this.store.get();
+    if (Number(s.coins || 0) < def.price) {
+      this._showToast("Yetersiz yton");
+      return;
+    }
+
+    const nameRaw = window.prompt(`${def.name} için isim gir:`, def.name);
+    if (nameRaw === null) return;
+    const name = String(nameRaw || def.name).trim() || def.name;
+
+    const businessId = `biz_${businessType}_${Date.now()}`;
+    const products = def.products.map((product, idx) => ({
+      ...product,
+      id: `${businessId}_p${idx + 1}`,
+    }));
+
+    const newBusiness = {
+      id: businessId,
+      type: businessType,
+      icon: def.icon,
+      imageKey: def.imageKey,
+      imageSrc: def.imageSrc,
+      name,
+      ownerId: String(s.player?.id || "player_main"),
+      ownerName: String(s.player?.username || "Player"),
+      dailyProduction: 50,
+      stock: products.reduce((sum, item) => sum + Number(item.qty || 0), 0),
+      theme: def.theme,
+      products,
+    };
+
+    this.store.set({
+      coins: Math.max(0, Number(s.coins || 0) - def.price),
+      businesses: {
+        ...(s.businesses || {}),
+        owned: [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))],
+      },
+    });
+
+    this._showToast(`${name} satın alındı`);
   }
 
   _renderBuy(ctx, x, y, w) {
@@ -2421,15 +2585,15 @@ _drawButton(ctx, rect, text, style = "ghost") {
       "İşletme Satın Al",
       "Bina kartları • günlük üretim • isim vererek satın al",
       "OWNER SETUP",
-      "🏗️",
+      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
       "#ffcc66"
     );
     y += 130;
 
     const buildings = [
-      { type: "nightclub", icon: "🌃", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 25+" },
-      { type: "coffeeshop", icon: "🌿", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 20+" },
-      { type: "brothel", icon: "💋", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 35+" },
+      { type: "nightclub", icon: "🌃", imageKey: "nightclub", imageSrc: "./src/assets/nightclub.jpg", name: "Nightclub", price: 1000, risk: "Orta", level: "Lv 25+" },
+      { type: "coffeeshop", icon: "🌿", imageKey: "coffeeshop", imageSrc: "./src/assets/coffeeshop.jpg", name: "Coffeeshop", price: 850, risk: "Düşük", level: "Lv 20+" },
+      { type: "brothel", icon: "💋", imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg", name: "Genel Ev", price: 1200, risk: "Yüksek", level: "Lv 35+" },
     ];
 
     for (const b of buildings) {
@@ -2438,19 +2602,18 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.strokeStyle = "rgba(255,255,255,0.09)";
       strokeRoundRect(ctx, x, y, w, 104, 18);
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 22px system-ui";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      ctx.fillText(b.icon, x + 14, y + 28);
+      this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, b, b.name, b.type);
 
+      ctx.fillStyle = "#fff";
       ctx.font = "900 14px system-ui";
-      ctx.fillText(b.name, x + 48, y + 22);
+      textFit(ctx, b.name, x + 80, y + 22, w - 178);
 
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "11px system-ui";
-      ctx.fillText(`Fiyat ${fmtNum(b.price)} yton • Günlük üretim 50`, x + 48, y + 44);
-      ctx.fillText(`Risk ${b.risk} • Önerilen ${b.level}`, x + 48, y + 62);
+      textFit(ctx, `Fiyat ${fmtNum(b.price)} yton • Günlük üretim 50`, x + 80, y + 44, w - 178);
+      textFit(ctx, `Risk ${b.risk} • Önerilen ${b.level}`, x + 80, y + 62, w - 178);
 
       const rect = { x: x + w - 94, y: y + 66, w: 80, h: 28 };
       this.hitButtons.push({ rect, action: "buy_business", businessType: b.type });
@@ -2472,9 +2635,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
     this.hitButtons = [];
 
     const bgImg =
-      (this.blackmarketBgImg?.complete && this.blackmarketBgImg?.naturalWidth ? this.blackmarketBgImg : null) ||
-      getImgSafe(this.assets, "blackmarket_bg") ||
       getImgSafe(this.assets, "trade") ||
+      getImgSafe(this.assets, "blackmarket_bg") ||
       getImgSafe(this.assets, "blackmarket") ||
       getImgSafe(this.assets, "background");
 
@@ -2509,7 +2671,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.globalAlpha = 0.08;
     ctx.fillStyle = "#ff9e46";
     fillRoundRect(ctx, safe.x - 8, safe.y + 8, safe.w * 0.42, 120, 42);
-    ctx.fillStyle = "#ffcc66";
+    ctx.fillStyle = "#2d68ff";
     fillRoundRect(ctx, safe.x + safe.w - 112, safe.y + 128, 78, 78, 28);
     ctx.restore();
 
@@ -2529,7 +2691,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
 
 
-  this.hitBack = { x: panelX + panelW - 52, y: panelY + 10, w: 40, h: 40 };
+  this.hitBack = { x: panelX + 12, y: panelY + 10, w: 40, h: 40 };
 this._drawButton(ctx, this.hitBack, "✕", "muted");
 
     
@@ -2624,10 +2786,6 @@ this._drawButton(ctx, this.hitBack, "✕", "muted");
       sg.addColorStop(1, "rgba(255,132,58,0.78)");
       ctx.fillStyle = sg;
       fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
-    }
-
-    if (this.lootAnim) {
-      this._drawLootOverlay(ctx, panelX, panelY, panelW, panelH);
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
