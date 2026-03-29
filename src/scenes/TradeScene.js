@@ -165,6 +165,27 @@ function drawCoverImage(ctx, img, x, y, w, h) {
   return true;
 }
 
+function drawContainImage(ctx, img, x, y, w, h) {
+  if (!img || !img.complete || !(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) return false;
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  const scale = Math.min(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) * 0.5;
+  const dy = y + (h - dh) * 0.5;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
+}
+
+function shortRewardLabel(reward) {
+  const raw = String(reward?.label || reward?.text || reward?.name || "ÖDÜL").replace(/\s+/g, ' ').trim();
+  if (!raw) return 'ÖDÜL';
+  if (raw.length <= 14) return raw;
+  const parts = raw.split(' ');
+  return parts.slice(0, 2).join(' ').slice(0, 14);
+}
+
 export class TradeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.store = store;
@@ -189,6 +210,8 @@ export class TradeScene {
     this.toastText = "";
     this.toastUntil = 0;
     this.runtimeImages = new Map();
+    this.wheelAnim = null;
+    this.lastTs = Date.now();
   }
 
   onEnter() {
@@ -200,6 +223,8 @@ export class TradeScene {
     this.dragging = false;
     this.moved = 0;
     this.clickCandidate = false;
+    this.wheelAnim = null;
+    this.lastTs = Date.now();
 
     this.store.set({
       trade: {
@@ -285,27 +310,28 @@ export class TradeScene {
 
   _itemArt(input = {}, fallbackType = "") {
     if (!input) return this._businessArt(fallbackType);
+
     const imageKey = input.imageKey || input.artKey || input.key || "";
     const imageSrc = input.imageSrc || input.artSrc || input.src || "";
     if (imageKey || imageSrc) return { imageKey, imageSrc };
 
-    const typeArt = this._businessArt(input.type || fallbackType);
-    if (typeArt && !input.itemName && !input.name) return typeArt;
+    const typeArt = this._businessArt(input.type || input.businessType || input.business_type || fallbackType);
+    if (typeArt && !input.itemName && !input.name && !input.label && !input.productKey && !input.product_key) return typeArt;
 
-    const raw = `${input.itemName || ""} ${input.name || ""} ${input.label || ""}`.toLowerCase();
-    if (/(whiskey|champagne|drink|night whiskey|black whiskey|club champagne)/.test(raw)) {
+    const raw = `${input.productKey || ""} ${input.product_key || ""} ${input.itemKey || ""} ${input.itemName || ""} ${input.name || ""} ${input.label || ""} ${input.kind || ""}`.toLowerCase();
+    if (/(whiskey|champagne|drink|night whiskey|black whiskey|club champagne|premium_champ|whiskey_item)/.test(raw)) {
       return { imageSrc: "./src/assets/drink.png" };
     }
-    if (/(white widow|og kush|moon rocks|weed|kush)/.test(raw)) {
+    if (/(white widow|og kush|moon rocks|weed|kush|widow|moon_rocks)/.test(raw)) {
       return { imageSrc: "./src/assets/weed.png" };
     }
-    if (/(vip companion|deluxe service|vip girl|companion|service)/.test(raw)) {
+    if (/(vip companion|deluxe service|vip girl|companion|service|escort|girl)/.test(raw)) {
       return { imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg" };
     }
-    if (/(golden pass|vip pass|pass)/.test(raw)) {
+    if (/(golden pass|vip pass|pass|bonus)/.test(raw)) {
       return { imageSrc: "./src/assets/bonus.png" };
     }
-    if (/(crate|sandık)/.test(raw)) {
+    if (/(crate|sandık|loot|premium_crate|mystery_crate)/.test(raw)) {
       return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
     }
     return typeArt;
@@ -320,21 +346,27 @@ export class TradeScene {
   }
 
   _drawArtThumb(ctx, x, y, w, h, art, fallbackLabel = "", fallbackType = "") {
+    const spec = this._itemArt(art, fallbackType) || {};
     const img = this._resolveArtImage(art, fallbackType);
     const r = Math.max(10, Math.min(18, Math.floor(Math.min(w, h) * 0.22)));
+    const useContain = /\.png($|\?)/i.test(String(spec.imageSrc || "")) || ["consumable", "goods", "rare"].includes(String(art?.kind || "").toLowerCase());
+    const pad = useContain ? Math.max(4, Math.floor(Math.min(w, h) * 0.12)) : 0;
 
     ctx.save();
     roundRectPath(ctx, x, y, w, h, r);
     ctx.clip();
 
     const bg = ctx.createLinearGradient(x, y, x, y + h);
-    bg.addColorStop(0, "rgba(255,190,90,0.22)");
-    bg.addColorStop(1, "rgba(22,12,8,0.54)");
+    bg.addColorStop(0, "rgba(255,190,90,0.16)");
+    bg.addColorStop(1, "rgba(22,12,8,0.52)");
     ctx.fillStyle = bg;
     ctx.fillRect(x, y, w, h);
 
-    if (!drawCoverImage(ctx, img, x, y, w, h)) {
-      ctx.fillStyle = "rgba(255,255,255,0.16)";
+    if (img) {
+      if (useContain) drawContainImage(ctx, img, x + pad, y + pad, w - pad * 2, h - pad * 2);
+      else drawCoverImage(ctx, img, x, y, w, h);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
       ctx.fillRect(x, y, w, h);
       ctx.fillStyle = "#fff4d6";
       ctx.font = `800 ${Math.max(12, Math.floor(h * 0.24))}px system-ui`;
@@ -658,36 +690,77 @@ export class TradeScene {
     });
   }
 
+  _startWheelAnimation(mode, pool, selectedIndex, reward) {
+    const trade = this._trade();
+    const total = Math.max(1, pool.length);
+    const current = this.wheelAnim?.rotation ?? Number(trade.lootWheel?.rotation || this._rewardRotation(0, total));
+    const desired = this._rewardRotation(selectedIndex, total);
+    const TAU = Math.PI * 2;
+    let delta = desired - current;
+    while (delta < 0) delta += TAU;
+    while (delta >= TAU) delta -= TAU;
+    const loops = mode === "premium" ? 5 : 4;
+    const target = current + delta + loops * TAU;
+    this.wheelAnim = {
+      mode,
+      reward: reward ? { ...reward, item: reward.item ? { ...reward.item } : null } : null,
+      start: Date.now(),
+      duration: mode === "premium" ? 2400 : 1900,
+      from: current,
+      to: target,
+      rotation: current,
+      selectedIndex,
+      poolSize: total,
+    };
+  }
+
+  _getWheelRotation(trade, pool) {
+    if (this.wheelAnim && this.wheelAnim.poolSize === Math.max(1, pool.length)) return this.wheelAnim.rotation;
+    const wheelState = trade.lootWheel || {};
+    return Number.isFinite(Number(wheelState.rotation)) ? Number(wheelState.rotation) : this._rewardRotation(Number(wheelState.selectedIndex || 0), pool.length);
+  }
+
+  _crateDisplayCards(reveal) {
+    const reward = reveal?.reward || null;
+    const pool = Array.isArray(reveal?.pool) ? reveal.pool : [];
+    if (!reward) return pool.slice(0, 3);
+    const idx = pool.findIndex((entry) => String(entry.id || '') === String(reward.id || ''));
+    if (idx < 0 || pool.length < 2) return [reward];
+    const prev = pool[(idx - 1 + pool.length) % pool.length];
+    const next = pool[(idx + 1) % pool.length];
+    return [prev, reward, next];
+  }
+
   _drawRewardCard(ctx, x, y, w, h, reward, highlight = false) {
     const accent = reward?.accent || "#f3b35b";
     const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, highlight ? "rgba(255,201,110,0.28)" : "rgba(10,14,20,0.42)");
-    grad.addColorStop(1, highlight ? "rgba(98,52,10,0.34)" : "rgba(6,10,16,0.52)");
+    grad.addColorStop(0, highlight ? "rgba(255,201,110,0.24)" : "rgba(10,14,20,0.42)");
+    grad.addColorStop(1, highlight ? "rgba(98,52,10,0.30)" : "rgba(6,10,16,0.52)");
     ctx.fillStyle = grad;
-    fillRoundRect(ctx, x, y, w, h, 20);
+    fillRoundRect(ctx, x, y, w, h, 22);
     ctx.strokeStyle = highlight ? "rgba(255,216,134,0.78)" : "rgba(255,255,255,0.10)";
-    ctx.lineWidth = highlight ? 1.4 : 1;
-    strokeRoundRect(ctx, x, y, w, h, 20);
+    ctx.lineWidth = highlight ? 1.6 : 1;
+    strokeRoundRect(ctx, x, y, w, h, 22);
 
-    this._drawArtThumb(ctx, x + 12, y + 12, 56, 56, reward?.item || reward, reward?.label || reward?.text || "ÖDÜL");
+    this._drawArtThumb(ctx, x + 14, y + 14, 68, h - 28, reward?.item || reward, reward?.label || reward?.text || "ÖDÜL");
 
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.font = "900 14px system-ui";
-    textFit(ctx, reward?.label || reward?.text || "Ödül", x + 78, y + 28, w - 90);
+    textFit(ctx, reward?.label || reward?.text || "Ödül", x + 94, y + 28, w - 164);
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    textFit(ctx, reward?.text || "", x + 78, y + 48, w - 90);
+    textFit(ctx, reward?.text || "", x + 94, y + 48, w - 164);
 
     if (highlight) {
       ctx.fillStyle = accent;
-      fillRoundRect(ctx, x + w - 64, y + 12, 46, 22, 11);
+      fillRoundRect(ctx, x + w - 72, y + 14, 56, 24, 12);
       ctx.fillStyle = "#251506";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 10px system-ui";
-      ctx.fillText("KAZANILDI", x + w - 41, y + 23);
+      ctx.fillText("KAZANILDI", x + w - 44, y + 26);
     }
   }
 
@@ -696,9 +769,9 @@ export class TradeScene {
     const mode = wheelState.mode === "premium" ? "premium" : "free";
     const pool = mode === "premium" ? this._premiumSpinRewards() : this._freeSpinRewards();
     const selectedIndex = Number.isFinite(Number(wheelState.selectedIndex)) ? Number(wheelState.selectedIndex) : 0;
-    const rotation = Number.isFinite(Number(wheelState.rotation)) ? Number(wheelState.rotation) : this._rewardRotation(selectedIndex, pool.length);
+    const rotation = this._getWheelRotation(trade, pool);
 
-    const boxH = 324;
+    const boxH = 392;
     this.drawCard(ctx, x, y, w, boxH);
 
     ctx.fillStyle = "#fff";
@@ -706,17 +779,33 @@ export class TradeScene {
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillText(mode === "premium" ? "Premium Çark" : "Günlük Çark", x + 16, y + 28);
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.fillStyle = this.wheelAnim ? "rgba(255,215,120,0.86)" : "rgba(255,255,255,0.70)";
     ctx.font = "12px system-ui";
-    ctx.fillText("Okun gösterdiği dilim ile verilen ödül birebir aynıdır.", x + 16, y + 48);
+    ctx.fillText(this.wheelAnim ? "Çark dönüyor..." : "Okun gösterdiği dilim birebir ödül verir.", x + 16, y + 48);
 
     const cx = x + w / 2;
-    const cy = y + 140;
-    const radius = Math.min(98, Math.floor(Math.min(w * 0.32, 98)));
+    const cy = y + 160;
+    const radius = Math.min(122, Math.floor(Math.min(w * 0.31, 122)));
     const slice = (Math.PI * 2) / pool.length;
 
     ctx.save();
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + radius + 12, radius * 0.92, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
     ctx.translate(cx, cy);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius + 8, 0, Math.PI * 2);
+    const rim = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius + 8);
+    rim.addColorStop(0, "rgba(0,0,0,0)");
+    rim.addColorStop(1, "rgba(255,215,120,0.30)");
+    ctx.fillStyle = rim;
+    ctx.fill();
+
     for (let i = 0; i < pool.length; i += 1) {
       const start = rotation + i * slice;
       const end = start + slice;
@@ -724,63 +813,75 @@ export class TradeScene {
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, start, end);
       ctx.closePath();
-      ctx.fillStyle = i % 2 === 0 ? "rgba(193,136,44,0.95)" : "rgba(129,87,24,0.95)";
+      const seg = ctx.createLinearGradient(-radius, -radius, radius, radius);
+      if (i % 2 === 0) {
+        seg.addColorStop(0, "rgba(206,152,55,0.96)");
+        seg.addColorStop(1, "rgba(126,84,22,0.96)");
+      } else {
+        seg.addColorStop(0, "rgba(165,116,36,0.96)");
+        seg.addColorStop(1, "rgba(95,62,15,0.96)");
+      }
+      ctx.fillStyle = seg;
       ctx.fill();
-      ctx.strokeStyle = "rgba(255,240,208,0.52)";
+      ctx.strokeStyle = "rgba(255,240,208,0.42)";
       ctx.lineWidth = 1.2;
       ctx.stroke();
-
-      if (i === selectedIndex) {
-        ctx.save();
-        ctx.globalAlpha = 0.22;
-        ctx.fillStyle = "#fff2cf";
-        ctx.fill();
-        ctx.restore();
-      }
 
       const mid = start + slice / 2;
       ctx.save();
       ctx.rotate(mid);
       const reward = pool[i];
-      this._drawArtThumb(ctx, radius * 0.40, -18, 34, 34, reward.item || reward, reward.label || reward.text || "ÖDÜL");
-      ctx.fillStyle = "#fff";
+      this._drawArtThumb(ctx, radius * 0.44, -22, 40, 40, reward.item || reward, shortRewardLabel(reward));
+      ctx.fillStyle = "#fff7e6";
       ctx.font = "900 10px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const label = String(reward.label || reward.text || "").replace(/\+/g, "").slice(0, 12);
-      ctx.fillText(label, radius * 0.58, 28);
+      const label = shortRewardLabel(reward).replace(/\+/g, '');
+      ctx.fillText(label, radius * 0.62, 28);
       ctx.restore();
     }
 
-    ctx.fillStyle = "rgba(20,12,6,0.92)";
     ctx.beginPath();
-    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.arc(0, 0, 26, 0, Math.PI * 2);
+    const hub = ctx.createRadialGradient(0, 0, 4, 0, 0, 28);
+    hub.addColorStop(0, "rgba(65,36,9,0.98)");
+    hub.addColorStop(1, "rgba(20,11,6,0.98)");
+    ctx.fillStyle = hub;
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.strokeStyle = "rgba(255,235,192,0.18)";
     ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = "#f8df9d";
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
     ctx.beginPath();
-    ctx.moveTo(cx, y + 74);
-    ctx.lineTo(cx - 14, y + 48);
-    ctx.lineTo(cx + 14, y + 48);
+    ctx.moveTo(cx, y + 58);
+    ctx.lineTo(cx - 16, y + 92);
+    ctx.lineTo(cx + 16, y + 92);
     ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = "#f8df9d";
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 54);
+    ctx.lineTo(cx - 14, y + 84);
+    ctx.lineTo(cx + 14, y + 84);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
 
     const reward = wheelState.reward || pool[selectedIndex] || pool[0];
-    this._drawRewardCard(ctx, x + 14, y + 212, w - 28, 84, reward, true);
+    this._drawRewardCard(ctx, x + 14, y + 278, w - 28, 92, reward, true);
     return boxH;
   }
 
   _drawCrateReveal(ctx, x, y, w, reveal) {
-    if (!reveal?.pool?.length) return 0;
-    const cards = reveal.pool.slice(0, 3);
-    const selectedIndex = Math.max(0, Math.min(cards.length - 1, Number(reveal.selectedIndex || 0)));
+    if (!reveal?.reward) return 0;
+    const cards = this._crateDisplayCards(reveal);
     const cardGap = 10;
-    const cardW = Math.floor((w - cardGap * 2) / 3);
+    const sideW = Math.floor((w - 28 - cardGap * 2) * 0.26);
+    const centerW = w - 28 - cardGap * 2 - sideW * 2;
 
-    this.drawCard(ctx, x, y, w, 166);
+    this.drawCard(ctx, x, y, w, 196);
     ctx.fillStyle = "#fff";
     ctx.font = "900 16px system-ui";
     ctx.textAlign = "left";
@@ -788,14 +889,26 @@ export class TradeScene {
     ctx.fillText(reveal.kind === "legendary" ? "Legendary Sandık Açıldı" : "Mystery Sandık Açıldı", x + 16, y + 28);
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.font = "12px system-ui";
-    ctx.fillText("Parlayan kart verilen ödüldür.", x + 16, y + 48);
+    ctx.fillText("Ortadaki kart verilen ödüldür.", x + 16, y + 48);
 
-    for (let i = 0; i < cards.length; i += 1) {
-      const rx = x + 14 + i * (cardW + cardGap);
-      const reward = cards[i];
-      this._drawRewardCard(ctx, rx, y + 58, cardW, 94, reward, i === selectedIndex);
+    const left = { x: x + 14, y: y + 72, w: sideW, h: 96 };
+    const center = { x: left.x + sideW + cardGap, y: y + 62, w: centerW, h: 116 };
+    const right = { x: center.x + centerW + cardGap, y: y + 72, w: sideW, h: 96 };
+
+    if (cards[0]) {
+      ctx.save();
+      ctx.globalAlpha = 0.72;
+      this._drawRewardCard(ctx, left.x, left.y, left.w, left.h, cards[0], false);
+      ctx.restore();
     }
-    return 166;
+    this._drawRewardCard(ctx, center.x, center.y, center.w, center.h, reveal.reward, true);
+    if (cards[2]) {
+      ctx.save();
+      ctx.globalAlpha = 0.72;
+      this._drawRewardCard(ctx, right.x, right.y, right.w, right.h, cards[2], false);
+      ctx.restore();
+    }
+    return 196;
   }
 
   _showToast(text, ms = 1400) {
@@ -982,6 +1095,10 @@ export class TradeScene {
   }
 
   _doFreeSpin() {
+    if (this.wheelAnim) {
+      this._showToast("Çark dönüyor");
+      return;
+    }
     if (!this._isFreeSpinReady()) {
       this._showToast("Günlük ücretsiz çark kullanıldı");
       return;
@@ -993,10 +1110,14 @@ export class TradeScene {
 
     this._grantReward(reward, { markFreeSpin: true });
     this._setWheelResult("free", pool, selectedIndex, reward);
-    this._showToast(reward.text, 1600);
+    this._startWheelAnimation("free", pool, selectedIndex, reward);
   }
 
   _doPremiumSpin() {
+    if (this.wheelAnim) {
+      this._showToast("Çark dönüyor");
+      return;
+    }
     const s = this.store.get();
     const cost = 90;
 
@@ -1011,7 +1132,7 @@ export class TradeScene {
 
     this._grantReward(reward, { cost });
     this._setWheelResult("premium", pool, selectedIndex, reward);
-    this._showToast(reward.text, 1600);
+    this._startWheelAnimation("premium", pool, selectedIndex, reward);
   }
 
   _buyCrate(kind) {
@@ -1668,6 +1789,24 @@ export class TradeScene {
   }
 
   update() {
+    const now = Date.now();
+    if (this.wheelAnim) {
+      const t = clamp((now - this.wheelAnim.start) / Math.max(1, this.wheelAnim.duration), 0, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      this.wheelAnim.rotation = this.wheelAnim.from + (this.wheelAnim.to - this.wheelAnim.from) * eased;
+      if (t >= 1) {
+        const trade = this._trade();
+        this._setTrade({
+          lootWheel: {
+            ...(trade.lootWheel || {}),
+            rotation: this._rewardRotation(this.wheelAnim.selectedIndex, this.wheelAnim.poolSize),
+          },
+        });
+        this._showToast(this.wheelAnim.reward?.text || "Ödül alındı", 1600);
+        this.wheelAnim = null;
+      }
+    }
+
     const pointer = getPointer(this.input);
     const px = Number(pointer?.x || 0);
     const py = Number(pointer?.y || 0);
@@ -2087,7 +2226,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       "İşletmelerim",
       `${fmtNum(businesses.length)} işletme • yönetim paneli`,
       "OWNER MODE",
-      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
+      businesses[0] || { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
       "#4b8fff"
     );
     y += 132;
