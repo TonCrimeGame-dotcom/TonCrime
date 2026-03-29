@@ -830,3 +830,71 @@
     transform: translateX(10px) !important;
   }
 }
+
+
+/* ===== TONCRIME HUD IMAGE MINI VISUALS ===== */
+.hudMiniIcon.hudMiniVisual {
+  width: 20px !important;
+  height: 20px !important;
+  flex: 0 0 20px !important;
+  padding: 0 !important;
+  border-radius: 7px !important;
+  overflow: hidden !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 100%),
+    rgba(12,12,16,0.42) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.07),
+    0 2px 8px rgba(0,0,0,0.22) !important;
+}
+
+.hudMiniIcon.hudMiniVisual img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  padding: 1px;
+}
+
+.hudMiniIcon.hudMiniVisual.is-empty {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%),
+    rgba(12,12,16,0.20) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
+.hudMiniIcon.hudMiniVisual.is-empty img {
+  display: none;
+}
+
+.hudMiniIcon.hudMiniVisualYton img {
+  padding: 0;
+}
+
+.hudMiniIcon.hudMiniVisualWeapon img {
+  padding: 0.5px;
+}
+
+#hudLeft .line2,
+#hudLeft .line3 {
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .hudMiniIcon.hudMiniVisual {
+    width: 18px !important;
+    height: 18px !important;
+    flex-basis: 18px !important;
+    border-radius: 6px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .hudMiniIcon.hudMiniVisual {
+    width: 16px !important;
+    height: 16px !important;
+    flex-basis: 16px !important;
+    border-radius: 5px !important;
+  }
+}
