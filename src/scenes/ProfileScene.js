@@ -812,11 +812,11 @@ export class ProfileScene {
     if (tab === "wallet") {
       const wallet = state?.wallet || {};
       const step = String(wallet.investmentStep || "idle");
-      let total = layout.mobile ? 1040 : 1120;
-      total += wallet.withdrawPending ? (layout.mobile ? 34 : 24) : 0;
-      if (step === "select") total += layout.mobile ? 260 : 210;
-      if (step === "payment") total += layout.mobile ? 360 : 320;
-      if (step === "confirmed") total += layout.mobile ? 470 : 410;
+      let total = layout.mobile ? 1320 : 1360;
+      total += wallet.withdrawPending ? (layout.mobile ? 40 : 28) : 0;
+      if (step === "select") total += layout.mobile ? 300 : 250;
+      if (step === "payment") total += layout.mobile ? 420 : 360;
+      if (step === "confirmed") total += layout.mobile ? 520 : 450;
       return total;
     }
     if (tab === "ranking") {
@@ -1168,116 +1168,116 @@ export class ProfileScene {
     const latestInvestment = Array.isArray(wallet.investments) && wallet.investments.length ? wallet.investments[0] : null;
     const latestWithdraw = Array.isArray(wallet.withdraws) && wallet.withdraws.length ? wallet.withdraws[0] : null;
 
-    this.drawSectionTitle(ctx, 'Cüzdan', 'Tek kolon ve daha ferah görünüm', x + 8, y + 20, w - 16);
-
-    let cy = y + 44;
+    let cy = y + 8;
     const fullW = w - 16;
     const cardX = x + 8;
     const innerX = cardX + 16;
     const innerW = fullW - 32;
-    const inputH = 46;
-    const gap = 14;
+    const inputH = 44;
+    const gap = 12;
+    const cardGap = 16;
+    const halfW = Math.floor((innerW - gap) / 2);
 
     const drawActionBtn = (btn, label, tone = 'gold') => {
       fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === 'soft' ? 'rgba(255,255,255,0.08)' : 'rgba(243,187,102,0.16)');
       strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === 'soft' ? 'rgba(255,255,255,0.16)' : 'rgba(243,187,102,0.36)', 1);
       ctx.fillStyle = 'rgba(255,255,255,0.96)';
-      ctx.font = `700 ${L.mobile ? 14 : 15}px system-ui`;
+      ctx.font = `700 ${L.mobile ? 13 : 15}px system-ui`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+      textFit(ctx, label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1, btn.w - 20);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
     };
 
     const drawCardHead = (title, sub, y0) => {
       ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 18px system-ui';
-      textFit(ctx, title, innerX, y0 + 30, innerW);
+      ctx.font = `700 ${L.mobile ? 16 : 18}px system-ui`;
+      textFit(ctx, title, innerX, y0 + 28, innerW);
       ctx.fillStyle = 'rgba(255,213,156,0.76)';
       ctx.font = '500 12px system-ui';
-      textFit(ctx, sub, innerX, y0 + 50, innerW);
+      const lines = wrapText(ctx, sub, innerW, 2);
+      lines.forEach((line, idx) => ctx.fillText(line, innerX, y0 + 48 + idx * 15));
     };
 
-    this.drawCard(ctx, cardX, cy, fullW, 120);
-    drawCardHead('Bakiye Özeti', 'Mevcut dönüşüm bakiyelerin', cy);
+    this.drawCard(ctx, cardX, cy, fullW, 122);
+    drawCardHead('Bakiye Özeti', 'YTON ve TON bakiyelerini buradan takip et.', cy);
     ctx.fillStyle = 'rgba(255,255,255,0.98)';
-    ctx.font = `700 ${L.mobile ? 28 : 32}px system-ui`;
-    ctx.fillText(`${moneyFmt(ytonBalance)} YTON`, innerX, cy + 84);
+    ctx.font = `700 ${L.mobile ? 25 : 30}px system-ui`;
+    textFit(ctx, `${moneyFmt(ytonBalance)} YTON`, innerX, cy + 90, innerW * 0.62);
     ctx.textAlign = 'right';
-    ctx.fillText(`${tonFmt(tonBalance)} TON`, cardX + fullW - 16, cy + 84);
+    textFit(ctx, `${tonFmt(tonBalance)} TON`, cardX + fullW - 16, cy + 90, innerW * 0.36);
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(255,255,255,0.62)';
     ctx.font = '500 11px system-ui';
-    ctx.fillText('1 YTON = 0.01 TON', innerX, cy + 103);
+    ctx.fillText('1 YTON = 0.01 TON', innerX, cy + 108);
     ctx.textAlign = 'right';
-    ctx.fillText('1 TON = 100 YTON', cardX + fullW - 16, cy + 103);
+    ctx.fillText('1 TON = 100 YTON', cardX + fullW - 16, cy + 108);
     ctx.textAlign = 'left';
-    cy += 134;
+    cy += 122 + cardGap;
 
-    this.drawCard(ctx, cardX, cy, fullW, 190);
-    drawCardHead('YTON → TON Çevir', 'Kasadaki YTON bakiyeni TON bakiyene aktar.', cy);
+    this.drawCard(ctx, cardX, cy, fullW, 212);
+    drawCardHead('YTON → TON Çevir', 'Kasadaki YTON bakiyeni TON bakiyene dönüştür.', cy);
     ctx.fillStyle = 'rgba(255,255,255,0.64)';
     ctx.font = '500 11px system-ui';
     const lastForward = wallet.lastConvertedYton > 0
       ? `Son işlem: ${tonFmt(wallet.lastConvertedYton)} YTON → ${tonFmt(wallet.lastConvertedTon)} TON`
       : 'Henüz YTON → TON çevirisi yapılmadı';
-    textFit(ctx, lastForward, innerX, cy + 68, innerW);
-    this._showSceneInput('convertYtonInput', innerX, cy + 82, innerW, inputH, wallet.convertYtonInput || '', 'YTON miktarı');
-    const halfW = Math.floor((innerW - gap) / 2);
-    const fillYtonBtn = { x: innerX, y: cy + 138, w: halfW, h: 40, onClick: () => this._useAllConvertibleYton() };
-    const convertYtonBtn = { x: innerX + halfW + gap, y: cy + 138, w: halfW, h: 40, onClick: () => this._convertYtonToTon() };
+    textFit(ctx, lastForward, innerX, cy + 78, innerW);
+    this._showSceneInput('convertYtonInput', innerX, cy + 94, innerW, inputH, wallet.convertYtonInput || '', 'YTON miktarı');
+    const fillYtonBtn = { x: innerX, y: cy + 150, w: halfW, h: 40, onClick: () => this._useAllConvertibleYton() };
+    const convertYtonBtn = { x: innerX + halfW + gap, y: cy + 150, w: halfW, h: 40, onClick: () => this._convertYtonToTon() };
     this.buttons.push(fillYtonBtn, convertYtonBtn);
     drawActionBtn(fillYtonBtn, 'Tüm YTON', 'soft');
     drawActionBtn(convertYtonBtn, 'TON’a Çevir');
-    cy += 204;
+    cy += 212 + cardGap;
 
-    this.drawCard(ctx, cardX, cy, fullW, 190);
+    this.drawCard(ctx, cardX, cy, fullW, 212);
     drawCardHead('TON → YTON Çevir', 'TON bakiyeni tekrar YTON bakiyene dönüştür.', cy);
     ctx.fillStyle = 'rgba(255,255,255,0.64)';
     ctx.font = '500 11px system-ui';
     const lastReverse = wallet.lastReverseConvertedTon > 0
       ? `Son işlem: ${tonFmt(wallet.lastReverseConvertedTon)} TON → ${tonFmt(wallet.lastReverseConvertedYton)} YTON`
       : 'Henüz TON → YTON çevirisi yapılmadı';
-    textFit(ctx, lastReverse, innerX, cy + 68, innerW);
-    this._showSceneInput('convertTonInput', innerX, cy + 82, innerW, inputH, wallet.convertTonInput || '', 'TON miktarı');
-    const fillTonBtn = { x: innerX, y: cy + 138, w: halfW, h: 40, onClick: () => this._useAllTonBalance() };
-    const convertTonBtn = { x: innerX + halfW + gap, y: cy + 138, w: halfW, h: 40, onClick: () => this._convertTonToYton() };
+    textFit(ctx, lastReverse, innerX, cy + 78, innerW);
+    this._showSceneInput('convertTonInput', innerX, cy + 94, innerW, inputH, wallet.convertTonInput || '', 'TON miktarı');
+    const fillTonBtn = { x: innerX, y: cy + 150, w: halfW, h: 40, onClick: () => this._useAllTonBalance() };
+    const convertTonBtn = { x: innerX + halfW + gap, y: cy + 150, w: halfW, h: 40, onClick: () => this._convertTonToYton() };
     this.buttons.push(fillTonBtn, convertTonBtn);
     drawActionBtn(fillTonBtn, 'Tüm TON', 'soft');
     drawActionBtn(convertTonBtn, 'YTON’a Çevir');
-    cy += 204;
+    cy += 212 + cardGap;
 
-    this.drawCard(ctx, cardX, cy, fullW, 166);
+    this.drawCard(ctx, cardX, cy, fullW, 196);
     drawCardHead('Bağlı Cüzdan', 'Çekim yapılacak TON adresini yaz ve kaydet.', cy);
     ctx.fillStyle = connected ? 'rgba(124,255,170,0.92)' : 'rgba(255,255,255,0.62)';
     ctx.font = '600 11px system-ui';
-    textFit(ctx, connected ? `Bağlı adres: ${shortAddr(connected)}` : 'Henüz kayıtlı adres yok', innerX, cy + 68, innerW);
-    this._showSceneInput('walletAddressInput', innerX, cy + 82, innerW, inputH, wallet.walletAddressInput || '', 'EQ... veya UQ...');
-    const saveWalletBtn = { x: innerX, y: cy + 138, w: innerW, h: 40, onClick: () => this._connectWallet() };
+    textFit(ctx, connected ? `Bağlı adres: ${shortAddr(connected)}` : 'Henüz kayıtlı adres yok', innerX, cy + 78, innerW);
+    this._showSceneInput('walletAddressInput', innerX, cy + 94, innerW, inputH, wallet.walletAddressInput || '', 'EQ... veya UQ...');
+    const saveWalletBtn = { x: innerX, y: cy + 150, w: innerW, h: 40, onClick: () => this._connectWallet() };
     this.buttons.push(saveWalletBtn);
     drawActionBtn(saveWalletBtn, connected ? 'Adresi Güncelle' : 'Adresi Kaydet');
-    cy += 180;
+    cy += 196 + cardGap;
 
-    const withdrawCardH = wallet.withdrawPending ? 188 : 170;
+    const withdrawCardH = wallet.withdrawPending ? 224 : 208;
     this.drawCard(ctx, cardX, cy, fullW, withdrawCardH);
-    drawCardHead('Çekim Talebi', 'Min 0.5 TON • Max 100 TON • Bağlı adrese gönderilir.', cy);
-    this._showSceneInput('withdrawTonInput', innerX, cy + 82, innerW, inputH, wallet.withdrawTonInput || '', 'Çekilecek TON miktarı');
-    const withdrawBtn = { x: innerX, y: cy + 138, w: innerW, h: 42, onClick: () => this._requestWithdraw() };
+    drawCardHead('Çekim Talebi', 'Min 0.5 TON • Max 100 TON • Bağlı adrese gider.', cy);
+    this._showSceneInput('withdrawTonInput', innerX, cy + 94, innerW, inputH, wallet.withdrawTonInput || '', 'Çekilecek TON miktarı');
+    const withdrawBtn = { x: innerX, y: cy + 150, w: innerW, h: 42, onClick: () => this._requestWithdraw() };
     this.buttons.push(withdrawBtn);
     drawActionBtn(withdrawBtn, 'Çekim Talebi Oluştur', 'soft');
-    if (wallet.withdrawPending && latestWithdraw) {
-      ctx.fillStyle = 'rgba(124,255,170,0.92)';
-      ctx.font = '700 11px system-ui';
-      textFit(ctx, `Beklemede: ${tonFmt(latestWithdraw.amountTon)} TON • ${wallet.withdrawRequestId || latestWithdraw.id || ''}`, innerX, cy + 197 - 20, innerW);
-    } else {
-      ctx.fillStyle = 'rgba(255,255,255,0.62)';
-      ctx.font = '500 11px system-ui';
-      textFit(ctx, 'Önce TON bakiye oluştur, sonra miktarı yazıp talep aç.', innerX, cy + 197 - 20, innerW);
-    }
-    cy += withdrawCardH + 14;
+    ctx.fillStyle = wallet.withdrawPending && latestWithdraw ? 'rgba(124,255,170,0.92)' : 'rgba(255,255,255,0.62)';
+    ctx.font = wallet.withdrawPending && latestWithdraw ? '700 11px system-ui' : '500 11px system-ui';
+    const withdrawMsg = wallet.withdrawPending && latestWithdraw
+      ? `Beklemede: ${tonFmt(latestWithdraw.amountTon)} TON • ${wallet.withdrawRequestId || latestWithdraw.id || ''}`
+      : 'Önce TON bakiye oluştur, sonra miktarı yazıp talep aç.';
+    const withdrawLines = wrapText(ctx, withdrawMsg, innerW, 2);
+    withdrawLines.forEach((line, idx) => ctx.fillText(line, innerX, cy + 210 + idx * 15));
+    cy += withdrawCardH + cardGap;
 
-    this.drawCard(ctx, cardX, cy, fullW, 74);
-    drawCardHead('Yatırım', '20 TON • 50 TON • 100 TON limitlerinden birini seç.', cy);
-    cy += 88;
+    this.drawCard(ctx, cardX, cy, fullW, 84);
+    drawCardHead('Yatırım', '20 TON, 50 TON veya 100 TON limitlerinden birini seç.', cy);
+    cy += 84 + 12;
 
     const investBtn = { x: cardX, y: cy, w: fullW, h: 44, onClick: () => this._openInvestmentSelector() };
     this.buttons.push(investBtn);
@@ -1286,11 +1286,11 @@ export class ProfileScene {
 
     if (step === 'select') {
       const options = [20, 50, 100];
-      const blockH = 86 + options.length * 74;
+      const blockH = 92 + options.length * 74 + 50;
       this.drawCard(ctx, cardX, cy, fullW, blockH);
       drawCardHead('Yatırım Limiti Seç', 'Bir limit seç ve ödeme ekranına geç.', cy);
       options.forEach((amount, idx) => {
-        const btn = { x: innerX, y: cy + 62 + idx * 74, w: innerW, h: 58, onClick: () => this._selectInvestmentAmount(amount) };
+        const btn = { x: innerX, y: cy + 68 + idx * 74, w: innerW, h: 58, onClick: () => this._selectInvestmentAmount(amount) };
         this.buttons.push(btn);
         fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 16, 'rgba(255,255,255,0.05)');
         strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 16, 'rgba(243,187,102,0.28)', 1);
@@ -1303,7 +1303,7 @@ export class ProfileScene {
         ctx.font = '500 11px system-ui';
         ctx.fillText('Limit seç', btn.x + btn.w / 2, btn.y + btn.h / 2 + 16);
       });
-      const cancelBtn = { x: innerX, y: cy + 62 + options.length * 74, w: innerW, h: 40, onClick: () => this._cancelInvestmentFlow() };
+      const cancelBtn = { x: innerX, y: cy + 68 + options.length * 74, w: innerW, h: 40, onClick: () => this._cancelInvestmentFlow() };
       this.buttons.push(cancelBtn);
       drawActionBtn(cancelBtn, 'Vazgeç', 'soft');
       ctx.textAlign = 'left';
@@ -1312,21 +1312,21 @@ export class ProfileScene {
     }
 
     if (step === 'payment' || step === 'confirmed') {
-      const blockH = latestInvestment ? 420 : 318;
+      const blockH = latestInvestment ? 420 : 330;
       this.drawCard(ctx, cardX, cy, fullW, blockH);
       drawCardHead('Yatırım Ödeme Bilgisi', `Seçilen limit: ${Number(wallet.selectedInvestmentTon || 0)} TON`, cy);
 
-      this.drawCard(ctx, innerX, cy + 64, innerW, 84);
+      this.drawCard(ctx, innerX, cy + 72, innerW, 84);
       ctx.fillStyle = 'rgba(255,213,156,0.76)';
       ctx.font = '500 12px system-ui';
-      ctx.fillText('TON Cüzdan Adresi', innerX + 16, cy + 92);
+      ctx.fillText('TON Cüzdan Adresi', innerX + 16, cy + 100);
       ctx.fillStyle = 'rgba(255,255,255,0.96)';
       ctx.font = '700 13px system-ui';
-      textFit(ctx, address, innerX + 16, cy + 118, innerW - 32);
+      textFit(ctx, address, innerX + 16, cy + 126, innerW - 32);
 
-      const copyBtn = { x: innerX, y: cy + 164, w: innerW, h: 42, onClick: () => this._copyWalletAddress() };
-      const paidBtn = { x: innerX, y: cy + 216, w: innerW, h: 42, onClick: () => this._confirmInvestmentPaid() };
-      const backBtn = { x: innerX, y: cy + 268, w: innerW, h: 38, onClick: () => this._openInvestmentSelector() };
+      const copyBtn = { x: innerX, y: cy + 170, w: innerW, h: 42, onClick: () => this._copyWalletAddress() };
+      const paidBtn = { x: innerX, y: cy + 222, w: innerW, h: 42, onClick: () => this._confirmInvestmentPaid() };
+      const backBtn = { x: innerX, y: cy + 274, w: innerW, h: 38, onClick: () => this._openInvestmentSelector() };
       this.buttons.push(copyBtn, paidBtn, backBtn);
       drawActionBtn(copyBtn, 'Adresi Kopyala', 'soft');
       drawActionBtn(paidBtn, step === 'confirmed' ? 'Onay Gönderildi' : 'Ödemeyi Yaptım');
@@ -1338,16 +1338,16 @@ export class ProfileScene {
         ? `Onay kaydı oluşturuldu${wallet.investmentRequestId ? ` • ${wallet.investmentRequestId}` : ''}`
         : 'Ödemeyi yaptıktan sonra Ödemeyi Yaptım butonuna bas.';
       const lines = wrapText(ctx, msg, innerW, 3);
-      lines.forEach((line, i) => ctx.fillText(line, innerX, cy + 324 + i * 16));
+      lines.forEach((line, i) => ctx.fillText(line, innerX, cy + 330 + i * 16));
 
       if (latestInvestment) {
-        this.drawCard(ctx, innerX, cy + 360, innerW, 46);
+        this.drawCard(ctx, innerX, cy + 372, innerW, 46);
         ctx.fillStyle = 'rgba(255,255,255,0.98)';
         ctx.font = '700 14px system-ui';
-        ctx.fillText(`${Number(latestInvestment.amountTon || 0)} TON`, innerX + 16, cy + 388);
+        ctx.fillText(`${Number(latestInvestment.amountTon || 0)} TON`, innerX + 16, cy + 400);
         ctx.fillStyle = 'rgba(124,255,170,0.92)';
         ctx.font = '700 11px system-ui';
-        ctx.fillText('Durum: ödeme onayı bekleniyor', innerX + 16, cy + 406);
+        ctx.fillText('Durum: ödeme onayı bekleniyor', innerX + 16, cy + 418);
       }
       return;
     }
@@ -1358,7 +1358,8 @@ export class ProfileScene {
     ctx.fillText('Yatırım Sistemi Hazır', innerX, cy + 30);
     ctx.fillStyle = 'rgba(255,213,156,0.76)';
     ctx.font = '500 12px system-ui';
-    ctx.fillText('Yatırım Yap butonuna bas, limit seç, adrese gönder ve onayla.', innerX, cy + 56);
+    const finalLines = wrapText(ctx, 'Yatırım Yap butonuna bas, limit seç, TON adresine gönder ve onayla.', innerW, 2);
+    finalLines.forEach((line, idx) => ctx.fillText(line, innerX, cy + 52 + idx * 15));
   }
 
   drawRankingContent(ctx, state, x, y, w, h, L) {
