@@ -1,54 +1,65 @@
-function rnd(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+const DEFAULT_STAR_ASSET = "g_star1.png";
+const DEFAULT_STAR_PATH = `./src/assets/${DEFAULT_STAR_ASSET}`;
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
 }
 
-function mk(id, name, gender, extra = {}) {
-  const coinValue = rnd(6, 18);
-  const energyGain = rnd(2, 6);
-  const image = gender === "male" ? "star_m" : "star_f"; // Assets KEY
-  return { id, name, gender, coinValue, energyGain, image, ...extra };
+function makeGirlStar(index) {
+  const file = `g_star${index}.png`;
+  const energyGain = Math.min(36, 8 + Math.floor((index - 1) / 2) * 2);
+  const coinValue = 16 + index * 3;
+
+  return {
+    id: index,
+    code: `g_star${index}`,
+    name: `G Star ${pad2(index)}`,
+    gender: "female",
+    rarity: index >= 21 ? "legendary" : index >= 13 ? "epic" : index >= 7 ? "rare" : "common",
+    coinValue,
+    energyGain,
+    twinId: null,
+    assetName: file,
+    assetPath: `./src/assets/${file}`,
+    image: `./src/assets/${file}`,
+    fallbackImage: DEFAULT_STAR_PATH,
+  };
 }
 
-export const stars = (() => {
-  const arr = [];
-  let id = 1;
+export const stars = [
+  ...Array.from({ length: 26 }, (_, i) => makeGirlStar(i + 1)),
+  {
+    id: 27,
+    code: "twins1",
+    name: "Twins VIP",
+    gender: "female",
+    rarity: "legendary",
+    coinValue: 110,
+    energyGain: 34,
+    twinId: null,
+    assetName: "twins1.png",
+    assetPath: "./src/assets/twins1.png",
+    image: "./src/assets/twins1.png",
+    fallbackImage: DEFAULT_STAR_PATH,
+  },
+].map((star, index, list) => ({
+  ...star,
+  order: index,
+  fallbackImage:
+    star.fallbackImage ||
+    list[index - 1]?.assetPath ||
+    list[0]?.assetPath ||
+    DEFAULT_STAR_PATH,
+}));
 
-  // 5 ikiz çift = 10 kişi
-  const twinPairs = [
-    ["tw1", "Nova Twin", "Vega Twin"],
-    ["tw2", "Silk Twin", "Storm Twin"],
-    ["tw3", "Blaze Twin", "Velvet Twin"],
-    ["tw4", "Rouge Twin", "Skye Twin"],
-    ["tw5", "Diamond Twin", "Moon Twin"],
-  ];
+export const starAssetMap = Object.fromEntries(
+  stars.map((star) => [star.code, star.assetPath])
+);
 
-  for (const [twinId, a, b] of twinPairs) {
-    arr.push(mk(id++, a, "female", { twinId }));
-    arr.push(mk(id++, b, "female", { twinId }));
-  }
+export function getStarById(id) {
+  return stars.find((star) => Number(star.id) === Number(id)) || null;
+}
 
-  // Erkek 15
-  const maleNames = [
-    "Alex Steel","Victor Stone","Leo Rush","Max Power","Tony Blaze",
-    "Rico Vega","Marco Storm","Dante Cruz","Ivan Blade","Niko Night",
-    "Kane Wolf","Adrian Fox","Rafael Noir","Luca Shade","Mason Viper",
-  ];
-  for (const n of maleNames) arr.push(mk(id++, n, "male"));
-
-  // Kalanlar kadın (50’ye tamamla)
-  const femaleNames = [
-    "Luna Vega","Sasha Velvet","Nina Blaze","Kira Moon","Lola Vixen",
-    "Bella Storm","Roxy Heat","Jade Sin","Candy Rouge","Alexa Noir",
-    "Mila Desire","Nora Bliss","Eva Diamond","Lily Skye","Ruby Flame",
-    "Tina Rush","Katy Nova","Lana Bliss","Vera Silk","Maya Gold",
-    "Ivy Storm","Nadia Kiss","Daisy Rouge","Elena Blaze","Zoe Night",
-    "Aria Frost","Violet Ray","Selena Tide","Jenna Spark","Mira Lux",
-  ];
-
-  for (const n of femaleNames) {
-    if (arr.length >= 50) break;
-    arr.push(mk(id++, n, "female"));
-  }
-
-  return arr.slice(0, 50);
-})();
+export function getStarByCode(code) {
+  return stars.find((star) => String(star.code) === String(code)) || null;
+}
