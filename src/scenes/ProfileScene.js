@@ -62,51 +62,6 @@ function moneyFmt(n) {
   return Number.isFinite(v) ? v.toLocaleString("tr-TR") : "0";
 }
 
-function textFit(ctx, text, x, y, maxWidth) {
-  const value = String(text || "");
-  if (!maxWidth || ctx.measureText(value).width <= maxWidth) {
-    ctx.fillText(value, x, y);
-    return;
-  }
-  let t = value;
-  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1);
-  ctx.fillText(`${t}…`, x, y);
-}
-
-function wrapText(ctx, text, maxWidth, maxLines = 3) {
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  const lines = [];
-  let line = "";
-
-  for (let i = 0; i < words.length; i += 1) {
-    const next = line ? `${line} ${words[i]}` : words[i];
-    if (!line || ctx.measureText(next).width <= maxWidth) {
-      line = next;
-    } else {
-      lines.push(line);
-      line = words[i];
-    }
-    if (lines.length >= maxLines) break;
-  }
-
-  if (line && lines.length < maxLines) lines.push(line);
-
-  if (lines.length === maxLines && words.length) {
-    let t = lines[maxLines - 1] || "";
-    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1);
-    lines[maxLines - 1] = `${t}…`;
-  }
-
-  return lines;
-}
-
-function makeImage(url) {
-  if (!url) return null;
-  const img = new Image();
-  img.src = url;
-  return img;
-}
-
 function drawCoverImage(ctx, img, x, y, w, h) {
   if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
   const iw = img.naturalWidth;
@@ -128,6 +83,17 @@ function fitFontSize(ctx, text, maxWidth, start, min = 11, weight = 900, family 
     size -= 1;
   }
   return min;
+}
+
+function textFit(ctx, text, x, y, maxWidth) {
+  const value = String(text || "");
+  if (!maxWidth || ctx.measureText(value).width <= maxWidth) {
+    ctx.fillText(value, x, y);
+    return;
+  }
+  let t = value;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1);
+  ctx.fillText(`${t}…`, x, y);
 }
 
 function getPointer(input) {
@@ -196,21 +162,20 @@ export class ProfileScene {
     this._avatarUrl = "";
     this._avatarImg = null;
     this._fileInput = null;
-    this.showLeaderboard = false;
-    this.hitBoardClose = null;
+    this.activeTab = "profile";
   }
 
   onEnter() {
     this._ensureAvatarInput();
     this._seedLeaderboard();
-    this.showLeaderboard = false;
+    this._dragScroll = null;
     this.scrollY = 0;
     this.scrollMax = 0;
-    this._dragScroll = null;
+    const uiTab = String(this.store.get()?.ui?.profileTab || "profile");
+    this.activeTab = uiTab === "wallet" ? "wallet" : "profile";
   }
 
   onExit() {
-    this.showLeaderboard = false;
     this._dragScroll = null;
   }
 
@@ -218,6 +183,20 @@ export class ProfileScene {
     try {
       window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text } }));
     } catch (_) {}
+  }
+
+  _setTab(tab) {
+    this.activeTab = tab;
+    this.scrollY = 0;
+    if (tab === "profile" || tab === "wallet") {
+      const s = this.store.get() || {};
+      this.store.set({
+        ui: {
+          ...(s.ui || {}),
+          profileTab: tab,
+        },
+      });
+    }
   }
 
   _ensureAvatarInput() {
@@ -265,18 +244,16 @@ export class ProfileScene {
             const canvas = document.createElement("canvas");
             canvas.width = size;
             canvas.height = size;
-            const ctx = canvas.getContext("2d");
+            const c = canvas.getContext("2d");
             const scale = Math.max(size / img.width, size / img.height);
             const dw = img.width * scale;
             const dh = img.height * scale;
             const dx = (size - dw) * 0.5;
             const dy = (size - dh) * 0.5;
-            ctx.fillStyle = "#101218";
-            ctx.fillRect(0, 0, size, size);
-            ctx.drawImage(img, dx, dy, dw, dh);
-            let out = canvas.toDataURL("image/webp", 0.86);
-            if (out.length > 360000) out = canvas.toDataURL("image/jpeg", 0.84);
-            resolve(out);
+            c.fillStyle = "#101218";
+            c.fillRect(0, 0, size, size);
+            c.drawImage(img, dx, dy, dw, dh);
+            resolve(canvas.toDataURL("image/webp", 0.86));
           } catch (err) {
             reject(err);
           }
@@ -321,33 +298,13 @@ export class ProfileScene {
     }
   }
 
-  getState() {
-    return this.store?.get ? this.store.get() : {};
-  }
-
-  getBackgroundImage() {
-    return (
-      (typeof this.assets?.getImage === "function" && (
-        this.assets.getImage("clan_bg") ||
-        this.assets.getImage("clan") ||
-        this.assets.getImage("background") ||
-        this.assets.getImage("pvp_bg")
-      )) ||
-      this.assets?.images?.clan_bg ||
-      this.assets?.images?.clan ||
-      this.assets?.images?.background ||
-      this.assets?.images?.pvp_bg ||
-      null
-    );
-  }
-
   getLayout(ctx) {
     const size = canvasCssSize(ctx.canvas);
     const w = size.w;
     const h = size.h;
-    const state = this.getState();
+    const state = this.store.get() || {};
     const safe = state.ui?.safe || { x: 0, y: 0, w, h };
-    const mobile = safe.w < 760;
+    const mobile = safe.w < 720;
     const hudTop = Number(state.ui?.hudReservedTop || (mobile ? 84 : 96));
     const chatBottom = Number(state.ui?.chatReservedBottom || (mobile ? 74 : 88));
     const side = mobile ? 10 : Math.max(16, Math.floor(safe.w * 0.03));
@@ -356,85 +313,13 @@ export class ProfileScene {
     const panelX = safe.x + side;
     const panelY = top;
     const panelW = safe.w - side * 2;
-    const panelH = Math.max(340, bottom - top);
-    const headerH = mobile ? 68 : 74;
-    const heroH = mobile ? 174 : 188;
-    const tabH = mobile ? 38 : 42;
-    const contentY = panelY + headerH + heroH + tabH + 28;
+    const panelH = Math.max(320, bottom - top);
+    const headerH = mobile ? 74 : 80;
+    const heroH = mobile ? 170 : 188;
+    const tabsH = mobile ? 42 : 46;
+    const contentY = panelY + headerH + heroH + tabsH + 10;
     const contentH = panelY + panelH - contentY - 14;
-
-    return {
-      mobile,
-      w,
-      h,
-      safe,
-      panelX,
-      panelY,
-      panelW,
-      panelH,
-      headerH,
-      heroH,
-      tabH,
-      contentY,
-      contentH,
-      pad: mobile ? 14 : 18,
-    };
-  }
-
-  drawBackground(ctx, w, h) {
-    const bg = this.getBackgroundImage();
-    if (bg?.width && bg?.height) {
-      const scale = Math.max(w / bg.width, h / bg.height);
-      const dw = bg.width * scale;
-      const dh = bg.height * scale;
-      ctx.drawImage(bg, (w - dw) / 2, (h - dh) / 2, dw, dh);
-    } else {
-      ctx.fillStyle = "#130a08";
-      ctx.fillRect(0, 0, w, h);
-    }
-
-    const shade = ctx.createLinearGradient(0, 0, 0, h);
-    shade.addColorStop(0, "rgba(8,5,4,0.22)");
-    shade.addColorStop(0.5, "rgba(18,9,5,0.12)");
-    shade.addColorStop(1, "rgba(6,3,2,0.28)");
-    ctx.fillStyle = shade;
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  beginScrollArea(ctx, x, y, w, h, contentH) {
-    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
-    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
-    this.scrollArea = { x, y, w, h };
-    ctx.save();
-    roundRectPath(ctx, x, y, w, h, 18);
-    ctx.clip();
-  }
-
-  endScrollArea(ctx) {
-    ctx.restore();
-  }
-
-  drawScrollBar(ctx) {
-    if (!this.scrollArea || this.scrollMax <= 0) return;
-    const { x, y, w, h } = this.scrollArea;
-    const trackX = x + w - 5;
-    const trackY = y + 8;
-    const trackH = h - 16;
-    const thumbH = Math.max(36, Math.floor((h / (h + this.scrollMax)) * trackH));
-    const travel = Math.max(0, trackH - thumbH);
-    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
-    fillRoundRect(ctx, trackX, trackY, 3, trackH, 3, "rgba(255,255,255,0.10)");
-    fillRoundRect(ctx, trackX, thumbY, 3, thumbH, 3, "rgba(245,195,111,0.88)");
-  }
-
-  estimateContentHeight(state, tab, layout) {
-    if (tab === "wallet") return layout.mobile ? 480 : 420;
-    const btnRow = 72;
-    const cardRow = layout.mobile ? 440 : 256;
-    const metrics = 112;
-    const social = 120;
-    const about = 120;
-    return btnRow + cardRow + metrics + social + about + 40;
+    return { mobile, w, h, safe, panelX, panelY, panelW, panelH, headerH, heroH, tabsH, contentY, contentH, pad: mobile ? 14 : 18 };
   }
 
   update() {
@@ -471,19 +356,65 @@ export class ProfileScene {
     }
   }
 
-  render(ctx, w, h) {
-    const state = this.getState();
-    const L = this.layout = this.getLayout(ctx);
-
-    this.buttons = [];
-    this.scrollArea = null;
-    this.hitBoardClose = null;
-
-    this.drawBackground(ctx, L.w, L.h);
-    this.drawShell(ctx, state, L);
+  beginScrollArea(ctx, x, y, w, h, contentH) {
+    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
+    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
+    this.scrollArea = { x, y, w, h };
+    ctx.save();
+    roundRectPath(ctx, x, y, w, h, 18);
+    ctx.clip();
   }
 
-  drawShell(ctx, state, L) {
+  endScrollArea(ctx) {
+    ctx.restore();
+  }
+
+  drawScrollBar(ctx) {
+    if (!this.scrollArea || this.scrollMax <= 0) return;
+    const { x, y, w, h } = this.scrollArea;
+    const trackX = x + w - 5;
+    const trackY = y + 8;
+    const trackH = h - 16;
+    const thumbH = Math.max(36, Math.floor((h / (h + this.scrollMax)) * trackH));
+    const travel = Math.max(0, trackH - thumbH);
+    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
+    fillRoundRect(ctx, trackX, trackY, 3, trackH, 3, "rgba(255,255,255,0.10)");
+    fillRoundRect(ctx, trackX, thumbY, 3, thumbH, 3, "rgba(245,195,111,0.88)");
+  }
+
+  getContentHeight(L) {
+    if (this.activeTab === "wallet") return L.mobile ? 420 : 390;
+    if (this.activeTab === "ranking") {
+      const count = Math.max(6, Math.min(12, (this.store.get()?.pvp?.leaderboard || []).length || 8));
+      return 84 + count * (L.mobile ? 52 : 46);
+    }
+    return L.mobile ? 470 : 430;
+  }
+
+  render(ctx) {
+    const state = this.store.get() || {};
+    const L = this.layout = this.getLayout(ctx);
+    this.buttons = [];
+    this.scrollArea = null;
+
+    const bg = getImgSafe(this.assets, "clan_bg") || getImgSafe(this.assets, "clan") || getImgSafe(this.assets, "background") || null;
+    if (bg && bg.width) {
+      const scale = Math.max(L.w / bg.width, L.h / bg.height);
+      const dw = bg.width * scale;
+      const dh = bg.height * scale;
+      ctx.drawImage(bg, (L.w - dw) * 0.5, (L.h - dh) * 0.5, dw, dh);
+    } else {
+      ctx.fillStyle = "#0c0908";
+      ctx.fillRect(0, 0, L.w, L.h);
+    }
+
+    const veil = ctx.createLinearGradient(0, 0, 0, L.h);
+    veil.addColorStop(0, "rgba(15,8,6,0.22)");
+    veil.addColorStop(0.55, "rgba(12,8,5,0.16)");
+    veil.addColorStop(1, "rgba(5,3,2,0.28)");
+    ctx.fillStyle = veil;
+    ctx.fillRect(0, 0, L.w, L.h);
+
     const x = L.panelX;
     const y = L.panelY;
     const w = L.panelW;
@@ -498,54 +429,46 @@ export class ProfileScene {
     gloss.addColorStop(1, "rgba(255,255,255,0.02)");
     fillRoundRect(ctx, x + 1, y + 1, w - 2, h - 2, 23, gloss);
 
-    this.drawHeader(ctx, state, L);
-    this.drawHero(ctx, state, L);
-    this.drawTabs(ctx, state, L);
+    this.drawHeader(ctx, state, x, y, w, L);
+    this.drawHero(ctx, state, x + pad, y + L.headerH, w - pad * 2, L.heroH, L);
+    this.drawTabs(ctx, x + pad, y + L.headerH + L.heroH + 8, w - pad * 2, L.tabsH, L);
 
-    const tab = String(state?.ui?.profileTab || "profile");
-    const viewportX = x + 10;
-    const viewportY = L.contentY;
-    const viewportW = w - 20;
-    const viewportH = L.contentH;
-    const contentH = this.estimateContentHeight(state, tab, L);
+    const contentX = x + 10;
+    const contentY = L.contentY;
+    const contentW = w - 20;
+    const contentH = L.contentH;
+    const totalH = this.getContentHeight(L);
 
-    this.beginScrollArea(ctx, viewportX, viewportY, viewportW, viewportH, contentH);
-    const drawY = viewportY - this.scrollY;
+    this.beginScrollArea(ctx, contentX, contentY, contentW, contentH, totalH);
+    const drawY = contentY - this.scrollY;
 
-    if (tab === "wallet") this.drawWalletContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
-    else this.drawProfileContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
+    if (this.activeTab === "wallet") {
+      this.drawWalletTab(ctx, state, contentX + 2, drawY + 2, contentW - 6, totalH - 4, L);
+    } else if (this.activeTab === "ranking") {
+      this.drawRankingTab(ctx, state, contentX + 2, drawY + 2, contentW - 6, totalH - 4, L);
+    } else {
+      this.drawProfileTab(ctx, state, contentX + 2, drawY + 2, contentW - 6, totalH - 4, L);
+    }
 
     this.endScrollArea(ctx);
     this.drawScrollBar(ctx);
-
-    if (this.showLeaderboard) {
-      this.drawLeaderboardOverlay(ctx, state, L);
-    }
   }
 
-  drawHeader(ctx, state, L) {
-    const x = L.panelX + L.pad;
-    const y = L.panelY + 12;
-    const w = L.panelW - L.pad * 2;
-    const h = L.headerH - 8;
-
-    fillRoundRect(ctx, x, y, w, h, 18, "rgba(10,12,16,0.28)");
-    strokeRoundRect(ctx, x, y, w, h, 18, "rgba(255,255,255,0.10)", 1);
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+  drawHeader(ctx, state, x, y, w, L) {
+    const pad = L.pad;
+    const titleX = x + pad;
+    const titleY = y + 30;
     ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = `${L.mobile ? 20 : 24}px system-ui`;
-    ctx.font = `700 ${L.mobile ? 20 : 24}px system-ui`;
-    ctx.fillText("PROFILE", x + 16, y + 28);
+    ctx.font = `${L.mobile ? 700 : 800} ${L.mobile ? 18 : 22}px system-ui`;
+    ctx.fillText("PROFILE", titleX, titleY);
     ctx.fillStyle = "rgba(255,220,170,0.86)";
-    ctx.font = `500 ${L.mobile ? 12 : 14}px system-ui`;
-    ctx.fillText("TonCrime oyuncu kartı", x + 16, y + 50);
+    ctx.font = `500 ${L.mobile ? 11 : 13}px system-ui`;
+    ctx.fillText("TonCrime oyuncu kartı", titleX, titleY + 22);
 
     const closeSize = L.mobile ? 38 : 42;
     const closeBtn = {
-      x: x + w - closeSize - 10,
-      y: y + 10,
+      x: x + w - pad - closeSize,
+      y: y + 14,
       w: closeSize,
       h: closeSize,
       onClick: () => this.scenes?.go?.("home"),
@@ -554,7 +477,7 @@ export class ProfileScene {
     fillRoundRect(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(12,12,14,0.42)");
     strokeRoundRect(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(255,255,255,0.14)", 1);
     ctx.fillStyle = "#ffffff";
-    ctx.font = `700 ${L.mobile ? 26 : 28}px system-ui`;
+    ctx.font = `${L.mobile ? 700 : 700} ${L.mobile ? 26 : 28}px system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("×", closeBtn.x + closeBtn.w / 2, closeBtn.y + closeBtn.h / 2 + 1);
@@ -562,30 +485,31 @@ export class ProfileScene {
     ctx.textBaseline = "alphabetic";
   }
 
-  drawHero(ctx, state, L) {
+  drawHero(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const pvp = state.pvp || {};
-    const x = L.panelX + L.pad;
-    const y = L.panelY + L.headerH;
-    const w = L.panelW - L.pad * 2;
-    const h = L.heroH;
+    const clanName = String(state?.clan?.name || state?.clan?.tag || "No Clan");
+    const username = String(p.username || "Player").trim() || "Player";
+    const level = Math.max(1, Number(p.level || 1));
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const rating = Math.max(0, Number(pvp.rating || 1000));
+    const yton = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
 
     fillRoundRect(ctx, x, y, w, h, 22, "rgba(10,12,16,0.28)");
     strokeRoundRect(ctx, x, y, w, h, 22, "rgba(255,193,111,0.42)", 1.2);
 
+    const avatarFrameW = L.mobile ? 104 : 132;
+    const avatarFrameH = L.mobile ? 116 : 132;
     const avatarFrameX = x + 16;
     const avatarFrameY = y + 16;
-    const avatarFrameW = L.mobile ? 114 : 136;
-    const avatarFrameH = L.mobile ? 118 : 132;
-
     fillRoundRect(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18, "rgba(255,255,255,0.05)");
     strokeRoundRect(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18, "rgba(255,182,86,0.18)", 1);
 
-    const avatarX = avatarFrameX + 10;
-    const avatarY = avatarFrameY + 10;
-    const avatarW = avatarFrameW - 20;
-    const avatarH = avatarFrameH - 20;
-    const username = String(p.username || "Player").trim() || "Player";
+    const avatarX = avatarFrameX + 9;
+    const avatarY = avatarFrameY + 9;
+    const avatarW = avatarFrameW - 18;
+    const avatarH = avatarFrameH - 18;
     const avatarUrl = getPlayerAvatar(p);
     if (avatarUrl !== this._avatarUrl) {
       this._avatarUrl = avatarUrl;
@@ -602,139 +526,87 @@ export class ProfileScene {
       ctx.fillStyle = avGrad;
       ctx.fillRect(avatarX, avatarY, avatarW, avatarH);
       ctx.fillStyle = "#f1f3f7";
-      ctx.font = `900 ${L.mobile ? 34 : 38}px system-ui`;
+      ctx.font = `900 ${L.mobile ? 32 : 38}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(getInitials(username), avatarX + avatarW / 2, avatarY + avatarH / 2 + 1);
     }
     ctx.restore();
-    strokeRoundRect(ctx, avatarX, avatarY, avatarW, avatarH, 14, "rgba(255,255,255,0.10)", 1);
 
-    fillRoundRect(ctx, avatarFrameX + 10, avatarFrameY + avatarFrameH - 30, 82, 22, 11, "#27d85c");
+    fillRoundRect(ctx, avatarFrameX + 8, avatarFrameY + avatarFrameH - 28, 78, 22, 11, "#27d85c");
     ctx.fillStyle = "#08130d";
     ctx.font = "900 12px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("ONLINE", avatarFrameX + 51, avatarFrameY + avatarFrameH - 19);
+    ctx.fillText("ONLINE", avatarFrameX + 47, avatarFrameY + avatarFrameH - 17);
 
     const infoX = avatarFrameX + avatarFrameW + 18;
-    const infoY = y + 22;
-    const infoW = w - (infoX - x) - 16;
-    const playerId = String(p.telegramId || p.id || window.tcGetProfileKey?.() || "guest");
-    const clanName = String(state?.clan?.name || state?.clan?.tag || "No Clan");
-    const level = Math.max(1, Number(p.level || 1));
-    const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
-    const yton = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
-    const rating = Math.max(0, Number(pvp.rating || 1000));
-    const wins = Math.max(0, Number(pvp.wins || 0));
-    const losses = Math.max(0, Number(pvp.losses || 0));
+    const infoY = y + 26;
+    const infoW = w - (infoX - x) - 18;
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    const nameSize = fitFontSize(ctx, username, infoW - 8, L.mobile ? 28 : 32, 16);
+    const nameSize = fitFontSize(ctx, username, infoW, L.mobile ? 25 : 32, 18);
     ctx.font = `900 ${nameSize}px system-ui`;
     ctx.fillStyle = "#f3f6fb";
-    ctx.fillText(username, infoX, infoY + 8);
+    textFit(ctx, username, infoX, infoY + 8, infoW);
 
-    ctx.font = `500 ${L.mobile ? 12 : 13}px system-ui`;
-    ctx.fillStyle = "rgba(255,255,255,0.56)";
-    textFit(ctx, `#${playerId}`, infoX, infoY + 32, infoW - 10);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = `600 ${L.mobile ? 12 : 13}px system-ui`;
+    textFit(ctx, clanName, infoX, infoY + 30, infoW);
 
-    const statCardY = infoY + 46;
-    const gap = 10;
-    const cardW = Math.floor((infoW - gap) / 2);
-    const cardH = 48;
-
-    this.drawMiniInfo(ctx, infoX, statCardY, cardW, cardH, "Level", String(level), `Rating ${rating}`);
-    this.drawMiniInfo(ctx, infoX + cardW + gap, statCardY, cardW, cardH, "Energy", `${energy}/${energyMax}`, "Hazır durum");
-    this.drawMiniInfo(ctx, infoX, statCardY + cardH + 10, cardW, cardH, "Clan", clanName, wins + losses > 0 ? `${wins}-${losses} skor` : "Henüz savaş yok");
-    this.drawMiniInfo(ctx, infoX + cardW + gap, statCardY + cardH + 10, cardW, cardH, "YTON", moneyFmt(yton), p.weaponName || "Silah Yok");
-
-    const tgBtn = {
-      x: infoX,
-      y: y + h - 48,
-      w: Math.min(220, infoW),
-      h: 32,
-      onClick: () => openTelegramLink(),
+    const boxY = infoY + 44;
+    const boxGap = 8;
+    const boxW = Math.floor((infoW - boxGap) / 2);
+    const boxH = 46;
+    const drawMini = (bx, by, label, value, color = "#f3f6fb") => {
+      fillRoundRect(ctx, bx, by, boxW, boxH, 14, "rgba(255,255,255,0.04)");
+      strokeRoundRect(ctx, bx, by, boxW, boxH, 14, "rgba(255,255,255,0.08)", 1);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = `600 ${L.mobile ? 10 : 11}px system-ui`;
+      ctx.fillText(label, bx + 12, by + 17);
+      ctx.fillStyle = color;
+      ctx.font = `900 ${L.mobile ? 18 : 20}px system-ui`;
+      textFit(ctx, value, bx + 12, by + 37, boxW - 24);
     };
-    this.buttons.push(tgBtn);
-    fillRoundRect(ctx, tgBtn.x, tgBtn.y, tgBtn.w, tgBtn.h, 12, "rgba(243,187,102,0.16)");
-    strokeRoundRect(ctx, tgBtn.x, tgBtn.y, tgBtn.w, tgBtn.h, 12, "rgba(243,187,102,0.36)", 1);
-    ctx.fillStyle = "rgba(255,240,218,0.96)";
-    ctx.font = `700 ${L.mobile ? 12 : 13}px system-ui`;
-    ctx.fillText("TonCrime Telegram", tgBtn.x + 16, tgBtn.y + 21);
+
+    drawMini(infoX, boxY, "Level", String(level));
+    drawMini(infoX + boxW + boxGap, boxY, "Energy", `${energy}/${energyMax}`, "#9be67c");
+    drawMini(infoX, boxY + boxH + boxGap, "Rating", String(rating));
+    drawMini(infoX + boxW + boxGap, boxY + boxH + boxGap, "Bakiye", moneyFmt(yton), "#f6c46b");
   }
 
-  drawMiniInfo(ctx, x, y, w, h, label, value, sub) {
-    fillRoundRect(ctx, x, y, w, h, 16, "rgba(255,255,255,0.05)");
-    strokeRoundRect(ctx, x, y, w, h, 16, "rgba(255,255,255,0.10)", 1);
-    ctx.fillStyle = "rgba(255,213,156,0.78)";
-    ctx.font = "500 11px system-ui";
-    textFit(ctx, label, x + 12, y + 16, w - 24);
-    ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = "700 16px system-ui";
-    textFit(ctx, value, x + 12, y + 34, w - 24);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "500 10px system-ui";
-    textFit(ctx, sub, x + 12, y + 48, w - 24);
-  }
-
-  drawTabs(ctx, state, L) {
-    const x = L.panelX + L.pad;
-    const y = L.panelY + L.headerH + L.heroH + 10;
-    const w = L.panelW - L.pad * 2;
-    const tab = String(state?.ui?.profileTab || "profile");
+  drawTabs(ctx, x, y, w, h, L) {
     const tabs = [
       { id: "profile", label: "Genel" },
       { id: "wallet", label: "Cüzdan" },
-      { id: "leaderboard", label: "Sıralama" },
+      { id: "ranking", label: "Sıralama" },
     ];
     const gap = 8;
     const tabW = Math.floor((w - gap * (tabs.length - 1)) / tabs.length);
 
-    tabs.forEach((item, index) => {
-      const tx = x + index * (tabW + gap);
-      const active = (item.id === "leaderboard" ? this.showLeaderboard : tab === item.id);
+    tabs.forEach((tab, i) => {
+      const tx = x + i * (tabW + gap);
       const btn = {
         x: tx,
         y,
         w: tabW,
-        h: L.tabH,
-        onClick: () => {
-          if (item.id === "leaderboard") {
-            this._seedLeaderboard();
-            this.showLeaderboard = true;
-            return;
-          }
-          const s = this.store.get() || {};
-          this.store.set({ ui: { ...(s.ui || {}), profileTab: item.id } });
-          this.showLeaderboard = false;
-          this.scrollY = 0;
-        },
+        h,
+        onClick: () => this._setTab(tab.id),
       };
       this.buttons.push(btn);
-      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, active ? "rgba(243,187,102,0.20)" : "rgba(255,255,255,0.05)");
-      strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.10)", 1);
+      const active = this.activeTab === tab.id;
+      fillRoundRect(ctx, tx, y, tabW, h, 14, active ? "rgba(243,187,102,0.20)" : "rgba(255,255,255,0.05)");
+      strokeRoundRect(ctx, tx, y, tabW, h, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.10)", 1);
       ctx.fillStyle = active ? "rgba(255,248,236,0.98)" : "rgba(255,255,255,0.82)";
       ctx.font = `700 ${L.mobile ? 12 : 13}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(item.label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+      ctx.fillText(tab.label, tx + tabW / 2, y + h / 2 + 1);
     });
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-  }
-
-  drawSectionTitle(ctx, title, sub, x, y, w) {
-    ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = "700 18px system-ui";
-    textFit(ctx, title, x, y, w);
-    if (!sub) return;
-    ctx.fillStyle = "rgba(255,213,156,0.76)";
-    ctx.font = "500 12px system-ui";
-    textFit(ctx, sub, x, y + 18, w);
   }
 
   drawCard(ctx, x, y, w, h) {
@@ -742,263 +614,175 @@ export class ProfileScene {
     strokeRoundRect(ctx, x, y, w, h, 18, "rgba(255,255,255,0.10)", 1);
   }
 
-  drawProfileContent(ctx, state, x, y, w, h, L) {
+  drawSimpleMetric(ctx, x, y, w, h, label, value, color = "#f3f6fb") {
+    this.drawCard(ctx, x, y, w, h);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "600 12px system-ui";
+    ctx.fillText(label, x + 16, y + 22);
+    ctx.fillStyle = color;
+    ctx.font = "900 26px system-ui";
+    textFit(ctx, value, x + 16, y + 54, w - 32);
+  }
+
+  drawProfileTab(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const pvp = state.pvp || {};
-    const businessesOwned = Array.isArray(state?.businesses?.owned) ? state.businesses.owned.length : 0;
-    const inventoryList = Array.isArray(state?.inventory?.items) ? state.inventory.items : [];
-    const inventoryItems = inventoryList.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const rating = Math.max(0, Number(pvp.rating || 1000));
     const wins = Math.max(0, Number(pvp.wins || 0));
     const losses = Math.max(0, Number(pvp.losses || 0));
-    const totalFight = wins + losses;
-    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
-    const kdText = losses > 0 ? (wins / losses).toFixed(2) : wins > 0 ? String(wins) : "0.00";
-    const rating = Math.max(0, Number(pvp.rating || 1000));
-    const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice().sort((a, b) => Number(b.score || 0) - Number(a.score || 0)) : [];
-    const username = String(p.username || "Player").trim() || "Player";
-    const myRank = Math.max(1, leaderboard.findIndex((row) => String(row.name || "") === username) + 1 || 1);
+    const total = wins + losses;
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+    const kd = losses > 0 ? (wins / losses).toFixed(2) : wins > 0 ? String(wins) : "0.00";
 
-    this.drawSectionTitle(ctx, "Profil Özeti", "Clan sayfasındaki sıcak cam tasarım ile sadeleştirildi.", x + 8, y + 20, w - 16);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = "800 18px system-ui";
+    ctx.fillText("Genel Durum", x + 8, y + 22);
+    ctx.fillStyle = "rgba(255,213,156,0.72)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("Sade görünüm • taşan yazılar kaldırıldı", x + 8, y + 42);
 
-    const topY = y + 40;
-    const gap = 10;
+    const gap = 12;
+    const metricW = Math.floor((w - gap) / 2);
+    const metricH = 84;
+    const row1Y = y + 56;
+    const row2Y = row1Y + metricH + gap;
 
-    if (L.mobile) {
-      const rowH = 98;
-      this.drawStatCard(ctx, x + 8, topY, w - 16, rowH, "Businesses", String(businessesOwned), "Sahip olduğun işletmeler", "▦");
-      this.drawStatCard(ctx, x + 8, topY + rowH + 10, w - 16, rowH, "Inventory", String(inventoryItems), "Envanter yoğunluğu", "▤");
-      this.drawStatCard(ctx, x + 8, topY + (rowH + 10) * 2, w - 16, rowH, "PVP Record", `${wins}-${losses}`, "Kazanç / kayıp", "☠");
-    } else {
-      const cardW = Math.floor((w - 16 - gap * 2) / 3);
-      const rowH = 172;
-      this.drawStatCard(ctx, x + 8, topY, cardW, rowH, "Businesses", String(businessesOwned), "Sahip olduğun işletmeler", "▦");
-      this.drawStatCard(ctx, x + 8 + cardW + gap, topY, cardW, rowH, "Inventory", String(inventoryItems), "Envanter yoğunluğu", "▤");
-      this.drawStatCard(ctx, x + 8 + (cardW + gap) * 2, topY, cardW, rowH, "PVP Record", `${wins}-${losses}`, "Kazanç / kayıp", "☠");
-    }
+    this.drawSimpleMetric(ctx, x + 8, row1Y, metricW - 8, metricH, "Enerji", `${energy}/${energyMax}`, "#9be67c");
+    this.drawSimpleMetric(ctx, x + metricW + gap, row1Y, metricW - 8, metricH, "Rating", String(rating));
+    this.drawSimpleMetric(ctx, x + 8, row2Y, metricW - 8, metricH, "W / L", `${wins} / ${losses}`);
+    this.drawSimpleMetric(ctx, x + metricW + gap, row2Y, metricW - 8, metricH, "Win Rate", `${winRate}%`, "#f6c46b");
 
-    const statGridY = L.mobile ? topY + 3 * 108 : topY + 186;
-    this.drawCard(ctx, x + 8, statGridY, w - 16, 102);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.beginPath();
-    ctx.moveTo(x + 8 + (w - 16) / 3, statGridY + 16);
-    ctx.lineTo(x + 8 + (w - 16) / 3, statGridY + 86);
-    ctx.moveTo(x + 8 + (w - 16) * 2 / 3, statGridY + 16);
-    ctx.lineTo(x + 8 + (w - 16) * 2 / 3, statGridY + 86);
-    ctx.stroke();
-
-    const mx1 = x + 8 + (w - 16) / 6;
-    const mx2 = x + 8 + (w - 16) / 2;
-    const mx3 = x + 8 + (w - 16) * 5 / 6;
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(255,255,255,0.66)";
-    ctx.font = "700 13px system-ui";
-    ctx.fillText("Win Rate", mx1, statGridY + 26);
-    ctx.fillText("K / D", mx2, statGridY + 26);
-    ctx.fillText("Top Rank", mx3, statGridY + 26);
-    ctx.fillStyle = "#f6be62";
-    ctx.font = "900 28px system-ui";
-    ctx.fillText(`${winRate}%`, mx1, statGridY + 64);
+    const statY = row2Y + metricH + 16;
+    this.drawCard(ctx, x + 8, statY, w - 16, 82);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "600 12px system-ui";
+    ctx.fillText("K / D", x + 24, statY + 22);
+    ctx.fillText("Seviye", x + w * 0.38, statY + 22);
+    ctx.fillText("Clan", x + w * 0.66, statY + 22);
     ctx.fillStyle = "#f3f6fb";
-    ctx.fillText(kdText, mx2, statGridY + 64);
-    ctx.fillStyle = "#f6be62";
-    ctx.fillText(`#${myRank}`, mx3, statGridY + 64);
-    ctx.textAlign = "left";
+    ctx.font = "900 24px system-ui";
+    ctx.fillText(kd, x + 24, statY + 56);
+    ctx.fillText(String(Math.max(1, Number(p.level || 1))), x + w * 0.38, statY + 56);
+    textFit(ctx, String(state?.clan?.name || state?.clan?.tag || "-"), x + w * 0.66, statY + 56, w * 0.24);
 
-    const btnY = statGridY + 118;
+    const btnY = statY + 98;
     const btnGap = 12;
     const btnW = Math.floor((w - 16 - btnGap) / 2);
     const editBtn = {
       x: x + 8,
       y: btnY,
       w: btnW,
-      h: 48,
+      h: 52,
       onClick: () => this._fileInput?.click(),
     };
-    const boardBtn = {
+    const tgBtn = {
       x: x + 8 + btnW + btnGap,
       y: btnY,
       w: btnW,
-      h: 48,
-      onClick: () => {
-        this._seedLeaderboard();
-        this.showLeaderboard = true;
-      },
-    };
-    this.buttons.push(editBtn, boardBtn);
-    this.drawActionButton(ctx, editBtn, "rgba(90,140,255,0.14)", "rgba(120,170,255,0.34)", "📷 Edit Avatar");
-    this.drawActionButton(ctx, boardBtn, "rgba(243,187,102,0.14)", "rgba(243,187,102,0.34)", "🏆 Leaderboard");
-
-    const socialY = btnY + 64;
-    this.drawCard(ctx, x + 8, socialY, w - 16, 96);
-    this.drawSectionTitle(ctx, "Topluluk", "Telegram bağlantısı ve oyuncu kimliği.", x + 22, socialY + 22, w - 44);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "500 12px system-ui";
-    const socialText = wrapText(ctx, `Oyuncu adı ${username} • Silah ${String(p.weaponName || "Silah Yok")} • Rating ${rating}`, w - 200, 2);
-    socialText.forEach((line, i) => ctx.fillText(line, x + 22, socialY + 48 + i * 16));
-
-    const tgBtn = {
-      x: x + w - 194,
-      y: socialY + 28,
-      w: 170,
-      h: 36,
+      h: 52,
       onClick: () => openTelegramLink(),
     };
-    this.buttons.push(tgBtn);
-    this.drawActionButton(ctx, tgBtn, "rgba(243,187,102,0.16)", "rgba(243,187,102,0.34)", "TonCrime Telegram", 13);
+    this.buttons.push(editBtn, tgBtn);
 
-    const aboutY = socialY + 110;
-    this.drawCard(ctx, x + 8, aboutY, w - 16, 104);
-    this.drawSectionTitle(ctx, "Oyuncu Notu", "Bu alan profil kartını daha temiz göstermek için sade tutuldu.", x + 22, aboutY + 22, w - 44);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "500 12px system-ui";
-    const lines = wrapText(ctx, `Seviye ${Math.max(1, Number(p.level || 1))} oyuncu. Enerji ${Math.max(0, Number(p.energy || 0))}/${Math.max(1, Number(p.energyMax || 100))}. Clan ${String(state?.clan?.name || state?.clan?.tag || "bağlı değil")}.`, w - 44, 3);
-    lines.forEach((line, i) => ctx.fillText(line, x + 22, aboutY + 48 + i * 16));
+    fillRoundRect(ctx, editBtn.x, editBtn.y, editBtn.w, editBtn.h, 16, "rgba(80,140,255,0.12)");
+    strokeRoundRect(ctx, editBtn.x, editBtn.y, editBtn.w, editBtn.h, 16, "rgba(120,170,255,0.26)", 1);
+    fillRoundRect(ctx, tgBtn.x, tgBtn.y, tgBtn.w, tgBtn.h, 16, "rgba(243,187,102,0.14)");
+    strokeRoundRect(ctx, tgBtn.x, tgBtn.y, tgBtn.w, tgBtn.h, 16, "rgba(243,187,102,0.30)", 1);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "800 17px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Edit Avatar", editBtn.x + editBtn.w / 2, editBtn.y + editBtn.h / 2 + 1);
+    ctx.fillText("Telegram", tgBtn.x + tgBtn.w / 2, tgBtn.y + tgBtn.h / 2 + 1);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
   }
 
-  drawWalletContent(ctx, state, x, y, w, h, L) {
+  drawWalletTab(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const yton = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
+    const level = Math.max(1, Number(p.level || 1));
     const energy = Math.max(0, Number(p.energy || 0));
     const energyMax = Math.max(1, Number(p.energyMax || 100));
-    const rating = Math.max(0, Number(state?.pvp?.rating || 1000));
-    const username = String(p.username || "Player").trim() || "Player";
 
-    this.drawSectionTitle(ctx, "Cüzdan", "Clan sayfası düzeninde daha sade bakiye görünümü.", x + 8, y + 20, w - 16);
-
-    this.drawCard(ctx, x + 8, y + 42, w - 16, 128);
-    ctx.fillStyle = "rgba(255,213,156,0.78)";
-    ctx.font = "500 13px system-ui";
-    ctx.fillText("Mevcut Bakiye", x + 24, y + 72);
-    ctx.fillStyle = "#f6c46b";
-    ctx.font = `900 ${L.mobile ? 34 : 40}px system-ui`;
-    ctx.fillText(`${moneyFmt(yton)} YTON`, x + 24, y + 118);
-    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = "800 18px system-ui";
+    ctx.fillText("Cüzdan", x + 8, y + 22);
+    ctx.fillStyle = "rgba(255,213,156,0.72)";
     ctx.font = "500 12px system-ui";
-    ctx.fillText("Oyuncu ekonomisi bu bakiyeden ilerler.", x + 24, y + 144);
+    ctx.fillText("Sade bakiye görünümü", x + 8, y + 42);
 
-    const statY = y + 184;
-    const gap = 10;
-    const cardW = L.mobile ? w - 16 : Math.floor((w - 16 - gap * 2) / 3);
-    if (L.mobile) {
-      this.drawStatCard(ctx, x + 8, statY, cardW, 86, "Oyuncu", username, "Ana profil", "👤");
-      this.drawStatCard(ctx, x + 8, statY + 96, cardW, 86, "Enerji", `${energy}/${energyMax}`, "Hazır durum", "⚡");
-      this.drawStatCard(ctx, x + 8, statY + 192, cardW, 86, "Rating", String(rating), "PvP değeri", "★");
-    } else {
-      this.drawStatCard(ctx, x + 8, statY, cardW, 146, "Oyuncu", username, "Ana profil", "👤");
-      this.drawStatCard(ctx, x + 8 + cardW + gap, statY, cardW, 146, "Enerji", `${energy}/${energyMax}`, "Hazır durum", "⚡");
-      this.drawStatCard(ctx, x + 8 + (cardW + gap) * 2, statY, cardW, 146, "Rating", String(rating), "PvP değeri", "★");
-    }
+    this.drawCard(ctx, x + 8, y + 56, w - 16, 124);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "600 14px system-ui";
+    ctx.fillText("Mevcut Bakiye", x + 28, y + 90);
+    ctx.fillStyle = "#f6c46b";
+    ctx.font = `900 ${L.mobile ? 34 : 42}px system-ui`;
+    textFit(ctx, `${moneyFmt(yton)} YTON`, x + 28, y + 140, w - 56);
 
-    const tgY = L.mobile ? statY + 298 : statY + 160;
+    const gap = 12;
+    const boxW = Math.floor((w - gap) / 2);
+    const boxY = y + 196;
+    this.drawSimpleMetric(ctx, x + 8, boxY, boxW - 8, 82, "Seviye", String(level));
+    this.drawSimpleMetric(ctx, x + boxW + gap, boxY, boxW - 8, 82, "Enerji", `${energy}/${energyMax}`, "#9be67c");
+
     const tgBtn = {
       x: x + 8,
-      y: tgY,
-      w: Math.min(240, w - 16),
-      h: 48,
+      y: boxY + 98,
+      w: w - 16,
+      h: 52,
       onClick: () => openTelegramLink(),
     };
     this.buttons.push(tgBtn);
-    this.drawActionButton(ctx, tgBtn, "rgba(243,187,102,0.16)", "rgba(243,187,102,0.34)", "TonCrime Telegram", 14);
-  }
-
-  drawStatCard(ctx, x, y, w, h, title, value, sub, icon) {
-    this.drawCard(ctx, x, y, w, h);
-    ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = "700 17px system-ui";
-    textFit(ctx, title, x + 16, y + 24, w - 32);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "500 12px system-ui";
-    textFit(ctx, sub, x + 16, y + 44, w - 32);
-    fillRoundRect(ctx, x + 16, y + 58, w - 32, Math.min(58, h - 74), 16, "rgba(255,176,82,0.08)");
-    ctx.fillStyle = "rgba(255,255,255,0.94)";
-    ctx.font = "900 30px system-ui";
+    fillRoundRect(ctx, tgBtn.x, tgBtn.y, tgBtn.w, tgBtn.h, 16, "rgba(243,187,102,0.14)");
+    strokeRoundRect(ctx, tgBtn.x, tgBtn.y, tgBtn.w, tgBtn.h, 16, "rgba(243,187,102,0.30)", 1);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = "800 17px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(icon, x + w / 2, y + Math.min(88, h - 28));
-    ctx.font = `900 ${h > 120 ? 28 : 24}px system-ui`;
-    ctx.fillStyle = "#f3f6fb";
-    ctx.fillText(String(value), x + w / 2, y + h - 24);
+    ctx.fillText("TonCrime Telegram", tgBtn.x + tgBtn.w / 2, tgBtn.y + tgBtn.h / 2 + 1);
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
   }
 
-  drawActionButton(ctx, rect, fill, stroke, label, fontSize = 16) {
-    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16, fill);
-    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16, stroke, 1);
-    ctx.fillStyle = "#f3f6fb";
-    ctx.font = `900 ${fontSize}px system-ui`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-  }
-
-  drawLeaderboardOverlay(ctx, state, L) {
+  drawRankingTab(ctx, state, x, y, w, h, L) {
+    this._seedLeaderboard();
     const p = state.player || {};
     const username = String(p.username || "Player").trim() || "Player";
     const pvp = state.pvp || {};
-    const leaderboard = Array.isArray(pvp.leaderboard)
-      ? pvp.leaderboard.slice().sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
-      : [];
-    const list = leaderboard.length ? leaderboard.slice(0, 10) : [{ name: username, wins: Number(pvp.wins || 0), losses: Number(pvp.losses || 0), rating: Number(pvp.rating || 1000), score: Number(pvp.rating || 1000) }];
+    const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice().sort((a, b) => Number(b.score || 0) - Number(a.score || 0)) : [];
+    const list = leaderboard.length ? leaderboard.slice(0, 12) : [{ name: username, wins: 0, losses: 0, rating: Number(pvp.rating || 1000), score: Number(pvp.rating || 1000) }];
 
-    ctx.fillStyle = "rgba(0,0,0,0.36)";
-    ctx.fillRect(0, 0, L.w, L.h);
-
-    const ovW = Math.min(520, L.panelW - 30);
-    const ovH = Math.min(460, L.panelH - 40);
-    const ovX = L.panelX + (L.panelW - ovW) * 0.5;
-    const ovY = L.panelY + 20;
-
-    fillRoundRect(ctx, ovX, ovY, ovW, ovH, 20, "rgba(8,10,16,0.96)");
-    strokeRoundRect(ctx, ovX, ovY, ovW, ovH, 20, "rgba(255,176,82,0.24)", 1);
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "#f3f6fb";
-    ctx.font = "700 24px system-ui";
-    ctx.fillText("Leaderboard", ovX + 22, ovY + 34);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = "800 18px system-ui";
+    ctx.fillText("Sıralama", x + 8, y + 22);
+    ctx.fillStyle = "rgba(255,213,156,0.72)";
     ctx.font = "500 12px system-ui";
-    ctx.fillStyle = "rgba(255,255,255,0.68)";
-    ctx.fillText("PvP kayıtları otomatik sıralanır", ovX + 22, ovY + 56);
+    ctx.fillText("En iyi oyuncular", x + 8, y + 42);
 
-    const closeBtn = {
-      x: ovX + ovW - 48,
-      y: ovY + 14,
-      w: 30,
-      h: 30,
-      onClick: () => { this.showLeaderboard = false; },
-    };
-    this.buttons.push(closeBtn);
-    fillRoundRect(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 10, "rgba(255,255,255,0.06)");
-    strokeRoundRect(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 10, "rgba(255,255,255,0.10)", 1);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.font = "700 18px system-ui";
-    ctx.fillText("×", closeBtn.x + 15, closeBtn.y + 15);
-
-    let rowY = ovY + 84;
-    for (let i = 0; i < list.length; i += 1) {
-      const item = list[i];
+    let rowY = y + 58;
+    const rowH = L.mobile ? 44 : 40;
+    list.forEach((item, i) => {
       const isMe = String(item.name || "") === username;
-      fillRoundRect(ctx, ovX + 16, rowY, ovW - 32, 34, 12, isMe ? "rgba(255,176,82,0.14)" : "rgba(255,255,255,0.04)");
-      strokeRoundRect(ctx, ovX + 16, rowY, ovW - 32, 34, 12, isMe ? "rgba(255,176,82,0.22)" : "rgba(255,255,255,0.05)", 1);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
+      this.drawCard(ctx, x + 8, rowY, w - 16, rowH);
+      if (isMe) {
+        fillRoundRect(ctx, x + 8, rowY, w - 16, rowH, 18, "rgba(243,187,102,0.10)");
+      }
       ctx.fillStyle = isMe ? "#ffd494" : "#f3f6fb";
-      ctx.font = "700 14px system-ui";
-      ctx.fillText(`#${i + 1}`, ovX + 30, rowY + 22);
-      textFit(ctx, String(item.name || "Player"), ovX + 72, rowY + 22, ovW - 250);
+      ctx.font = "800 14px system-ui";
+      ctx.fillText(`#${i + 1}`, x + 22, rowY + 25);
+      textFit(ctx, String(item.name || "Player"), x + 58, rowY + 25, w - 220);
       ctx.textAlign = "right";
       ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "700 13px system-ui";
-      ctx.fillText(`${Number(item.wins || 0)}W/${Number(item.losses || 0)}L`, ovX + ovW - 138, rowY + 22);
+      ctx.font = "700 12px system-ui";
+      ctx.fillText(`${Number(item.wins || 0)}W/${Number(item.losses || 0)}L`, x + w - 108, rowY + 24);
       ctx.fillStyle = "#f6c46b";
-      ctx.fillText(String(Number(item.rating || 1000)), ovX + ovW - 34, rowY + 22);
-      rowY += 42;
-    }
+      ctx.font = "800 14px system-ui";
+      ctx.fillText(String(Number(item.rating || 1000)), x + w - 28, rowY + 25);
+      ctx.textAlign = "left";
+      rowY += rowH + 8;
+    });
   }
 }
