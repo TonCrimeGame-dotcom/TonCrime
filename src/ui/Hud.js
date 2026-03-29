@@ -31,52 +31,63 @@ export function startHud(store) {
   const clamp01 = (n) => clamp(n, 0, 1);
 
   const YTON_IMAGE_SRC = "./src/assets/yton.png";
-  const WEAPON_IMAGE_MAP = {
-    glock_17: "house.png",
-    sig_p320: "dry.png",
-    beretta_92fs: "oak.png",
-    colt_1911: "rose.png",
-    mossberg_500: "street.png",
-    rem_870: "dark.png",
-    mp5: "blue.png",
-    ump45: "club.png",
-    ar15: "neon.png",
-    ak74: "sunset.png",
-    ak47: "gold.png",
-    m4a1: "night.png",
-    g3: "blackbarrel.png",
-    scar_h: "smoked.png",
-    svd: "saint.png",
-    m24: "obsidian.png",
-    m79: "velvet.png",
-    rpg7: "tropical.png",
-    barrett_m82: "luxe.png",
-    m134: "mafia.png",
+  const WEAPON_ASSET_BY_ID = {
+    glock_17: "glock.png",
+    sig_p320: "sauer.png",
+    beretta_92fs: "baretta.png",
+    colt_1911: "cold.png",
+    mossberg_500: "moss.png",
+    rem_870: "reminaton.png",
+    mp5: "mp5.png",
+    ump45: "ump.png",
+    ar15: "ar.png",
+    ak74: "ak74.png",
+    ak47: "ak47.png",
+    m4a1: "m4a1.png",
+    g3: "g3.png",
+    scar_h: "scar.png",
+    svd: "dragunov.png",
+    m24: "m24.png",
+    m79: "m79.png",
+    rpg7: "rpg.png",
+    barrett_m82: "barrett.png",
+    m134: "m134.png",
   };
 
-  const WEAPON_NAME_MAP = {
-    "hkmp5919mm": "blue.png",
-    "hkump4545acp": "club.png",
-    "ar1555645": "neon.png",
-    "ak7454539": "sunset.png",
-    "ak4776239": "gold.png",
-    "m4a155645": "night.png",
-    "hkg376251": "blackbarrel.png",
-    "fnscarh76251": "smoked.png",
-    "dragunovsvd76254r": "saint.png",
-    "remingtonm2476251": "obsidian.png",
-    "m79launcher": "velvet.png",
-    "rpg7launcher": "tropical.png",
-    "barrettm8250bmg": "luxe.png",
-    "m134minigun76251": "mafia.png",
-    "glock17919mm": "house.png",
-    "sigsauerp320919mm": "dry.png",
-    "beretta92fs919mm": "oak.png",
-    "colt191145acp": "rose.png",
-    "mossberg50012ga": "street.png",
-    "remington87012ga": "dark.png",
+  const WEAPON_ASSET_BY_NAME = {
+    "glock17919mm": "glock.png",
+    "sigsauerp320919mm": "sauer.png",
+    "beretta92fs919mm": "baretta.png",
+    "colt191145acp": "cold.png",
+    "mossberg50012ga": "moss.png",
+    "remington87012ga": "reminaton.png",
+    "hkmp5919mm": "mp5.png",
+    "hkump4545acp": "ump.png",
+    "ar1555645": "ar.png",
+    "ak7454539": "ak74.png",
+    "ak4776239": "ak47.png",
+    "m4a155645": "m4a1.png",
+    "hkg376251": "g3.png",
+    "fnscarh76251": "scar.png",
+    "dragunovsvd76254r": "dragunov.png",
+    "remingtonm2476251": "m24.png",
+    "m79launcher": "m79.png",
+    "rpg7launcher": "rpg.png",
+    "barrettm8250bmg": "barrett.png",
+    "m134minigun76251": "m134.png",
   };
 
+  const WEAPON_IMAGE_HINT_KEYS = [
+    "weaponImage",
+    "weaponImg",
+    "weaponAsset",
+    "weaponAssetName",
+    "weaponAssetFile",
+    "weaponFile",
+    "equippedImage",
+    "equippedAsset",
+    "equippedSkin",
+  ];
   function fmtMMSS(ms) {
     const totalSec = Math.max(0, Math.ceil(ms / 1000));
     const m = Math.floor(totalSec / 60);
@@ -126,44 +137,40 @@ export function startHud(store) {
     return `./src/assets/${raw}.png`;
   }
 
+  function firstExistingString(values = []) {
+    for (const val of values) {
+      const text = String(val || "").trim();
+      if (text) return text;
+    }
+    return "";
+  }
+
   function resolveWeaponImage(state) {
     const player = state?.player || {};
     const weapons = state?.weapons || {};
     const weaponName = String(player.weaponName || "").trim();
-    const noWeapon =
-      !weaponName ||
-      /^silah yok$/i.test(weaponName) ||
-      /^no weapon$/i.test(weaponName);
-
+    const noWeapon = !weaponName || /^silah yok$/i.test(weaponName) || /^no weapon$/i.test(weaponName);
     if (noWeapon) return "";
 
-    const explicit =
-      player.weaponImage ||
-      player.weaponImg ||
-      player.weaponAsset ||
-      player.weaponAssetName ||
-      player.weaponSkin ||
-      weapons.equippedImage ||
-      weapons.equippedAsset ||
-      weapons.equippedSkin;
-
-    if (explicit) {
-      return resolveAssetPath(explicit);
-    }
+    const explicit = firstExistingString(
+      WEAPON_IMAGE_HINT_KEYS.map((key) => player?.[key]).concat(
+        WEAPON_IMAGE_HINT_KEYS.map((key) => weapons?.[key])
+      )
+    );
+    if (explicit) return resolveAssetPath(explicit);
 
     const equippedId = String(weapons.equippedId || player.weaponId || "").trim();
-    if (equippedId && WEAPON_IMAGE_MAP[equippedId]) {
-      return resolveAssetPath(WEAPON_IMAGE_MAP[equippedId]);
+    if (equippedId && WEAPON_ASSET_BY_ID[equippedId]) {
+      return resolveAssetPath(WEAPON_ASSET_BY_ID[equippedId]);
     }
 
     const normalizedName = normalizeWeaponKey(weaponName);
-    if (normalizedName && WEAPON_NAME_MAP[normalizedName]) {
-      return resolveAssetPath(WEAPON_NAME_MAP[normalizedName]);
+    if (normalizedName && WEAPON_ASSET_BY_NAME[normalizedName]) {
+      return resolveAssetPath(WEAPON_ASSET_BY_NAME[normalizedName]);
     }
 
-    return resolveAssetPath("blackbarrel.png");
+    return "";
   }
-
   function ensureMiniVisual(el, className = "") {
     if (!el) return null;
     el.classList.add("hudMiniVisual");
@@ -186,15 +193,27 @@ export function startHud(store) {
     if (!target?.wrap || !target?.img) return;
     target.wrap.title = title || "";
 
+    if (!target.img.__hudVisualBound) {
+      target.img.__hudVisualBound = true;
+      target.img.addEventListener("error", () => {
+        target.wrap.classList.add("is-empty");
+        target.img.removeAttribute("src");
+      });
+      target.img.addEventListener("load", () => {
+        target.wrap.classList.remove("is-empty");
+      });
+    }
+
     if (src) {
       if (target.img.getAttribute("src") !== src) {
         target.img.src = src;
       }
       target.wrap.classList.remove("is-empty");
-    } else {
-      target.img.removeAttribute("src");
-      target.wrap.classList.add("is-empty");
+      return;
     }
+
+    target.img.removeAttribute("src");
+    target.wrap.classList.add("is-empty");
   }
 
   function makeActionDock() {
@@ -356,7 +375,7 @@ export function startHud(store) {
     elUsername.title = username;
 
     const yton = Number(s.yton ?? s.coins ?? p.coins ?? 0);
-    elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
+    elCoins.textContent = Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0";
     setMiniVisual(coinsVisual, YTON_IMAGE_SRC, "YTON");
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
