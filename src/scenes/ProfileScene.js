@@ -176,6 +176,26 @@ function getProjectTonWalletAddress() {
   return 'UQTONCRIME9x7j4m2p8v6k1a5d3n8q4w7e2r6t9y5u1i3o';
 }
 
+function isLikelyTonAddress(addr) {
+  const v = String(addr || '').trim();
+  if (!v) return false;
+  if (v.length < 20 || v.length > 80) return false;
+  return /^(UQ|EQ|kQ|0:|ton)/i.test(v);
+}
+
+function parseTonAmount(value) {
+  const raw = String(value ?? '').replace(',', '.').trim();
+  if (!raw) return NaN;
+  const amount = Number(raw);
+  return Number.isFinite(amount) ? amount : NaN;
+}
+
+function tonFmt(n) {
+  const value = Number(n || 0);
+  if (!Number.isFinite(value)) return '0';
+  return value.toLocaleString('tr-TR', { maximumFractionDigits: value % 1 ? 2 : 0 });
+}
+
 export class ProfileScene {
   constructor({ store, input, scenes, assets }) {
     this.store = store;
@@ -299,8 +319,12 @@ export class ProfileScene {
     if (!wallet.selectedInvestmentTon) wallet.selectedInvestmentTon = 0;
     if (typeof wallet.withdrawPending !== "boolean") wallet.withdrawPending = false;
     if (!wallet.withdrawRequestedAt) wallet.withdrawRequestedAt = 0;
+    if (!wallet.withdrawAmountTon) wallet.withdrawAmountTon = 0;
+    if (!wallet.withdrawTargetAddress) wallet.withdrawTargetAddress = "";
+    if (!wallet.withdrawRequestId) wallet.withdrawRequestId = "";
     if (!wallet.connectedAddress) wallet.connectedAddress = "";
     if (!Array.isArray(wallet.investments)) wallet.investments = [];
+    if (!Array.isArray(wallet.withdraws)) wallet.withdraws = [];
     if (!wallet.investmentRequestId) wallet.investmentRequestId = "";
     this.store.set({ wallet });
   }
@@ -316,12 +340,31 @@ export class ProfileScene {
     this.store.set({ wallet });
   }
 
+  _askText(message, defaultValue = "") {
+    try {
+      if (typeof window?.prompt !== "function") return null;
+      return window.prompt(message, defaultValue);
+    } catch (_) {
+      return null;
+    }
+  }
+
   _connectWallet() {
-    const p = (this.store.get() || {}).player || {};
-    const seed = String(p.telegramId || p.username || "player").replace(/[^a-zA-Z0-9]/g, "").slice(-8) || "player";
-    const fakeAddr = `UQ${seed.padEnd(46, "7")}`.slice(0, 48);
-    this._setWallet({ connectedAddress: fakeAddr });
-    this._toast("Cüzdan bağlandı");
+    const wallet = this._walletState();
+    const current = String(wallet.connectedAddress || "").trim();
+    const answer = this._askText("Bağlamak istediğin TON cüzdan adresini gir.", current);
+    if (answer == null) return;
+    const address = String(answer || "").trim();
+    if (!address) {
+      this._toast("Cüzdan adresi girilmedi");
+      return;
+    }
+    if (!isLikelyTonAddress(address)) {
+      this._toast("Geçerli bir TON cüzdan adresi gir");
+      return;
+    }
+    this._setWallet({ connectedAddress: address });
+    this._toast(current ? "Cüzdan adresi güncellendi" : "Cüzdan bağlandı");
   }
 
   _disconnectWallet() {
@@ -395,7 +438,59 @@ export class ProfileScene {
   }
 
   _requestWithdraw() {
-    this._setWallet({ withdrawPending: true, withdrawRequestedAt: Date.now() });
+    const wallet = this._walletState();
+    let targetAddress = String(wallet.connectedAddress || wallet.withdrawTargetAddress || "").trim();
+
+    if (!targetAddress) {
+      const addrInput = this._askText("Çekimin gönderileceği TON cüzdan adresini gir.", "");
+      if (addrInput == null) return;
+      targetAddress = String(addrInput || "").trim();
+      if (!targetAddress) {
+        this._toast("Çekim için cüzdan adresi gerekli");
+        return;
+      }
+    }
+
+    if (!isLikelyTonAddress(targetAddress)) {
+      this._toast("Geçerli bir TON cüzdan adresi gir");
+      return;
+    }
+
+    const amountInput = this._askText(
+      "Çekmek istediğin TON miktarını gir. Min 0.5 TON / Max 100 TON",
+      wallet.withdrawAmountTon ? String(wallet.withdrawAmountTon) : ""
+    );
+    if (amountInput == null) return;
+
+    const amountTon = parseTonAmount(amountInput);
+    if (!Number.isFinite(amountTon)) {
+      this._toast("Geçerli bir TON miktarı gir");
+      return;
+    }
+    if (amountTon < 0.5 || amountTon > 100) {
+      this._toast("Çekim limiti 0.5 TON ile 100 TON arasında olmalı");
+      return;
+    }
+
+    const requestId = `WD-${Date.now().toString(36).toUpperCase()}`;
+    const withdraws = Array.isArray(wallet.withdraws) ? wallet.withdraws.slice() : [];
+    withdraws.unshift({
+      id: requestId,
+      amountTon,
+      address: targetAddress,
+      status: "pending_review",
+      createdAt: Date.now(),
+    });
+
+    this._setWallet({
+      connectedAddress: wallet.connectedAddress || targetAddress,
+      withdrawPending: true,
+      withdrawRequestedAt: Date.now(),
+      withdrawAmountTon: amountTon,
+      withdrawTargetAddress: targetAddress,
+      withdrawRequestId: requestId,
+      withdraws,
+    });
     this._toast("Çekim talebi oluşturuldu");
   }
 
@@ -464,7 +559,7 @@ export class ProfileScene {
     const panelW = safe.w - side * 2;
     const panelH = Math.max(340, bottom - top);
     const headerH = mobile ? 64 : 70;
-    const heroH = mobile ? 150 : 160;
+    const heroH = mobile ? 178 : 160;
     const tabH = mobile ? 36 : 40;
     const contentY = panelY + headerH + heroH + tabH + 24;
     const contentH = panelY + panelH - contentY - 14;
@@ -536,22 +631,19 @@ export class ProfileScene {
     if (tab === "wallet") {
       const wallet = state?.wallet || {};
       const step = String(wallet.investmentStep || "idle");
-      if (layout.mobile) {
-        if (step === "select") return 760;
-        if (step === "payment") return 930;
-        if (step === "confirmed") return 900;
-        return 620;
-      }
-      if (step === "select") return 640;
-      if (step === "payment") return 780;
-      if (step === "confirmed") return 760;
-      return 500;
+      let total = layout.mobile ? 560 : 430;
+      total += wallet.withdrawPending ? (layout.mobile ? 96 : 76) : 0;
+      if (step === "select") total += layout.mobile ? 250 : 160;
+      else if (step === "payment") total += layout.mobile ? 420 : 340;
+      else if (step === "confirmed") total += layout.mobile ? 400 : 320;
+      else total += 90;
+      return total;
     }
     if (tab === "ranking") {
       const board = Array.isArray(state?.pvp?.leaderboard) ? state.pvp.leaderboard : [];
       return 70 + Math.max(6, Math.min(12, board.length || 6)) * (layout.mobile ? 52 : 48);
     }
-    return layout.mobile ? 380 : 250;
+    return layout.mobile ? 520 : 340;
   }
 
   update() {
@@ -668,14 +760,17 @@ export class ProfileScene {
   }
 
   drawInfoMini(ctx, x, y, w, h, label, value) {
+    const compact = w < 150 || h < 52;
+    const labelSize = compact ? 10 : 11;
+    const valueSize = compact ? 13 : 16;
     fillRoundRect(ctx, x, y, w, h, 14, "rgba(255,255,255,0.05)");
     strokeRoundRect(ctx, x, y, w, h, 14, "rgba(255,255,255,0.10)", 1);
     ctx.fillStyle = "rgba(255,213,156,0.78)";
-    ctx.font = "500 11px system-ui";
-    textFit(ctx, label, x + 10, y + 18, w - 20);
+    ctx.font = `500 ${labelSize}px system-ui`;
+    textFit(ctx, label, x + 10, y + 17, w - 20);
     ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = "700 16px system-ui";
-    textFit(ctx, value, x + 10, y + 40, w - 20);
+    ctx.font = `700 ${valueSize}px system-ui`;
+    textFit(ctx, value, x + 10, y + h - 13, w - 20);
   }
 
   drawHero(ctx, state, L) {
@@ -693,8 +788,8 @@ export class ProfileScene {
 
     const avatarFrameX = x + 16;
     const avatarFrameY = y + 16;
-    const avatarFrameW = L.mobile ? 106 : 116;
-    const avatarFrameH = L.mobile ? 106 : 116;
+    const avatarFrameW = L.mobile ? 98 : 116;
+    const avatarFrameH = L.mobile ? 98 : 116;
 
     fillRoundRect(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18, "rgba(255,255,255,0.05)");
     strokeRoundRect(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18, "rgba(255,182,86,0.18)", 1);
@@ -740,20 +835,19 @@ export class ProfileScene {
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = `700 ${L.mobile ? 20 : 28}px system-ui`;
+    ctx.font = `700 ${L.mobile ? 18 : 28}px system-ui`;
     textFit(ctx, username, infoX, infoY + 18, infoW);
 
-    const cols = 2;
-    const gap = 10;
+    const gap = L.mobile ? 8 : 10;
     const miniW = Math.floor((infoW - gap) / 2);
-    const miniH = 48;
+    const miniH = L.mobile ? 52 : 48;
     const level = Math.max(1, Number(p.level || 1));
     const energy = Math.max(0, Number(p.energy || 0));
     const energyMax = Math.max(1, Number(p.energyMax || 100));
     const rating = Math.max(0, Number(pvp.rating || 1000));
 
-    const row1Y = infoY + 34;
-    const row2Y = row1Y + miniH + 10;
+    const row1Y = infoY + (L.mobile ? 28 : 34);
+    const row2Y = row1Y + miniH + gap;
     this.drawInfoMini(ctx, infoX, row1Y, miniW, miniH, "Level", String(level));
     this.drawInfoMini(ctx, infoX + miniW + gap, row1Y, miniW, miniH, "Enerji", `${energy}/${energyMax}`);
     this.drawInfoMini(ctx, infoX, row2Y, miniW, miniH, "Clan", clanName);
@@ -891,11 +985,22 @@ export class ProfileScene {
     const step = String(wallet.investmentStep || "idle");
     const address = String(wallet.depositAddress || getProjectTonWalletAddress());
     const latestInvestment = Array.isArray(wallet.investments) && wallet.investments.length ? wallet.investments[0] : null;
+    const latestWithdraw = Array.isArray(wallet.withdraws) && wallet.withdraws.length ? wallet.withdraws[0] : null;
 
     this.drawSectionTitle(ctx, "Cüzdan", "TON işlemleri ve yatırım paneli", x + 8, y + 20, w - 16);
 
     let cy = y + 42;
     const fullW = w - 16;
+
+    const drawActionBtn = (btn, label, tone = "gold") => {
+      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === "soft" ? "rgba(255,255,255,0.08)" : "rgba(243,187,102,0.16)");
+      strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === "soft" ? "rgba(255,255,255,0.16)" : "rgba(243,187,102,0.36)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = `700 ${L.mobile ? 14 : 15}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+    };
 
     this.drawCard(ctx, x + 8, cy, fullW, 108);
     ctx.fillStyle = "rgba(255,213,156,0.78)";
@@ -909,65 +1014,61 @@ export class ProfileScene {
     ctx.fillText(`1 YTON = 0.01 TON  •  Karşılık: ${tonValue} TON`, x + 24, cy + 90);
     cy += 122;
 
-    this.drawCard(ctx, x + 8, cy, fullW, 94);
+    const walletCardH = L.mobile ? 118 : 96;
+    this.drawCard(ctx, x + 8, cy, fullW, walletCardH);
     ctx.fillStyle = "rgba(255,213,156,0.78)";
     ctx.font = "500 12px system-ui";
-    ctx.fillText("Bağlı Cüzdan", x + 24, cy + 28);
+    ctx.fillText("Bağlı TON Cüzdanı", x + 24, cy + 28);
     ctx.fillStyle = "rgba(255,255,255,0.96)";
     ctx.font = "700 15px system-ui";
-    textFit(ctx, connected ? shortAddr(connected) : "Bağlı değil", x + 24, cy + 56, fullW - 166);
+    textFit(ctx, connected ? shortAddr(connected) : "Henüz cüzdan adresi eklenmedi", x + 24, cy + 56, fullW - (L.mobile ? 48 : 170));
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.font = "500 11px system-ui";
+    textFit(ctx, connected ? "Adres kullanıcıdan alınır, otomatik üretilmez." : "Butona basınca adres sorulur, kafasına göre adres yazılmaz.", x + 24, cy + 78, fullW - (L.mobile ? 48 : 170));
 
     const connectBtn = {
-      x: x + fullW - 124,
-      y: cy + 22,
-      w: 100,
+      x: L.mobile ? x + 24 : x + fullW - 124,
+      y: L.mobile ? cy + walletCardH - 44 : cy + 22,
+      w: L.mobile ? fullW - 32 : 100,
       h: 34,
-      onClick: () => connected ? this._disconnectWallet() : this._connectWallet(),
+      onClick: () => this._connectWallet(),
     };
     this.buttons.push(connectBtn);
-    fillRoundRect(ctx, connectBtn.x, connectBtn.y, connectBtn.w, connectBtn.h, 12, "rgba(243,187,102,0.16)");
-    strokeRoundRect(ctx, connectBtn.x, connectBtn.y, connectBtn.w, connectBtn.h, 12, "rgba(243,187,102,0.36)", 1);
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "700 12px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(connected ? "Bağlantıyı Kes" : "Cüzdan Bağla", connectBtn.x + connectBtn.w / 2, connectBtn.y + connectBtn.h / 2 + 1);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    cy += 108;
+    drawActionBtn(connectBtn, connected ? "Adresi Değiştir" : "Adres Ekle");
+    cy += walletCardH + 14;
 
     const actionGap = 10;
     const actionW = L.mobile ? fullW : Math.floor((fullW - actionGap) / 2);
     const investBtn = { x: x + 8, y: cy, w: actionW, h: 44, onClick: () => this._openInvestmentSelector() };
     const withdrawBtn = { x: L.mobile ? x + 8 : x + 8 + actionW + actionGap, y: L.mobile ? cy + 54 : cy, w: actionW, h: 44, onClick: () => this._requestWithdraw() };
     this.buttons.push(investBtn, withdrawBtn);
-
-    const drawActionBtn = (btn, label, tone = "gold") => {
-      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === "soft" ? "rgba(255,255,255,0.08)" : "rgba(243,187,102,0.16)");
-      strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === "soft" ? "rgba(255,255,255,0.16)" : "rgba(243,187,102,0.36)", 1);
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = `700 ${L.mobile ? 14 : 15}px system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
-    };
-
     drawActionBtn(investBtn, "Yatırım Yap");
     drawActionBtn(withdrawBtn, "Çekim Talebi", "soft");
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     cy += L.mobile ? 110 : 58;
 
-    if (wallet.withdrawPending) {
-      this.drawCard(ctx, x + 8, cy, fullW, 64);
-      ctx.fillStyle = "rgba(255,213,156,0.78)";
-      ctx.font = "500 12px system-ui";
-      ctx.fillText("Çekim Durumu", x + 24, cy + 26);
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = "700 14px system-ui";
-      ctx.fillText("Talep alındı • yönetici onayı bekleniyor", x + 24, cy + 48);
-      cy += 78;
+    const withdrawCardH = wallet.withdrawPending ? (L.mobile ? 96 : 78) : (L.mobile ? 90 : 72);
+    this.drawCard(ctx, x + 8, cy, fullW, withdrawCardH);
+    ctx.fillStyle = "rgba(255,213,156,0.78)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("Çekim Talebi", x + 24, cy + 26);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "500 11px system-ui";
+    ctx.fillText("Min 0.5 TON • Max 100 TON", x + 24, cy + 44);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = "700 13px system-ui";
+    if (wallet.withdrawPending && latestWithdraw) {
+      textFit(ctx, `${tonFmt(latestWithdraw.amountTon)} TON • ${shortAddr(latestWithdraw.address)}`, x + 24, cy + (L.mobile ? 67 : 62), fullW - 48);
+      if (L.mobile) {
+        ctx.fillStyle = "rgba(124,255,170,0.92)";
+        ctx.font = "700 11px system-ui";
+        textFit(ctx, `Durum: onay bekleniyor • ${wallet.withdrawRequestId || latestWithdraw.id || ''}`, x + 24, cy + 84, fullW - 48);
+      }
+    } else {
+      textFit(ctx, "Butona basınca önce miktar istenir, sonra çekim talebi açılır.", x + 24, cy + (L.mobile ? 67 : 62), fullW - 48);
     }
+    cy += withdrawCardH + 14;
 
     if (step === "select") {
       const blockH = L.mobile ? 254 : 162;
