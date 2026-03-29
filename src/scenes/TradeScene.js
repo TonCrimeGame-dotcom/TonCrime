@@ -64,6 +64,21 @@ function strokeRoundRect(ctx, x, y, w, h, r) {
 function fmtNum(n) {
   return Number(n || 0).toLocaleString("tr-TR");
 }
+
+function getWalletYton(state = {}) {
+  return Number(state?.wallet?.yton || 0);
+}
+
+function patchWalletYton(state = {}, nextYton = 0) {
+  return {
+    wallet: {
+      ...(state.wallet || {}),
+      yton: Number(nextYton || 0),
+    },
+    coins: Number(nextYton || 0),
+  };
+}
+
 function fitText(ctx, text, maxWidth) {
   const src = String(text || "");
   if (!src || maxWidth <= 8) return "";
@@ -540,15 +555,17 @@ export class TradeScene {
     if (meta.markFreeSpin) tradePatch.lastFreeSpinDay = todayKey();
 
     if (reward.type === "coins") {
+      const nextYton = getWalletYton(s) + Number(reward.amount || 0) - Number(meta.cost || 0);
       this.store.set({
-        coins: Number(s.coins || 0) + Number(reward.amount || 0) - Number(meta.cost || 0),
+        ...patchWalletYton(s, nextYton),
         ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
       });
     } else if (reward.type === "energy") {
       const p = { ...(s.player || {}) };
       p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
+      const nextYton = getWalletYton(s) - Number(meta.cost || 0);
       this.store.set({
-        coins: Number(s.coins || 0) - Number(meta.cost || 0),
+        ...patchWalletYton(s, nextYton),
         player: p,
         ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
       });
@@ -557,8 +574,9 @@ export class TradeScene {
       const existing = items.find((x) => x.name === reward.item.name);
       if (existing) existing.qty = Number(existing.qty || 0) + Number(reward.item.qty || 1);
       else items.unshift({ ...reward.item });
+      const nextYton = getWalletYton(s) - Number(meta.cost || 0);
       this.store.set({
-        coins: Number(s.coins || 0) - Number(meta.cost || 0),
+        ...patchWalletYton(s, nextYton),
         inventory: { ...(s.inventory || {}), items },
         ...(Object.keys(tradePatch).length ? { trade: { ...(s.trade || {}), ...tradePatch } } : {}),
       });
@@ -615,7 +633,7 @@ export class TradeScene {
       this._showToast("Günlük ücretsiz çark kullanıldı");
       return;
     }
-    if (premium && Number(s.coins || 0) < cost) {
+    if (premium && getWalletYton(s) < cost) {
       this._showToast("Premium çark için yetersiz yton");
       return;
     }
@@ -648,7 +666,7 @@ export class TradeScene {
   _startCrateRoll(kind) {
     const s = this.store.get();
     const cost = kind === "legendary" ? 140 : 65;
-    if (Number(s.coins || 0) < cost) {
+    if (getWalletYton(s) < cost) {
       this._showToast("Yetersiz yton");
       return;
     }
@@ -938,8 +956,9 @@ export class TradeScene {
     if (item.qty <= 0) items.splice(idx, 1);
     else items[idx] = item;
 
+    const nextYton = getWalletYton(s) + gain;
     this.store.set({
-      coins: Number(s.coins || 0) + gain,
+      ...patchWalletYton(s, nextYton),
       inventory: {
         ...(s.inventory || {}),
         items,
