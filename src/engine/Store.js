@@ -1,8 +1,7 @@
 export class Store {
   constructor(initialState = {}) {
     this.listeners = new Set();
-    const normalized = this._normalizeLegacyState(this._clone(initialState || {}));
-    this.state = this._mergeDefaults(normalized);
+    this.state = this._mergeDefaults(this._clone(initialState || {}));
   }
 
   get() {
@@ -84,9 +83,6 @@ export class Store {
       lang: "tr",
 
       coins: 5000,
-      wallet: {
-        yton: 5000,
-      },
       cash: 25000,
       premium: false,
 
@@ -136,6 +132,14 @@ export class Store {
         selectedShopItemId: null,
         view: "main", // main | shop
         toast: null,
+        lootWheel: {
+          mode: "free",
+          selectedIndex: 0,
+          rotation: 0,
+          reward: null,
+          updatedAt: 0,
+        },
+        crateReveal: null,
       },
 
       inventory: {
@@ -144,6 +148,7 @@ export class Store {
             id: "inv_energy_whiskey",
             kind: "consumable",
             icon: "🥃",
+            imageSrc: "./src/assets/drink.png",
             name: "Imported Whiskey",
             rarity: "common",
             qty: 4,
@@ -159,6 +164,8 @@ export class Store {
             id: "inv_vip_girl",
             kind: "girls",
             icon: "💋",
+            imageKey: "xxx",
+            imageSrc: "./src/assets/xxx.jpg",
             name: "VIP Girl",
             rarity: "epic",
             qty: 2,
@@ -174,6 +181,7 @@ export class Store {
             id: "inv_moon_rocks",
             kind: "goods",
             icon: "🌿",
+            imageSrc: "./src/assets/weed.png",
             name: "Moon Rocks",
             rarity: "rare",
             qty: 6,
@@ -188,6 +196,7 @@ export class Store {
             id: "inv_gold_pass",
             kind: "rare",
             icon: "👑",
+            imageSrc: "./src/assets/bonus.png",
             name: "Golden Pass",
             rarity: "legendary",
             qty: 1,
@@ -207,6 +216,8 @@ export class Store {
             id: "biz_night_1",
             type: "nightclub",
             icon: "🌃",
+            imageKey: "nightclub",
+            imageSrc: "./src/assets/nightclub.jpg",
             name: "Velvet Night",
             ownerId: "player_main",
             ownerName: "Player",
@@ -217,6 +228,7 @@ export class Store {
               {
                 id: "biz_night_1_whiskey",
                 icon: "🥃",
+                imageSrc: "./src/assets/drink.png",
                 name: "Black Whiskey",
                 rarity: "common",
                 qty: 16,
@@ -227,6 +239,7 @@ export class Store {
               {
                 id: "biz_night_1_champ",
                 icon: "🍾",
+                imageSrc: "./src/assets/drink.png",
                 name: "Premium Champagne",
                 rarity: "rare",
                 qty: 8,
@@ -240,6 +253,8 @@ export class Store {
             id: "biz_coffee_1",
             type: "coffeeshop",
             icon: "🌿",
+            imageKey: "coffeeshop",
+            imageSrc: "./src/assets/coffeeshop.jpg",
             name: "Amsterdam Dreams",
             ownerId: "player_main",
             ownerName: "Player",
@@ -250,6 +265,7 @@ export class Store {
               {
                 id: "biz_coffee_1_weed",
                 icon: "🍁",
+                imageSrc: "./src/assets/weed.png",
                 name: "White Widow",
                 rarity: "rare",
                 qty: 14,
@@ -263,6 +279,8 @@ export class Store {
             id: "biz_brothel_1",
             type: "brothel",
             icon: "💋",
+            imageKey: "xxx",
+            imageSrc: "./src/assets/xxx.jpg",
             name: "Ruby House",
             ownerId: "player_main",
             ownerName: "Player",
@@ -273,6 +291,8 @@ export class Store {
               {
                 id: "biz_brothel_1_vip",
                 icon: "🌹",
+                imageKey: "xxx",
+                imageSrc: "./src/assets/xxx.jpg",
                 name: "VIP Companion",
                 rarity: "epic",
                 qty: 5,
@@ -292,6 +312,8 @@ export class Store {
             businessId: "nb_777",
             type: "nightclub",
             icon: "🌃",
+            imageKey: "nightclub",
+            imageSrc: "./src/assets/nightclub.jpg",
             name: "Red Velvet Club",
             ownerId: "u_777",
             ownerName: "Mert",
@@ -305,6 +327,8 @@ export class Store {
             businessId: "cf_555",
             type: "coffeeshop",
             icon: "🌿",
+            imageKey: "coffeeshop",
+            imageSrc: "./src/assets/coffeeshop.jpg",
             name: "Green Smoke",
             ownerId: "u_555",
             ownerName: "Ares",
@@ -318,6 +342,8 @@ export class Store {
             businessId: "br_222",
             type: "brothel",
             icon: "💋",
+            imageKey: "xxx",
+            imageSrc: "./src/assets/xxx.jpg",
             name: "Ruby House",
             ownerId: "u_222",
             ownerName: "Selim",
@@ -333,6 +359,7 @@ export class Store {
             id: "list_1",
             shopId: "shop_1",
             icon: "🥃",
+            imageSrc: "./src/assets/drink.png",
             itemName: "Night Whiskey",
             rarity: "common",
             stock: 18,
@@ -345,6 +372,7 @@ export class Store {
             id: "list_2",
             shopId: "shop_1",
             icon: "🍾",
+            imageSrc: "./src/assets/drink.png",
             itemName: "Club Champagne",
             rarity: "rare",
             stock: 7,
@@ -357,6 +385,7 @@ export class Store {
             id: "list_3",
             shopId: "shop_1",
             icon: "🎟️",
+            imageSrc: "./src/assets/bonus.png",
             itemName: "VIP Pass",
             rarity: "epic",
             stock: 3,
@@ -369,6 +398,7 @@ export class Store {
             id: "list_4",
             shopId: "shop_2",
             icon: "🍁",
+            imageSrc: "./src/assets/weed.png",
             itemName: "OG Kush",
             rarity: "rare",
             stock: 12,
@@ -381,6 +411,7 @@ export class Store {
             id: "list_5",
             shopId: "shop_2",
             icon: "🌿",
+            imageSrc: "./src/assets/weed.png",
             itemName: "Moon Rocks",
             rarity: "epic",
             stock: 4,
@@ -393,6 +424,8 @@ export class Store {
             id: "list_6",
             shopId: "shop_3",
             icon: "💋",
+            imageKey: "xxx",
+            imageSrc: "./src/assets/xxx.jpg",
             itemName: "VIP Companion",
             rarity: "epic",
             stock: 5,
@@ -405,6 +438,8 @@ export class Store {
             id: "list_7",
             shopId: "shop_3",
             icon: "🌹",
+            imageKey: "xxx",
+            imageSrc: "./src/assets/xxx.jpg",
             itemName: "Deluxe Service",
             rarity: "legendary",
             stock: 2,
@@ -482,32 +517,66 @@ export class Store {
       if (!biz.ownerName) biz.ownerName = playerName;
       if (!biz.ownerId) biz.ownerId = String(merged.player.id || "player_main");
       if (!biz.icon) biz.icon = this._businessIcon(biz.type);
+      const bizImg = this._businessImageData(biz.type);
+      if (!biz.imageKey && bizImg.imageKey) biz.imageKey = bizImg.imageKey;
+      if (!biz.imageSrc && bizImg.imageSrc) biz.imageSrc = bizImg.imageSrc;
       if (!Array.isArray(biz.products)) biz.products = [];
+      for (const product of biz.products) {
+        const art = this._itemImageData(product.name || product.itemName || "", biz.type);
+        if (!product.imageKey && art.imageKey) product.imageKey = art.imageKey;
+        if (!product.imageSrc && art.imageSrc) product.imageSrc = art.imageSrc;
+      }
+    }
+
+    for (const item of merged.inventory.items) {
+      const art = this._itemImageData(item.name || item.itemName || "", item.type || "");
+      if (!item.imageKey && art.imageKey) item.imageKey = art.imageKey;
+      if (!item.imageSrc && art.imageSrc) item.imageSrc = art.imageSrc;
     }
 
     for (const shop of merged.market.shops) {
       if (!shop.icon) shop.icon = this._businessIcon(shop.type);
+      const art = this._businessImageData(shop.type);
+      if (!shop.imageKey && art.imageKey) shop.imageKey = art.imageKey;
+      if (!shop.imageSrc && art.imageSrc) shop.imageSrc = art.imageSrc;
       if (typeof shop.totalListings !== "number") {
         shop.totalListings = merged.market.listings.filter((x) => x.shopId === shop.id).length;
       }
     }
 
+    for (const listing of merged.market.listings) {
+      const shop = merged.market.shops.find((x) => x.id === listing.shopId);
+      const art = this._itemImageData(listing.itemName || listing.name || "", shop?.type || listing.type || "");
+      if (!listing.imageKey && art.imageKey) listing.imageKey = art.imageKey;
+      if (!listing.imageSrc && art.imageSrc) listing.imageSrc = art.imageSrc;
+    }
+
     return merged;
   }
 
-  _normalizeLegacyState(state) {
-    const next = this._isObject(state) ? { ...state } : {};
-    const wallet = this._isObject(next.wallet) ? { ...next.wallet } : {};
-    const sourceYton = Number(wallet.yton ?? next.yton ?? next.coins ?? 5000);
+  _businessImageData(type) {
+    switch (type) {
+      case "nightclub":
+        return { imageKey: "nightclub", imageSrc: "./src/assets/nightclub.jpg" };
+      case "coffeeshop":
+        return { imageKey: "coffeeshop", imageSrc: "./src/assets/coffeeshop.jpg" };
+      case "brothel":
+        return { imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg" };
+      case "blackmarket":
+        return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
+      default:
+        return { imageKey: "", imageSrc: "" };
+    }
+  }
 
-    wallet.yton = Number.isFinite(sourceYton) ? sourceYton : 5000;
-    next.wallet = wallet;
-
-    // Geçiş sürecinde eski alanı da wallet ile eşitliyoruz.
-    next.coins = wallet.yton;
-    if ("yton" in next) delete next.yton;
-
-    return next;
+  _itemImageData(name, type = "") {
+    const raw = String(name || "").toLowerCase();
+    if (/(whiskey|champagne|drink)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/drink.png" };
+    if (/(moon rocks|og kush|white widow|weed|kush)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/weed.png" };
+    if (/(vip companion|deluxe service|vip girl|companion|service)/.test(raw)) return { imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg" };
+    if (/(golden pass|vip pass|pass)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/bonus.png" };
+    if (/(crate|sandık)/.test(raw)) return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
+    return this._businessImageData(type);
   }
 
   _businessIcon(type) {
