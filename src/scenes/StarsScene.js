@@ -60,15 +60,15 @@ function drawImageContainTop(ctx, img, x, y, w, h, topBias = 0.12) {
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-function drawImageCoverRounded(ctx, img, x, y, w, h, radius) {
+function drawImageContainRounded(ctx, img, x, y, w, h, radius, topBias = 0.1) {
   if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
   const iw = img.naturalWidth;
   const ih = img.naturalHeight;
-  const scale = Math.max(w / iw, h / ih);
+  const scale = Math.min(w / iw, h / ih);
   const dw = iw * scale;
   const dh = ih * scale;
   const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2;
+  const dy = y + (h - dh) / 2 - Math.max(0, h - dh) * topBias;
 
   ctx.save();
   roundRectPath(ctx, x, y, w, h, radius);
@@ -505,8 +505,9 @@ export class StarsScene {
     const listW = panelW - 20;
 
     const isSmall = safe.w <= 420;
-    const rowH = isSmall ? 90 : 98;
-    const thumb = isSmall ? 58 : 66;
+    const rowH = isSmall ? 112 : 124;
+    const thumbW = isSmall ? 58 : 66;
+    const thumbH = isSmall ? 84 : 96;
     const btnW = isSmall ? 96 : 112;
     const btnH = isSmall ? 38 : 42;
 
@@ -539,16 +540,16 @@ export class StarsScene {
       fillRoundRect(ctx, rowRect.x + 1, rowRect.y + 1, rowRect.w - 2, rowRect.h * 0.5, 18);
 
       const imgX = rowRect.x + 12;
-      const imgY = rowRect.y + (rowRect.h - thumb) / 2;
-      const imgW = thumb;
-      const imgH = thumb;
-      const imgRadius = 14;
+      const imgY = rowRect.y + (rowRect.h - thumbH) / 2;
+      const imgW = thumbW;
+      const imgH = thumbH;
+      const imgRadius = 16;
 
       ctx.fillStyle = "rgba(255,255,255,0.06)";
       fillRoundRect(ctx, imgX, imgY, imgW, imgH, imgRadius);
 
       const starImg = this._getStarImage(star);
-      const drew = drawImageCoverRounded(ctx, starImg, imgX, imgY, imgW, imgH, imgRadius);
+      const drew = drawImageContainRounded(ctx, starImg, imgX, imgY, imgW, imgH, imgRadius, 0.14);
       ctx.strokeStyle = "rgba(255,255,255,0.10)";
       strokeRoundRect(ctx, imgX + 0.5, imgY + 0.5, imgW - 1, imgH - 1, imgRadius);
 
@@ -576,20 +577,25 @@ export class StarsScene {
         700
       );
 
+      const line1Y = rowRect.y + 30;
+      const line2Y = rowRect.y + 56;
+      const line3Y = rowRect.y + 76;
+      const line4Y = rowRect.y + 95;
+
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = `700 ${nameSize}px ${titleFamily}`;
-      ctx.fillText(ellipsisText(ctx, star.name, textW), textX, rowRect.y + 31);
+      ctx.fillText(ellipsisText(ctx, star.name, textW), textX, line1Y);
 
       ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.font = `${isSmall ? 12 : 13}px system-ui`;
-      ctx.fillText(`+Enerji: ${Number(star.energyGain || 0)}`, textX, rowRect.y + 52);
+      ctx.fillText(`+Enerji: ${Number(star.energyGain || 0)}`, textX, line2Y);
 
       ctx.fillStyle = "rgba(255,255,255,0.76)";
       ctx.font = `${isSmall ? 11 : 12}px system-ui`;
-      ctx.fillText(`Fiyat: ${Number(star.coinValue || 0)} coin`, textX, rowRect.y + 69);
-      ctx.fillText(`${star.assetName || "asset"}`, textX, rowRect.y + 84);
+      ctx.fillText(`Fiyat: ${Number(star.coinValue || 0)} coin`, textX, line3Y);
+      ctx.fillText(`Rarity: ${String(star.rarity || "common").toUpperCase()}`, textX, line4Y);
 
       ctx.fillStyle = "rgba(18,18,22,0.70)";
       fillRoundRect(ctx, btnX, btnY, btnW, btnH, 14);
