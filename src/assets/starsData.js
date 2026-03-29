@@ -1,9 +1,34 @@
 const DEFAULT_STAR_ASSET = "g_star1.png";
 const DEFAULT_STAR_PATH = `./src/assets/${DEFAULT_STAR_ASSET}`;
 
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
+const STAR_DISPLAY_NAMES = [
+  "Scarlett Blaze",
+  "Ruby Vane",
+  "Luna Hart",
+  "Carmen Vale",
+  "Jade Monroe",
+  "Ivy Noir",
+  "Stella Cruz",
+  "Nina Velvet",
+  "Aurora Kane",
+  "Sasha Bloom",
+  "Bella Storm",
+  "Violet Rae",
+  "Naomi Lace",
+  "Zara Quinn",
+  "Mila Rose",
+  "Serena Fox",
+  "Kiara Lux",
+  "Vanessa Moon",
+  "Bianca Flame",
+  "Selena Dove",
+  "Adriana Skye",
+  "Nicole Hart",
+  "Amber Knight",
+  "Victoria Blaze",
+  "Elena Frost",
+  "Isabella Voss",
+];
 
 function makeGirlStar(index) {
   const file = `g_star${index}.png`;
@@ -13,7 +38,7 @@ function makeGirlStar(index) {
   return {
     id: index,
     code: `g_star${index}`,
-    name: `G Star ${pad2(index)}`,
+    name: STAR_DISPLAY_NAMES[index - 1] || `Star ${index}`,
     gender: "female",
     rarity: index >= 21 ? "legendary" : index >= 13 ? "epic" : index >= 7 ? "rare" : "common",
     coinValue,
@@ -31,7 +56,7 @@ export const stars = [
   {
     id: 27,
     code: "twins1",
-    name: "Twins VIP",
+    name: "Velvet Twins",
     gender: "female",
     rarity: "legendary",
     coinValue: 110,
