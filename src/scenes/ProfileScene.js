@@ -176,6 +176,11 @@ function getProjectTonWalletAddress() {
   return 'UQTONCRIME9x7j4m2p8v6k1a5d3n8q4w7e2r6t9y5u1i3o';
 }
 
+function looksLikeTonAddress(value) {
+  const v = String(value || "").trim();
+  return /^(EQ|UQ)[A-Za-z0-9_-]{40,64}$/.test(v);
+}
+
 export class ProfileScene {
   constructor({ store, input, scenes, assets }) {
     this.store = store;
@@ -302,6 +307,9 @@ export class ProfileScene {
     if (!wallet.connectedAddress) wallet.connectedAddress = "";
     if (!Array.isArray(wallet.investments)) wallet.investments = [];
     if (!wallet.investmentRequestId) wallet.investmentRequestId = "";
+    if (!wallet.withdrawRequestId) wallet.withdrawRequestId = "";
+    if (!wallet.withdrawTargetAddress) wallet.withdrawTargetAddress = "";
+    if (!wallet.withdrawAmountTon) wallet.withdrawAmountTon = 0;
     this.store.set({ wallet });
   }
 
@@ -317,11 +325,23 @@ export class ProfileScene {
   }
 
   _connectWallet() {
-    const p = (this.store.get() || {}).player || {};
-    const seed = String(p.telegramId || p.username || "player").replace(/[^a-zA-Z0-9]/g, "").slice(-8) || "player";
-    const fakeAddr = `UQ${seed.padEnd(46, "7")}`.slice(0, 48);
-    this._setWallet({ connectedAddress: fakeAddr });
-    this._toast("Cüzdan bağlandı");
+    try {
+      const tg = window.Telegram?.WebApp;
+      tg?.openLink?.("https://tonkeeper.com/");
+    } catch (_) {}
+
+    const typed = window.prompt(
+      "Bağladığın TON cüzdan adresini gir (EQ... / UQ...):",
+      this._walletState().connectedAddress || ""
+    );
+    if (typed == null) return;
+    const addr = String(typed || "").trim();
+    if (!looksLikeTonAddress(addr)) {
+      this._toast("Geçerli bir TON adresi gir (EQ... / UQ...)");
+      return;
+    }
+    this._setWallet({ connectedAddress: addr });
+    this._toast("Cüzdan başarıyla bağlandı");
   }
 
   _disconnectWallet() {
@@ -395,8 +415,42 @@ export class ProfileScene {
   }
 
   _requestWithdraw() {
-    this._setWallet({ withdrawPending: true, withdrawRequestedAt: Date.now() });
-    this._toast("Çekim talebi oluşturuldu");
+    const wallet = this._walletState();
+    const connected = String(wallet.connectedAddress || "").trim();
+    if (!connected) {
+      this._toast("Önce cüzdan bağla");
+      return;
+    }
+    if (wallet.withdrawPending) {
+      this._toast("Aktif bir çekim talebin zaten var");
+      return;
+    }
+
+    const s = this.store.get() || {};
+    const yton = Math.max(0, Number(s.wallet?.yton || 0));
+    const maxTon = Number((yton * 0.01).toFixed(2));
+    if (maxTon <= 0) {
+      this._toast("Çekilebilir TON bakiyesi yok");
+      return;
+    }
+
+    const raw = window.prompt(`Çekmek istediğin TON miktarı (max ${maxTon}):`, String(maxTon));
+    if (raw == null) return;
+    const amountTon = Number(raw);
+    if (!Number.isFinite(amountTon) || amountTon <= 0 || amountTon > maxTon) {
+      this._toast("Geçerli bir TON tutarı gir");
+      return;
+    }
+
+    const requestId = `WD-${Date.now().toString(36).toUpperCase()}`;
+    this._setWallet({
+      withdrawPending: true,
+      withdrawRequestedAt: Date.now(),
+      withdrawRequestId: requestId,
+      withdrawTargetAddress: connected,
+      withdrawAmountTon: Number(amountTon.toFixed(2)),
+    });
+    this._toast("Çekim talebi başarıyla oluşturuldu");
   }
 
   _seedLeaderboard() {
@@ -464,7 +518,7 @@ export class ProfileScene {
     const panelW = safe.w - side * 2;
     const panelH = Math.max(340, bottom - top);
     const headerH = mobile ? 64 : 70;
-    const heroH = mobile ? 150 : 160;
+    const heroH = mobile ? 188 : 160;
     const tabH = mobile ? 36 : 40;
     const contentY = panelY + headerH + heroH + tabH + 24;
     const contentH = panelY + panelH - contentY - 14;
@@ -883,9 +937,8 @@ export class ProfileScene {
   }
 
   drawWalletContent(ctx, state, x, y, w, h, L) {
-    const p = state.player || {};
     const wallet = this._walletState();
-    const balance = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
+    const balance = Math.max(0, Number(state.wallet?.yton || 0));
     const tonValue = (balance * 0.01).toFixed(2);
     const connected = String(wallet.connectedAddress || "").trim();
     const step = String(wallet.investmentStep || "idle");
@@ -915,12 +968,13 @@ export class ProfileScene {
     ctx.fillText("Bağlı Cüzdan", x + 24, cy + 28);
     ctx.fillStyle = "rgba(255,255,255,0.96)";
     ctx.font = "700 15px system-ui";
-    textFit(ctx, connected ? shortAddr(connected) : "Bağlı değil", x + 24, cy + 56, fullW - 166);
+    const connectBtnW = L.mobile ? 116 : 100;
+    textFit(ctx, connected ? shortAddr(connected) : "Bağlı değil", x + 24, cy + 56, Math.max(96, fullW - connectBtnW - 48));
 
     const connectBtn = {
-      x: x + fullW - 124,
+      x: x + fullW - (connectBtnW + 24),
       y: cy + 22,
-      w: 100,
+      w: connectBtnW,
       h: 34,
       onClick: () => connected ? this._disconnectWallet() : this._connectWallet(),
     };
@@ -959,14 +1013,19 @@ export class ProfileScene {
     cy += L.mobile ? 110 : 58;
 
     if (wallet.withdrawPending) {
-      this.drawCard(ctx, x + 8, cy, fullW, 64);
+      this.drawCard(ctx, x + 8, cy, fullW, 84);
       ctx.fillStyle = "rgba(255,213,156,0.78)";
       ctx.font = "500 12px system-ui";
       ctx.fillText("Çekim Durumu", x + 24, cy + 26);
       ctx.fillStyle = "rgba(255,255,255,0.96)";
       ctx.font = "700 14px system-ui";
       ctx.fillText("Talep alındı • yönetici onayı bekleniyor", x + 24, cy + 48);
-      cy += 78;
+      if (wallet.withdrawRequestId) {
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.font = "500 12px system-ui";
+        ctx.fillText(`Kod: ${wallet.withdrawRequestId} • ${Number(wallet.withdrawAmountTon || 0)} TON`, x + 24, cy + 68);
+      }
+      cy += 98;
     }
 
     if (step === "select") {

@@ -1,7 +1,8 @@
 export class Store {
   constructor(initialState = {}) {
     this.listeners = new Set();
-    this.state = this._mergeDefaults(this._clone(initialState || {}));
+    const normalized = this._normalizeLegacyState(this._clone(initialState || {}));
+    this.state = this._mergeDefaults(normalized);
   }
 
   get() {
@@ -83,6 +84,9 @@ export class Store {
       lang: "tr",
 
       coins: 5000,
+      wallet: {
+        yton: 5000,
+      },
       cash: 25000,
       premium: false,
 
@@ -489,6 +493,21 @@ export class Store {
     }
 
     return merged;
+  }
+
+  _normalizeLegacyState(state) {
+    const next = this._isObject(state) ? { ...state } : {};
+    const wallet = this._isObject(next.wallet) ? { ...next.wallet } : {};
+    const sourceYton = Number(wallet.yton ?? next.yton ?? next.coins ?? 5000);
+
+    wallet.yton = Number.isFinite(sourceYton) ? sourceYton : 5000;
+    next.wallet = wallet;
+
+    // Geçiş sürecinde eski alanı da wallet ile eşitliyoruz.
+    next.coins = wallet.yton;
+    if ("yton" in next) delete next.yton;
+
+    return next;
   }
 
   _businessIcon(type) {

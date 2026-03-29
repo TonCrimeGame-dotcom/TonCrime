@@ -90,6 +90,20 @@
     return { w, h };
   }
 
+  function getWalletYton(state = null) {
+    return Number(state?.wallet?.yton || 0);
+  }
+
+  function patchWalletYton(state = null, nextYton = 0) {
+    return {
+      wallet: {
+        ...(state?.wallet || {}),
+        yton: Number(nextYton || 0),
+      },
+      coins: Number(nextYton || 0),
+    };
+  }
+
   function loadPvpGameScript(srcList) {
     const list = Array.isArray(srcList) ? srcList : [srcList];
 
@@ -991,7 +1005,7 @@
       const playerState = { ...(s.player || {}) };
       const currentEnergy = Number(playerState.energy || 0);
       const energyCost = getEnergyCostForMode(id);
-      const ytonBalance = Number(s.yton ?? s.coins ?? 0);
+      const ytonBalance = getWalletYton(s);
 
       if (!sb || !userId || !mode || !stake) {
         this.matchState = "menu";
@@ -1308,7 +1322,7 @@
       }
 
       const currentEnergy = Number(player.energy || 0);
-      const currentYton = Number(s.yton ?? s.coins ?? 0);
+      const currentYton = getWalletYton(s);
 
       if (currentEnergy < economy.energy) {
         this.store?.set?.({ pvp: { ...pvp, selectedMode: null } });
@@ -1340,7 +1354,7 @@
             entryEnergy: economy.energy,
             entryStake: economy.stake,
             expectedPayout: economy.payout,
-            rewardCoins: Number(economy.payout || 0),
+            rewardYton: Number(economy.payout || 0),
             serverFee: Number(economy.commission || 0),
             payoutDone: false,
             matchStartedAt: Date.now(),
@@ -1626,7 +1640,8 @@
         }
         if (didWin && data?.prize_yton != null) {
           const latest = this.store?.get?.() || {};
-          this.store?.set?.({ yton: Number(latest.yton ?? latest.coins ?? 0) + Number(data.prize_yton || 0) });
+          const nextYton = getWalletYton(latest) + Number(data.prize_yton || 0);
+          this.store?.set?.(patchWalletYton(latest, nextYton));
         }
       } catch (err) {
         console.error("[TonCrime] _finishBetMatchIfNeeded fatal:", err);
