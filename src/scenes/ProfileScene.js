@@ -196,60 +196,7 @@ function tonFmt(n) {
   return value.toLocaleString('tr-TR', { maximumFractionDigits: value % 1 ? 2 : 0 });
 }
 
-
-function getYtonBalance(state) {
-  const p = state?.player || {};
-  return Math.max(0, Number(state?.yton ?? state?.coins ?? p?.coins ?? 0));
-}
-
-function setYtonBalance(store, nextValue) {
-  const safe = Math.max(0, Number(nextValue || 0));
-  const s = store?.get?.() || {};
-  const p = s.player || {};
-  const patch = {
-    coins: safe,
-    player: { ...p, coins: safe },
-  };
-  if (Object.prototype.hasOwnProperty.call(s, 'yton') || !Object.prototype.hasOwnProperty.call(s, 'coins')) {
-    patch.yton = safe;
-  }
-  store?.set?.(patch);
-}
-
-function sanitizeTextInput(v, maxLen = 128) {
-  return String(v ?? '').replace(/[\n\r\t]/g, ' ').slice(0, maxLen);
-}
-
-function sanitizeNumberInput(v, { allowDecimal = true, maxLen = 16 } = {}) {
-  let s = String(v ?? '').replace(/,/g, '.').replace(/[^0-9.]/g, '');
-  if (!allowDecimal) {
-    s = s.replace(/\./g, '');
-  } else {
-    const parts = s.split('.');
-    if (parts.length > 2) s = `${parts[0]}.${parts.slice(1).join('')}`;
-  }
-  return s.slice(0, maxLen);
-}
-
-function parseNumericInput(v) {
-  const n = Number(String(v ?? '').replace(/,/g, '.'));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function looksLikeTonAddress(addr) {
-  const v = String(addr || '').trim();
-  if (!v) return false;
-  return /^(EQ|UQ|kQ)[A-Za-z0-9_-]{20,}$/.test(v) || /^[A-Za-z0-9:_-]{30,}$/.test(v);
-}
-
-function formatTonAmount(n, maxDigits = 2) {
-  const v = Number(n || 0);
-  if (!Number.isFinite(v)) return '0';
-  return v.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: maxDigits });
-}
-
 export class ProfileScene {
-
   constructor({ store, input, scenes, assets }) {
     this.store = store;
     this.input = input;
@@ -257,7 +204,6 @@ export class ProfileScene {
     this.assets = assets;
 
     this.buttons = [];
-    this.textFields = [];
     this.scrollArea = null;
     this.scrollY = 0;
     this.scrollMax = 0;
@@ -266,14 +212,11 @@ export class ProfileScene {
     this._avatarUrl = "";
     this._avatarImg = null;
     this._fileInput = null;
-    this._domInput = null;
-    this.activeField = "";
     this.activeTab = "profile";
   }
 
   onEnter() {
     this._ensureAvatarInput();
-    this._ensureDomInput();
     this._ensureWalletState();
     this._seedLeaderboard();
     const uiTab = String(this.store.get()?.ui?.profileTab || "profile");
@@ -281,14 +224,10 @@ export class ProfileScene {
     this.scrollY = 0;
     this.scrollMax = 0;
     this._dragScroll = null;
-    this.activeField = "";
-    this._hideDomInput();
   }
 
   onExit() {
     this._dragScroll = null;
-    this.activeField = "";
-    this._hideDomInput();
   }
 
   _toast(text) {
@@ -297,117 +236,9 @@ export class ProfileScene {
     } catch (_) {}
   }
 
-  _ensureDomInput() {
-    if (this._domInput || typeof document === 'undefined') return;
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.autocomplete = 'off';
-    input.autocapitalize = 'off';
-    input.spellcheck = false;
-    input.style.position = 'fixed';
-    input.style.left = '-9999px';
-    input.style.top = '0';
-    input.style.width = '1px';
-    input.style.height = '1px';
-    input.style.opacity = '0.01';
-    input.style.pointerEvents = 'none';
-    input.style.border = '0';
-    input.style.background = 'transparent';
-    input.style.color = 'transparent';
-    input.style.caretColor = 'transparent';
-    input.style.zIndex = '9999';
-    input.addEventListener('input', (e) => {
-      if (!this.activeField) return;
-      this._updateFieldValue(this.activeField, e.target?.value ?? '');
-    });
-    input.addEventListener('blur', () => {
-      input.style.left = '-9999px';
-    });
-    document.body.appendChild(input);
-    this._domInput = input;
-  }
-
-  _hideDomInput() {
-    if (!this._domInput) return;
-    this._domInput.blur();
-    this._domInput.style.left = '-9999px';
-    this._domInput.style.width = '1px';
-    this._domInput.style.height = '1px';
-  }
-
-  _focusField(key) {
-    this.activeField = key;
-    const field = this.textFields.find((f) => f.key === key);
-    if (!field || !this._domInput) return;
-    this._domInput.type = field.inputType || 'text';
-    this._domInput.inputMode = field.inputMode || (field.inputType === 'number' ? 'decimal' : 'text');
-    this._domInput.maxLength = field.maxLength || 128;
-    this._domInput.value = String(field.value ?? '');
-    try {
-      this._domInput.focus({ preventScroll: true });
-      this._domInput.setSelectionRange(this._domInput.value.length, this._domInput.value.length);
-    } catch (_) {}
-  }
-
-  _blurField() {
-    this.activeField = '';
-    this._hideDomInput();
-  }
-
-  _registerField(field) {
-    this.textFields.push(field);
-  }
-
-  _updateFieldValue(key, value) {
-    const wallet = this._walletState();
-    if (key === 'walletAddressInput') {
-      this._setWallet({ walletAddressInput: sanitizeTextInput(value, 72) });
-      return;
-    }
-    if (key === 'withdrawAmountInput') {
-      this._setWallet({ withdrawAmountInput: sanitizeNumberInput(value, { allowDecimal: true, maxLen: 8 }) });
-      return;
-    }
-    if (key === 'convertYtonInput') {
-      this._setWallet({ convertYtonInput: sanitizeNumberInput(value, { allowDecimal: true, maxLen: 10 }) });
-      return;
-    }
-    this._setWallet({ [key]: value });
-  }
-
-  _syncDomInput(ctx) {
-    if (!this._domInput) return;
-    if (this.activeTab !== 'wallet' || !this.activeField) {
-      this._hideDomInput();
-      return;
-    }
-    const field = this.textFields.find((f) => f.key === this.activeField);
-    if (!field) {
-      this._hideDomInput();
-      return;
-    }
-    const canvasRect = ctx.canvas?.getBoundingClientRect?.();
-    if (!canvasRect) return;
-    const inView = field.x + field.w > 0 && field.y + field.h > 0 && field.x < canvasRect.width && field.y < canvasRect.height;
-    if (!inView) {
-      this._hideDomInput();
-      return;
-    }
-    this._domInput.type = field.inputType || 'text';
-    this._domInput.inputMode = field.inputMode || (field.inputType === 'number' ? 'decimal' : 'text');
-    this._domInput.maxLength = field.maxLength || 128;
-    const nextValue = String(field.value ?? '');
-    if (this._domInput.value !== nextValue) this._domInput.value = nextValue;
-    this._domInput.style.left = `${Math.round(canvasRect.left + field.x)}px`;
-    this._domInput.style.top = `${Math.round(canvasRect.top + field.y)}px`;
-    this._domInput.style.width = `${Math.max(24, Math.round(field.w))}px`;
-    this._domInput.style.height = `${Math.max(20, Math.round(field.h))}px`;
-  }
-
   _setTab(tab) {
     this.activeTab = tab;
     this.scrollY = 0;
-    this._blurField();
     const s = this.store.get() || {};
     this.store.set({
       ui: {
@@ -488,18 +319,12 @@ export class ProfileScene {
     if (!wallet.selectedInvestmentTon) wallet.selectedInvestmentTon = 0;
     if (typeof wallet.withdrawPending !== "boolean") wallet.withdrawPending = false;
     if (!wallet.withdrawRequestedAt) wallet.withdrawRequestedAt = 0;
-    if (!wallet.withdrawPendingAmountTon) wallet.withdrawPendingAmountTon = 0;
+    if (!wallet.withdrawAmountTon) wallet.withdrawAmountTon = 0;
+    if (!wallet.withdrawTargetAddress) wallet.withdrawTargetAddress = "";
     if (!wallet.withdrawRequestId) wallet.withdrawRequestId = "";
     if (!wallet.connectedAddress) wallet.connectedAddress = "";
-    if (!wallet.walletAddressInput) wallet.walletAddressInput = String(wallet.connectedAddress || '');
-    if (!wallet.withdrawAmountInput) wallet.withdrawAmountInput = "";
-    if (!wallet.convertYtonInput) wallet.convertYtonInput = "";
-    if (!wallet.tonBalance) wallet.tonBalance = 0;
-    if (!wallet.lastConversionYton) wallet.lastConversionYton = 0;
-    if (!wallet.lastConversionTon) wallet.lastConversionTon = 0;
-    if (!wallet.lastConversionAt) wallet.lastConversionAt = 0;
-    if (!Array.isArray(wallet.withdrawRequests)) wallet.withdrawRequests = [];
     if (!Array.isArray(wallet.investments)) wallet.investments = [];
+    if (!Array.isArray(wallet.withdraws)) wallet.withdraws = [];
     if (!wallet.investmentRequestId) wallet.investmentRequestId = "";
     this.store.set({ wallet });
   }
@@ -526,57 +351,25 @@ export class ProfileScene {
 
   _connectWallet() {
     const wallet = this._walletState();
-    const addr = String(wallet.walletAddressInput || '').trim();
-    if (!addr) {
-      this._toast('Önce TON cüzdan adresini yaz');
-      this._focusField('walletAddressInput');
+    const current = String(wallet.connectedAddress || "").trim();
+    const answer = this._askText("Bağlamak istediğin TON cüzdan adresini gir.", current);
+    if (answer == null) return;
+    const address = String(answer || "").trim();
+    if (!address) {
+      this._toast("Cüzdan adresi girilmedi");
       return;
     }
-    if (!looksLikeTonAddress(addr)) {
-      this._toast('Geçerli bir TON adresi gir');
-      this._focusField('walletAddressInput');
+    if (!isLikelyTonAddress(address)) {
+      this._toast("Geçerli bir TON cüzdan adresi gir");
       return;
     }
-    this._setWallet({ connectedAddress: addr, walletAddressInput: addr });
-    this._toast('Cüzdan bağlandı');
+    this._setWallet({ connectedAddress: address });
+    this._toast(current ? "Cüzdan adresi güncellendi" : "Cüzdan bağlandı");
   }
 
   _disconnectWallet() {
-    const wallet = this._walletState();
-    this._setWallet({ connectedAddress: '', walletAddressInput: String(wallet.walletAddressInput || '') });
-    this._toast('Cüzdan bağlantısı kaldırıldı');
-  }
-
-  _setConvertMax() {
-    const balance = getYtonBalance(this.getState());
-    this._setWallet({ convertYtonInput: balance > 0 ? String(balance) : '' });
-    this._focusField('convertYtonInput');
-  }
-
-  _convertYtonToTon() {
-    const state = this.getState();
-    const wallet = this._walletState();
-    const ytonBalance = getYtonBalance(state);
-    const amountYton = parseNumericInput(wallet.convertYtonInput);
-    if (!amountYton || amountYton <= 0) {
-      this._toast('Çevrilecek YTON miktarını gir');
-      this._focusField('convertYtonInput');
-      return;
-    }
-    if (amountYton > ytonBalance) {
-      this._toast('Kasanda bu kadar YTON yok');
-      return;
-    }
-    const tonGain = Math.round(amountYton * 0.01 * 10000) / 10000;
-    setYtonBalance(this.store, ytonBalance - amountYton);
-    this._setWallet({
-      tonBalance: Math.max(0, Number(wallet.tonBalance || 0)) + tonGain,
-      convertYtonInput: '',
-      lastConversionYton: amountYton,
-      lastConversionTon: tonGain,
-      lastConversionAt: Date.now(),
-    });
-    this._toast(`${formatTonAmount(amountYton, 2)} YTON → ${formatTonAmount(tonGain, 4)} TON çevrildi`);
+    this._setWallet({ connectedAddress: "" });
+    this._toast("Cüzdan bağlantısı kaldırıldı");
   }
 
   _openInvestmentSelector() {
@@ -646,57 +439,59 @@ export class ProfileScene {
 
   _requestWithdraw() {
     const wallet = this._walletState();
-    const amount = parseNumericInput(wallet.withdrawAmountInput);
-    const availableTon = Math.max(0, Number(wallet.tonBalance || 0));
-    const connected = String(wallet.connectedAddress || '').trim();
+    let targetAddress = String(wallet.connectedAddress || wallet.withdrawTargetAddress || "").trim();
 
-    if (!connected) {
-      this._toast('Önce çekim adresi için cüzdan bağla');
-      this._focusField('walletAddressInput');
-      return;
+    if (!targetAddress) {
+      const addrInput = this._askText("Çekimin gönderileceği TON cüzdan adresini gir.", "");
+      if (addrInput == null) return;
+      targetAddress = String(addrInput || "").trim();
+      if (!targetAddress) {
+        this._toast("Çekim için cüzdan adresi gerekli");
+        return;
+      }
     }
-    if (!amount || amount <= 0) {
-      this._toast('Çekilecek TON miktarını gir');
-      this._focusField('withdrawAmountInput');
-      return;
-    }
-    if (amount < 0.5) {
-      this._toast('Minimum çekim 0.5 TON');
-      return;
-    }
-    if (amount > 100) {
-      this._toast('Maksimum çekim 100 TON');
-      return;
-    }
-    if (wallet.withdrawPending) {
-      this._toast('Bekleyen bir çekim talebin zaten var');
-      return;
-    }
-    if (amount > availableTon) {
-      this._toast('Yetersiz TON bakiye');
+
+    if (!isLikelyTonAddress(targetAddress)) {
+      this._toast("Geçerli bir TON cüzdan adresi gir");
       return;
     }
 
-    const requestId = `WDR-${Date.now().toString(36).toUpperCase()}`;
-    const withdrawRequests = Array.isArray(wallet.withdrawRequests) ? wallet.withdrawRequests.slice() : [];
-    withdrawRequests.unshift({
+    const amountInput = this._askText(
+      "Çekmek istediğin TON miktarını gir. Min 0.5 TON / Max 100 TON",
+      wallet.withdrawAmountTon ? String(wallet.withdrawAmountTon) : ""
+    );
+    if (amountInput == null) return;
+
+    const amountTon = parseTonAmount(amountInput);
+    if (!Number.isFinite(amountTon)) {
+      this._toast("Geçerli bir TON miktarı gir");
+      return;
+    }
+    if (amountTon < 0.5 || amountTon > 100) {
+      this._toast("Çekim limiti 0.5 TON ile 100 TON arasında olmalı");
+      return;
+    }
+
+    const requestId = `WD-${Date.now().toString(36).toUpperCase()}`;
+    const withdraws = Array.isArray(wallet.withdraws) ? wallet.withdraws.slice() : [];
+    withdraws.unshift({
       id: requestId,
-      amountTon: amount,
-      address: connected,
-      status: 'pending_review',
+      amountTon,
+      address: targetAddress,
+      status: "pending_review",
       createdAt: Date.now(),
     });
 
     this._setWallet({
-      tonBalance: Math.max(0, availableTon - amount),
+      connectedAddress: wallet.connectedAddress || targetAddress,
       withdrawPending: true,
       withdrawRequestedAt: Date.now(),
-      withdrawPendingAmountTon: amount,
+      withdrawAmountTon: amountTon,
+      withdrawTargetAddress: targetAddress,
       withdrawRequestId: requestId,
-      withdrawAmountInput: '',
-      withdrawRequests,
+      withdraws,
     });
-    this._toast('Çekim talebi oluşturuldu');
+    this._toast("Çekim talebi oluşturuldu");
   }
 
   _seedLeaderboard() {
@@ -754,6 +549,7 @@ export class ProfileScene {
     const state = this.getState();
     const safe = state.ui?.safe || { x: 0, y: 0, w, h };
     const mobile = safe.w < 760;
+    const walletMode = this.activeTab === "wallet";
     const hudTop = Number(state.ui?.hudReservedTop || (mobile ? 84 : 96));
     const chatBottom = Number(state.ui?.chatReservedBottom || (mobile ? 74 : 88));
     const side = mobile ? 10 : Math.max(16, Math.floor(safe.w * 0.03));
@@ -764,13 +560,18 @@ export class ProfileScene {
     const panelW = safe.w - side * 2;
     const panelH = Math.max(340, bottom - top);
     const headerH = mobile ? 64 : 70;
-    const heroH = mobile ? 178 : 160;
+    const heroVisible = !walletMode;
+    const heroH = heroVisible ? (mobile ? 178 : 160) : 0;
+    const heroGap = heroVisible ? 8 : 2;
     const tabH = mobile ? 36 : 40;
-    const contentY = panelY + headerH + heroH + tabH + 24;
+    const contentGap = walletMode ? 10 : 24;
+    const contentY = panelY + headerH + heroH + heroGap + tabH + contentGap;
     const contentH = panelY + panelH - contentY - 14;
 
     return {
       mobile,
+      walletMode,
+      heroVisible,
       w,
       h,
       safe,
@@ -780,6 +581,7 @@ export class ProfileScene {
       panelH,
       headerH,
       heroH,
+      heroGap,
       tabH,
       contentY,
       contentH,
@@ -836,22 +638,19 @@ export class ProfileScene {
     if (tab === "wallet") {
       const wallet = state?.wallet || {};
       const step = String(wallet.investmentStep || "idle");
-      if (layout.mobile) {
-        if (step === "select") return 1320;
-        if (step === "payment") return 1540;
-        if (step === "confirmed") return 1500;
-        return 1180;
-      }
-      if (step === "select") return 1160;
-      if (step === "payment") return 1360;
-      if (step === "confirmed") return 1320;
-      return 1020;
+      let total = layout.mobile ? 560 : 430;
+      total += wallet.withdrawPending ? (layout.mobile ? 96 : 76) : 0;
+      if (step === "select") total += layout.mobile ? 250 : 160;
+      else if (step === "payment") total += layout.mobile ? 420 : 340;
+      else if (step === "confirmed") total += layout.mobile ? 400 : 320;
+      else total += 90;
+      return total;
     }
     if (tab === "ranking") {
       const board = Array.isArray(state?.pvp?.leaderboard) ? state.pvp.leaderboard : [];
       return 70 + Math.max(6, Math.min(12, board.length || 6)) * (layout.mobile ? 52 : 48);
     }
-    return layout.mobile ? 380 : 250;
+    return layout.mobile ? 520 : 340;
   }
 
   update() {
@@ -886,15 +685,6 @@ export class ProfileScene {
         return;
       }
     }
-
-    for (const field of this.textFields) {
-      if (pointInRect(px, py, field)) {
-        this._focusField(field.key);
-        return;
-      }
-    }
-
-    if (this.activeField) this._blurField();
   }
 
   render(ctx, w, h) {
@@ -902,12 +692,10 @@ export class ProfileScene {
     const L = this.getLayout(ctx);
 
     this.buttons = [];
-    this.textFields = [];
     this.scrollArea = null;
 
     this.drawBackground(ctx, L.w, L.h);
     this.drawShell(ctx, state, L);
-    this._syncDomInput(ctx);
   }
 
   drawShell(ctx, state, L) {
@@ -926,7 +714,7 @@ export class ProfileScene {
     fillRoundRect(ctx, x + 1, y + 1, w - 2, h - 2, 23, gloss);
 
     this.drawHeader(ctx, L);
-    this.drawHero(ctx, state, L);
+    if (L.heroVisible) this.drawHero(ctx, state, L);
     this.drawTabs(ctx, L);
 
     const viewportX = x + 10;
@@ -1075,7 +863,7 @@ export class ProfileScene {
 
   drawTabs(ctx, L) {
     const x = L.panelX + L.pad;
-    const y = L.panelY + L.headerH + L.heroH + 8;
+    const y = L.panelY + L.headerH + L.heroH + (L.heroGap || 2);
     const w = L.panelW - L.pad * 2;
     const gap = 8;
     const tabs = [
@@ -1116,35 +904,6 @@ export class ProfileScene {
     ctx.fillStyle = "rgba(255,213,156,0.76)";
     ctx.font = "500 12px system-ui";
     textFit(ctx, sub, x, y + 18, w);
-  }
-
-  drawInputField(ctx, cfg) {
-    const active = this.activeField === cfg.key;
-    fillRoundRect(ctx, cfg.x, cfg.y, cfg.w, cfg.h, 14, active ? "rgba(243,187,102,0.12)" : "rgba(255,255,255,0.05)");
-    strokeRoundRect(ctx, cfg.x, cfg.y, cfg.w, cfg.h, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.12)", 1);
-
-    ctx.fillStyle = "rgba(255,213,156,0.76)";
-    ctx.font = "500 11px system-ui";
-    textFit(ctx, cfg.label || '', cfg.x + 12, cfg.y + 16, cfg.w - 24);
-
-    const rawValue = String(cfg.value ?? '');
-    const displayValue = rawValue || String(cfg.placeholder || '');
-    const showCaret = active && rawValue && Math.floor(Date.now() / 500) % 2 === 0;
-    ctx.fillStyle = rawValue ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.42)";
-    ctx.font = `600 ${cfg.fontSize || 15}px system-ui`;
-    textFit(ctx, `${displayValue}${showCaret ? '|' : ''}`, cfg.x + 12, cfg.y + cfg.h - 14, cfg.w - 24);
-
-    this._registerField({
-      key: cfg.key,
-      x: cfg.x,
-      y: cfg.y,
-      w: cfg.w,
-      h: cfg.h,
-      value: rawValue,
-      inputType: cfg.inputType || 'text',
-      inputMode: cfg.inputMode || (cfg.inputType === 'number' ? 'decimal' : 'text'),
-      maxLength: cfg.maxLength || 128,
-    });
   }
 
   drawProfileContent(ctx, state, x, y, w, h, L) {
@@ -1227,214 +986,106 @@ export class ProfileScene {
   drawWalletContent(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const wallet = this._walletState();
-    const ytonBalance = getYtonBalance(state);
-    const tonBalance = Math.max(0, Number(wallet.tonBalance || 0));
-    const connected = String(wallet.connectedAddress || '').trim();
-    const step = String(wallet.investmentStep || 'idle');
+    const balance = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
+    const tonValue = (balance * 0.01).toFixed(2);
+    const connected = String(wallet.connectedAddress || "").trim();
+    const step = String(wallet.investmentStep || "idle");
     const address = String(wallet.depositAddress || getProjectTonWalletAddress());
     const latestInvestment = Array.isArray(wallet.investments) && wallet.investments.length ? wallet.investments[0] : null;
-    const previewTon = parseNumericInput(wallet.convertYtonInput) * 0.01;
+    const latestWithdraw = Array.isArray(wallet.withdraws) && wallet.withdraws.length ? wallet.withdraws[0] : null;
 
-    this.drawSectionTitle(ctx, 'Cüzdan', 'TON işlemleri, YTON çevirme ve yatırım paneli', x + 8, y + 20, w - 16);
+    this.drawSectionTitle(ctx, "Cüzdan", "TON işlemleri ve yatırım paneli", x + 8, y + 20, w - 16);
 
     let cy = y + 42;
     const fullW = w - 16;
-    const actionGap = 10;
 
-    const drawActionBtn = (btn, label, tone = 'gold') => {
-      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === 'soft' ? 'rgba(255,255,255,0.08)' : 'rgba(243,187,102,0.16)');
-      strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === 'soft' ? 'rgba(255,255,255,0.16)' : 'rgba(243,187,102,0.36)', 1);
-      ctx.fillStyle = 'rgba(255,255,255,0.96)';
-      ctx.font = `700 ${L.mobile ? 13 : 14}px system-ui`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+    const drawActionBtn = (btn, label, tone = "gold") => {
+      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === "soft" ? "rgba(255,255,255,0.08)" : "rgba(243,187,102,0.16)");
+      strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, tone === "soft" ? "rgba(255,255,255,0.16)" : "rgba(243,187,102,0.36)", 1);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = `700 ${L.mobile ? 14 : 15}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
     };
 
-    // Summary
-    const summaryH = L.mobile ? 132 : 112;
-    this.drawCard(ctx, x + 8, cy, fullW, summaryH);
-    ctx.fillStyle = 'rgba(255,213,156,0.78)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText('Bakiyeler', x + 24, cy + 26);
-    if (L.mobile) {
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 28px system-ui';
-      ctx.fillText(`${moneyFmt(ytonBalance)} YTON`, x + 24, cy + 62);
-      ctx.fillStyle = 'rgba(255,213,156,0.76)';
-      ctx.font = '500 12px system-ui';
-      ctx.fillText('Kasadaki bakiye', x + 24, cy + 82);
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 24px system-ui';
-      ctx.fillText(`${formatTonAmount(tonBalance, 4)} TON`, x + 24, cy + 114);
+    this.drawCard(ctx, x + 8, cy, fullW, 108);
+    ctx.fillStyle = "rgba(255,213,156,0.78)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("Kasadaki Bakiye", x + 24, cy + 28);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = `700 ${L.mobile ? 28 : 34}px system-ui`;
+    ctx.fillText(`${moneyFmt(balance)} YTON`, x + 24, cy + 66);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText(`1 YTON = 0.01 TON  •  Karşılık: ${tonValue} TON`, x + 24, cy + 90);
+    cy += 122;
+
+    const walletCardH = L.mobile ? 118 : 96;
+    this.drawCard(ctx, x + 8, cy, fullW, walletCardH);
+    ctx.fillStyle = "rgba(255,213,156,0.78)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("Bağlı TON Cüzdanı", x + 24, cy + 28);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = "700 15px system-ui";
+    textFit(ctx, connected ? shortAddr(connected) : "Henüz cüzdan adresi eklenmedi", x + 24, cy + 56, fullW - (L.mobile ? 48 : 170));
+    ctx.fillStyle = "rgba(255,255,255,0.66)";
+    ctx.font = "500 11px system-ui";
+    textFit(ctx, connected ? "Adres kullanıcıdan alınır, otomatik üretilmez." : "Butona basınca adres sorulur, kafasına göre adres yazılmaz.", x + 24, cy + 78, fullW - (L.mobile ? 48 : 170));
+
+    const connectBtn = {
+      x: L.mobile ? x + 24 : x + fullW - 124,
+      y: L.mobile ? cy + walletCardH - 44 : cy + 22,
+      w: L.mobile ? fullW - 32 : 100,
+      h: 34,
+      onClick: () => this._connectWallet(),
+    };
+    this.buttons.push(connectBtn);
+    drawActionBtn(connectBtn, connected ? "Adresi Değiştir" : "Adres Ekle");
+    cy += walletCardH + 14;
+
+    const actionGap = 10;
+    const actionW = L.mobile ? fullW : Math.floor((fullW - actionGap) / 2);
+    const investBtn = { x: x + 8, y: cy, w: actionW, h: 44, onClick: () => this._openInvestmentSelector() };
+    const withdrawBtn = { x: L.mobile ? x + 8 : x + 8 + actionW + actionGap, y: L.mobile ? cy + 54 : cy, w: actionW, h: 44, onClick: () => this._requestWithdraw() };
+    this.buttons.push(investBtn, withdrawBtn);
+    drawActionBtn(investBtn, "Yatırım Yap");
+    drawActionBtn(withdrawBtn, "Çekim Talebi", "soft");
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    cy += L.mobile ? 110 : 58;
+
+    const withdrawCardH = wallet.withdrawPending ? (L.mobile ? 96 : 78) : (L.mobile ? 90 : 72);
+    this.drawCard(ctx, x + 8, cy, fullW, withdrawCardH);
+    ctx.fillStyle = "rgba(255,213,156,0.78)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("Çekim Talebi", x + 24, cy + 26);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "500 11px system-ui";
+    ctx.fillText("Min 0.5 TON • Max 100 TON", x + 24, cy + 44);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = "700 13px system-ui";
+    if (wallet.withdrawPending && latestWithdraw) {
+      textFit(ctx, `${tonFmt(latestWithdraw.amountTon)} TON • ${shortAddr(latestWithdraw.address)}`, x + 24, cy + (L.mobile ? 67 : 62), fullW - 48);
+      if (L.mobile) {
+        ctx.fillStyle = "rgba(124,255,170,0.92)";
+        ctx.font = "700 11px system-ui";
+        textFit(ctx, `Durum: onay bekleniyor • ${wallet.withdrawRequestId || latestWithdraw.id || ''}`, x + 24, cy + 84, fullW - 48);
+      }
     } else {
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 30px system-ui';
-      ctx.fillText(`${moneyFmt(ytonBalance)} YTON`, x + 24, cy + 66);
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 26px system-ui';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${formatTonAmount(tonBalance, 4)} TON`, x + fullW - 24, cy + 64);
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
+      textFit(ctx, "Butona basınca önce miktar istenir, sonra çekim talebi açılır.", x + 24, cy + (L.mobile ? 67 : 62), fullW - 48);
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.68)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText('1 YTON = 0.01 TON', x + 24, cy + summaryH - 18);
-    cy += summaryH + 14;
+    cy += withdrawCardH + 14;
 
-    // Convert section
-    const convertH = L.mobile ? 188 : 154;
-    this.drawCard(ctx, x + 8, cy, fullW, convertH);
-    ctx.fillStyle = 'rgba(255,255,255,0.98)';
-    ctx.font = '700 16px system-ui';
-    ctx.fillText('YTON → TON Çevir', x + 24, cy + 28);
-    ctx.fillStyle = 'rgba(255,213,156,0.76)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText('Çevrilen TON çekim için hazır bakiyeye eklenir.', x + 24, cy + 48);
-
-    this.drawInputField(ctx, {
-      key: 'convertYtonInput',
-      x: x + 24,
-      y: cy + 62,
-      w: fullW - 48,
-      h: 48,
-      label: 'Çevrilecek YTON miktarı',
-      value: wallet.convertYtonInput || '',
-      placeholder: 'Örn: 50',
-      inputType: 'text',
-      inputMode: 'decimal',
-      maxLength: 10,
-    });
-
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText(`Çıkacak TON: ${formatTonAmount(previewTon, 4)}`, x + 24, cy + 128);
-
-    const fillBtn = { x: x + 24, y: cy + (L.mobile ? 138 : 102), w: L.mobile ? fullW - 48 : 150, h: 38, onClick: () => this._setConvertMax() };
-    const convertBtn = { x: L.mobile ? x + 24 : x + 184, y: cy + (L.mobile ? 138 + 48 : 102), w: L.mobile ? fullW - 48 : fullW - 208, h: 38, onClick: () => this._convertYtonToTon() };
-    if (!L.mobile) convertBtn.y = cy + 102;
-    this.buttons.push(fillBtn, convertBtn);
-    drawActionBtn(fillBtn, 'Tümünü Yaz', 'soft');
-    drawActionBtn(convertBtn, 'TON’a Çevir');
-    cy += convertH + 14;
-
-    if (wallet.lastConversionAt) {
-      this.drawCard(ctx, x + 8, cy, fullW, 70);
-      ctx.fillStyle = 'rgba(255,213,156,0.76)';
-      ctx.font = '500 12px system-ui';
-      ctx.fillText('Son Çevirme', x + 24, cy + 26);
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 15px system-ui';
-      ctx.fillText(`${formatTonAmount(wallet.lastConversionYton, 2)} YTON → ${formatTonAmount(wallet.lastConversionTon, 4)} TON`, x + 24, cy + 50);
-      cy += 84;
-    }
-
-    // Wallet connect section
-    const connectH = L.mobile ? 166 : 144;
-    this.drawCard(ctx, x + 8, cy, fullW, connectH);
-    ctx.fillStyle = 'rgba(255,255,255,0.98)';
-    ctx.font = '700 16px system-ui';
-    ctx.fillText('Bağlı Cüzdan', x + 24, cy + 28);
-    ctx.fillStyle = 'rgba(255,213,156,0.76)';
-    ctx.font = '500 12px system-ui';
-    textFit(ctx, connected ? `Aktif adres: ${shortAddr(connected)}` : 'Çekim yapılacak TON adresini gir ve bağla.', x + 24, cy + 48, fullW - 48);
-
-    this.drawInputField(ctx, {
-      key: 'walletAddressInput',
-      x: x + 24,
-      y: cy + 60,
-      w: fullW - 48,
-      h: 48,
-      label: 'TON cüzdan adresi',
-      value: wallet.walletAddressInput || '',
-      placeholder: 'EQ... veya UQ...',
-      inputType: 'text',
-      inputMode: 'text',
-      maxLength: 72,
-      fontSize: 13,
-    });
-
-    const saveWalletBtn = { x: x + 24, y: cy + (L.mobile ? 118 : 72), w: L.mobile ? fullW - 48 : Math.floor((fullW - 58) / 2), h: 38, onClick: () => this._connectWallet() };
-    const disconnectBtn = { x: L.mobile ? x + 24 : saveWalletBtn.x + saveWalletBtn.w + 10, y: cy + (L.mobile ? 118 + 48 : 72), w: L.mobile ? fullW - 48 : Math.floor((fullW - 58) / 2), h: 38, onClick: () => this._disconnectWallet() };
-    this.buttons.push(saveWalletBtn, disconnectBtn);
-    drawActionBtn(saveWalletBtn, connected ? 'Cüzdanı Güncelle' : 'Cüzdanı Bağla');
-    drawActionBtn(disconnectBtn, 'Bağlantıyı Kes', 'soft');
-    cy += connectH + 14;
-
-    // Withdraw section
-    const withdrawH = L.mobile ? 178 : 156;
-    this.drawCard(ctx, x + 8, cy, fullW, withdrawH);
-    ctx.fillStyle = 'rgba(255,255,255,0.98)';
-    ctx.font = '700 16px system-ui';
-    ctx.fillText('Çekim Talebi', x + 24, cy + 28);
-    ctx.fillStyle = 'rgba(255,213,156,0.76)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText('Min 0.5 TON • Max 100 TON • Çıkış adresi bağlı cüzdan', x + 24, cy + 48);
-
-    this.drawInputField(ctx, {
-      key: 'withdrawAmountInput',
-      x: x + 24,
-      y: cy + 60,
-      w: fullW - 48,
-      h: 48,
-      label: 'Çekilecek TON miktarı',
-      value: wallet.withdrawAmountInput || '',
-      placeholder: 'Örn: 1.5',
-      inputType: 'text',
-      inputMode: 'decimal',
-      maxLength: 8,
-    });
-
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText(`Kullanılabilir TON: ${formatTonAmount(tonBalance, 4)}`, x + 24, cy + 128);
-    const withdrawBtn = { x: x + 24, y: cy + (L.mobile ? 138 : 102), w: fullW - 48, h: 38, onClick: () => this._requestWithdraw() };
-    this.buttons.push(withdrawBtn);
-    drawActionBtn(withdrawBtn, 'Çekim Talebi Oluştur', wallet.withdrawPending ? 'soft' : 'gold');
-    cy += withdrawH + 14;
-
-    if (wallet.withdrawPending) {
-      this.drawCard(ctx, x + 8, cy, fullW, 82);
-      ctx.fillStyle = 'rgba(255,213,156,0.78)';
-      ctx.font = '500 12px system-ui';
-      ctx.fillText('Bekleyen Çekim', x + 24, cy + 28);
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 15px system-ui';
-      ctx.fillText(`${formatTonAmount(wallet.withdrawPendingAmountTon, 4)} TON • ${wallet.withdrawRequestId || 'hazırlanıyor'}`, x + 24, cy + 52);
-      ctx.fillStyle = 'rgba(124,255,170,0.92)';
-      ctx.font = '700 12px system-ui';
-      ctx.fillText('Durum: yönetici onayı bekleniyor', x + 24, cy + 72);
-      cy += 96;
-    }
-
-    // Investment section controls
-    this.drawCard(ctx, x + 8, cy, fullW, 92);
-    ctx.fillStyle = 'rgba(255,255,255,0.98)';
-    ctx.font = '700 16px system-ui';
-    ctx.fillText('Yatırım', x + 24, cy + 30);
-    ctx.fillStyle = 'rgba(255,213,156,0.76)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText('20 / 50 / 100 TON yatırım akışı', x + 24, cy + 50);
-
-    const investBtn = { x: x + 24, y: cy + (L.mobile ? 58 : 44), w: L.mobile ? fullW - 48 : Math.floor((fullW - 58) / 2), h: 36, onClick: () => this._openInvestmentSelector() };
-    const copyMasterWalletBtn = { x: L.mobile ? x + 24 : investBtn.x + investBtn.w + 10, y: cy + (L.mobile ? 104 : 44), w: L.mobile ? fullW - 48 : Math.floor((fullW - 58) / 2), h: 36, onClick: () => this._copyWalletAddress() };
-    this.buttons.push(investBtn, copyMasterWalletBtn);
-    drawActionBtn(investBtn, 'Yatırım Yap');
-    drawActionBtn(copyMasterWalletBtn, 'TON Adresini Kopyala', 'soft');
-    cy += 106;
-
-    if (step === 'select') {
+    if (step === "select") {
       const blockH = L.mobile ? 254 : 162;
       this.drawCard(ctx, x + 8, cy, fullW, blockH);
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 17px system-ui';
-      ctx.fillText('Yatırım Limiti Seç', x + 24, cy + 28);
-      ctx.fillStyle = 'rgba(255,213,156,0.76)';
-      ctx.font = '500 12px system-ui';
-      ctx.fillText('20 TON • 50 TON • 100 TON seçeneklerinden birini seç', x + 24, cy + 50);
+      ctx.fillStyle = "rgba(255,255,255,0.98)";
+      ctx.font = "700 17px system-ui";
+      ctx.fillText("Yatırım Limiti Seç", x + 24, cy + 28);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = "500 12px system-ui";
+      ctx.fillText("20 TON • 50 TON • 100 TON seçeneklerinden birini seç", x + 24, cy + 50);
 
       const options = [20, 50, 100];
       const optGap = 10;
@@ -1445,84 +1096,84 @@ export class ProfileScene {
         const oy = L.mobile ? cy + 66 + idx * (optH + 10) : cy + 72;
         const btn = { x: ox, y: oy, w: optW, h: optH, onClick: () => this._selectInvestmentAmount(amount) };
         this.buttons.push(btn);
-        fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 16, 'rgba(255,255,255,0.05)');
-        strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 16, 'rgba(243,187,102,0.28)', 1);
-        ctx.fillStyle = 'rgba(255,255,255,0.98)';
-        ctx.font = '700 20px system-ui';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 16, "rgba(255,255,255,0.05)");
+        strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 16, "rgba(243,187,102,0.28)", 1);
+        ctx.fillStyle = "rgba(255,255,255,0.98)";
+        ctx.font = "700 20px system-ui";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
         ctx.fillText(`${amount} TON`, btn.x + btn.w / 2, btn.y + btn.h / 2 - 6);
-        ctx.fillStyle = 'rgba(255,213,156,0.76)';
-        ctx.font = '500 11px system-ui';
-        ctx.fillText('Limit seç', btn.x + btn.w / 2, btn.y + btn.h / 2 + 16);
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = "rgba(255,213,156,0.76)";
+        ctx.font = "500 11px system-ui";
+        ctx.fillText("Limit seç", btn.x + btn.w / 2, btn.y + btn.h / 2 + 16);
       });
 
       const cancelBtn = { x: x + 24, y: L.mobile ? cy + 66 + options.length * (optH + 10) : cy + 72 + optH + 18, w: L.mobile ? fullW - 32 : 160, h: 40, onClick: () => this._cancelInvestmentFlow() };
       this.buttons.push(cancelBtn);
-      drawActionBtn(cancelBtn, 'Vazgeç', 'soft');
+      drawActionBtn(cancelBtn, "Vazgeç", "soft");
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
       return;
     }
 
-    if (step === 'payment' || step === 'confirmed') {
-      const blockH = L.mobile ? 340 : 292;
+    if (step === "payment" || step === "confirmed") {
+      const blockH = L.mobile ? 330 : 286;
       this.drawCard(ctx, x + 8, cy, fullW, blockH);
-      ctx.fillStyle = 'rgba(255,255,255,0.98)';
-      ctx.font = '700 17px system-ui';
-      ctx.fillText('Yatırım Ödeme Bilgisi', x + 24, cy + 28);
-      ctx.fillStyle = 'rgba(255,213,156,0.76)';
-      ctx.font = '500 12px system-ui';
+      ctx.fillStyle = "rgba(255,255,255,0.98)";
+      ctx.font = "700 17px system-ui";
+      ctx.fillText("Yatırım Ödeme Bilgisi", x + 24, cy + 28);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = "500 12px system-ui";
       ctx.fillText(`Seçilen limit: ${Number(wallet.selectedInvestmentTon || 0)} TON`, x + 24, cy + 50);
 
       this.drawCard(ctx, x + 24, cy + 64, fullW - 32, 84);
-      ctx.fillStyle = 'rgba(255,213,156,0.76)';
-      ctx.font = '500 12px system-ui';
-      ctx.fillText('TON Cüzdan Adresi', x + 40, cy + 92);
-      ctx.fillStyle = 'rgba(255,255,255,0.96)';
-      ctx.font = '700 13px system-ui';
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = "500 12px system-ui";
+      ctx.fillText("TON Cüzdan Adresi", x + 40, cy + 92);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = "700 13px system-ui";
       textFit(ctx, address, x + 40, cy + 118, fullW - 64);
 
       const copyBtn = { x: x + 24, y: cy + 164, w: L.mobile ? fullW - 32 : 168, h: 42, onClick: () => this._copyWalletAddress() };
       const paidBtn = { x: L.mobile ? x + 24 : x + 202, y: L.mobile ? cy + 214 : cy + 164, w: L.mobile ? fullW - 32 : fullW - 210, h: 42, onClick: () => this._confirmInvestmentPaid() };
       const backBtn = { x: x + 24, y: L.mobile ? cy + 264 : cy + 218, w: L.mobile ? fullW - 32 : 168, h: 38, onClick: () => this._openInvestmentSelector() };
       this.buttons.push(copyBtn, paidBtn, backBtn);
-      drawActionBtn(copyBtn, 'Adresi Kopyala', 'soft');
-      drawActionBtn(paidBtn, step === 'confirmed' ? 'Onay Gönderildi' : 'Ödemeyi Yaptım');
-      drawActionBtn(backBtn, 'Limiti Değiştir', 'soft');
+      drawActionBtn(copyBtn, "Adresi Kopyala", "soft");
+      drawActionBtn(paidBtn, step === "confirmed" ? "Onay Gönderildi" : "Ödemeyi Yaptım");
+      drawActionBtn(backBtn, "Limiti Değiştir", "soft");
 
-      ctx.fillStyle = step === 'confirmed' ? 'rgba(124,255,170,0.92)' : 'rgba(255,255,255,0.70)';
-      ctx.font = '500 12px system-ui';
-      const msg = step === 'confirmed'
-        ? `Onay kaydı oluşturuldu${wallet.investmentRequestId ? ` • ${wallet.investmentRequestId}` : ''}`
-        : 'Ödemeyi yaptıktan sonra Ödemeyi Yaptım butonuna bas.';
+      ctx.fillStyle = step === "confirmed" ? "rgba(124,255,170,0.92)" : "rgba(255,255,255,0.70)";
+      ctx.font = "500 12px system-ui";
+      const msg = step === "confirmed"
+        ? `Onay kaydı oluşturuldu${wallet.investmentRequestId ? ` • ${wallet.investmentRequestId}` : ""}`
+        : "Ödemeyi yaptıktan sonra Ödemeyi Yaptım butonuna bas.";
       const lines = wrapText(ctx, msg, fullW - 48, 3);
-      const msgY = L.mobile ? cy + 320 : cy + 272;
+      const msgY = L.mobile ? cy + 314 : cy + 268;
       lines.forEach((line, i) => ctx.fillText(line, x + 24, msgY + i * 16));
       cy += blockH + 14;
 
       if (latestInvestment) {
         this.drawCard(ctx, x + 8, cy, fullW, 88);
-        ctx.fillStyle = 'rgba(255,213,156,0.76)';
-        ctx.font = '500 12px system-ui';
-        ctx.fillText('Son Yatırım Talebi', x + 24, cy + 28);
-        ctx.fillStyle = 'rgba(255,255,255,0.98)';
-        ctx.font = '700 16px system-ui';
+        ctx.fillStyle = "rgba(255,213,156,0.76)";
+        ctx.font = "500 12px system-ui";
+        ctx.fillText("Son Yatırım Talebi", x + 24, cy + 28);
+        ctx.fillStyle = "rgba(255,255,255,0.98)";
+        ctx.font = "700 16px system-ui";
         ctx.fillText(`${Number(latestInvestment.amountTon || 0)} TON`, x + 24, cy + 54);
-        ctx.fillStyle = 'rgba(124,255,170,0.92)';
-        ctx.font = '700 12px system-ui';
-        ctx.fillText('Durum: ödeme onayı bekleniyor', x + 24, cy + 74);
+        ctx.fillStyle = "rgba(124,255,170,0.92)";
+        ctx.font = "700 12px system-ui";
+        ctx.fillText("Durum: ödeme onayı bekleniyor", x + 24, cy + 74);
       }
       return;
     }
 
     this.drawCard(ctx, x + 8, cy, fullW, 86);
-    ctx.fillStyle = 'rgba(255,255,255,0.98)';
-    ctx.font = '700 16px system-ui';
-    ctx.fillText('Yatırım Sistemi Hazır', x + 24, cy + 30);
-    ctx.fillStyle = 'rgba(255,213,156,0.76)';
-    ctx.font = '500 12px system-ui';
-    ctx.fillText('Yatırım Yap butonuna bas, limit seç, TON adresine gönder ve onayla.', x + 24, cy + 56);
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = "700 16px system-ui";
+    ctx.fillText("Yatırım Sistemi Hazır", x + 24, cy + 30);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("Yatırım Yap butonuna bas, limit seç, TON adresine gönder ve onayla.", x + 24, cy + 56);
   }
 
   drawRankingContent(ctx, state, x, y, w, h, L) {
