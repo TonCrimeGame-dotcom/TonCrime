@@ -30,6 +30,19 @@ function strokeRoundRect(ctx, x, y, w, h, r, stroke, lw = 1) {
   ctx.stroke();
 }
 
+function drawCoverImage(ctx, img, x, y, w, h) {
+  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) * 0.5;
+  const dy = y + (h - dh) * 0.5;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
+}
+
 function getImgSafe(assets, key) {
   if (!assets || !key) return null;
   if (typeof assets.getImage === "function") return assets.getImage(key) || null;
@@ -62,17 +75,19 @@ function moneyFmt(n) {
   return Number.isFinite(v) ? v.toLocaleString("tr-TR") : "0";
 }
 
-function drawCoverImage(ctx, img, x, y, w, h) {
-  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const scale = Math.max(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) * 0.5;
-  const dy = y + (h - dh) * 0.5;
-  ctx.drawImage(img, dx, dy, dw, dh);
-  return true;
+function tonFmt(n) {
+  const v = Number(n || 0);
+  return Number.isFinite(v) ? v.toFixed(2).replace(/\.00$/, "") : "0";
+}
+
+function fitFontSize(ctx, text, maxWidth, startSize, minSize = 12, weight = 900) {
+  let size = startSize;
+  while (size > minSize) {
+    ctx.font = `${weight} ${size}px system-ui`;
+    if (ctx.measureText(String(text || "")).width <= maxWidth) return size;
+    size -= 1;
+  }
+  return minSize;
 }
 
 function textFit(ctx, text, x, y, maxWidth) {
@@ -144,12 +159,15 @@ function makeImage(url) {
   return img;
 }
 
-function getTelegramUrl() {
-  return "https://t.me/TonCrimeEu";
+function shortAddress(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Bağlı değil";
+  if (raw.length <= 18) return raw;
+  return `${raw.slice(0, 6)}...${raw.slice(-5)}`;
 }
 
 function openTelegramLink() {
-  const url = getTelegramUrl();
+  const url = "https://t.me/TonCrimeEu";
   try {
     const tg = window.Telegram?.WebApp;
     if (tg?.openTelegramLink) {
@@ -163,6 +181,12 @@ function openTelegramLink() {
     location.href = url;
   }
 }
+
+const INVESTMENT_PLANS = [
+  { id: "safe", label: "Safe", depositYton: 100, days: 3, roiPct: 8 },
+  { id: "pro", label: "Pro", depositYton: 250, days: 5, roiPct: 15 },
+  { id: "elite", label: "Elite", depositYton: 500, days: 7, roiPct: 25 },
+];
 
 export class ProfileScene {
   constructor({ store, input, scenes, assets }) {
@@ -186,6 +210,8 @@ export class ProfileScene {
   onEnter() {
     this._ensureAvatarInput();
     this._seedLeaderboard();
+    this._ensureWalletState();
+    this._tickWalletTimers();
     const uiTab = String(this.store.get()?.ui?.profileTab || "profile");
     this.activeTab = ["profile", "wallet", "ranking"].includes(uiTab) ? uiTab : "profile";
     this.scrollY = 0;
@@ -201,18 +227,6 @@ export class ProfileScene {
     try {
       window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text } }));
     } catch (_) {}
-  }
-
-  _setTab(tab) {
-    this.activeTab = tab;
-    this.scrollY = 0;
-    const s = this.store.get() || {};
-    this.store.set({
-      ui: {
-        ...(s.ui || {}),
-        profileTab: tab,
-      },
-    });
   }
 
   _ensureAvatarInput() {
@@ -306,33 +320,201 @@ export class ProfileScene {
     }
   }
 
-  getState() {
-    return this.store?.get ? this.store.get() : {};
+  _ensureWalletState() {
+    const state = this.store.get() || {};
+    const wallet = state.wallet || {};
+    const next = {
+      connected: !!wallet.connected,
+      provider: String(wallet.provider || "TON Wallet"),
+      address: String(wallet.address || ""),
+      tonBalance: Math.max(0, Number(wallet.tonBalance || 0)),
+      withdrawRequests: Array.isArray(wallet.withdrawRequests) ? wallet.withdrawRequests.map((x) => ({ ...x })) : [],
+      investments: Array.isArray(wallet.investments) ? wallet.investments.map((x) => ({ ...x })) : [],
+    };
+    if (JSON.stringify(next) !== JSON.stringify(wallet || {})) {
+      this.store.set({ wallet: next });
+    }
   }
 
-  getBackgroundImage() {
-    return (
-      (typeof this.assets?.getImage === "function" && (
-        this.assets.getImage("clan_bg") ||
-        this.assets.getImage("clan") ||
-        this.assets.getImage("background") ||
-        this.assets.getImage("pvp_bg")
-      )) ||
-      this.assets?.images?.clan_bg ||
-      this.assets?.images?.clan ||
-      this.assets?.images?.background ||
-      this.assets?.images?.pvp_bg ||
-      null
-    );
+  _tickWalletTimers() {
+    this._ensureWalletState();
+    const state = this.store.get() || {};
+    const wallet = { ...(state.wallet || {}) };
+    let changed = false;
+    const now = Date.now();
+
+    wallet.withdrawRequests = (wallet.withdrawRequests || []).map((req) => {
+      if (req.status === "pending" && now - Number(req.createdAt || 0) > 24 * 60 * 60 * 1000) {
+        changed = true;
+        return { ...req, status: "completed" };
+      }
+      return req;
+    });
+
+    wallet.investments = (wallet.investments || []).map((inv) => {
+      if (inv.status === "active" && now >= Number(inv.endsAt || 0)) {
+        changed = true;
+        return { ...inv, status: "ready" };
+      }
+      return inv;
+    });
+
+    if (changed) this.store.set({ wallet });
+  }
+
+  _setTab(tab) {
+    this.activeTab = tab;
+    this.scrollY = 0;
+    const s = this.store.get() || {};
+    this.store.set({ ui: { ...(s.ui || {}), profileTab: tab } });
+  }
+
+  _generateWalletAddress() {
+    const state = this.store.get() || {};
+    const seed = String(state.player?.telegramId || state.player?.id || window.tcGetProfileKey?.() || Date.now());
+    const cleaned = seed.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    const core = (cleaned + "TONCRIMEWALLET0000000000").slice(0, 30);
+    return `UQ${core}`;
+  }
+
+  _connectWallet() {
+    this._ensureWalletState();
+    const state = this.store.get() || {};
+    const wallet = { ...(state.wallet || {}) };
+    if (wallet.connected && wallet.address) {
+      this._toast("Cüzdan zaten bağlı");
+      return;
+    }
+    wallet.connected = true;
+    wallet.provider = "TON Wallet";
+    wallet.address = this._generateWalletAddress();
+    this.store.set({ wallet });
+    try {
+      window.dispatchEvent(new CustomEvent("tc:wallet-connect", { detail: { provider: wallet.provider, address: wallet.address } }));
+    } catch (_) {}
+    this._toast("Cüzdan bağlandı");
+  }
+
+  _disconnectWallet() {
+    this._ensureWalletState();
+    const state = this.store.get() || {};
+    const wallet = { ...(state.wallet || {}) };
+    wallet.connected = false;
+    wallet.address = "";
+    wallet.provider = "TON Wallet";
+    this.store.set({ wallet });
+    try {
+      window.dispatchEvent(new CustomEvent("tc:wallet-disconnect"));
+    } catch (_) {}
+    this._toast("Cüzdan bağlantısı kaldırıldı");
+  }
+
+  _convertYtonToTon(ratio) {
+    this._ensureWalletState();
+    const state = this.store.get() || {};
+    const yton = Math.max(0, Number(state.yton ?? state.coins ?? state.player?.coins ?? 0));
+    const wallet = { ...(state.wallet || {}) };
+    const amountYton = Math.floor(yton * ratio);
+    if (amountYton < 1) {
+      this._toast("Çevrilecek YTON yok");
+      return;
+    }
+    const amountTon = Number((amountYton * 0.01).toFixed(2));
+    wallet.tonBalance = Number((Number(wallet.tonBalance || 0) + amountTon).toFixed(2));
+    const nextYton = Math.max(0, yton - amountYton);
+    if (typeof state.yton !== "undefined") this.store.set({ yton: nextYton, wallet });
+    else this.store.set({ coins: nextYton, wallet });
+    this._toast(`${amountYton} YTON → ${tonFmt(amountTon)} TON çevrildi`);
+  }
+
+  _requestWithdrawal(amountTon) {
+    this._ensureWalletState();
+    const state = this.store.get() || {};
+    const wallet = { ...(state.wallet || {}) };
+    if (!wallet.connected || !wallet.address) {
+      this._toast("Önce cüzdan bağla");
+      return;
+    }
+    const tonBalance = Math.max(0, Number(wallet.tonBalance || 0));
+    if (tonBalance < amountTon) {
+      this._toast("Yetersiz TON bakiye");
+      return;
+    }
+    wallet.tonBalance = Number((tonBalance - amountTon).toFixed(2));
+    wallet.withdrawRequests = [
+      {
+        id: `wd_${Date.now()}`,
+        amountTon,
+        address: wallet.address,
+        createdAt: Date.now(),
+        status: "pending",
+      },
+      ...(wallet.withdrawRequests || []),
+    ].slice(0, 12);
+    this.store.set({ wallet });
+    try {
+      window.dispatchEvent(new CustomEvent("tc:withdraw-request", { detail: { amountTon, address: wallet.address } }));
+    } catch (_) {}
+    this._toast(`Çekim talebi oluşturuldu • ${tonFmt(amountTon)} TON`);
+  }
+
+  _startInvestment(planId) {
+    this._ensureWalletState();
+    const plan = INVESTMENT_PLANS.find((x) => x.id === planId);
+    if (!plan) return;
+    const state = this.store.get() || {};
+    const wallet = { ...(state.wallet || {}) };
+    const yton = Math.max(0, Number(state.yton ?? state.coins ?? state.player?.coins ?? 0));
+    if (yton < plan.depositYton) {
+      this._toast("Yetersiz YTON bakiye");
+      return;
+    }
+
+    const nextYton = yton - plan.depositYton;
+    const payoutYton = Math.round(plan.depositYton * (1 + plan.roiPct / 100));
+    wallet.investments = [
+      {
+        id: `inv_${Date.now()}_${plan.id}`,
+        planId: plan.id,
+        label: plan.label,
+        depositYton: plan.depositYton,
+        payoutYton,
+        days: plan.days,
+        roiPct: plan.roiPct,
+        createdAt: Date.now(),
+        endsAt: Date.now() + plan.days * 24 * 60 * 60 * 1000,
+        status: "active",
+      },
+      ...(wallet.investments || []),
+    ].slice(0, 12);
+
+    if (typeof state.yton !== "undefined") this.store.set({ yton: nextYton, wallet });
+    else this.store.set({ coins: nextYton, wallet });
+    this._toast(`${plan.label} yatırım planı başlatıldı`);
+  }
+
+  _collectInvestment(investmentId) {
+    this._ensureWalletState();
+    const state = this.store.get() || {};
+    const wallet = { ...(state.wallet || {}) };
+    const index = (wallet.investments || []).findIndex((x) => x.id === investmentId && x.status === "ready");
+    if (index < 0) return;
+    const inv = wallet.investments[index];
+    wallet.investments[index] = { ...inv, status: "collected", collectedAt: Date.now() };
+    const yton = Math.max(0, Number(state.yton ?? state.coins ?? state.player?.coins ?? 0));
+    const nextYton = yton + Number(inv.payoutYton || 0);
+    if (typeof state.yton !== "undefined") this.store.set({ yton: nextYton, wallet });
+    else this.store.set({ coins: nextYton, wallet });
+    this._toast(`${moneyFmt(inv.payoutYton)} YTON yatırımı toplandı`);
   }
 
   getLayout(ctx) {
     const size = canvasCssSize(ctx.canvas);
     const w = size.w;
     const h = size.h;
-    const state = this.getState();
+    const state = this.store.get() || {};
     const safe = state.ui?.safe || { x: 0, y: 0, w, h };
-    const mobile = safe.w < 760;
+    const mobile = safe.w < 720;
     const hudTop = Number(state.ui?.hudReservedTop || (mobile ? 84 : 96));
     const chatBottom = Number(state.ui?.chatReservedBottom || (mobile ? 74 : 88));
     const side = mobile ? 10 : Math.max(16, Math.floor(safe.w * 0.03));
@@ -341,86 +523,18 @@ export class ProfileScene {
     const panelX = safe.x + side;
     const panelY = top;
     const panelW = safe.w - side * 2;
-    const panelH = Math.max(340, bottom - top);
-    const headerH = mobile ? 64 : 70;
-    const heroH = mobile ? 150 : 160;
-    const tabH = mobile ? 36 : 40;
-    const contentY = panelY + headerH + heroH + tabH + 24;
+    const panelH = Math.max(320, bottom - top);
+    const headerH = mobile ? 74 : 80;
+    const heroH = mobile ? 170 : 188;
+    const tabsH = mobile ? 40 : 44;
+    const contentY = panelY + headerH + heroH + tabsH + 12;
     const contentH = panelY + panelH - contentY - 14;
-
-    return {
-      mobile,
-      w,
-      h,
-      safe,
-      panelX,
-      panelY,
-      panelW,
-      panelH,
-      headerH,
-      heroH,
-      tabH,
-      contentY,
-      contentH,
-      pad: mobile ? 14 : 18,
-    };
-  }
-
-  drawBackground(ctx, w, h) {
-    const bg = this.getBackgroundImage();
-    if (bg?.width && bg?.height) {
-      const scale = Math.max(w / bg.width, h / bg.height);
-      const dw = bg.width * scale;
-      const dh = bg.height * scale;
-      ctx.drawImage(bg, (w - dw) / 2, (h - dh) / 2, dw, dh);
-    } else {
-      ctx.fillStyle = "#130a08";
-      ctx.fillRect(0, 0, w, h);
-    }
-    const shade = ctx.createLinearGradient(0, 0, 0, h);
-    shade.addColorStop(0, "rgba(8,5,4,0.22)");
-    shade.addColorStop(0.5, "rgba(18,9,5,0.12)");
-    shade.addColorStop(1, "rgba(6,3,2,0.28)");
-    ctx.fillStyle = shade;
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  beginScrollArea(ctx, x, y, w, h, contentH) {
-    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
-    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
-    this.scrollArea = { x, y, w, h };
-    ctx.save();
-    roundRectPath(ctx, x, y, w, h, 18);
-    ctx.clip();
-  }
-
-  endScrollArea(ctx) {
-    ctx.restore();
-  }
-
-  drawScrollBar(ctx) {
-    if (!this.scrollArea || this.scrollMax <= 0) return;
-    const { x, y, w, h } = this.scrollArea;
-    const trackX = x + w - 5;
-    const trackY = y + 8;
-    const trackH = h - 16;
-    const thumbH = Math.max(36, Math.floor((h / (h + this.scrollMax)) * trackH));
-    const travel = Math.max(0, trackH - thumbH);
-    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
-    fillRoundRect(ctx, trackX, trackY, 3, trackH, 3, "rgba(255,255,255,0.10)");
-    fillRoundRect(ctx, trackX, thumbY, 3, thumbH, 3, "rgba(245,195,111,0.88)");
-  }
-
-  estimateContentHeight(state, tab, layout) {
-    if (tab === "wallet") return layout.mobile ? 280 : 250;
-    if (tab === "ranking") {
-      const board = Array.isArray(state?.pvp?.leaderboard) ? state.pvp.leaderboard : [];
-      return 70 + Math.max(6, Math.min(12, board.length || 6)) * (layout.mobile ? 52 : 48);
-    }
-    return layout.mobile ? 380 : 250;
+    return { mobile, w, h, safe, panelX, panelY, panelW, panelH, headerH, heroH, tabsH, contentY, contentH, pad: mobile ? 14 : 18 };
   }
 
   update() {
+    this._tickWalletTimers();
+
     const p = getPointer(this.input);
     const px = Number(p.x || 0);
     const py = Number(p.y || 0);
@@ -454,18 +568,65 @@ export class ProfileScene {
     }
   }
 
-  render(ctx, w, h) {
-    const state = this.getState();
-    const L = this.getLayout(ctx);
+  beginScrollArea(ctx, x, y, w, h, contentH) {
+    this.scrollMax = Math.max(0, Math.ceil(contentH - h));
+    this.scrollY = clamp(this.scrollY, 0, this.scrollMax);
+    this.scrollArea = { x, y, w, h };
+    ctx.save();
+    roundRectPath(ctx, x, y, w, h, 18);
+    ctx.clip();
+  }
 
+  endScrollArea(ctx) {
+    ctx.restore();
+  }
+
+  drawScrollBar(ctx) {
+    if (!this.scrollArea || this.scrollMax <= 0) return;
+    const { x, y, w, h } = this.scrollArea;
+    const trackX = x + w - 5;
+    const trackY = y + 8;
+    const trackH = h - 16;
+    const thumbH = Math.max(36, Math.floor((h / (h + this.scrollMax)) * trackH));
+    const travel = Math.max(0, trackH - thumbH);
+    const thumbY = trackY + (travel * this.scrollY / Math.max(1, this.scrollMax));
+    fillRoundRect(ctx, trackX, trackY, 3, trackH, 3, "rgba(255,255,255,0.10)");
+    fillRoundRect(ctx, trackX, thumbY, 3, thumbH, 3, "rgba(245,195,111,0.88)");
+  }
+
+  getContentHeight(L) {
+    if (this.activeTab === "wallet") return L.mobile ? 860 : 720;
+    if (this.activeTab === "ranking") {
+      const count = Math.max(6, Math.min(12, (this.store.get()?.pvp?.leaderboard || []).length || 8));
+      return 72 + count * (L.mobile ? 54 : 48);
+    }
+    return L.mobile ? 360 : 320;
+  }
+
+  render(ctx) {
+    const state = this.store.get() || {};
+    const L = this.getLayout(ctx);
     this.buttons = [];
     this.scrollArea = null;
 
-    this.drawBackground(ctx, L.w, L.h);
-    this.drawShell(ctx, state, L);
-  }
+    const bg = getImgSafe(this.assets, "clan_bg") || getImgSafe(this.assets, "clan") || getImgSafe(this.assets, "background") || null;
+    if (bg && bg.width) {
+      const scale = Math.max(L.w / bg.width, L.h / bg.height);
+      const dw = bg.width * scale;
+      const dh = bg.height * scale;
+      ctx.drawImage(bg, (L.w - dw) * 0.5, (L.h - dh) * 0.5, dw, dh);
+    } else {
+      ctx.fillStyle = "#0c0908";
+      ctx.fillRect(0, 0, L.w, L.h);
+    }
 
-  drawShell(ctx, state, L) {
+    const veil = ctx.createLinearGradient(0, 0, 0, L.h);
+    veil.addColorStop(0, "rgba(15,8,6,0.22)");
+    veil.addColorStop(0.55, "rgba(12,8,5,0.16)");
+    veil.addColorStop(1, "rgba(5,3,2,0.28)");
+    ctx.fillStyle = veil;
+    ctx.fillRect(0, 0, L.w, L.h);
+
     const x = L.panelX;
     const y = L.panelY;
     const w = L.panelW;
@@ -480,52 +641,55 @@ export class ProfileScene {
     gloss.addColorStop(1, "rgba(255,255,255,0.02)");
     fillRoundRect(ctx, x + 1, y + 1, w - 2, h - 2, 23, gloss);
 
-    this.drawHeader(ctx, L);
-    this.drawHero(ctx, state, L);
-    this.drawTabs(ctx, L);
+    this.drawHeader(ctx, x, y, w, L);
+    this.drawHero(ctx, state, x + pad, y + L.headerH, w - pad * 2, L.heroH, L);
+    this.drawTabs(ctx, x + pad, y + L.headerH + L.heroH + 8, w - pad * 2, L.tabsH, L);
 
-    const viewportX = x + 10;
-    const viewportY = L.contentY;
-    const viewportW = w - 20;
-    const viewportH = L.contentH;
-    const contentH = this.estimateContentHeight(state, this.activeTab, L);
+    const contentX = x + 10;
+    const contentY = L.contentY;
+    const contentW = w - 20;
+    const contentH = L.contentH;
+    const totalH = this.getContentHeight(L);
 
-    this.beginScrollArea(ctx, viewportX, viewportY, viewportW, viewportH, contentH);
-    const drawY = viewportY - this.scrollY;
+    this.beginScrollArea(ctx, contentX, contentY, contentW, contentH, totalH);
+    const drawY = contentY - this.scrollY;
 
-    if (this.activeTab === "wallet") this.drawWalletContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
-    else if (this.activeTab === "ranking") this.drawRankingContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
-    else this.drawProfileContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
+    if (this.activeTab === "wallet") {
+      this.drawWalletTab(ctx, state, contentX + 2, drawY + 2, contentW - 6, totalH - 4, L);
+    } else if (this.activeTab === "ranking") {
+      this.drawRankingTab(ctx, state, contentX + 2, drawY + 2, contentW - 6, totalH - 4, L);
+    } else {
+      this.drawProfileTab(ctx, state, contentX + 2, drawY + 2, contentW - 6, totalH - 4, L);
+    }
 
     this.endScrollArea(ctx);
     this.drawScrollBar(ctx);
   }
 
-  drawHeader(ctx, L) {
-    const x = L.panelX + L.pad;
-    const y = L.panelY + 12;
-    const w = L.panelW - L.pad * 2;
-    const h = L.headerH - 8;
-
-    fillRoundRect(ctx, x, y, w, h, 18, "rgba(10,12,16,0.28)");
-    strokeRoundRect(ctx, x, y, w, h, 18, "rgba(255,255,255,0.10)", 1);
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+  drawHeader(ctx, x, y, w, L) {
+    const pad = L.pad;
+    const titleX = x + pad;
+    const titleY = y + 30;
     ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = `700 ${L.mobile ? 18 : 22}px system-ui`;
-    ctx.fillText("PROFILE", x + 16, y + 28);
+    ctx.font = `${L.mobile ? 700 : 800} ${L.mobile ? 18 : 22}px system-ui`;
+    ctx.fillText("PROFILE", titleX, titleY);
     ctx.fillStyle = "rgba(255,220,170,0.86)";
     ctx.font = `500 ${L.mobile ? 11 : 13}px system-ui`;
-    ctx.fillText("TonCrime oyuncu kartı", x + 16, y + 48);
+    ctx.fillText("TonCrime oyuncu kartı", titleX, titleY + 22);
 
     const closeSize = L.mobile ? 38 : 42;
-    const closeBtn = { x: x + w - closeSize - 10, y: y + 8, w: closeSize, h: closeSize, onClick: () => this.scenes?.go?.("home") };
+    const closeBtn = {
+      x: x + w - pad - closeSize,
+      y: y + 14,
+      w: closeSize,
+      h: closeSize,
+      onClick: () => this.scenes?.go?.("home"),
+    };
     this.buttons.push(closeBtn);
     fillRoundRect(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(12,12,14,0.42)");
     strokeRoundRect(ctx, closeBtn.x, closeBtn.y, closeBtn.w, closeBtn.h, 12, "rgba(255,255,255,0.14)", 1);
     ctx.fillStyle = "#ffffff";
-    ctx.font = `700 ${L.mobile ? 24 : 28}px system-ui`;
+    ctx.font = `${L.mobile ? 700 : 700} ${L.mobile ? 26 : 28}px system-ui`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("×", closeBtn.x + closeBtn.w / 2, closeBtn.y + closeBtn.h / 2 + 1);
@@ -533,35 +697,23 @@ export class ProfileScene {
     ctx.textBaseline = "alphabetic";
   }
 
-  drawInfoMini(ctx, x, y, w, h, label, value) {
-    fillRoundRect(ctx, x, y, w, h, 14, "rgba(255,255,255,0.05)");
-    strokeRoundRect(ctx, x, y, w, h, 14, "rgba(255,255,255,0.10)", 1);
-    ctx.fillStyle = "rgba(255,213,156,0.78)";
-    ctx.font = "500 11px system-ui";
-    textFit(ctx, label, x + 10, y + 18, w - 20);
-    ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = "700 16px system-ui";
-    textFit(ctx, value, x + 10, y + 40, w - 20);
-  }
-
-  drawHero(ctx, state, L) {
+  drawHero(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const pvp = state.pvp || {};
-    const x = L.panelX + L.pad;
-    const y = L.panelY + L.headerH;
-    const w = L.panelW - L.pad * 2;
-    const h = L.heroH;
-    const clanName = String(state?.clan?.name || state?.clan?.tag || "No Clan");
     const username = String(p.username || "Player").trim() || "Player";
+    const clanName = String(state?.clan?.name || state?.clan?.tag || "No Clan");
+    const level = Math.max(1, Number(p.level || 1));
+    const energy = Math.max(0, Number(p.energy || 0));
+    const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const rating = Math.max(0, Number(pvp.rating || 1000));
 
     fillRoundRect(ctx, x, y, w, h, 22, "rgba(10,12,16,0.28)");
     strokeRoundRect(ctx, x, y, w, h, 22, "rgba(255,193,111,0.42)", 1.2);
 
-    const avatarFrameX = x + 16;
+    const avatarFrameW = L.mobile ? 98 : 128;
+    const avatarFrameH = L.mobile ? 112 : 128;
+    const avatarFrameX = x + 14;
     const avatarFrameY = y + 16;
-    const avatarFrameW = L.mobile ? 106 : 116;
-    const avatarFrameH = L.mobile ? 106 : 116;
-
     fillRoundRect(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18, "rgba(255,255,255,0.05)");
     strokeRoundRect(ctx, avatarFrameX, avatarFrameY, avatarFrameW, avatarFrameH, 18, "rgba(255,182,86,0.18)", 1);
 
@@ -585,71 +737,78 @@ export class ProfileScene {
       ctx.fillStyle = avGrad;
       ctx.fillRect(avatarX, avatarY, avatarW, avatarH);
       ctx.fillStyle = "#f1f3f7";
-      ctx.font = `900 ${L.mobile ? 30 : 34}px system-ui`;
+      ctx.font = `900 ${L.mobile ? 32 : 38}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(getInitials(username), avatarX + avatarW / 2, avatarY + avatarH / 2 + 1);
     }
     ctx.restore();
 
-    fillRoundRect(ctx, avatarFrameX + 8, avatarFrameY + avatarFrameH - 26, 78, 20, 10, "#27d85c");
+    fillRoundRect(ctx, avatarFrameX + 8, avatarFrameY + avatarFrameH - 28, 78, 22, 11, "#27d85c");
     ctx.fillStyle = "#08130d";
-    ctx.font = "900 11px system-ui";
+    ctx.font = "900 12px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("ONLINE", avatarFrameX + 47, avatarFrameY + avatarFrameH - 16);
+    ctx.fillText("ONLINE", avatarFrameX + 47, avatarFrameY + avatarFrameH - 17);
 
     const infoX = avatarFrameX + avatarFrameW + 16;
-    const infoY = avatarFrameY + 6;
+    const infoY = y + 28;
     const infoW = w - (infoX - x) - 16;
 
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = `700 ${L.mobile ? 20 : 28}px system-ui`;
-    textFit(ctx, username, infoX, infoY + 18, infoW);
+    const nameSize = fitFontSize(ctx, username, infoW, L.mobile ? 24 : 30, 18);
+    ctx.font = `900 ${nameSize}px system-ui`;
+    ctx.fillStyle = "#f3f6fb";
+    textFit(ctx, username, infoX, infoY + 4, infoW);
 
-    const cols = 2;
-    const gap = 10;
-    const miniW = Math.floor((infoW - gap) / 2);
-    const miniH = 48;
-    const level = Math.max(1, Number(p.level || 1));
-    const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
-    const rating = Math.max(0, Number(pvp.rating || 1000));
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = `600 ${L.mobile ? 12 : 13}px system-ui`;
+    textFit(ctx, clanName, infoX, infoY + 28, infoW);
 
-    const row1Y = infoY + 34;
-    const row2Y = row1Y + miniH + 10;
-    this.drawInfoMini(ctx, infoX, row1Y, miniW, miniH, "Level", String(level));
-    this.drawInfoMini(ctx, infoX + miniW + gap, row1Y, miniW, miniH, "Enerji", `${energy}/${energyMax}`);
-    this.drawInfoMini(ctx, infoX, row2Y, miniW, miniH, "Clan", clanName);
-    this.drawInfoMini(ctx, infoX + miniW + gap, row2Y, miniW, miniH, "Rating", String(rating));
+    const boxGap = 8;
+    const boxW = Math.floor((infoW - boxGap) / 2);
+    const boxH = L.mobile ? 42 : 46;
+    const row1Y = infoY + 40;
+    const row2Y = row1Y + boxH + boxGap;
+    this.drawMiniBox(ctx, infoX, row1Y, boxW, boxH, "Level", String(level));
+    this.drawMiniBox(ctx, infoX + boxW + boxGap, row1Y, boxW, boxH, "Energy", `${energy}/${energyMax}`);
+    this.drawMiniBox(ctx, infoX, row2Y, boxW, boxH, "Rating", String(rating));
+    this.drawMiniBox(ctx, infoX + boxW + boxGap, row2Y, boxW, boxH, "Clan", clanName);
   }
 
-  drawTabs(ctx, L) {
-    const x = L.panelX + L.pad;
-    const y = L.panelY + L.headerH + L.heroH + 8;
-    const w = L.panelW - L.pad * 2;
-    const gap = 8;
+  drawMiniBox(ctx, x, y, w, h, label, value) {
+    fillRoundRect(ctx, x, y, w, h, 14, "rgba(255,255,255,0.04)");
+    strokeRoundRect(ctx, x, y, w, h, 14, "rgba(255,255,255,0.08)", 1);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "600 10px system-ui";
+    textFit(ctx, label, x + 10, y + 14, w - 20);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = `900 ${h < 44 ? 16 : 18}px system-ui`;
+    textFit(ctx, value, x + 10, y + h - 10, w - 20);
+  }
+
+  drawTabs(ctx, x, y, w, h, L) {
     const tabs = [
       { id: "profile", label: "Genel" },
       { id: "wallet", label: "Cüzdan" },
       { id: "ranking", label: "Sıralama" },
     ];
+    const gap = 8;
     const tabW = Math.floor((w - gap * (tabs.length - 1)) / tabs.length);
 
-    tabs.forEach((tab, index) => {
-      const tx = x + index * (tabW + gap);
-      const btn = { x: tx, y, w: tabW, h: L.tabH, onClick: () => this._setTab(tab.id) };
+    tabs.forEach((tab, i) => {
+      const tx = x + i * (tabW + gap);
+      const btn = { x: tx, y, w: tabW, h, onClick: () => this._setTab(tab.id) };
       this.buttons.push(btn);
       const active = this.activeTab === tab.id;
-      fillRoundRect(ctx, tx, y, tabW, L.tabH, 14, active ? "rgba(243,187,102,0.20)" : "rgba(255,255,255,0.05)");
-      strokeRoundRect(ctx, tx, y, tabW, L.tabH, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.10)", 1);
+      fillRoundRect(ctx, tx, y, tabW, h, 14, active ? "rgba(243,187,102,0.20)" : "rgba(255,255,255,0.05)");
+      strokeRoundRect(ctx, tx, y, tabW, h, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.10)", 1);
       ctx.fillStyle = active ? "rgba(255,248,236,0.98)" : "rgba(255,255,255,0.82)";
       ctx.font = `700 ${L.mobile ? 12 : 13}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(tab.label, tx + tabW / 2, y + L.tabH / 2 + 1);
+      ctx.fillText(tab.label, tx + tabW / 2, y + h / 2 + 1);
     });
 
     ctx.textAlign = "left";
@@ -671,140 +830,244 @@ export class ProfileScene {
     textFit(ctx, sub, x, y + 18, w);
   }
 
-  drawProfileContent(ctx, state, x, y, w, h, L) {
+  drawPrimaryButton(ctx, rect, label, fill = "rgba(243,187,102,0.18)", stroke = "rgba(243,187,102,0.40)", fontSize = 12) {
+    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 12, fill);
+    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 12, stroke, 1);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = `700 ${fontSize}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
+  drawProfileTab(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const pvp = state.pvp || {};
+    const yton = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
     const wins = Math.max(0, Number(pvp.wins || 0));
     const losses = Math.max(0, Number(pvp.losses || 0));
-    const totalFight = wins + losses;
-    const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
-    const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const fights = wins + losses;
+    const winRate = fights > 0 ? Math.round((wins / fights) * 100) : 0;
     const rating = Math.max(0, Number(pvp.rating || 1000));
-
-    this.drawSectionTitle(ctx, "Genel Bakış", "Daha sade profil görünümü", x + 8, y + 20, w - 16);
-
-    const gap = 12;
-    const colW = L.mobile ? (w - 16) : Math.floor((w - 16 - gap) / 2);
-    const row1Y = y + 40;
-    const row2Y = row1Y + 92;
-
-    const drawStat = (sx, sy, title, value, sub) => {
-      this.drawCard(ctx, sx, sy, colW, 80);
-      ctx.fillStyle = "rgba(255,213,156,0.78)";
-      ctx.font = "500 12px system-ui";
-      textFit(ctx, title, sx + 16, sy + 24, colW - 32);
-      ctx.fillStyle = "rgba(255,255,255,0.98)";
-      ctx.font = `700 ${L.mobile ? 28 : 30}px system-ui`;
-      textFit(ctx, value, sx + 16, sy + 56, colW - 32);
-      if (sub) {
-        ctx.fillStyle = "rgba(255,255,255,0.66)";
-        ctx.font = "500 11px system-ui";
-        textFit(ctx, sub, sx + 16, sy + 72, colW - 32);
-      }
-    };
-
-    if (L.mobile) {
-      drawStat(x + 8, row1Y, "Enerji", `${energy}/${energyMax}`, "Hazır durum");
-      drawStat(x + 8, row2Y, "Rating", String(rating), "PvP değeri");
-      drawStat(x + 8, row2Y + 92, "Maç", `${wins}-${losses}`, `${winRate}% win rate`);
-    } else {
-      drawStat(x + 8, row1Y, "Enerji", `${energy}/${energyMax}`, "Hazır durum");
-      drawStat(x + 8 + colW + gap, row1Y, "Rating", String(rating), "PvP değeri");
-      drawStat(x + 8, row2Y, "Maç", `${wins}-${losses}`, `${winRate}% win rate`);
-      drawStat(x + 8 + colW + gap, row2Y, "Durum", "ONLINE", "TonCrime aktif");
-    }
-
-    const actionsY = L.mobile ? row2Y + 184 : row2Y + 92;
-    this.drawSectionTitle(ctx, "İşlemler", null, x + 8, actionsY + 12, w - 16);
-
-    const btnGap = 12;
-    const btnW = L.mobile ? (w - 16) : Math.floor((w - 16 - btnGap) / 2);
-    const btnH = 46;
-    const editBtn = { x: x + 8, y: actionsY + 28, w: btnW, h: btnH, onClick: () => this._fileInput?.click() };
-    const tgBtn = {
-      x: L.mobile ? x + 8 : x + 8 + btnW + btnGap,
-      y: L.mobile ? actionsY + 28 + btnH + 10 : actionsY + 28,
-      w: btnW,
-      h: btnH,
-      onClick: openTelegramLink,
-    };
-    this.buttons.push(editBtn, tgBtn);
-
-    const drawBtn = (btn, label) => {
-      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, "rgba(243,187,102,0.16)");
-      strokeRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, "rgba(243,187,102,0.36)", 1);
-      ctx.fillStyle = "rgba(255,255,255,0.96)";
-      ctx.font = `700 ${L.mobile ? 14 : 15}px system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
-    };
-
-    drawBtn(editBtn, "Avatar Düzenle");
-    drawBtn(tgBtn, "TonCrime Telegram");
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-  }
-
-  drawWalletContent(ctx, state, x, y, w, h, L) {
-    const p = state.player || {};
-    const balance = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
     const clanName = String(state?.clan?.name || state?.clan?.tag || "No Clan");
 
-    this.drawSectionTitle(ctx, "Cüzdan", "Sadece gerekli bakiye bilgisi", x + 8, y + 20, w - 16);
+    this.drawSectionTitle(ctx, "Genel", "Sade oyuncu özeti.", x + 8, y + 18, w - 16);
 
-    this.drawCard(ctx, x + 8, y + 40, w - 16, 112);
-    ctx.fillStyle = "rgba(255,213,156,0.78)";
-    ctx.font = "500 12px system-ui";
-    ctx.fillText("Toplam Bakiye", x + 24, y + 68);
-    ctx.fillStyle = "rgba(255,255,255,0.98)";
-    ctx.font = `700 ${L.mobile ? 34 : 40}px system-ui`;
-    ctx.fillText(`${moneyFmt(balance)} YTON`, x + 24, y + 114);
+    this.drawCard(ctx, x + 8, y + 42, w - 16, 110);
+    const colGap = 10;
+    const boxW = Math.floor((w - 16 - colGap) / 2);
+    this.drawMiniBox(ctx, x + 18, y + 58, boxW, 38, "Bakiye", `${moneyFmt(yton)} YTON`);
+    this.drawMiniBox(ctx, x + 18 + boxW + colGap, y + 58, boxW, 38, "Silah", String(p.weaponName || "Silah Yok"));
+    this.drawMiniBox(ctx, x + 18, y + 102, boxW, 38, "Clan", clanName);
+    this.drawMiniBox(ctx, x + 18 + boxW + colGap, y + 102, boxW, 38, "Kayıt", `${wins}-${losses}`);
 
-    this.drawCard(ctx, x + 8, y + 166, w - 16, 84);
-    ctx.fillStyle = "rgba(255,213,156,0.78)";
-    ctx.font = "500 12px system-ui";
-    ctx.fillText("Bağlı Bilgi", x + 24, y + 194);
-    ctx.fillStyle = "rgba(255,255,255,0.96)";
-    ctx.font = "700 15px system-ui";
-    textFit(ctx, `Clan: ${clanName}`, x + 24, y + 220, w - 48);
-    textFit(ctx, `Oyuncu: ${String(p.username || "Player")}`, x + 24, y + 242, w - 48);
+    const metricsY = y + 166;
+    this.drawCard(ctx, x + 8, metricsY, w - 16, 110);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.beginPath();
+    ctx.moveTo(x + w / 3, metricsY + 18);
+    ctx.lineTo(x + w / 3, metricsY + 92);
+    ctx.moveTo(x + (w * 2) / 3, metricsY + 18);
+    ctx.lineTo(x + (w * 2) / 3, metricsY + 92);
+    ctx.stroke();
+
+    const c1 = x + w / 6;
+    const c2 = x + w / 2;
+    const c3 = x + (w * 5) / 6;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "600 12px system-ui";
+    ctx.fillText("Win Rate", c1, metricsY + 28);
+    ctx.fillText("Rating", c2, metricsY + 28);
+    ctx.fillText("Seviye", c3, metricsY + 28);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = `900 ${L.mobile ? 24 : 28}px system-ui`;
+    ctx.fillText(`${winRate}%`, c1, metricsY + 70);
+    ctx.fillText(String(rating), c2, metricsY + 70);
+    ctx.fillText(String(Math.max(1, Number(p.level || 1))), c3, metricsY + 70);
+    ctx.textAlign = "left";
+
+    const btnY = metricsY + 124;
+    const btnGap = 12;
+    const btnW = Math.floor((w - 16 - btnGap) / 2);
+    const editBtn = { x: x + 8, y: btnY, w: btnW, h: 46, onClick: () => this._fileInput?.click() };
+    const tgBtn = { x: x + 8 + btnW + btnGap, y: btnY, w: btnW, h: 46, onClick: () => openTelegramLink() };
+    this.buttons.push(editBtn, tgBtn);
+    this.drawPrimaryButton(ctx, editBtn, "Avatar Değiştir", "rgba(90,140,255,0.14)", "rgba(120,170,255,0.34)");
+    this.drawPrimaryButton(ctx, tgBtn, "Telegram", "rgba(243,187,102,0.16)", "rgba(243,187,102,0.34)");
   }
 
-  drawRankingContent(ctx, state, x, y, w, h, L) {
+  drawWalletTab(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
-    const username = String(p.username || "Player").trim() || "Player";
-    const board = Array.isArray(state?.pvp?.leaderboard) ? state.pvp.leaderboard.slice() : [];
-    board.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-    const list = board.length ? board.slice(0, 12) : [{ name: username, wins: 0, losses: 0, rating: 1000, score: 1000 }];
+    const wallet = state.wallet || {};
+    const yton = Math.max(0, Number(state.yton ?? state.coins ?? p.coins ?? 0));
+    const tonBalance = Math.max(0, Number(wallet.tonBalance || 0));
+    const connected = !!wallet.connected;
+    const address = shortAddress(wallet.address);
+    const requests = Array.isArray(wallet.withdrawRequests) ? wallet.withdrawRequests.slice(0, 3) : [];
+    const investments = Array.isArray(wallet.investments) ? wallet.investments.slice(0, 3) : [];
 
-    this.drawSectionTitle(ctx, "Sıralama", "PvP kayıtları", x + 8, y + 20, w - 16);
-    let rowY = y + 40;
+    this.drawSectionTitle(ctx, "Cüzdan", "TON dönüşüm, bağlama, çekim ve yatırım.", x + 8, y + 18, w - 16);
 
-    list.forEach((item, index) => {
-      const rowH = L.mobile ? 44 : 40;
-      const isMe = String(item.name || "") === username;
-      this.drawCard(ctx, x + 8, rowY, w - 16, rowH);
-      if (isMe) fillRoundRect(ctx, x + 8, rowY, w - 16, rowH, 18, "rgba(243,187,102,0.10)");
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = isMe ? "#ffd494" : "rgba(255,255,255,0.96)";
-      ctx.font = "700 14px system-ui";
-      ctx.fillText(`#${index + 1}`, x + 22, rowY + 25);
-      textFit(ctx, String(item.name || "Player"), x + 62, rowY + 25, w - 220);
-      ctx.textAlign = "right";
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "500 12px system-ui";
-      ctx.fillText(`${Number(item.wins || 0)}W/${Number(item.losses || 0)}L`, x + w - 110, rowY + 25);
-      ctx.fillStyle = "#f6c46b";
-      ctx.font = "700 13px system-ui";
-      ctx.fillText(String(Number(item.rating || 1000)), x + w - 30, rowY + 25);
-      rowY += rowH + 8;
+    this.drawCard(ctx, x + 8, y + 42, w - 16, 118);
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "600 12px system-ui";
+    ctx.fillText("1 YTON = 0.01 TON", x + 22, y + 66);
+    ctx.fillStyle = "#f3f6fb";
+    ctx.font = `900 ${L.mobile ? 34 : 40}px system-ui`;
+    ctx.fillText(`${moneyFmt(yton)} YTON`, x + 22, y + 112);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "600 12px system-ui";
+    ctx.fillText(`TON cüzdanı: ${tonFmt(tonBalance)} TON`, x + 22, y + 136);
+
+    const topBtnY = y + 174;
+    const btnGap = 8;
+    const convW = Math.floor((w - 16 - btnGap * 2) / 3);
+    const convButtons = [
+      { label: "25% Çevir", ratio: 0.25 },
+      { label: "50% Çevir", ratio: 0.5 },
+      { label: "Tümünü", ratio: 1 },
+    ];
+    convButtons.forEach((item, i) => {
+      const btn = {
+        x: x + 8 + i * (convW + btnGap),
+        y: topBtnY,
+        w: convW,
+        h: 38,
+        onClick: () => this._convertYtonToTon(item.ratio),
+      };
+      this.buttons.push(btn);
+      this.drawPrimaryButton(ctx, btn, item.label, "rgba(243,187,102,0.14)", "rgba(243,187,102,0.32)", L.mobile ? 11 : 12);
     });
 
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
+    const connectY = topBtnY + 52;
+    this.drawCard(ctx, x + 8, connectY, w - 16, 116);
+    this.drawSectionTitle(ctx, connected ? "Bağlı Cüzdan" : "Cüzdan Bağlama", connected ? address : "Sabit kayıt için bağlantı aktif edilir.", x + 22, connectY + 22, w - 160);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText(connected ? `Sağlayıcı: ${wallet.provider || "TON Wallet"}` : "TON cüzdanın profile sabitlenir.", x + 22, connectY + 72);
+
+    const connectBtn = {
+      x: x + w - 132,
+      y: connectY + 34,
+      w: 104,
+      h: 34,
+      onClick: () => (connected ? this._disconnectWallet() : this._connectWallet()),
+    };
+    this.buttons.push(connectBtn);
+    this.drawPrimaryButton(ctx, connectBtn, connected ? "Bağlantıyı Kes" : "Cüzdan Bağla", connected ? "rgba(255,255,255,0.08)" : "rgba(243,187,102,0.16)", connected ? "rgba(255,255,255,0.16)" : "rgba(243,187,102,0.34)", L.mobile ? 10 : 11);
+
+    const withdrawY = connectY + 130;
+    this.drawCard(ctx, x + 8, withdrawY, w - 16, 166);
+    this.drawSectionTitle(ctx, "Çekim Talebi", "Bağlı cüzdana TON çekim isteği bırak.", x + 22, withdrawY + 22, w - 44);
+
+    const wdGap = 8;
+    const wdW = Math.floor((w - 16 - wdGap * 2) / 3);
+    [1, 5, 10].forEach((amount, i) => {
+      const btn = {
+        x: x + 8 + i * (wdW + wdGap),
+        y: withdrawY + 54,
+        w: wdW,
+        h: 36,
+        onClick: () => this._requestWithdrawal(amount),
+      };
+      this.buttons.push(btn);
+      this.drawPrimaryButton(ctx, btn, `${amount} TON`, "rgba(255,255,255,0.06)", "rgba(255,255,255,0.12)", L.mobile ? 11 : 12);
+    });
+
+    let reqY = withdrawY + 104;
+    if (!requests.length) {
+      ctx.fillStyle = "rgba(255,255,255,0.62)";
+      ctx.font = "500 12px system-ui";
+      ctx.fillText("Henüz çekim talebi yok.", x + 22, reqY + 12);
+    } else {
+      requests.forEach((req, index) => {
+        const rowY = reqY + index * 18;
+        ctx.fillStyle = req.status === "completed" ? "#9be67c" : "rgba(255,255,255,0.72)";
+        ctx.font = "500 12px system-ui";
+        textFit(ctx, `${tonFmt(req.amountTon)} TON • ${req.status === "completed" ? "tamamlandı" : "bekliyor"}`, x + 22, rowY + 12, w - 44);
+      });
+    }
+
+    const investY = withdrawY + 180;
+    this.drawCard(ctx, x + 8, investY, w - 16, 278);
+    this.drawSectionTitle(ctx, "Yatırım", "YTON ile plan başlat, süre dolunca getiriyi topla.", x + 22, investY + 22, w - 44);
+
+    const planGap = 10;
+    const planW = L.mobile ? w - 16 : Math.floor((w - 16 - planGap * 2) / 3);
+    INVESTMENT_PLANS.forEach((plan, i) => {
+      const px = L.mobile ? x + 8 : x + 8 + i * (planW + planGap);
+      const py = L.mobile ? investY + 54 + i * 72 : investY + 54;
+      this.drawCard(ctx, px, py, planW, 62);
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.font = "700 14px system-ui";
+      ctx.fillText(plan.label, px + 14, py + 22);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = "500 11px system-ui";
+      ctx.fillText(`${plan.depositYton} YTON • ${plan.days} gün • +%${plan.roiPct}`, px + 14, py + 40);
+      const btn = { x: px + planW - 86, y: py + 15, w: 72, h: 30, onClick: () => this._startInvestment(plan.id) };
+      this.buttons.push(btn);
+      this.drawPrimaryButton(ctx, btn, "Başlat", "rgba(243,187,102,0.16)", "rgba(243,187,102,0.32)", 11);
+    });
+
+    const listY = L.mobile ? investY + 54 + INVESTMENT_PLANS.length * 72 : investY + 130;
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "600 12px system-ui";
+    ctx.fillText("Aktif / Hazır yatırımlar", x + 22, listY + 4);
+
+    if (!investments.length) {
+      ctx.fillStyle = "rgba(255,255,255,0.62)";
+      ctx.font = "500 12px system-ui";
+      ctx.fillText("Aktif yatırım yok.", x + 22, listY + 28);
+    } else {
+      investments.forEach((inv, i) => {
+        const rowY = listY + 20 + i * 42;
+        this.drawCard(ctx, x + 18, rowY, w - 36, 34);
+        ctx.fillStyle = "rgba(255,255,255,0.90)";
+        ctx.font = "600 12px system-ui";
+        textFit(ctx, `${inv.label} • ${moneyFmt(inv.depositYton)} → ${moneyFmt(inv.payoutYton)} YTON`, x + 30, rowY + 22, w - 170);
+        ctx.fillStyle = inv.status === "ready" ? "#9be67c" : inv.status === "collected" ? "rgba(255,255,255,0.55)" : "rgba(255,213,156,0.76)";
+        ctx.font = "600 11px system-ui";
+        ctx.fillText(inv.status === "ready" ? "Hazır" : inv.status === "collected" ? "Toplandı" : `${inv.days} gün`, x + w - 136, rowY + 22);
+        if (inv.status === "ready") {
+          const btn = { x: x + w - 94, y: rowY + 4, w: 70, h: 26, onClick: () => this._collectInvestment(inv.id) };
+          this.buttons.push(btn);
+          this.drawPrimaryButton(ctx, btn, "Topla", "rgba(255,255,255,0.08)", "rgba(255,255,255,0.14)", 11);
+        }
+      });
+    }
+  }
+
+  drawRankingTab(ctx, state, x, y, w, h, L) {
+    const p = state.player || {};
+    const username = String(p.username || "Player").trim() || "Player";
+    const pvp = state.pvp || {};
+    const leaderboard = Array.isArray(pvp.leaderboard)
+      ? pvp.leaderboard.slice().sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+      : [];
+    const list = leaderboard.length
+      ? leaderboard.slice(0, 12)
+      : [{ name: username, wins: Number(pvp.wins || 0), losses: Number(pvp.losses || 0), rating: Number(pvp.rating || 1000), score: Number(pvp.rating || 1000) }];
+
+    this.drawSectionTitle(ctx, "Sıralama", "PvP sonuçlarına göre güncel liste.", x + 8, y + 18, w - 16);
+
+    let rowY = y + 44;
+    list.forEach((item, index) => {
+      this.drawCard(ctx, x + 8, rowY, w - 16, 40);
+      const isMe = String(item.name || "") === username;
+      ctx.fillStyle = isMe ? "#ffd494" : "rgba(255,255,255,0.96)";
+      ctx.font = "700 13px system-ui";
+      ctx.fillText(`#${index + 1}`, x + 22, rowY + 24);
+      textFit(ctx, String(item.name || "Player"), x + 60, rowY + 24, w - 240);
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.font = "500 12px system-ui";
+      ctx.fillText(`${Number(item.wins || 0)}W/${Number(item.losses || 0)}L`, x + w - 152, rowY + 24);
+      ctx.fillStyle = "#f6c46b";
+      ctx.font = "700 13px system-ui";
+      ctx.fillText(String(Number(item.rating || 1000)), x + w - 72, rowY + 24);
+      rowY += 48;
+    });
   }
 }
