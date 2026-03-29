@@ -51,16 +51,31 @@ function ellipsisText(ctx, text, maxWidth) {
 function drawImageContainTop(ctx, img, x, y, w, h, topBias = 0.12) {
   const iw = img.width || 1;
   const ih = img.height || 1;
-
   const scale = Math.max(w / iw, h / ih);
   const dw = iw * scale;
   const dh = ih * scale;
   const dx = x + (w - dw) / 2;
-
   const extraH = dh - h;
   const dy = y - extraH * topBias;
-
   ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+function drawImageCoverRounded(ctx, img, x, y, w, h, radius) {
+  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+
+  ctx.save();
+  roundRectPath(ctx, x, y, w, h, radius);
+  ctx.clip();
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+  return true;
 }
 
 function ensureArray(v) {
@@ -195,6 +210,7 @@ export class StarsScene {
     this._bgImg = null;
     this._audio = null;
     this._audioStarted = false;
+    this._starImageCache = new Map();
 
     this.toastText = "";
     this.toastUntil = 0;
@@ -224,6 +240,8 @@ export class StarsScene {
     this._bgImg = new Image();
     this._bgImg.src = "./src/assets/xxx-bg.png";
 
+    this._primeStarImages();
+
     try {
       this._audio = new Audio("./src/assets/xxx.mp3");
       this._audio.loop = true;
@@ -243,6 +261,31 @@ export class StarsScene {
         this._audio.currentTime = 0;
       }
     } catch (_) {}
+  }
+
+  _primeStarImages() {
+    for (const star of stars) {
+      this._getStarImage(star);
+    }
+  }
+
+  _getStarImage(star) {
+    const src = String(star?.assetPath || star?.image || "").trim();
+    const fallback = String(star?.fallbackImage || stars[0]?.assetPath || "").trim();
+    const key = `${src}|${fallback}`;
+
+    if (this._starImageCache.has(key)) {
+      return this._starImageCache.get(key);
+    }
+
+    const img = new Image();
+    img.src = src || fallback;
+    img.onerror = () => {
+      if (img.src !== fallback && fallback) img.src = fallback;
+    };
+
+    this._starImageCache.set(key, img);
+    return img;
   }
 
   _showToast(text, ms = 1800) {
@@ -428,7 +471,7 @@ export class StarsScene {
     ctx.font = `700 ${titleSize}px ${titleFamily}`;
     ctx.fillText("Genel Ev", titleX, titleY);
 
-    const subText = `Coin: ${Number(s.coins || 0)}   •   Enerji: ${Number(p.energy || 0)}/${Number(p.energyMax || 100)}`;
+    const subText = `Coin: ${Number(s.coins || 0)}   •   Enerji: ${Number(p.energy || 0)}/${Number(p.energyMax || 100)}   •   ${stars.length} kişi`;
     ctx.fillStyle = "rgba(255,255,255,0.82)";
     ctx.font = `${safe.w <= 420 ? 10 : 11}px system-ui`;
     ctx.fillText(subText, titleX + 4, headerY + headerH - 10);
@@ -462,8 +505,8 @@ export class StarsScene {
     const listW = panelW - 20;
 
     const isSmall = safe.w <= 420;
-    const rowH = isSmall ? 84 : 92;
-    const thumb = isSmall ? 50 : 60;
+    const rowH = isSmall ? 90 : 98;
+    const thumb = isSmall ? 58 : 66;
     const btnW = isSmall ? 96 : 112;
     const btnH = isSmall ? 38 : 42;
 
@@ -499,17 +542,23 @@ export class StarsScene {
       const imgY = rowRect.y + (rowRect.h - thumb) / 2;
       const imgW = thumb;
       const imgH = thumb;
+      const imgRadius = 14;
 
       ctx.fillStyle = "rgba(255,255,255,0.06)";
-      fillRoundRect(ctx, imgX, imgY, imgW, imgH, 14);
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, imgX + 0.5, imgY + 0.5, imgW - 1, imgH - 1, 14);
+      fillRoundRect(ctx, imgX, imgY, imgW, imgH, imgRadius);
 
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = `700 ${isSmall ? 14 : 16}px ${titleFamily}`;
-      ctx.fillText("VIP", imgX + imgW / 2, imgY + imgH / 2 + 1);
+      const starImg = this._getStarImage(star);
+      const drew = drawImageCoverRounded(ctx, starImg, imgX, imgY, imgW, imgH, imgRadius);
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      strokeRoundRect(ctx, imgX + 0.5, imgY + 0.5, imgW - 1, imgH - 1, imgRadius);
+
+      if (!drew) {
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `700 ${isSmall ? 11 : 12}px system-ui`;
+        ctx.fillText(star.assetName || "IMG", imgX + imgW / 2, imgY + imgH / 2);
+      }
 
       const btnX = rowRect.x + rowRect.w - btnW - 12;
       const btnY = rowRect.y + (rowRect.h - btnH) / 2;
@@ -521,8 +570,8 @@ export class StarsScene {
         ctx,
         star.name,
         textW,
-        isSmall ? 21 : 26,
-        isSmall ? 15 : 16,
+        isSmall ? 20 : 24,
+        isSmall ? 14 : 16,
         titleFamily,
         700
       );
@@ -531,15 +580,16 @@ export class StarsScene {
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
       ctx.font = `700 ${nameSize}px ${titleFamily}`;
-      ctx.fillText(ellipsisText(ctx, star.name, textW), textX, rowRect.y + 34);
+      ctx.fillText(ellipsisText(ctx, star.name, textW), textX, rowRect.y + 31);
 
-      ctx.fillStyle = "rgba(255,255,255,0.90)";
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.font = `${isSmall ? 12 : 13}px system-ui`;
-      ctx.fillText(`+Enerji: ${Number(star.energyGain || 0)}`, textX, rowRect.y + 56);
+      ctx.fillText(`+Enerji: ${Number(star.energyGain || 0)}`, textX, rowRect.y + 52);
 
-      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.fillStyle = "rgba(255,255,255,0.76)";
       ctx.font = `${isSmall ? 11 : 12}px system-ui`;
-      ctx.fillText(`Fiyat: ${Number(star.coinValue || 0)} coin`, textX, rowRect.y + 73);
+      ctx.fillText(`Fiyat: ${Number(star.coinValue || 0)} coin`, textX, rowRect.y + 69);
+      ctx.fillText(`${star.assetName || "asset"}`, textX, rowRect.y + 84);
 
       ctx.fillStyle = "rgba(18,18,22,0.70)";
       fillRoundRect(ctx, btnX, btnY, btnW, btnH, 14);
@@ -591,6 +641,7 @@ export class StarsScene {
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
+      ctx.font = "700 13px system-ui";
       const tw = Math.min(panelW - 28, Math.max(180, ctx.measureText(this.toastText).width + 34));
       const th = 40;
       const tx = panelX + (panelW - tw) / 2;
@@ -604,7 +655,6 @@ export class StarsScene {
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = "700 13px system-ui";
       ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2 + 1);
     }
 
