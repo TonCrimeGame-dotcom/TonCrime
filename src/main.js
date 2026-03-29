@@ -27,6 +27,7 @@ import { startBotEngine } from "./engine/BotEngine.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
+import { incrementEnergyRefillUsed } from "./missions/energyRefill.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 const NightclubScene = NightclubSceneModule.NightclubScene || NightclubSceneModule.default;
@@ -196,10 +197,12 @@ const defaultState = {
     energyClaimed: false,
 
     telegramJoined: false,
+    telegramJoinRequested: false,
     telegramClaimed: false,
 
     levelClaimedAt: 0,
     lastDailyKey: "",
+    lastAutoEnergyRefillKey: "",
   },
 
   ui: { safe: getSafeArea() },
@@ -411,12 +414,29 @@ function tickEnergy() {
   if (!p) return;
 
   const now = Date.now();
-  const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
   const maxE = Math.max(1, Number(p.energyMax || 10));
   const e = Math.max(0, Math.min(maxE, Number(p.energy || 0)));
+  const m = s.missions || {};
+  const dailyKey = missionDayKey();
+
+  if (m.lastAutoEnergyRefillKey !== dailyKey) {
+    if (e < maxE) incrementEnergyRefillUsed(store);
+    store.set({
+      player: {
+        ...p,
+        energy: maxE,
+      },
+      missions: {
+        ...m,
+        lastAutoEnergyRefillKey: dailyKey,
+      },
+    });
+    return;
+  }
 
   if (e >= maxE) return;
 
+  const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
   const elapsed = now - Number(p.lastEnergyAt || now);
   if (elapsed < interval) return;
 
@@ -629,9 +649,11 @@ function missionEnsureDefaults(store) {
       energyRefillUsed: Number(m.energyRefillUsed || 0),
       energyClaimed: !!m.energyClaimed,
       telegramJoined: !!m.telegramJoined,
+      telegramJoinRequested: !!m.telegramJoinRequested,
       telegramClaimed: !!m.telegramClaimed,
       levelClaimedAt: Number(m.levelClaimedAt || 0),
       lastDailyKey: String(m.lastDailyKey || ""),
+      lastAutoEnergyRefillKey: String(m.lastAutoEnergyRefillKey || ""),
     },
   });
 }
@@ -695,20 +717,26 @@ class MissionsScene {
     const s = this.store.get() || {};
     const m = s.missions || {};
     const today = missionDayKey();
-    if (m.lastDailyKey === today) return;
+    if (m.lastDailyKey !== today) {
+      this.store.set({
+        missions: {
+          ...m,
+          dailyAdWatched: 0,
+          dailyAdClaimed: false,
+          pvpPlayed: 0,
+          pvpClaimed: false,
+          energyRefillUsed: 0,
+          energyClaimed: false,
+          lastDailyKey: today,
+        },
+      });
+    }
 
-    this.store.set({
-      missions: {
-        ...m,
-        dailyAdWatched: 0,
-        dailyAdClaimed: false,
-        pvpPlayed: 0,
-        pvpClaimed: false,
-        energyRefillUsed: 0,
-        energyClaimed: false,
-        lastDailyKey: today,
-      },
-    });
+    const latestMissions = (this.store.get() || {}).missions || {};
+    if (latestMissions.lastAutoEnergyRefillKey !== today) {
+      this._refillEnergyToFull("dailyAuto");
+      this._setMissions({ lastAutoEnergyRefillKey: today });
+    }
   }
 
   _grantCoins(n) {
@@ -764,6 +792,25 @@ class MissionsScene {
     });
   }
 
+  _refillEnergyToFull(reason = "manual") {
+    const s = this.store.get() || {};
+    const p = s.player || {};
+    const maxE = Math.max(1, Number(p.energyMax || 100));
+    const current = missionClamp(Number(p.energy || 0), 0, maxE);
+    if (current >= maxE) return false;
+
+    this.store.set({
+      player: {
+        ...p,
+        energy: maxE,
+      },
+    });
+
+    incrementEnergyRefillUsed(this.store);
+    if (reason === "dailyAuto") this._showToast("Günlük tam enerji yenilendi");
+    return true;
+  }
+
   async _watchAd() {
     const s = this.store.get() || {};
     const m = s.missions || {};
@@ -801,9 +848,23 @@ class MissionsScene {
         dailyAdWatched: missionClamp(Number(m2.dailyAdWatched || 0) + 1, 0, 20),
       },
     });
+    const sPlayer = this.store.get() || {};
+    const p = sPlayer.player || {};
+    this.store.set({
+      player: {
+        ...p,
+        lastEnergyAt: Date.now(),
+      },
+    });
 
-    this._grantEnergy(1);
-    this._showToast("+1 enerji");
+    const m3 = (this.store.get() || {}).missions || {};
+    if (Number(m3.dailyAdWatched || 0) >= 20) {
+      const didRefill = this._refillEnergyToFull("ad20");
+      this._showToast(didRefill ? "20 reklam tamamlandı: enerji ful" : "20 reklam tamamlandı");
+      return;
+    }
+
+    this._showToast("Reklam sayacı ilerledi");
   }
 
   _openInvite() {
@@ -820,10 +881,13 @@ class MissionsScene {
       }
     } catch (_) {}
 
+    const s = this.store.get() || {};
+    const m = s.missions || {};
+    this._setMissions({ referrals: Number(m.referrals || 0) + 1 });
     this._showToast("Davet bağlantısı açıldı");
   }
 
-  _openTelegramTask() {
+  async _openTelegramTask() {
     const s = this.store.get() || {};
     const m = s.missions || {};
 
@@ -833,11 +897,28 @@ class MissionsScene {
     }
 
     if (!m.telegramJoined) {
+      if (m.telegramJoinRequested) {
+        let joined = false;
+        try {
+          if (typeof window?.tcSocial?.verifyTelegramJoin === "function") {
+            joined = !!(await window.tcSocial.verifyTelegramJoin());
+          }
+        } catch (_) {}
+
+        if (!joined) {
+          this._showToast("Katılım doğrulanamadı");
+          return;
+        }
+
+        this._setMissions({ telegramJoined: true });
+        this._showToast("Katılım doğrulandı. Şimdi al.");
+        return;
+      }
       try {
         window.open(this.telegramUrl, "_blank");
       } catch (_) {}
-      this._setMissions({ telegramJoined: true });
-      this._showToast("Katılım açıldı");
+      this._setMissions({ telegramJoinRequested: true });
+      this._showToast("Telegram açıldı. Katıldıysan kontrol et.");
       return;
     }
 
@@ -936,7 +1017,7 @@ class MissionsScene {
       {
         key: "ads",
         title: `Günlük Reklam İzle (${missionFmtNum(m.dailyAdWatched)}/20)`,
-        desc: "Her reklam +1 enerji verir. 20 reklama ulaştığında görev ödülü açılır.",
+        desc: "20 reklam izlediğinde enerji bir kez tamamen dolar.",
         reward: m.dailyAdClaimed ? "Ödül alındı" : "Ödül: +20 coin • +10 XP",
         buttonLabel: m.dailyAdClaimed ? "Alındı" : Number(m.dailyAdWatched || 0) >= 20 ? "Ödülü Al" : "İzle",
         buttonKind: m.dailyAdClaimed ? "done" : Number(m.dailyAdWatched || 0) >= 20 ? "claim" : "action",
@@ -946,7 +1027,7 @@ class MissionsScene {
       {
         key: "invite",
         title: `Arkadaş Davet (${missionFmtNum(m.referrals)})`,
-        desc: "Davet bağlantını paylaş. Backend bağlı olduğunda sayı otomatik ilerler.",
+        desc: "Bağlantıyı paylaşınca davet sayacı artar. Backend bağlıysa gerçek doğrulama ile güncellenir.",
         reward: "Eşikler: 10 • 100 • 1000 • 5000",
         buttonLabel: "Davet Et",
         buttonKind: "action",
@@ -986,9 +1067,9 @@ class MissionsScene {
       {
         key: "telegram",
         title: "Telegram Grubuna Katıl",
-        desc: "Önce katıl, sonra aynı butondan ödülü al.",
+        desc: "Önce katıl, sonra kontrol et ve ödülü al.",
         reward: m.telegramClaimed ? "Ödül alındı" : "Ödül: +20 coin",
-        buttonLabel: m.telegramClaimed ? "Alındı" : m.telegramJoined ? "Al" : "Katıl",
+        buttonLabel: m.telegramClaimed ? "Alındı" : m.telegramJoined ? "Al" : m.telegramJoinRequested ? "Kontrol Et" : "Katıl",
         buttonKind: m.telegramClaimed ? "done" : m.telegramJoined ? "claim" : "telegram",
         action: m.telegramClaimed ? null : "telegram",
         progress: m.telegramClaimed ? 1 : m.telegramJoined ? 1 : 0,
