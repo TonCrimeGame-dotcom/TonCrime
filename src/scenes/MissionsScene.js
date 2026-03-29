@@ -858,7 +858,7 @@ export class MissionsScene {
     ctx.fillText(`Hazır görev: ${missionFmtNum(readyCount)}`, footerRect.x + 12, footerRect.y + 21);
     ctx.fillStyle = "rgba(255,255,255,0.66)";
     ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-    ctx.fillText(`Coin ${missionFmtNum(s.coins || 0)} • XP ${missionFmtNum((s.player || {}).xp || 0)}`, footerRect.x + 12, footerRect.y + 38);
+    ctx.fillText(`YTON ${missionFmtNum(s.YTON || 0)} • XP ${missionFmtNum((s.player || {}).xp || 0)}`, footerRect.x + 12, footerRect.y + 38);
 
     if (this.toastText && Date.now() < this.toastUntil) {
       const tw = Math.min(panelW - 36, 280);
@@ -877,3 +877,4 @@ export class MissionsScene {
     }
   }
 }
+
