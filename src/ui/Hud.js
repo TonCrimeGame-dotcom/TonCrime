@@ -19,6 +19,8 @@ export function startHud(store) {
   const elPremiumBadge = document.getElementById("hudPremiumBadge");
   const elLogo = document.getElementById("hudLogo");
   const elCenter = document.getElementById("hudCenter");
+  const elCoinsIcon = elCoins?.closest?.(".line2")?.querySelector?.(".hudMiniIcon") || null;
+  const elWeaponIcon = elWeaponName?.closest?.(".line3")?.querySelector?.(".hudMiniIcon") || null;
 
   if (!root || !row || !shell || !elUsername || !elCoins || !elWeaponName || !elXpFill || !elXpText || !elEnergyFill || !elEnergyText || !elAvatar || !elAvatarImg || !elAvatarFallback) {
     console.warn("[HUD] gerekli HUD elementleri bulunamadı");
@@ -27,6 +29,53 @@ export function startHud(store) {
 
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const clamp01 = (n) => clamp(n, 0, 1);
+
+  const YTON_IMAGE_SRC = "./src/assets/yton.png";
+  const WEAPON_IMAGE_MAP = {
+    glock_17: "house.png",
+    sig_p320: "dry.png",
+    beretta_92fs: "oak.png",
+    colt_1911: "rose.png",
+    mossberg_500: "street.png",
+    rem_870: "dark.png",
+    mp5: "blue.png",
+    ump45: "club.png",
+    ar15: "neon.png",
+    ak74: "sunset.png",
+    ak47: "gold.png",
+    m4a1: "night.png",
+    g3: "blackbarrel.png",
+    scar_h: "smoked.png",
+    svd: "saint.png",
+    m24: "obsidian.png",
+    m79: "velvet.png",
+    rpg7: "tropical.png",
+    barrett_m82: "luxe.png",
+    m134: "mafia.png",
+  };
+
+  const WEAPON_NAME_MAP = {
+    "hkmp5919mm": "blue.png",
+    "hkump4545acp": "club.png",
+    "ar1555645": "neon.png",
+    "ak7454539": "sunset.png",
+    "ak4776239": "gold.png",
+    "m4a155645": "night.png",
+    "hkg376251": "blackbarrel.png",
+    "fnscarh76251": "smoked.png",
+    "dragunovsvd76254r": "saint.png",
+    "remingtonm2476251": "obsidian.png",
+    "m79launcher": "velvet.png",
+    "rpg7launcher": "tropical.png",
+    "barrettm8250bmg": "luxe.png",
+    "m134minigun76251": "mafia.png",
+    "glock17919mm": "house.png",
+    "sigsauerp320919mm": "dry.png",
+    "beretta92fs919mm": "oak.png",
+    "colt191145acp": "rose.png",
+    "mossberg50012ga": "street.png",
+    "remington87012ga": "dark.png",
+  };
 
   function fmtMMSS(ms) {
     const totalSec = Math.max(0, Math.ceil(ms / 1000));
@@ -53,6 +102,99 @@ export function startHud(store) {
       player?.telegram_photo_url ||
       ""
     ).trim();
+  }
+
+
+  function normalizeWeaponKey(value) {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "")
+      .trim();
+  }
+
+  function resolveAssetPath(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.startsWith("./") || raw.startsWith("../") || raw.startsWith("/") || raw.startsWith("http")) {
+      return raw;
+    }
+    if (/\.(png|jpg|jpeg|webp|gif|svg)$/i.test(raw)) {
+      return `./src/assets/${raw}`;
+    }
+    return `./src/assets/${raw}.png`;
+  }
+
+  function resolveWeaponImage(state) {
+    const player = state?.player || {};
+    const weapons = state?.weapons || {};
+    const weaponName = String(player.weaponName || "").trim();
+    const noWeapon =
+      !weaponName ||
+      /^silah yok$/i.test(weaponName) ||
+      /^no weapon$/i.test(weaponName);
+
+    if (noWeapon) return "";
+
+    const explicit =
+      player.weaponImage ||
+      player.weaponImg ||
+      player.weaponAsset ||
+      player.weaponAssetName ||
+      player.weaponSkin ||
+      weapons.equippedImage ||
+      weapons.equippedAsset ||
+      weapons.equippedSkin;
+
+    if (explicit) {
+      return resolveAssetPath(explicit);
+    }
+
+    const equippedId = String(weapons.equippedId || player.weaponId || "").trim();
+    if (equippedId && WEAPON_IMAGE_MAP[equippedId]) {
+      return resolveAssetPath(WEAPON_IMAGE_MAP[equippedId]);
+    }
+
+    const normalizedName = normalizeWeaponKey(weaponName);
+    if (normalizedName && WEAPON_NAME_MAP[normalizedName]) {
+      return resolveAssetPath(WEAPON_NAME_MAP[normalizedName]);
+    }
+
+    return resolveAssetPath("blackbarrel.png");
+  }
+
+  function ensureMiniVisual(el, className = "") {
+    if (!el) return null;
+    el.classList.add("hudMiniVisual");
+    if (className) el.classList.add(className);
+
+    let img = el.querySelector("img");
+    if (!img) {
+      el.textContent = "";
+      img = document.createElement("img");
+      img.alt = "";
+      img.decoding = "async";
+      img.draggable = false;
+      el.appendChild(img);
+    }
+
+    return { wrap: el, img };
+  }
+
+  function setMiniVisual(target, src, title = "") {
+    if (!target?.wrap || !target?.img) return;
+    target.wrap.title = title || "";
+
+    if (src) {
+      if (target.img.getAttribute("src") !== src) {
+        target.img.src = src;
+      }
+      target.wrap.classList.remove("is-empty");
+    } else {
+      target.img.removeAttribute("src");
+      target.wrap.classList.add("is-empty");
+    }
   }
 
   function makeActionDock() {
@@ -152,11 +294,16 @@ export function startHud(store) {
     }
   }
 
+  const coinsVisual = ensureMiniVisual(elCoinsIcon, "hudMiniVisualYton");
+  const weaponVisual = ensureMiniVisual(elWeaponIcon, "hudMiniVisualWeapon");
+
   const { walletBtn, telegramBtn } = makeActionDock();
 
   if (elLogo) elLogo.style.display = "none";
   if (elCenter) elCenter.style.display = "none";
   row.dataset.centerHidden = "1";
+  if (coinsVisual?.wrap) coinsVisual.wrap.setAttribute("aria-hidden", "true");
+  if (weaponVisual?.wrap) weaponVisual.wrap.setAttribute("aria-hidden", "true");
 
   if (!elAvatarImg.__hudBound) {
     elAvatarImg.__hudBound = true;
@@ -210,9 +357,11 @@ export function startHud(store) {
 
     const yton = Number(s.yton ?? s.coins ?? p.coins ?? 0);
     elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
+    setMiniVisual(coinsVisual, YTON_IMAGE_SRC, "YTON");
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
     elWeaponName.textContent = weaponName;
+    setMiniVisual(weaponVisual, resolveWeaponImage(s), weaponName);
     if (elWeaponBonus) {
       elWeaponBonus.textContent = "";
       elWeaponBonus.style.display = "none";
