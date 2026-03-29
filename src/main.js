@@ -848,6 +848,14 @@ class MissionsScene {
         dailyAdWatched: missionClamp(Number(m2.dailyAdWatched || 0) + 1, 0, 20),
       },
     });
+    const sPlayer = this.store.get() || {};
+    const p = sPlayer.player || {};
+    this.store.set({
+      player: {
+        ...p,
+        lastEnergyAt: Date.now(),
+      },
+    });
 
     const m3 = (this.store.get() || {}).missions || {};
     if (Number(m3.dailyAdWatched || 0) >= 20) {
@@ -873,6 +881,9 @@ class MissionsScene {
       }
     } catch (_) {}
 
+    const s = this.store.get() || {};
+    const m = s.missions || {};
+    this._setMissions({ referrals: Number(m.referrals || 0) + 1 });
     this._showToast("Davet bağlantısı açıldı");
   }
 
@@ -1016,7 +1027,7 @@ class MissionsScene {
       {
         key: "invite",
         title: `Arkadaş Davet (${missionFmtNum(m.referrals)})`,
-        desc: "Davet bağlantını paylaş. Backend bağlı olduğunda sayı otomatik ilerler.",
+        desc: "Bağlantıyı paylaşınca davet sayacı artar. Backend bağlıysa gerçek doğrulama ile güncellenir.",
         reward: "Eşikler: 10 • 100 • 1000 • 5000",
         buttonLabel: "Davet Et",
         buttonKind: "action",
