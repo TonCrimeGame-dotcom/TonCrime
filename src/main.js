@@ -146,9 +146,27 @@ function saveStore(state) {
   } catch {}
 }
 
+function getWalletYton(state = {}) {
+  return Number(state?.wallet?.yton || 0);
+}
+
+function patchWalletYton(state = {}, nextYton) {
+  return {
+    wallet: {
+      ...(state.wallet || {}),
+      yton: Number(nextYton || 0),
+    },
+    // Legacy alan senkronizasyonu (diğer modüller için).
+    coins: Number(nextYton || 0),
+  };
+}
+
 const defaultState = {
   lang: "tr",
   coins: 4769,
+  wallet: {
+    yton: 4769,
+  },
   premium: false,
 
   intro: {
@@ -713,7 +731,8 @@ class MissionsScene {
 
   _grantCoins(n) {
     const s = this.store.get() || {};
-    this.store.set({ coins: Number(s.coins || 0) + Number(n || 0) });
+    const nextYton = getWalletYton(s) + Number(n || 0);
+    this.store.set(patchWalletYton(s, nextYton));
   }
 
   _grantXP(n) {
@@ -1368,7 +1387,7 @@ class MissionsScene {
     ctx.fillText(`Hazır görev: ${missionFmtNum(readyCount)}`, footerRect.x + 12, footerRect.y + 21);
     ctx.fillStyle = "rgba(255,255,255,0.66)";
     ctx.font = `${isTiny ? 10 : 11}px system-ui`;
-    ctx.fillText(`Coin ${missionFmtNum(s.coins || 0)} • XP ${missionFmtNum((s.player || {}).xp || 0)}`, footerRect.x + 12, footerRect.y + 38);
+    ctx.fillText(`YTON ${missionFmtNum(getWalletYton(s))} • XP ${missionFmtNum((s.player || {}).xp || 0)}`, footerRect.x + 12, footerRect.y + 38);
 
     if (this.toastText && Date.now() < this.toastUntil) {
       const tw = Math.min(panelW - 36, 280);
@@ -1420,8 +1439,9 @@ window.tc = window.tc || {};
 window.tc.dev = {
   coin(n = 100) {
     const s = store.get();
-    store.set({ coins: Number(s.coins || 0) + Number(n || 0) });
-    console.log("coins:", store.get().coins);
+    const nextYton = getWalletYton(s) + Number(n || 0);
+    store.set(patchWalletYton(s, nextYton));
+    console.log("wallet.yton:", getWalletYton(store.get()));
   },
   energy(n = 10) {
     const s = store.get();
