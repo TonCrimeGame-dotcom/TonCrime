@@ -548,54 +548,639 @@
 }
 
 
+/* ===== TONCRIME HUD LIGHT PANEL PATCH ===== */
 
-/* ===== TONCRIME FINAL HUD FIX ===== */
-.hudPanel,
-#hudTop .hudPanel,
-#hudShell.hudPanel {
+.hudPanel {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%) !important,
-    rgba(18,22,30,0.22) !important;
-  border: none !important;
+    linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.010) 100%),
+    rgba(0, 0, 0, 0.18) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  backdrop-filter: blur(6px) saturate(1.04) !important;
+  -webkit-backdrop-filter: blur(6px) saturate(1.04) !important;
   box-shadow:
-    0 14px 30px rgba(0,0,0,0.14),
-    inset 0 1px 0 rgba(255,255,255,0.08) !important;
-  backdrop-filter: blur(18px) saturate(1.14) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.14) !important;
+    0 8px 22px rgba(0,0,0,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.04) !important;
 }
 
 #hudShell {
+  overflow: visible;
+}
+
+/* barlar aynı sarı tonda */
+#hudXpFill,
+#hudEnergyFill {
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 100%) !important,
-    rgba(18,22,30,0.12) !important;
-  border: none !important;
+    linear-gradient(90deg, rgba(184,133,58,0.96) 0%, rgba(247,200,97,0.98) 100%) !important;
+  box-shadow:
+    0 0 14px rgba(255,191,90,0.18),
+    inset 0 1px 0 rgba(255,248,220,0.20) !important;
+}
+
+/* telegram + cüzdan butonları */
+#hudWalletBtn,
+#hudTelegramBtn,
+#hudTgBtn,
+#hudTelegram,
+.hudTelegramBtn {
+  position: absolute;
+  top: calc(100% + 6px);
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255,200,110,0.18) 0%, rgba(255,160,70,0.10) 100%),
+    rgba(10,12,18,0.82);
+  color: rgba(255,245,220,0.98);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+  box-shadow:
+    0 10px 22px rgba(0,0,0,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.10);
+  backdrop-filter: blur(12px) saturate(1.08);
+  -webkit-backdrop-filter: blur(12px) saturate(1.08);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+#hudWalletBtn { right: 10px; }
+#hudTelegramBtn,
+#hudTgBtn,
+#hudTelegram,
+.hudTelegramBtn { right: 58px; }
+
+#hudWalletBtn:active,
+#hudTelegramBtn:active,
+#hudTgBtn:active,
+#hudTelegram:active,
+.hudTelegramBtn:active {
+  transform: scale(0.98);
+}
+
+#hudWalletBtn img,
+#hudWalletBtn svg,
+#hudTelegramBtn img,
+#hudTelegramBtn svg,
+#hudTgBtn img,
+#hudTgBtn svg,
+#hudTelegram img,
+#hudTelegram svg,
+.hudTelegramBtn img,
+.hudTelegramBtn svg {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+@media (max-width: 720px) {
+  #hudWalletBtn,
+  #hudTelegramBtn,
+  #hudTgBtn,
+  #hudTelegram,
+  .hudTelegramBtn {
+    width: 38px;
+    height: 38px;
+    top: calc(100% + 5px);
+    font-size: 18px;
+    border-radius: 13px;
+  }
+
+  #hudWalletBtn { right: 8px; }
+
+  #hudTelegramBtn,
+  #hudTgBtn,
+  #hudTelegram,
+  .hudTelegramBtn { right: 52px; }
+}
+
+@media (max-width: 420px) {
+  #hudWalletBtn,
+  #hudTelegramBtn,
+  #hudTgBtn,
+  #hudTelegram,
+  .hudTelegramBtn {
+    width: 34px;
+    height: 34px;
+    top: calc(100% + 4px);
+    font-size: 16px;
+    border-radius: 12px;
+  }
+
+  #hudWalletBtn { right: 6px; }
+
+  #hudTelegramBtn,
+  #hudTgBtn,
+  #hudTelegram,
+  .hudTelegramBtn { right: 46px; }
+
+  #hudWalletBtn img,
+  #hudWalletBtn svg,
+  #hudTelegramBtn img,
+  #hudTelegramBtn svg,
+  #hudTgBtn img,
+  #hudTgBtn svg,
+  #hudTelegram img,
+  #hudTelegram svg,
+  .hudTelegramBtn img,
+  .hudTelegramBtn svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+
+/* ===== TONCRIME HUD FINAL TRANSPARENT PANEL + RIGHT BAR FIX ===== */
+.hudPanel {
+  background: transparent !important;
+  border-color: transparent !important;
   box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+#hudShell {
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+#hudRow {
+  grid-template-columns: minmax(0, 1fr) 26px 150px !important;
+  gap: 8px !important;
+}
+
+#hudCenter {
+  width: 26px !important;
+  min-width: 26px !important;
+  max-width: 26px !important;
+  padding: 0 !important;
+  justify-content: flex-start !important;
+  left: -52px !important;
+}
+
+#hudRight {
+  width: 150px !important;
+  min-width: 150px !important;
+  max-width: 150px !important;
+  justify-self: end !important;
+  margin-left: auto !important;
+  justify-items: stretch !important;
+}
+
+.bar {
+  width: 100% !important;
+}
+
+#hudXpFill,
+#hudEnergyFill {
+  background: linear-gradient(90deg, rgba(184,133,58,0.96) 0%, rgba(247,200,97,0.98) 100%) !important;
+  box-shadow: 0 0 14px rgba(255,191,90,0.18), inset 0 1px 0 rgba(255,248,220,0.20) !important;
+}
+
+@media (max-width: 980px) {
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 18px 142px !important;
+    gap: 7px !important;
+  }
+
+  #hudCenter {
+    width: 18px !important;
+    min-width: 18px !important;
+    max-width: 18px !important;
+    left: -42px !important;
+  }
+
+  #hudRight {
+    width: 142px !important;
+    min-width: 142px !important;
+    max-width: 142px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 12px 126px !important;
+    gap: 6px !important;
+  }
+
+  #hudCenter {
+    width: 12px !important;
+    min-width: 12px !important;
+    max-width: 12px !important;
+    left: -34px !important;
+  }
+
+  #hudRight {
+    width: 126px !important;
+    min-width: 126px !important;
+    max-width: 126px !important;
+    justify-self: end !important;
+    margin-left: auto !important;
+  }
+}
+
+@media (max-width: 420px) {
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 8px 118px !important;
+    gap: 5px !important;
+  }
+
+  #hudCenter {
+    width: 8px !important;
+    min-width: 8px !important;
+    max-width: 8px !important;
+    left: -28px !important;
+  }
+
+  #hudRight {
+    width: 118px !important;
+    min-width: 118px !important;
+    max-width: 118px !important;
+    justify-self: end !important;
+    margin-left: auto !important;
+  }
+}
+
+
+/* ===== TONCRIME HUD NUDGE RIGHT ===== */
+#hudRight {
+  transform: translateX(10px) !important;
+}
+
+@media (max-width: 980px) {
+  #hudRight {
+    transform: translateX(8px) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #hudRight {
+    transform: translateX(12px) !important;
+  }
+}
+
+@media (max-width: 420px) {
+  #hudRight {
+    transform: translateX(10px) !important;
+  }
+}
+
+
+/* ===== TONCRIME HUD IMAGE MINI VISUALS ===== */
+.hudMiniIcon.hudMiniVisual {
+  width: 20px !important;
+  height: 20px !important;
+  flex: 0 0 20px !important;
+  padding: 0 !important;
+  border-radius: 7px !important;
+  overflow: hidden !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 100%),
+    rgba(12,12,16,0.42) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.07),
+    0 2px 8px rgba(0,0,0,0.22) !important;
+}
+
+.hudMiniIcon.hudMiniVisual img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  padding: 1px;
+}
+
+.hudMiniIcon.hudMiniVisual.is-empty {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%),
+    rgba(12,12,16,0.20) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
+.hudMiniIcon.hudMiniVisual.is-empty img {
+  display: none;
+}
+
+.hudMiniIcon.hudMiniVisualYton img {
+  padding: 0;
+}
+
+.hudMiniIcon.hudMiniVisualWeapon img {
+  padding: 0.5px;
+}
+
+#hudLeft .line2,
+#hudLeft .line3 {
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .hudMiniIcon.hudMiniVisual {
+    width: 18px !important;
+    height: 18px !important;
+    flex-basis: 18px !important;
+    border-radius: 6px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .hudMiniIcon.hudMiniVisual {
+    width: 16px !important;
+    height: 16px !important;
+    flex-basis: 16px !important;
+    border-radius: 5px !important;
+  }
+}
+
+
+/* ===== HUD INLINE ASSET FIX ===== */
+#hudLeft .line2,
+#hudLeft .line3 {
+  align-items: center !important;
+}
+
+.hudMiniIcon.hudMiniVisual {
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 18px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  vertical-align: middle !important;
+  transform: translateY(0) !important;
+}
+
+.hudMiniIcon.hudMiniVisual img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
+}
+
+.hudMiniIcon.hudMiniVisual.is-empty {
+  display: none !important;
+}
+
+.hudMiniIcon.hudMiniVisualYton {
+  width: 17px !important;
+  height: 17px !important;
+  flex-basis: 17px !important;
+  margin-top: 0 !important;
+}
+
+.hudMiniIcon.hudMiniVisualYton img {
+  width: 17px !important;
+  height: 17px !important;
+}
+
+.hudMiniIcon.hudMiniVisualWeapon {
+  width: 24px !important;
+  height: 12px !important;
+  flex-basis: 24px !important;
+  margin-top: 0 !important;
+}
+
+.hudMiniIcon.hudMiniVisualWeapon img {
+  width: 24px !important;
+  height: 12px !important;
+}
+
+@media (max-width: 720px) {
+  .hudMiniIcon.hudMiniVisualYton {
+    width: 16px !important;
+    height: 16px !important;
+    flex-basis: 16px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisualYton img {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisualWeapon {
+    width: 22px !important;
+    height: 11px !important;
+    flex-basis: 22px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisualWeapon img {
+    width: 22px !important;
+    height: 11px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .hudMiniIcon.hudMiniVisualYton {
+    width: 15px !important;
+    height: 15px !important;
+    flex-basis: 15px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisualYton img {
+    width: 15px !important;
+    height: 15px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisualWeapon {
+    width: 20px !important;
+    height: 10px !important;
+    flex-basis: 20px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisualWeapon img {
+    width: 20px !important;
+    height: 10px !important;
+  }
+}
+
+
+/* ===== HUD ACTION BUTTONS + GLASS PANEL (LATEST FIX) ===== */
+.hudPanel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%) !important,
+    rgba(18, 22, 30, 0.28) !important;
+  border: 1px solid rgba(255,255,255,0.24) !important;
+  box-shadow:
+    0 14px 30px rgba(0,0,0,0.20),
+    inset 0 1px 0 rgba(255,255,255,0.35) !important;
+  backdrop-filter: blur(14px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
 }
 
 #hudActionDock {
-  position: absolute !important;
-  right: 8px !important;
-  bottom: -46px !important;
-  top: auto !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 6px !important;
-  z-index: 20 !important;
-  padding: 4px 6px !important;
-  border-radius: 14px !important;
-  border: 1px solid rgba(255,255,255,0.10) !important;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%) !important,
-    rgba(28,33,40,0.18) !important;
-  box-shadow:
-    0 10px 22px rgba(0,0,0,0.10),
-    inset 0 1px 0 rgba(255,255,255,0.08) !important;
-  backdrop-filter: blur(18px) saturate(1.14) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.14) !important;
+  position: absolute;
+  right: 8px;
+  top: calc(100% + 6px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 7;
 }
 
 #hudWalletBtn,
 #hudTelegramBtn,
 #hudLangBtn {
   position: static !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.4px;
+  display: grid;
+  place-items: center;
+}
+
+#hudWalletBtn svg,
+#hudTelegramBtn svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#hudLangBtn {
+  color: rgba(255,248,232,0.95);
+  text-transform: uppercase;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+
+/* ===== HUD ACTION BUTTONS + GLASS PANEL (LATEST FIX) ===== */
+.hudPanel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 100%) !important,
+    rgba(24, 20, 15, 0.64) !important;
+  border: 1px solid rgba(255,255,255,0.28) !important;
+  box-shadow:
+    0 14px 30px rgba(0,0,0,0.34),
+    inset 0 1px 0 rgba(255,255,255,0.35) !important;
+  backdrop-filter: blur(16px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.2) !important;
+}
+
+#hudActionDock {
+  position: absolute !important;
+  right: 8px !important;
+  top: auto !important;
+  bottom: -46px !important;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 20 !important;
+  pointer-events: auto;
+  background: rgba(28, 23, 18, 0.72);
+  border: 1px solid rgba(255,255,255,0.24);
+  border-radius: 14px;
+  padding: 4px 6px;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.28);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+}
+
+#hudWalletBtn,
+#hudTelegramBtn,
+#hudLangBtn {
+  position: static !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.4px;
+  display: grid;
+  place-items: center;
+}
+
+#hudWalletBtn svg,
+#hudTelegramBtn svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#hudLangBtn {
+  color: rgba(255,248,232,0.95);
+  text-transform: uppercase;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+/* ===== HUD HOTFIX: KEEP XP/ENERGY BARS VISIBLE + GLASS PANEL ===== */
+#hudShell {
+  position: relative !important;
+  overflow: visible !important;
+  padding-bottom: 52px !important;
+}
+
+#hudRow {
+  grid-template-columns: minmax(0, 1fr) 0 150px !important;
+  gap: 8px !important;
+}
+
+#hudCenter {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+  left: 0 !important;
+  padding: 0 !important;
+}
+
+#hudRight {
+  width: 150px !important;
+  min-width: 150px !important;
+  max-width: 150px !important;
+  transform: none !important;
+  display: grid !important;
+  gap: 6px !important;
+  align-self: center !important;
+  justify-self: end !important;
+}
+
+.bar {
+  display: block !important;
+  width: 100% !important;
+  min-height: 22px !important;
+}
+
+.barText {
+  opacity: 1 !important;
+}
+
+/* ===== TONCRIME MAIN HUD GLASS OVERRIDE ===== */
+.hudPanel,
+#hudTop .hudPanel,
+#hudShell.hudPanel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.07) 100%) !important,
+    rgba(20, 16, 14, 0.34) !important;
+  border: none !important;
+  box-shadow:
+    0 14px 34px rgba(0,0,0,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.10) !important;
+  backdrop-filter: blur(20px) saturate(1.16) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.16) !important;
+}
+
+#hudShell {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%) !important,
+    rgba(20, 16, 14, 0.22) !important;
+  border: none !important;
+  box-shadow: none !important;
 }
