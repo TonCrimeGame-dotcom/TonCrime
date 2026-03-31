@@ -1060,10 +1060,71 @@
 }
 
 
+/* ===== HUD ACTION BUTTONS + GLASS PANEL (LATEST FIX) ===== */
+.hudPanel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.07) 100%) !important,
+    rgba(24, 20, 15, 0.64) !important;
+  border: 1px solid rgba(255,255,255,0.28) !important;
+  box-shadow:
+    0 14px 30px rgba(0,0,0,0.34),
+    inset 0 1px 0 rgba(255,255,255,0.35) !important;
+  backdrop-filter: blur(16px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.2) !important;
+}
+
+#hudActionDock {
+  position: absolute !important;
+  right: 8px !important;
+  top: auto !important;
+  bottom: -46px !important;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 20 !important;
+  pointer-events: auto;
+  background: rgba(28, 23, 18, 0.72);
+  border: 1px solid rgba(255,255,255,0.24);
+  border-radius: 14px;
+  padding: 4px 6px;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.28);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+}
+
+#hudWalletBtn,
+#hudTelegramBtn,
+#hudLangBtn {
+  position: static !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.4px;
+  display: grid;
+  place-items: center;
+}
+
+#hudWalletBtn svg,
+#hudTelegramBtn svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+#hudLangBtn {
+  color: rgba(255,248,232,0.95);
+  text-transform: uppercase;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
 /* ===== HUD HOTFIX: KEEP XP/ENERGY BARS VISIBLE + GLASS PANEL ===== */
 #hudShell {
   position: relative !important;
   overflow: visible !important;
+  padding-bottom: 52px !important;
 }
 
 #hudRow {
@@ -1099,11 +1160,4 @@
 
 .barText {
   opacity: 1 !important;
-}
-
-#hudActionDock {
-  position: absolute !important;
-  right: 8px !important;
-  top: calc(100% + 6px) !important;
-  z-index: 10 !important;
 }
