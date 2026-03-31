@@ -364,17 +364,17 @@ export function startHud(store, i18n) {
   function applyButtonsStyle() {
     const narrow = window.innerWidth <= 420;
     const mobile = window.innerWidth <= 720;
-    const size = narrow ? 32 : (mobile ? 36 : 40);
+    const size = narrow ? 30 : (mobile ? 34 : 38);
     const gap = narrow ? 6 : 8;
 
     if (buttonTray) {
       buttonTray.style.position = "absolute";
-      buttonTray.style.right = `${narrow ? 6 : 10}px`;
-      buttonTray.style.top = `${narrow ? 52 : 58}px`;
-      buttonTray.style.display = "inline-flex";
+      buttonTray.style.right = `${narrow ? 8 : 10}px`;
+      buttonTray.style.top = `${narrow ? 58 : 62}px`;
+      buttonTray.style.display = "flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
-      buttonTray.style.justifyContent = "center";
+      buttonTray.style.justifyContent = "flex-end";
       buttonTray.style.flexWrap = "nowrap";
       buttonTray.style.gap = `${gap}px`;
       buttonTray.style.padding = "0";
@@ -384,29 +384,52 @@ export function startHud(store, i18n) {
       buttonTray.style.boxShadow = "none";
       buttonTray.style.backdropFilter = "none";
       buttonTray.style.webkitBackdropFilter = "none";
-      buttonTray.style.zIndex = "8";
       buttonTray.style.pointerEvents = "auto";
       buttonTray.style.opacity = "1";
       buttonTray.style.visibility = "visible";
+      buttonTray.style.width = "auto";
+      buttonTray.style.minWidth = "0";
     }
 
-    [walletBtn, telegramBtn, langBtn].forEach((el) => {
+    const applyMiniButton = (el) => {
       if (!el) return;
       el.style.display = "inline-flex";
+      el.style.position = "static";
+      el.style.width = `${size}px`;
+      el.style.height = `${size}px`;
+      el.style.minWidth = `${size}px`;
+      el.style.minHeight = `${size}px`;
+      el.style.padding = "0";
+      el.style.margin = "0";
+      el.style.borderRadius = `${narrow ? 12 : 13}px`;
+      el.style.border = "1px solid rgba(255,255,255,0.14)";
+      el.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.05) 100%), rgba(28,22,18,0.48)";
+      el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 14px rgba(0,0,0,0.16)";
+      el.style.backdropFilter = "blur(12px) saturate(1.1)";
+      el.style.webkitBackdropFilter = "blur(12px) saturate(1.1)";
+      el.style.alignItems = "center";
+      el.style.justifyContent = "center";
       el.style.pointerEvents = "auto";
       el.style.opacity = "1";
       el.style.visibility = "visible";
-    });
+      el.style.flex = "0 0 auto";
+    };
 
-    applyButtonChrome(walletBtn, { size });
-    walletBtn.style.color = "rgba(255,222,175,0.96)";
-    walletBtn.style.font = "inherit";
-    walletBtn.style.lineHeight = "1";
+    applyMiniButton(walletBtn);
+    applyMiniButton(telegramBtn);
+    applyMiniButton(langBtn);
 
-    applyButtonChrome(telegramBtn, { size });
-    telegramBtn.style.color = "#e7be77";
-
-    applyButtonChrome(langBtn, { size });
+    if (walletBtn) {
+      walletBtn.style.color = "rgba(255,222,175,0.96)";
+      walletBtn.style.font = "inherit";
+      walletBtn.style.lineHeight = "1";
+    }
+    if (telegramBtn) telegramBtn.style.color = "#e7be77";
+    if (langBtn) {
+      langBtn.style.color = "rgba(255,248,236,0.98)";
+      langBtn.style.font = `${narrow ? 800 : 900} ${narrow ? 10 : 11}px system-ui`;
+      langBtn.style.letterSpacing = "0.3px";
+    }
   }
 
   root.style.zIndex = "5000";
