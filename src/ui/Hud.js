@@ -1,4 +1,3 @@
-
 export function startHud(store, i18n) {
   const root = document.getElementById("hudTop");
   const row = document.getElementById("hudRow");
@@ -64,6 +63,7 @@ export function startHud(store, i18n) {
 
   let walletBtn = document.getElementById("hudWalletBtn");
   let langBtn = document.getElementById("hudLangBtn");
+
   if (!walletBtn) {
     walletBtn = document.createElement("button");
     walletBtn.id = "hudWalletBtn";
@@ -71,6 +71,13 @@ export function startHud(store, i18n) {
     walletBtn.setAttribute("aria-label", "Cüzdan");
     walletBtn.textContent = "💳";
     root.appendChild(walletBtn);
+  }
+
+  if (!langBtn) {
+    langBtn = document.createElement("button");
+    langBtn.id = "hudLangBtn";
+    langBtn.type = "button";
+    root.appendChild(langBtn);
   }
 
   function bindAvatarImgEventsOnce() {
@@ -102,18 +109,22 @@ export function startHud(store, i18n) {
   }
 
   function updateDynamicLabels() {
-    const lang = i18n?.getLang?.() || store.get?.()?.lang || 'tr';
+    const lang = i18n?.getLang?.() || store.get?.()?.lang || "tr";
+
     if (walletBtn) {
-      walletBtn.title = i18n?.t?.('hud.wallet', 'Cüzdan') || 'Cüzdan';
-      walletBtn.setAttribute('aria-label', i18n?.t?.('hud.wallet', 'Cüzdan') || 'Cüzdan');
+      const walletLabel = i18n?.t?.("hud.wallet", "Cüzdan") || "Cüzdan";
+      walletBtn.title = walletLabel;
+      walletBtn.setAttribute("aria-label", walletLabel);
     }
+
     if (elAvatar) {
-      elAvatar.title = i18n?.t?.('hud.openProfile', 'Profili Aç') || 'Profili Aç';
+      elAvatar.title = i18n?.t?.("hud.openProfile", "Profili Aç") || "Profili Aç";
     }
+
     if (langBtn) {
-      langBtn.title = i18n?.t?.('lang.switchTo', lang === 'tr' ? 'English' : 'Türkçe') || 'Language';
-      langBtn.setAttribute('aria-label', i18n?.t?.('hud.language', 'Dil') || 'Dil');
-      langBtn.textContent = lang === 'tr' ? 'EN' : 'TR';
+      langBtn.title = i18n?.t?.("lang.switchTo", lang === "tr" ? "English" : "Türkçe") || "Language";
+      langBtn.setAttribute("aria-label", i18n?.t?.("hud.language", "Dil") || "Dil");
+      langBtn.textContent = lang === "tr" ? "EN" : "TR";
     }
   }
 
@@ -132,24 +143,48 @@ export function startHud(store, i18n) {
       walletBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
 
-    if (!langBtn) {
-      langBtn = document.createElement('button');
-      langBtn.id = 'hudLangBtn';
-      langBtn.type = 'button';
-      root.appendChild(langBtn);
-    }
-
     if (!langBtn.__langBound) {
       langBtn.__langBound = true;
-      langBtn.addEventListener('click', () => {
-        const current = i18n?.getLang?.() || store.get?.()?.lang || 'tr';
-        const next = current === 'tr' ? 'en' : 'tr';
+      langBtn.addEventListener("click", () => {
+        const current = i18n?.getLang?.() || store.get?.()?.lang || "tr";
+        const next = current === "tr" ? "en" : "tr";
         if (i18n?.setLang) i18n.setLang(next);
         else store.set({ lang: next });
         updateDynamicLabels();
       });
-      langBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      langBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
+  }
+
+  function applyLangButtonStyle() {
+    if (!langBtn) return;
+    const narrow = window.innerWidth <= 420;
+    const mobile = window.innerWidth <= 720;
+    const size = narrow ? 34 : (mobile ? 38 : 42);
+    const radius = narrow ? 12 : (mobile ? 13 : 14);
+    const right = narrow ? 46 : (mobile ? 50 : 56);
+    const top = narrow ? "calc(100% + 4px)" : (mobile ? "calc(100% + 5px)" : "calc(100% + 6px)");
+
+    langBtn.style.position = "absolute";
+    langBtn.style.right = `${right}px`;
+    langBtn.style.top = top;
+    langBtn.style.width = `${size}px`;
+    langBtn.style.height = `${size}px`;
+    langBtn.style.border = "1px solid rgba(255,255,255,0.12)";
+    langBtn.style.borderRadius = `${radius}px`;
+    langBtn.style.background = "linear-gradient(180deg, rgba(255,200,110,0.18) 0%, rgba(255,160,70,0.10) 100%), rgba(10,12,18,0.82)";
+    langBtn.style.color = "rgba(255,245,220,0.98)";
+    langBtn.style.font = `${narrow ? 700 : 800} ${narrow ? 10 : 11}px system-ui`;
+    langBtn.style.letterSpacing = "0.3px";
+    langBtn.style.boxShadow = "0 10px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)";
+    langBtn.style.backdropFilter = "blur(12px) saturate(1.08)";
+    langBtn.style.webkitBackdropFilter = "blur(12px) saturate(1.08)";
+    langBtn.style.cursor = "pointer";
+    langBtn.style.zIndex = "2";
+    langBtn.style.display = "inline-flex";
+    langBtn.style.alignItems = "center";
+    langBtn.style.justifyContent = "center";
+    langBtn.style.padding = "0";
   }
 
   root.style.zIndex = "5000";
@@ -159,35 +194,16 @@ export function startHud(store, i18n) {
   root.style.right = "max(var(--sar), 0px)";
   root.style.top = "max(var(--sat), 0px)";
 
-  const applyMiniButtonStyle = (el) => {
-    if (!el) return;
-    el.style.position = 'absolute';
-    el.style.top = '10px';
-    el.style.height = '34px';
-    el.style.minWidth = '42px';
-    el.style.padding = '0 10px';
-    el.style.borderRadius = '12px';
-    el.style.border = '1px solid rgba(255,255,255,.14)';
-    el.style.background = 'rgba(255,255,255,.08)';
-    el.style.color = '#fff';
-    el.style.font = '800 12px system-ui';
-    el.style.cursor = 'pointer';
-    el.style.backdropFilter = 'blur(8px)';
-    el.style.zIndex = '2';
-  };
-
   let lastReservedTop = 0;
-  applyMiniButtonStyle(walletBtn);
   let lastAvatarUrl = "";
 
   function updateHud() {
     bindAvatarImgEventsOnce();
     bindClicksOnce();
+    applyLangButtonStyle();
     updateDynamicLabels();
 
     const s = store.get() || {};
-    if (walletBtn) { applyMiniButtonStyle(walletBtn); walletBtn.style.right = '10px'; }
-    if (langBtn) { applyMiniButtonStyle(langBtn); langBtn.style.right = '60px'; }
     const p = s.player || {};
     const ui = s.ui || {};
 
