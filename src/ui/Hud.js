@@ -537,3 +537,4 @@ export function startHud(store, i18n) {
 
   updateHud();
 }
+ 
