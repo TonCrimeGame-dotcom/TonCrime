@@ -376,25 +376,43 @@ export function startHud(store, i18n) {
     const size = narrow ? 34 : (mobile ? 38 : 42);
     const gap = narrow ? 6 : 8;
 
+    const shell = document.getElementById("hudShell");
+    const panel = shell?.classList?.contains("hudPanel") ? shell : document.querySelector(".hudPanel");
+
+    if (shell) {
+      shell.style.position = "relative";
+      shell.style.overflow = "visible";
+      shell.style.paddingBottom = `${narrow ? 46 : 56}px`;
+    }
+
+    if (panel) {
+      panel.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.05) 100%), rgba(24,20,15,0.42)";
+      panel.style.backdropFilter = "blur(18px) saturate(1.15)";
+      panel.style.webkitBackdropFilter = "blur(18px) saturate(1.15)";
+      panel.style.border = "1px solid transparent";
+      panel.style.boxShadow = "0 14px 36px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.10)";
+    }
+
     if (buttonTray) {
       buttonTray.style.position = "absolute";
       buttonTray.style.right = `${narrow ? 8 : 12}px`;
-      buttonTray.style.top = `${narrow ? 12 : 14}px`;
+      buttonTray.style.top = "auto";
+      buttonTray.style.bottom = `${narrow ? 6 : 8}px`;
       buttonTray.style.display = "inline-flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
       buttonTray.style.justifyContent = "center";
       buttonTray.style.flexWrap = "nowrap";
       buttonTray.style.gap = `${gap}px`;
-      buttonTray.style.padding = `${narrow ? 7 : 9}px`;
-      buttonTray.style.borderRadius = `${narrow ? 18 : 20}px`;
-      buttonTray.style.border = "1px solid rgba(255,235,205,0.16)";
-      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.13) 0%, rgba(255,228,186,0.09) 18%, rgba(31,36,45,0.94) 100%)";
-      buttonTray.style.backdropFilter = "blur(14px) saturate(1.06)";
-      buttonTray.style.webkitBackdropFilter = "blur(14px) saturate(1.06)";
-      buttonTray.style.boxShadow = "0 14px 28px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,186,102,0.05)";
-      buttonTray.style.zIndex = "6";
-      buttonTray.style.minHeight = `${size + (narrow ? 14 : 18)}px`;
+      buttonTray.style.padding = `${narrow ? 6 : 8}px`;
+      buttonTray.style.borderRadius = `${narrow ? 16 : 18}px`;
+      buttonTray.style.border = "none";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,228,186,0.06) 20%, rgba(31,36,45,0.78) 100%)";
+      buttonTray.style.backdropFilter = "blur(16px) saturate(1.08)";
+      buttonTray.style.webkitBackdropFilter = "blur(16px) saturate(1.08)";
+      buttonTray.style.boxShadow = "0 10px 22px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08)";
+      buttonTray.style.zIndex = "8";
+      buttonTray.style.minHeight = `${size + (narrow ? 12 : 16)}px`;
       buttonTray.style.pointerEvents = "auto";
     }
 
@@ -520,7 +538,7 @@ export function startHud(store, i18n) {
     if (elCenter) elCenter.style.display = "none";
 
     const safeTop = Number(ui.safe?.y || 0);
-    const reservedTop = Math.max(72, root.offsetHeight + safeTop + 6);
+    const reservedTop = Math.max(88, root.offsetHeight + safeTop + 6);
 
     if (Math.abs(lastReservedTop - reservedTop) > 1) {
       lastReservedTop = reservedTop;
@@ -537,4 +555,3 @@ export function startHud(store, i18n) {
 
   updateHud();
 }
- 
