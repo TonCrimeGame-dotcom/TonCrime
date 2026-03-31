@@ -5,7 +5,6 @@ import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
 import { supabase } from "./supabase.js";
-import { translations } from "./i18n/translations.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -395,7 +394,40 @@ setInterval(tickEnergy, 1000);
 
 /* ===== I18N ===== */
 const i18n = new I18n(store);
-i18n.register(translations);
+i18n.register({
+  tr: {
+    loading: "Yükleniyor...",
+    "hud.wallet": "Cüzdan",
+    "hud.openProfile": "Profili Aç",
+    "hud.language": "Dil",
+    "lang.current": "TR",
+    "lang.switchTo": "English",
+    "home.missions": "Görevler",
+    "home.pvp": "PvP",
+    "home.clan": "Clan",
+    "home.weapons": "Silah Kaçakçısı",
+    "home.blackmarket": "Black Market",
+    "home.nightclub": "Gece Kulübü",
+    "home.coffeeshop": "Coffeeshop",
+    "home.xxx": "Genel Ev",
+  },
+  en: {
+    loading: "Loading...",
+    "hud.wallet": "Wallet",
+    "hud.openProfile": "Open profile",
+    "hud.language": "Language",
+    "lang.current": "EN",
+    "lang.switchTo": "Türkçe",
+    "home.missions": "Missions",
+    "home.pvp": "PvP",
+    "home.clan": "Clan",
+    "home.weapons": "Arms Dealer",
+    "home.blackmarket": "Black Market",
+    "home.nightclub": "Nightclub",
+    "home.coffeeshop": "Coffeeshop",
+    "home.xxx": "Brothel",
+  },
+});
 
 /* ===== ASSETS ===== */
 const assets = new Assets();
