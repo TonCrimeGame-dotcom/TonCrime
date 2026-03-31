@@ -150,13 +150,13 @@ export function startHud(store, i18n) {
     const radius = narrow ? 12 : (mobile ? 13 : 14);
     el.style.width = `${size}px`;
     el.style.height = `${size}px`;
-    el.style.border = "1px solid rgba(255,255,255,0.08)";
+    el.style.border = "1px solid rgba(255,235,205,0.15)";
     el.style.borderRadius = `${radius}px`;
-    el.style.background = "linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 42%, rgba(28,33,42,0.18) 100%)";
-    el.style.backdropFilter = "blur(18px) saturate(1.14)";
-    el.style.webkitBackdropFilter = "blur(18px) saturate(1.14)";
+    el.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,220,170,0.10) 22%, rgba(29,34,43,0.92) 100%)";
+    el.style.backdropFilter = "blur(12px) saturate(1.08)";
+    el.style.webkitBackdropFilter = "blur(12px) saturate(1.08)";
     el.style.color = "rgba(255,248,236,0.98)";
-    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px rgba(0,0,0,0.10)";
+    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,200,120,0.05), 0 8px 18px rgba(0,0,0,0.22)";
     el.style.cursor = "pointer";
     el.style.display = "inline-flex";
     el.style.alignItems = "center";
@@ -246,6 +246,8 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
+    langBtn.textContent = "EN";
+    langBtn.setAttribute("aria-label", "Dil");
     buttonTray.appendChild(langBtn);
   }
 
@@ -261,7 +263,7 @@ export function startHud(store, i18n) {
   }
 
   if (buttonTray) {
-    [telegramBtn, walletBtn, langBtn].forEach((btn) => {
+    [telegramBtn, langBtn, walletBtn].forEach((btn) => {
       if (btn && btn.parentElement !== buttonTray) buttonTray.appendChild(btn);
     });
   }
@@ -376,42 +378,25 @@ export function startHud(store, i18n) {
     const size = narrow ? 34 : (mobile ? 38 : 42);
     const gap = narrow ? 6 : 8;
 
-    const shell = document.getElementById("hudShell");
-    const panel = shell?.classList?.contains("hudPanel") ? shell : document.querySelector(".hudPanel");
-
-    if (shell) {
-      shell.style.position = "relative";
-      shell.style.overflow = "visible";
-      shell.style.paddingBottom = `${narrow ? 58 : 68}px`;
-    }
-
-    if (panel) {
-      panel.style.background = "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%), rgba(20,18,16,0.18)";
-      panel.style.backdropFilter = "blur(20px) saturate(1.16)";
-      panel.style.webkitBackdropFilter = "blur(20px) saturate(1.16)";
-      panel.style.border = "none";
-      panel.style.boxShadow = "0 14px 28px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.06)";
-    }
-
     if (buttonTray) {
       buttonTray.style.position = "absolute";
       buttonTray.style.right = `${narrow ? 8 : 12}px`;
-      buttonTray.style.top = `${narrow ? 42 : 46}px`;
+      buttonTray.style.top = `${narrow ? 12 : 14}px`;
       buttonTray.style.display = "inline-flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
       buttonTray.style.justifyContent = "center";
       buttonTray.style.flexWrap = "nowrap";
       buttonTray.style.gap = `${gap}px`;
-      buttonTray.style.padding = `${narrow ? 6 : 8}px`;
-      buttonTray.style.borderRadius = `${narrow ? 16 : 18}px`;
-      buttonTray.style.border = "1px solid rgba(255,255,255,0.07)";
-      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%), rgba(28,33,42,0.14)";
-      buttonTray.style.backdropFilter = "blur(18px) saturate(1.14)";
-      buttonTray.style.webkitBackdropFilter = "blur(18px) saturate(1.14)";
-      buttonTray.style.boxShadow = "0 10px 22px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.08)";
-      buttonTray.style.zIndex = "8";
-      buttonTray.style.minHeight = `${size + (narrow ? 12 : 16)}px`;
+      buttonTray.style.padding = `${narrow ? 7 : 9}px`;
+      buttonTray.style.borderRadius = `${narrow ? 18 : 20}px`;
+      buttonTray.style.border = "1px solid rgba(255,235,205,0.16)";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.13) 0%, rgba(255,228,186,0.09) 18%, rgba(31,36,45,0.94) 100%)";
+      buttonTray.style.backdropFilter = "blur(14px) saturate(1.06)";
+      buttonTray.style.webkitBackdropFilter = "blur(14px) saturate(1.06)";
+      buttonTray.style.boxShadow = "0 14px 28px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,186,102,0.05)";
+      buttonTray.style.zIndex = "6";
+      buttonTray.style.minHeight = `${size + (narrow ? 14 : 18)}px`;
       buttonTray.style.pointerEvents = "auto";
     }
 
