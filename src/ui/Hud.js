@@ -152,9 +152,11 @@ export function startHud(store, i18n) {
     el.style.height = `${size}px`;
     el.style.border = "1px solid rgba(255,235,205,0.15)";
     el.style.borderRadius = `${radius}px`;
-    el.style.background = "linear-gradient(180deg, rgba(255,236,210,0.11) 0%, rgba(255,194,122,0.08) 48%, rgba(28,33,42,0.88) 100%)";
+    el.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,220,170,0.10) 22%, rgba(29,34,43,0.92) 100%)";
+    el.style.backdropFilter = "blur(12px) saturate(1.08)";
+    el.style.webkitBackdropFilter = "blur(12px) saturate(1.08)";
     el.style.color = "rgba(255,248,236,0.98)";
-    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.10), 0 6px 16px rgba(0,0,0,0.22)";
+    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,200,120,0.05), 0 8px 18px rgba(0,0,0,0.22)";
     el.style.cursor = "pointer";
     el.style.display = "inline-flex";
     el.style.alignItems = "center";
@@ -231,12 +233,13 @@ export function startHud(store, i18n) {
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
         <defs>
           <linearGradient id="tcTgGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#f7d389"/>
-            <stop offset="100%" stop-color="#d89a4a"/>
+            <stop offset="0%" stop-color="#ffe0a4"/>
+            <stop offset="100%" stop-color="#d79b43"/>
           </linearGradient>
         </defs>
-        <circle cx="12" cy="12" r="10" fill="rgba(9,12,18,0.22)"/>
-        <path fill="url(#tcTgGrad)" d="M18.32 6.38 5.75 11.23c-.86.34-.85.82-.15 1.03l3.22 1 1.24 3.98c.16.46.08.64.58.64.39 0 .56-.18.78-.4l1.57-1.53 3.27 2.41c.6.33 1.03.16 1.18-.56l2.27-10.73c.2-.89-.31-1.29-1.39-.69Zm-1.87 2.12-6.17 5.56-.24 2.34-.86-2.8 7.27-4.93c.32-.23.06-.36-.24-.17Z"/>
+        <circle cx="12" cy="12" r="9.5" fill="rgba(255,255,255,0.04)" stroke="rgba(255,231,197,0.18)"/>
+        <path fill="url(#tcTgGrad)" d="M17.92 7.08c.4-.16.78.18.68.61l-1.95 8.78c-.12.55-.74.77-1.17.43l-2.72-2.13-1.37 1.32c-.4.38-1.06.17-1.16-.37l-.75-3.09-2.42-.9c-.56-.21-.58-.99-.03-1.23l10.89-3.42Z"/>
+        <path fill="rgba(39,21,6,0.55)" d="m10.38 13.08 4.86-4.02c.29-.24.02-.41-.31-.2l-5.95 3.59.64 2.58.76-1.95Z"/>
       </svg>`;
     buttonTray.appendChild(telegramBtn);
   }
@@ -245,7 +248,6 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
-    langBtn.textContent = "EN";
     buttonTray.appendChild(langBtn);
   }
 
@@ -258,6 +260,12 @@ export function startHud(store, i18n) {
     buttonTray.appendChild(walletBtn);
   } else if (walletBtn.parentElement !== buttonTray) {
     buttonTray.appendChild(walletBtn);
+  }
+
+  if (buttonTray) {
+    [telegramBtn, langBtn, walletBtn].forEach((btn) => {
+      if (btn) buttonTray.appendChild(btn);
+    });
   }
 
   function bindAvatarImgEventsOnce() {
@@ -325,7 +333,7 @@ export function startHud(store, i18n) {
       langBtn.title = i18n?.t?.("lang.switchTo", lang === "tr" ? "English" : "Türkçe") || "Language";
       langBtn.setAttribute("aria-label", i18n?.t?.("hud.language", "Dil") || "Dil");
       langBtn.textContent = lang === "tr" ? "EN" : "TR";
-      langBtn.style.font = `${window.innerWidth <= 420 ? 700 : 800} ${window.innerWidth <= 420 ? 10 : 11}px system-ui`;
+      langBtn.style.font = `${window.innerWidth <= 420 ? 800 : 900} ${window.innerWidth <= 420 ? 10 : 11}px system-ui`;
       langBtn.style.letterSpacing = "0.3px";
     }
   }
@@ -379,6 +387,7 @@ export function startHud(store, i18n) {
     applyButtonChrome(langBtn, { size });
 
     applyButtonChrome(walletBtn, { size });
+    walletBtn.style.color = "rgba(255,222,175,0.96)";
     walletBtn.style.font = "inherit";
     walletBtn.style.lineHeight = "1";
   }
@@ -389,16 +398,34 @@ export function startHud(store, i18n) {
   root.style.left = "max(var(--sal), 0px)";
   root.style.right = "max(var(--sar), 0px)";
   root.style.top = "max(var(--sat), 0px)";
+  root.style.overflow = "visible";
 
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
 
   function hideDefaultMiniIcons() {
     try {
-      const coinIcon = elCoins?.previousElementSibling;
-      const weaponIcon = elWeaponName?.previousElementSibling;
-      if (coinIcon?.classList?.contains("hudMiniIcon")) coinIcon.style.display = "none";
-      if (weaponIcon?.classList?.contains("hudMiniIcon")) weaponIcon.style.display = "none";
+      const direct = [elCoins?.previousElementSibling, elWeaponName?.previousElementSibling];
+      direct.forEach((el) => {
+        if (!el) return;
+        if (el.classList?.contains("hudMiniIcon") || /^[Y⚔💰🔫]$/.test(String(el.textContent || "").trim())) {
+          el.style.display = "none";
+          el.style.width = "0";
+          el.style.margin = "0";
+          el.style.padding = "0";
+        }
+      });
+
+      root.querySelectorAll?.(".hudMiniIcon, [data-hud-mini-icon]").forEach((el) => {
+        if (!el || el === document.getElementById("hudCoinsAssetImg") || el === document.getElementById("hudWeaponAssetImg")) return;
+        const txt = String(el.textContent || "").trim();
+        if (!txt || /^[Y⚔💰🔫]$/.test(txt) || el.classList.contains("hudMiniIcon")) {
+          el.style.display = "none";
+          el.style.width = "0";
+          el.style.margin = "0";
+          el.style.padding = "0";
+        }
+      });
     } catch (_) {}
   }
 
