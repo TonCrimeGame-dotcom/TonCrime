@@ -215,14 +215,12 @@ export function startHud(store, i18n) {
   let walletBtn = document.getElementById("hudWalletBtn");
   let langBtn = document.getElementById("hudLangBtn");
   let telegramBtn = document.getElementById("hudTelegramBtn");
-  let buttonTray = document.getElementById("hudActionDock") || document.getElementById("hudActionTray");
+  let buttonTray = document.getElementById("hudActionTray");
 
   if (!buttonTray) {
     buttonTray = document.createElement("div");
-    buttonTray.id = "hudActionDock";
+    buttonTray.id = "hudActionTray";
     root.appendChild(buttonTray);
-  } else if (buttonTray.id !== "hudActionDock") {
-    buttonTray.id = "hudActionDock";
   }
 
   if (!telegramBtn) {
@@ -248,7 +246,6 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
-    langBtn.textContent = "EN";
     buttonTray.appendChild(langBtn);
   }
 
@@ -264,8 +261,8 @@ export function startHud(store, i18n) {
   }
 
   if (buttonTray) {
-    [telegramBtn, langBtn, walletBtn].forEach((btn) => {
-      if (btn) buttonTray.appendChild(btn);
+    [telegramBtn, walletBtn, langBtn].forEach((btn) => {
+      if (btn && btn.parentElement !== buttonTray) buttonTray.appendChild(btn);
     });
   }
 
@@ -377,8 +374,27 @@ export function startHud(store, i18n) {
     const narrow = window.innerWidth <= 420;
     const mobile = window.innerWidth <= 720;
     const size = narrow ? 34 : (mobile ? 38 : 42);
+    const gap = narrow ? 6 : 8;
 
     if (buttonTray) {
+      buttonTray.style.position = "absolute";
+      buttonTray.style.right = `${narrow ? 8 : 12}px`;
+      buttonTray.style.top = `${narrow ? 12 : 14}px`;
+      buttonTray.style.display = "inline-flex";
+      buttonTray.style.flexDirection = "row";
+      buttonTray.style.alignItems = "center";
+      buttonTray.style.justifyContent = "center";
+      buttonTray.style.flexWrap = "nowrap";
+      buttonTray.style.gap = `${gap}px`;
+      buttonTray.style.padding = `${narrow ? 7 : 9}px`;
+      buttonTray.style.borderRadius = `${narrow ? 18 : 20}px`;
+      buttonTray.style.border = "1px solid rgba(255,235,205,0.16)";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.13) 0%, rgba(255,228,186,0.09) 18%, rgba(31,36,45,0.94) 100%)";
+      buttonTray.style.backdropFilter = "blur(14px) saturate(1.06)";
+      buttonTray.style.webkitBackdropFilter = "blur(14px) saturate(1.06)";
+      buttonTray.style.boxShadow = "0 14px 28px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,186,102,0.05)";
+      buttonTray.style.zIndex = "6";
+      buttonTray.style.minHeight = `${size + (narrow ? 14 : 18)}px`;
       buttonTray.style.pointerEvents = "auto";
     }
 
