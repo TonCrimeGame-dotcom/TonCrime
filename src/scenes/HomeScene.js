@@ -86,14 +86,14 @@ export class HomeScene {
 
   _carouselItems() {
     return [
-      { id: "missions", titleTR: "Görevler", titleEN: "Missions", sceneKey: "missions" },
-      { id: "pvp", titleTR: "PvP", titleEN: "PvP", sceneKey: "pvp" },
-      { id: "clan", titleTR: "Clan", titleEN: "Clan", sceneKey: "clanhub" },
-      { id: "weapons", titleTR: "Silah Kaçakçısı", titleEN: "Arms Dealer", sceneKey: "weapons" },
-      { id: "blackmarket", titleTR: "Black Market", titleEN: "Black Market", sceneKey: "trade" },
-      { id: "nightclub", titleTR: "Gece Kulübü", titleEN: "Nightclub", sceneKey: "nightclub" },
-      { id: "coffeeshop", titleTR: "Coffeeshop", titleEN: "Coffeeshop", sceneKey: "coffeeshop" },
-      { id: "xxx", titleTR: "Genel Ev", titleEN: "Brothel", sceneKey: "xxx" },
+      { id: "missions", titleKey: "home.missions", sceneKey: "missions" },
+      { id: "pvp", titleKey: "home.pvp", sceneKey: "pvp" },
+      { id: "clan", titleKey: "home.clan", sceneKey: "clanhub" },
+      { id: "weapons", titleKey: "home.weapons", sceneKey: "weapons" },
+      { id: "blackmarket", titleKey: "home.blackmarket", sceneKey: "trade" },
+      { id: "nightclub", titleKey: "home.nightclub", sceneKey: "nightclub" },
+      { id: "coffeeshop", titleKey: "home.coffeeshop", sceneKey: "coffeeshop" },
+      { id: "xxx", titleKey: "home.xxx", sceneKey: "xxx" },
     ];
   }
 
@@ -274,7 +274,7 @@ export class HomeScene {
         dist === 0 ? "rgba(255,255,255,0.34)" : "rgba(255,255,255,0.14)";
       strokeRoundRect(ctx, x2 + 0.5, y2 + 0.5, w2 - 1, h2 - 1, 18);
 
-      const title = (state.lang ?? "tr") === "tr" ? item.titleTR : item.titleEN;
+      const title = this.i18n?.t(item.titleKey, item.id) || item.id;
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
