@@ -248,6 +248,7 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
+    langBtn.textContent = "EN";
     buttonTray.appendChild(langBtn);
   }
 
