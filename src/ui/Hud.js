@@ -148,25 +148,22 @@ export function startHud(store, i18n) {
     const mobile = window.innerWidth <= 720;
     const size = opts.size || (narrow ? 34 : (mobile ? 38 : 42));
     const radius = narrow ? 12 : (mobile ? 13 : 14);
-    el.style.position = "absolute";
-    el.style.right = `${opts.right || 4}px`;
-    el.style.top = opts.top || (narrow ? "calc(100% + 4px)" : (mobile ? "calc(100% + 5px)" : "calc(100% + 6px)"));
     el.style.width = `${size}px`;
     el.style.height = `${size}px`;
     el.style.border = "1px solid rgba(255,255,255,0.12)";
     el.style.borderRadius = `${radius}px`;
-    el.style.background = "linear-gradient(180deg, rgba(255,200,110,0.18) 0%, rgba(255,160,70,0.10) 100%), rgba(10,12,18,0.82)";
+    el.style.background = "linear-gradient(180deg, rgba(255,200,110,0.16) 0%, rgba(255,160,70,0.08) 100%), rgba(10,12,18,0.28)";
     el.style.color = "rgba(255,245,220,0.98)";
-    el.style.boxShadow = "0 10px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)";
+    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.10)";
     el.style.backdropFilter = "blur(12px) saturate(1.08)";
     el.style.webkitBackdropFilter = "blur(12px) saturate(1.08)";
     el.style.cursor = "pointer";
-    el.style.zIndex = "2";
     el.style.display = "inline-flex";
     el.style.alignItems = "center";
     el.style.justifyContent = "center";
     el.style.padding = "0";
     el.style.overflow = "hidden";
+    el.style.flex = "0 0 auto";
   }
 
   function ensureInlineImage(spanId, targetEl, candidates, alt, size = 15) {
@@ -218,6 +215,13 @@ export function startHud(store, i18n) {
   let walletBtn = document.getElementById("hudWalletBtn");
   let langBtn = document.getElementById("hudLangBtn");
   let telegramBtn = document.getElementById("hudTelegramBtn");
+  let buttonTray = document.getElementById("hudActionTray");
+
+  if (!buttonTray) {
+    buttonTray = document.createElement("div");
+    buttonTray.id = "hudActionTray";
+    root.appendChild(buttonTray);
+  }
 
   if (!walletBtn) {
     walletBtn = document.createElement("button");
@@ -232,15 +236,15 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
-    root.appendChild(langBtn);
+    buttonTray.appendChild(langBtn);
   }
 
   if (!telegramBtn) {
     telegramBtn = document.createElement("button");
     telegramBtn.id = "hudTelegramBtn";
     telegramBtn.type = "button";
-    telegramBtn.innerHTML = "<span style='font-size:16px;line-height:1'>✈</span>";
-    root.appendChild(telegramBtn);
+    telegramBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.78 18.65c-.36 0-.29-.14-.41-.5l-1.05-3.46 8.08-5.1c.38-.23.07-.36-.24-.16l-9.98 6.29-4.31-1.35c-.93-.3-.95-.93.2-1.38L18.9 6.5c.78-.3 1.46.19 1.21 1.37l-2.86 13.47c-.2.96-.77 1.19-1.56.74l-4.32-3.19-2.08 2.01c-.23.23-.42.42-.86.42Z"/></svg>`;
+    buttonTray.appendChild(telegramBtn);
   }
 
   function bindAvatarImgEventsOnce() {
@@ -351,17 +355,33 @@ export function startHud(store, i18n) {
     const narrow = window.innerWidth <= 420;
     const mobile = window.innerWidth <= 720;
     const size = narrow ? 34 : (mobile ? 38 : 42);
-    const gap = narrow ? 4 : 6;
+    const gap = narrow ? 6 : 8;
 
-    applyButtonChrome(walletBtn, { right: 4, size });
+    if (buttonTray) {
+      buttonTray.style.position = "absolute";
+      buttonTray.style.right = `${narrow ? 6 : 8}px`;
+      buttonTray.style.top = `${narrow ? 44 : 48}px`;
+      buttonTray.style.display = "inline-flex";
+      buttonTray.style.alignItems = "center";
+      buttonTray.style.gap = `${gap}px`;
+      buttonTray.style.padding = `${narrow ? 6 : 8}px`;
+      buttonTray.style.borderRadius = `${narrow ? 16 : 18}px`;
+      buttonTray.style.border = "1px solid rgba(255,255,255,0.12)";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%), rgba(10,12,18,0.20)";
+      buttonTray.style.boxShadow = "0 10px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)";
+      buttonTray.style.backdropFilter = "blur(14px) saturate(1.08)";
+      buttonTray.style.webkitBackdropFilter = "blur(14px) saturate(1.08)";
+      buttonTray.style.zIndex = "2";
+    }
+
+    applyButtonChrome(telegramBtn, { size });
+    telegramBtn.style.color = "#c9f1ff";
+
+    applyButtonChrome(langBtn, { size });
+
+    applyButtonChrome(walletBtn, { size });
     walletBtn.style.font = `${narrow ? 800 : 900} ${narrow ? 16 : 18}px system-ui`;
     walletBtn.style.lineHeight = "1";
-
-    applyButtonChrome(langBtn, { right: size + gap + 4, size });
-
-    applyButtonChrome(telegramBtn, { right: (size + gap) * 2 + 4, size });
-    telegramBtn.style.font = "700 15px system-ui";
-    telegramBtn.style.color = "#d7efff";
   }
 
   root.style.zIndex = "5000";
@@ -374,11 +394,22 @@ export function startHud(store, i18n) {
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
 
+  function hideDefaultMiniIcons() {
+    try {
+      const coinIcon = elCoins?.previousElementSibling;
+      const weaponIcon = elWeaponName?.previousElementSibling;
+      if (coinIcon?.classList?.contains("hudMiniIcon")) coinIcon.style.display = "none";
+      if (weaponIcon?.classList?.contains("hudMiniIcon")) weaponIcon.style.display = "none";
+    } catch (_) {}
+  }
+
+
   function updateHud() {
     bindAvatarImgEventsOnce();
     bindClicksOnce();
     applyButtonsStyle();
     updateDynamicLabels();
+    hideDefaultMiniIcons();
 
     const s = store.get() || {};
     const p = s.player || {};
