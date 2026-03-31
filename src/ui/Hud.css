@@ -1,215 +1,548 @@
+/* ===== TONCRIME HUD FINAL ===== */
+#hudTop {
+  position: fixed;
+  left: var(--sal);
+  right: var(--sar);
+  top: var(--sat);
+  padding: 6px 8px 0;
+  z-index: 9998;
+  pointer-events: auto;
+}
 
-export function startHud(store) {
-  const root = document.getElementById("hudTop");
-  const row = document.getElementById("hudRow");
+#hudTop,
+#hudTop * {
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: auto;
+}
 
-  const elUsername = document.getElementById("hudUsername");
-  const elCoins = document.getElementById("hudCoins");
-  const elWeaponName = document.getElementById("hudWeaponName");
-  const elWeaponBonus = document.getElementById("hudWeaponBonus");
+.hudPanel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.018) 100%),
+    rgba(0, 0, 0, 0.70);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  box-shadow:
+    0 14px 36px rgba(0,0,0,0.36),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -1px 0 rgba(255,255,255,0.03);
+}
 
-  const elXpFill = document.getElementById("hudXpFill");
-  const elXpText = document.getElementById("hudXpText");
-  const elEnergyFill = document.getElementById("hudEnergyFill");
-  const elEnergyText = document.getElementById("hudEnergyText");
+#hudShell {
+  width: 100%;
+  min-height: 66px;
+  padding: 8px 10px;
+  overflow: hidden;
+}
 
-  const elLogo = document.getElementById("hudLogo");
-  const elCenter = document.getElementById("hudCenter");
+#hudRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 150px;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
 
-  const elAvatar = document.getElementById("hudAvatar");
-  const elAvatarImg = document.getElementById("hudAvatarImg");
-  const elAvatarFallback = document.getElementById("hudAvatarFallback");
+/* ===== LEFT ===== */
+#hudLeft {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
 
-  const elOnlineBadge = document.getElementById("hudOnlineBadge");
-  const elPremiumBadge = document.getElementById("hudPremiumBadge");
+#hudIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
 
-  if (
-    !root || !row || !elUsername || !elCoins || !elWeaponName || !elWeaponBonus ||
-    !elXpFill || !elXpText || !elEnergyFill || !elEnergyText ||
-    !elAvatar || !elAvatarFallback || !elOnlineBadge || !elPremiumBadge
-  ) {
-    console.warn("[HUD] gerekli HUD elementleri bulunamadı");
-    return;
+#hudAvatarWrap {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+}
+
+#hudAvatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.16);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.12), rgba(255,255,255,0.03) 45%, rgba(255,255,255,0.01) 100%);
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.03),
+    0 4px 16px rgba(0,0,0,0.24);
+}
+
+#hudAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+#hudAvatarFallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,0.97);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+}
+
+#hudOnlineBadge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #29df65;
+  border: 2px solid rgba(0,0,0,0.92);
+  box-shadow:
+    0 0 10px rgba(41,223,101,0.40),
+    0 0 18px rgba(41,223,101,0.16);
+}
+
+#hudPremiumBadge {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 900;
+  color: #111;
+  background: linear-gradient(180deg, #ffe79b 0%, #ffc63d 100%);
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+}
+
+#hudIdentityText {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+#hudUsername,
+#hudCoins,
+#hudWeaponName,
+#hudWeaponBonus {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#hudUsername {
+  color: rgba(255,255,255,0.98);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: 0.2px;
+  margin-bottom: 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+
+#hudLeft .line2,
+#hudLeft .line3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+#hudLeft .line2 {
+  margin-bottom: 3px;
+}
+
+.hudMiniIcon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.95);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 1px 4px rgba(0,0,0,0.18);
+}
+
+#hudCoins {
+  color: rgba(255,255,255,0.93);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+#hudWeaponName {
+  color: rgba(255,255,255,0.80);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.1;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#hudWeaponBonus {
+  display: none !important;
+}
+
+/* ===== CENTER ===== */
+#hudCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  pointer-events: none;
+  overflow: visible;
+  padding: 0 8px;
+  position: relative;
+  left: -42px;
+}
+
+/* ===== RIGHT ===== */
+#hudRight {
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+  display: grid;
+  gap: 6px;
+  align-self: center;
+}
+
+.bar {
+  position: relative;
+  height: 22px;
+  border-radius: 999px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%),
+    rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,0.26),
+    inset 0 0 0 1px rgba(255,255,255,0.03);
+}
+
+.barFill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 180ms ease;
+}
+
+#hudXpFill {
+  background:
+    linear-gradient(90deg, rgba(108,108,108,0.96) 0%, rgba(190,190,190,0.96) 100%);
+  box-shadow:
+    0 0 14px rgba(255,255,255,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.20);
+}
+
+#hudEnergyFill {
+  background:
+    linear-gradient(90deg, rgba(248,248,248,0.98) 0%, rgba(180,180,180,0.94) 100%);
+  box-shadow:
+    0 0 14px rgba(255,255,255,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.28);
+}
+
+.barText {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 10px;
+  color: rgba(255,255,255,0.98);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  text-shadow:
+    0 1px 2px rgba(0,0,0,0.82),
+    0 0 4px rgba(0,0,0,0.34);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== TABLET ===== */
+@media (max-width: 980px) {
+  #hudShell {
+    min-height: 62px;
+    padding: 8px 10px;
   }
 
-  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-  const clamp01 = (n) => clamp(n, 0, 1);
-
-  function fmtMMSS(ms) {
-    const totalSec = Math.max(0, Math.ceil(ms / 1000));
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 78px 142px;
+    gap: 8px;
   }
 
-  function getInitials(name) {
-    const raw = String(name || "").trim();
-    if (!raw) return "P";
-    const parts = raw.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return raw.slice(0, 2).toUpperCase();
+  #hudLogo {
+    max-height: 48px;
   }
 
-  function getAvatarUrl(player) {
-    return (
-      player?.avatarUrl ||
-      player?.avatar ||
-      player?.photoUrl ||
-      player?.photo_url ||
-      player?.telegramPhotoUrl ||
-      player?.telegram_photo_url ||
-      ""
-    );
+  #hudRight {
+    width: 142px;
+    min-width: 142px;
+    max-width: 142px;
   }
 
-  let walletBtn = document.getElementById("hudWalletBtn");
-  if (!walletBtn) {
-    walletBtn = document.createElement("button");
-    walletBtn.id = "hudWalletBtn";
-    walletBtn.type = "button";
-    walletBtn.setAttribute("aria-label", "Cüzdan");
-    walletBtn.textContent = "💳";
-    root.appendChild(walletBtn);
+  .bar {
+    height: 21px;
   }
 
-  function bindAvatarImgEventsOnce() {
-    if (!elAvatarImg || elAvatarImg.__hudBound) return;
-    elAvatarImg.__hudBound = true;
+  .barText {
+    font-size: 9px;
+    padding: 0 9px;
+  }
+}
 
-    elAvatarImg.onload = () => {
-      elAvatarImg.style.display = "block";
-      elAvatarFallback.style.display = "none";
-    };
-
-    elAvatarImg.onerror = () => {
-      elAvatarImg.style.display = "none";
-      elAvatarFallback.style.display = "grid";
-    };
+/* ===== MOBILE ===== */
+@media (max-width: 720px) {
+  #hudTop {
+    padding: 6px 6px 0;
   }
 
-  function openProfile(tab = "profile") {
-    try {
-      const s = store.get() || {};
-      store.set({
-        ui: {
-          ...(s.ui || {}),
-          profileTab: tab,
-        },
-      });
-      window.dispatchEvent(new Event("tc:openProfile"));
-    } catch (_) {}
+  #hudShell {
+    min-height: 56px;
+    padding: 7px 8px;
+    border-radius: 18px;
   }
 
-  function bindClicksOnce() {
-    if (!elAvatar.__profileBound) {
-      elAvatar.__profileBound = true;
-      elAvatar.style.cursor = "pointer";
-      elAvatar.title = "Profili Aç";
-      elAvatar.addEventListener("click", () => openProfile("profile"));
-      elAvatar.addEventListener("pointerdown", (e) => e.stopPropagation());
-    }
-
-    if (!walletBtn.__walletBound) {
-      walletBtn.__walletBound = true;
-      walletBtn.title = "Cüzdan";
-      walletBtn.addEventListener("click", () => openProfile("wallet"));
-      walletBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-    }
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 58px 126px;
+    gap: 7px;
   }
 
-  root.style.zIndex = "5000";
-  root.style.opacity = "1";
-  root.style.pointerEvents = "auto";
-  root.style.left = "max(var(--sal), 0px)";
-  root.style.right = "max(var(--sar), 0px)";
-  root.style.top = "max(var(--sat), 0px)";
-
-  let lastReservedTop = 0;
-  let lastAvatarUrl = "";
-
-  function updateHud() {
-    bindAvatarImgEventsOnce();
-    bindClicksOnce();
-
-    const s = store.get() || {};
-    const p = s.player || {};
-    const ui = s.ui || {};
-
-    const username = String(p.username || "Player").trim() || "Player";
-    elUsername.textContent = username;
-    elUsername.title = username;
-
-    const yton = Number(s.coins ?? p.coins ?? 0);
-    elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
-
-    const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
-    elWeaponName.textContent = weaponName;
-    elWeaponName.title = weaponName;
-
-    elWeaponBonus.textContent = "";
-    elWeaponBonus.title = "";
-    elWeaponBonus.style.display = "none";
-
-    const xp = Math.max(0, Number(p.xp || 0));
-    const xpToNext = Math.max(1, Number(p.xpToNext || 100));
-    const xpPct = Math.max(3, clamp01(xp / xpToNext) * 100);
-    elXpFill.style.width = `${xpPct}%`;
-    elXpText.textContent = `LVL ${Number(p.level || 1)} • ${xp}/${xpToNext}`;
-
-    const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 10));
-    const energyPct = Math.max(3, clamp01(energy / energyMax) * 100);
-    elEnergyFill.style.width = `${energyPct}%`;
-
-    const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
-    const lastAt = Number(p.lastEnergyAt || Date.now());
-    const now = Date.now();
-    const untilNext = energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
-
-    elEnergyText.textContent =
-      energy >= energyMax
-        ? `ENERGY ${energy}/${energyMax} • FULL`
-        : `ENERGY ${energy}/${energyMax} • ${fmtMMSS(untilNext)}`;
-
-    const avatarUrl = getAvatarUrl(p);
-    const initials = getInitials(username);
-    elAvatarFallback.textContent = initials;
-
-    if (avatarUrl !== lastAvatarUrl) {
-      lastAvatarUrl = avatarUrl;
-      if (avatarUrl) {
-        elAvatarImg.style.display = "none";
-        elAvatarFallback.style.display = "grid";
-        elAvatarImg.src = avatarUrl;
-      } else {
-        elAvatarImg.removeAttribute("src");
-        elAvatarImg.style.display = "none";
-        elAvatarFallback.style.display = "grid";
-      }
-    }
-
-    const isPremium = !!(p.isPremium || p.premium || s.isPremium || s.premium || p.membership === "premium");
-    elOnlineBadge.style.display = "inline-flex";
-    elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
-
-    if (elLogo) elLogo.style.display = "block";
-    if (elCenter) elCenter.style.display = "flex";
-
-    const safeTop = Number(ui.safe?.y || 0);
-    const reservedTop = Math.max(72, root.offsetHeight + safeTop + 6);
-
-    if (Math.abs(lastReservedTop - reservedTop) > 1) {
-      lastReservedTop = reservedTop;
-      store.set({
-        ui: {
-          ...ui,
-          hudReservedTop: reservedTop,
-        },
-      });
-    }
-
-    requestAnimationFrame(updateHud);
+  #hudLeft {
+    min-width: 0;
   }
 
-  updateHud();
+  #hudIdentity {
+    gap: 8px;
+  }
+
+  #hudAvatarWrap,
+  #hudAvatar {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  #hudAvatarFallback {
+    font-size: 14px;
+  }
+
+  #hudOnlineBadge {
+    width: 11px;
+    height: 11px;
+  }
+
+  #hudPremiumBadge {
+    left: -3px;
+    top: -3px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 9px;
+  }
+
+  #hudUsername {
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+
+  #hudCoins {
+    font-size: 10px;
+  }
+
+  #hudWeaponName {
+    font-size: 9px;
+  }
+
+  .hudMiniIcon {
+    width: 13px;
+    height: 13px;
+    flex-basis: 13px;
+    font-size: 7px;
+  }
+
+  #hudCenter {
+    padding: 0 2px;
+  }
+
+  #hudLogo {
+    max-height: 42px;
+  }
+
+  #hudRight {
+    width: 126px;
+    min-width: 126px;
+    max-width: 126px;
+    gap: 5px;
+  }
+
+  .bar {
+    height: 19px;
+  }
+
+  .barText {
+    font-size: 8.5px;
+    padding: 0 8px;
+    letter-spacing: 0.1px;
+  }
+}
+
+/* ===== VERY SMALL MOBILE ===== */
+@media (max-width: 420px) {
+  #hudTop {
+    padding: 5px 5px 0;
+  }
+
+  #hudShell {
+    min-height: 52px;
+    padding: 6px 7px;
+  }
+
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 50px 118px;
+    gap: 6px;
+  }
+
+  #hudAvatarWrap,
+  #hudAvatar {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  #hudUsername {
+    font-size: 11px;
+  }
+
+  #hudCoins {
+    font-size: 9px;
+  }
+
+  #hudWeaponName {
+    font-size: 8px;
+  }
+
+  .hudMiniIcon {
+    width: 12px;
+    height: 12px;
+    flex-basis: 12px;
+    font-size: 7px;
+  }
+
+  #hudLogo {
+    max-height: 36px;
+  }
+
+  #hudRight {
+    width: 118px;
+    min-width: 118px;
+    max-width: 118px;
+  }
+
+  .bar {
+    height: 18px;
+  }
+
+  .barText {
+    font-size: 8px;
+    padding: 0 7px;
+  }
+}
+
+
+/* ===== HUD WALLET BUTTON ===== */
+#hudWalletBtn {
+  position: absolute;
+  right: 10px;
+  top: calc(100% + 6px);
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255,200,110,0.18) 0%, rgba(255,160,70,0.10) 100%),
+    rgba(10,12,18,0.82);
+  color: rgba(255,245,220,0.98);
+  font-size: 20px;
+  font-weight: 900;
+  box-shadow:
+    0 10px 22px rgba(0,0,0,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.10);
+  backdrop-filter: blur(12px) saturate(1.08);
+  -webkit-backdrop-filter: blur(12px) saturate(1.08);
+  cursor: pointer;
+}
+
+#hudWalletBtn:active {
+  transform: scale(0.98);
+}
+
+#hudXpFill {
+  background:
+    linear-gradient(90deg, rgba(184,133,58,0.96) 0%, rgba(247,200,97,0.98) 100%);
+  box-shadow:
+    0 0 14px rgba(255,191,90,0.18),
+    inset 0 1px 0 rgba(255,248,220,0.20);
+}
+
+#hudEnergyFill {
+  background:
+    linear-gradient(90deg, rgba(42,170,138,0.96) 0%, rgba(118,237,206,0.98) 100%);
+  box-shadow:
+    0 0 14px rgba(74,224,188,0.16),
+    inset 0 1px 0 rgba(220,255,245,0.16);
+}
+
+@media (max-width: 720px) {
+  #hudWalletBtn {
+    width: 38px;
+    height: 38px;
+    right: 8px;
+    top: calc(100% + 5px);
+    font-size: 18px;
+    border-radius: 13px;
+  }
+}
+
+@media (max-width: 420px) {
+  #hudWalletBtn {
+    width: 34px;
+    height: 34px;
+    right: 6px;
+    top: calc(100% + 4px);
+    font-size: 16px;
+    border-radius: 12px;
+  }
 }
