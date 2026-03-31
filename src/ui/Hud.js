@@ -246,8 +246,6 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
-    langBtn.textContent = "EN";
-    langBtn.setAttribute("aria-label", "Dil");
     buttonTray.appendChild(langBtn);
   }
 
@@ -263,7 +261,7 @@ export function startHud(store, i18n) {
   }
 
   if (buttonTray) {
-    [telegramBtn, langBtn, walletBtn].forEach((btn) => {
+    [telegramBtn, walletBtn, langBtn].forEach((btn) => {
       if (btn && btn.parentElement !== buttonTray) buttonTray.appendChild(btn);
     });
   }
@@ -377,6 +375,16 @@ export function startHud(store, i18n) {
     const mobile = window.innerWidth <= 720;
     const size = narrow ? 34 : (mobile ? 38 : 42);
     const gap = narrow ? 6 : 8;
+
+    const shell = document.getElementById("hudShell");
+    const panel = shell?.classList?.contains("hudPanel") ? shell : document.querySelector(".hudPanel");
+
+    if (panel) {
+      panel.style.background = "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%), rgba(18,22,30,0.18)";
+      panel.style.backdropFilter = "blur(18px) saturate(1.14)";
+      panel.style.webkitBackdropFilter = "blur(18px) saturate(1.14)";
+      panel.style.boxShadow = "0 14px 32px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.08)";
+    }
 
     if (buttonTray) {
       buttonTray.style.position = "absolute";
