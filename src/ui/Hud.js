@@ -243,6 +243,7 @@ export function startHud(store, i18n) {
     langBtn = document.createElement("button");
     langBtn.id = "hudLangBtn";
     langBtn.type = "button";
+    buttonTray.appendChild(langBtn);
   }
 
   if (!walletBtn) {
@@ -361,19 +362,51 @@ export function startHud(store, i18n) {
   }
 
   function applyButtonsStyle() {
+    const narrow = window.innerWidth <= 420;
+    const mobile = window.innerWidth <= 720;
+    const size = narrow ? 32 : (mobile ? 36 : 40);
+    const gap = narrow ? 6 : 8;
+
     if (buttonTray) {
-      buttonTray.style.display = "none";
-      buttonTray.style.pointerEvents = "none";
-      buttonTray.style.opacity = "0";
-      buttonTray.style.visibility = "hidden";
+      buttonTray.style.position = "absolute";
+      buttonTray.style.right = `${narrow ? 6 : 10}px`;
+      buttonTray.style.top = `${narrow ? 52 : 58}px`;
+      buttonTray.style.display = "inline-flex";
+      buttonTray.style.flexDirection = "row";
+      buttonTray.style.alignItems = "center";
+      buttonTray.style.justifyContent = "center";
+      buttonTray.style.flexWrap = "nowrap";
+      buttonTray.style.gap = `${gap}px`;
+      buttonTray.style.padding = "0";
+      buttonTray.style.margin = "0";
+      buttonTray.style.border = "none";
+      buttonTray.style.background = "transparent";
+      buttonTray.style.boxShadow = "none";
+      buttonTray.style.backdropFilter = "none";
+      buttonTray.style.webkitBackdropFilter = "none";
+      buttonTray.style.zIndex = "8";
+      buttonTray.style.pointerEvents = "auto";
+      buttonTray.style.opacity = "1";
+      buttonTray.style.visibility = "visible";
     }
-    [telegramBtn, langBtn, walletBtn].forEach((el) => {
+
+    [walletBtn, telegramBtn, langBtn].forEach((el) => {
       if (!el) return;
-      el.style.display = "none";
-      el.style.pointerEvents = "none";
-      el.style.opacity = "0";
-      el.style.visibility = "hidden";
+      el.style.display = "inline-flex";
+      el.style.pointerEvents = "auto";
+      el.style.opacity = "1";
+      el.style.visibility = "visible";
     });
+
+    applyButtonChrome(walletBtn, { size });
+    walletBtn.style.color = "rgba(255,222,175,0.96)";
+    walletBtn.style.font = "inherit";
+    walletBtn.style.lineHeight = "1";
+
+    applyButtonChrome(telegramBtn, { size });
+    telegramBtn.style.color = "#e7be77";
+
+    applyButtonChrome(langBtn, { size });
   }
 
   root.style.zIndex = "5000";
