@@ -281,7 +281,17 @@ export function startHud(store, i18n) {
           profileTab: tab,
         },
       });
-      window.dispatchEvent(new Event("tc:openProfile"));
+    } catch (_) {}
+
+    try {
+      const scenes = window.tcScenes;
+      if (scenes && typeof scenes.go === "function") {
+        scenes.go("profile");
+      }
+    } catch (_) {}
+
+    try {
+      window.dispatchEvent(new Event(tab === "wallet" ? "tc:openWallet" : "tc:openProfile"));
     } catch (_) {}
   }
 
@@ -364,72 +374,35 @@ export function startHud(store, i18n) {
   function applyButtonsStyle() {
     const narrow = window.innerWidth <= 420;
     const mobile = window.innerWidth <= 720;
-    const size = narrow ? 30 : (mobile ? 34 : 38);
+    const size = narrow ? 34 : (mobile ? 38 : 42);
     const gap = narrow ? 6 : 8;
 
     if (buttonTray) {
       buttonTray.style.position = "absolute";
       buttonTray.style.right = `${narrow ? 8 : 10}px`;
-      buttonTray.style.top = `${narrow ? 58 : 62}px`;
-      buttonTray.style.display = "flex";
+      buttonTray.style.top = `${narrow ? 44 : 48}px`;
+      buttonTray.style.display = "inline-flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
-      buttonTray.style.justifyContent = "flex-end";
-      buttonTray.style.flexWrap = "nowrap";
+      buttonTray.style.justifyContent = "center";
       buttonTray.style.gap = `${gap}px`;
-      buttonTray.style.padding = "0";
-      buttonTray.style.margin = "0";
-      buttonTray.style.border = "none";
-      buttonTray.style.background = "transparent";
-      buttonTray.style.boxShadow = "none";
-      buttonTray.style.backdropFilter = "none";
-      buttonTray.style.webkitBackdropFilter = "none";
-      buttonTray.style.pointerEvents = "auto";
-      buttonTray.style.opacity = "1";
-      buttonTray.style.visibility = "visible";
-      buttonTray.style.width = "auto";
-      buttonTray.style.minWidth = "0";
+      buttonTray.style.padding = `${narrow ? 6 : 8}px`;
+      buttonTray.style.borderRadius = `${narrow ? 18 : 20}px`;
+      buttonTray.style.border = "1px solid rgba(255,235,205,0.14)";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,210,145,0.06) 24%, rgba(24,28,36,0.90) 100%)";
+      buttonTray.style.boxShadow = "0 12px 26px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(255,180,90,0.05)";
+      buttonTray.style.zIndex = "2";
+      buttonTray.style.minHeight = `${size + (narrow ? 12 : 16)}px`;
     }
 
-    const applyMiniButton = (el) => {
-      if (!el) return;
-      el.style.display = "inline-flex";
-      el.style.position = "static";
-      el.style.width = `${size}px`;
-      el.style.height = `${size}px`;
-      el.style.minWidth = `${size}px`;
-      el.style.minHeight = `${size}px`;
-      el.style.padding = "0";
-      el.style.margin = "0";
-      el.style.borderRadius = `${narrow ? 12 : 13}px`;
-      el.style.border = "1px solid rgba(255,255,255,0.14)";
-      el.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.05) 100%), rgba(28,22,18,0.48)";
-      el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 14px rgba(0,0,0,0.16)";
-      el.style.backdropFilter = "blur(12px) saturate(1.1)";
-      el.style.webkitBackdropFilter = "blur(12px) saturate(1.1)";
-      el.style.alignItems = "center";
-      el.style.justifyContent = "center";
-      el.style.pointerEvents = "auto";
-      el.style.opacity = "1";
-      el.style.visibility = "visible";
-      el.style.flex = "0 0 auto";
-    };
+    applyButtonChrome(telegramBtn, { size });
+    telegramBtn.style.color = "#e7be77";
 
-    applyMiniButton(walletBtn);
-    applyMiniButton(telegramBtn);
-    applyMiniButton(langBtn);
+    applyButtonChrome(langBtn, { size });
 
-    if (walletBtn) {
-      walletBtn.style.color = "rgba(255,222,175,0.96)";
-      walletBtn.style.font = "inherit";
-      walletBtn.style.lineHeight = "1";
-    }
-    if (telegramBtn) telegramBtn.style.color = "#e7be77";
-    if (langBtn) {
-      langBtn.style.color = "rgba(255,248,236,0.98)";
-      langBtn.style.font = `${narrow ? 800 : 900} ${narrow ? 10 : 11}px system-ui`;
-      langBtn.style.letterSpacing = "0.3px";
-    }
+    applyButtonChrome(walletBtn, { size });
+    walletBtn.style.font = "inherit";
+    walletBtn.style.lineHeight = "1";
   }
 
   root.style.zIndex = "5000";
