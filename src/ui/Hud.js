@@ -373,22 +373,22 @@ export function startHud(store, i18n) {
     if (shell) {
       shell.style.position = "relative";
       shell.style.overflow = "visible";
-      shell.style.paddingBottom = `${narrow ? 52 : 62}px`;
+      shell.style.paddingBottom = `${narrow ? 58 : 68}px`;
     }
 
     if (panel) {
-      panel.style.background = "linear-gradient(180deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 100%), rgba(22,20,18,0.34)";
-      panel.style.backdropFilter = "blur(18px) saturate(1.14)";
-      panel.style.webkitBackdropFilter = "blur(18px) saturate(1.14)";
+      panel.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.04) 100%), rgba(24,20,18,0.24)";
+      panel.style.backdropFilter = "blur(20px) saturate(1.16)";
+      panel.style.webkitBackdropFilter = "blur(20px) saturate(1.16)";
       panel.style.border = "none";
-      panel.style.boxShadow = "0 12px 28px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.06)";
+      panel.style.boxShadow = "0 14px 28px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06)";
     }
 
     if (buttonTray) {
       buttonTray.style.position = "absolute";
       buttonTray.style.right = `${narrow ? 8 : 12}px`;
       buttonTray.style.top = "auto";
-      buttonTray.style.bottom = `${narrow ? -2 : -4}px`;
+      buttonTray.style.bottom = `${narrow ? -6 : -8}px`;
       buttonTray.style.display = "inline-flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
@@ -397,11 +397,11 @@ export function startHud(store, i18n) {
       buttonTray.style.gap = `${gap}px`;
       buttonTray.style.padding = `${narrow ? 6 : 8}px`;
       buttonTray.style.borderRadius = `${narrow ? 16 : 18}px`;
-      buttonTray.style.border = "none";
-      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.05) 100%), rgba(30,33,40,0.34)";
-      buttonTray.style.backdropFilter = "blur(16px) saturate(1.12)";
-      buttonTray.style.webkitBackdropFilter = "blur(16px) saturate(1.12)";
-      buttonTray.style.boxShadow = "0 10px 22px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.08)";
+      buttonTray.style.border = "1px solid rgba(255,255,255,0.07)";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 100%), rgba(30,33,40,0.20)";
+      buttonTray.style.backdropFilter = "blur(18px) saturate(1.14)";
+      buttonTray.style.webkitBackdropFilter = "blur(18px) saturate(1.14)";
+      buttonTray.style.boxShadow = "0 10px 22px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.08)";
       buttonTray.style.zIndex = "8";
       buttonTray.style.minHeight = `${size + (narrow ? 12 : 16)}px`;
       buttonTray.style.pointerEvents = "auto";
