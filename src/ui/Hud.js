@@ -150,13 +150,11 @@ export function startHud(store, i18n) {
     const radius = narrow ? 12 : (mobile ? 13 : 14);
     el.style.width = `${size}px`;
     el.style.height = `${size}px`;
-    el.style.border = "1px solid rgba(255,255,255,0.12)";
+    el.style.border = "1px solid rgba(255,235,205,0.15)";
     el.style.borderRadius = `${radius}px`;
-    el.style.background = "linear-gradient(180deg, rgba(255,200,110,0.16) 0%, rgba(255,160,70,0.08) 100%), rgba(10,12,18,0.28)";
-    el.style.color = "rgba(255,245,220,0.98)";
-    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.10)";
-    el.style.backdropFilter = "blur(12px) saturate(1.08)";
-    el.style.webkitBackdropFilter = "blur(12px) saturate(1.08)";
+    el.style.background = "linear-gradient(180deg, rgba(255,236,210,0.11) 0%, rgba(255,194,122,0.08) 48%, rgba(28,33,42,0.88) 100%)";
+    el.style.color = "rgba(255,248,236,0.98)";
+    el.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.10), 0 6px 16px rgba(0,0,0,0.22)";
     el.style.cursor = "pointer";
     el.style.display = "inline-flex";
     el.style.alignItems = "center";
@@ -223,13 +221,22 @@ export function startHud(store, i18n) {
     root.appendChild(buttonTray);
   }
 
-  if (!walletBtn) {
-    walletBtn = document.createElement("button");
-    walletBtn.id = "hudWalletBtn";
-    walletBtn.type = "button";
-    walletBtn.setAttribute("aria-label", "Cüzdan");
-    walletBtn.innerHTML = "☰";
-    root.appendChild(walletBtn);
+  if (!telegramBtn) {
+    telegramBtn = document.createElement("button");
+    telegramBtn.id = "hudTelegramBtn";
+    telegramBtn.type = "button";
+    telegramBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <defs>
+          <linearGradient id="tcTgGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#f7d389"/>
+            <stop offset="100%" stop-color="#d89a4a"/>
+          </linearGradient>
+        </defs>
+        <circle cx="12" cy="12" r="10" fill="rgba(9,12,18,0.22)"/>
+        <path fill="url(#tcTgGrad)" d="M18.32 6.38 5.75 11.23c-.86.34-.85.82-.15 1.03l3.22 1 1.24 3.98c.16.46.08.64.58.64.39 0 .56-.18.78-.4l1.57-1.53 3.27 2.41c.6.33 1.03.16 1.18-.56l2.27-10.73c.2-.89-.31-1.29-1.39-.69Zm-1.87 2.12-6.17 5.56-.24 2.34-.86-2.8 7.27-4.93c.32-.23.06-.36-.24-.17Z"/>
+      </svg>`;
+    buttonTray.appendChild(telegramBtn);
   }
 
   if (!langBtn) {
@@ -239,12 +246,15 @@ export function startHud(store, i18n) {
     buttonTray.appendChild(langBtn);
   }
 
-  if (!telegramBtn) {
-    telegramBtn = document.createElement("button");
-    telegramBtn.id = "hudTelegramBtn";
-    telegramBtn.type = "button";
-    telegramBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.78 18.65c-.36 0-.29-.14-.41-.5l-1.05-3.46 8.08-5.1c.38-.23.07-.36-.24-.16l-9.98 6.29-4.31-1.35c-.93-.3-.95-.93.2-1.38L18.9 6.5c.78-.3 1.46.19 1.21 1.37l-2.86 13.47c-.2.96-.77 1.19-1.56.74l-4.32-3.19-2.08 2.01c-.23.23-.42.42-.86.42Z"/></svg>`;
-    buttonTray.appendChild(telegramBtn);
+  if (!walletBtn) {
+    walletBtn = document.createElement("button");
+    walletBtn.id = "hudWalletBtn";
+    walletBtn.type = "button";
+    walletBtn.setAttribute("aria-label", "Cüzdan");
+    walletBtn.innerHTML = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a1 1 0 1 1 0 2H6.5a.5.5 0 0 0 0 1H19a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 16.5v-9Zm12.75 5.25a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z"/></svg>`;
+    buttonTray.appendChild(walletBtn);
+  } else if (walletBtn.parentElement !== buttonTray) {
+    buttonTray.appendChild(walletBtn);
   }
 
   function bindAvatarImgEventsOnce() {
@@ -359,28 +369,29 @@ export function startHud(store, i18n) {
 
     if (buttonTray) {
       buttonTray.style.position = "absolute";
-      buttonTray.style.right = `${narrow ? 6 : 8}px`;
+      buttonTray.style.right = `${narrow ? 8 : 10}px`;
       buttonTray.style.top = `${narrow ? 44 : 48}px`;
       buttonTray.style.display = "inline-flex";
+      buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
+      buttonTray.style.justifyContent = "center";
       buttonTray.style.gap = `${gap}px`;
       buttonTray.style.padding = `${narrow ? 6 : 8}px`;
-      buttonTray.style.borderRadius = `${narrow ? 16 : 18}px`;
-      buttonTray.style.border = "1px solid rgba(255,255,255,0.12)";
-      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%), rgba(10,12,18,0.20)";
-      buttonTray.style.boxShadow = "0 10px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08)";
-      buttonTray.style.backdropFilter = "blur(14px) saturate(1.08)";
-      buttonTray.style.webkitBackdropFilter = "blur(14px) saturate(1.08)";
+      buttonTray.style.borderRadius = `${narrow ? 18 : 20}px`;
+      buttonTray.style.border = "1px solid rgba(255,235,205,0.14)";
+      buttonTray.style.background = "linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,210,145,0.06) 24%, rgba(24,28,36,0.90) 100%)";
+      buttonTray.style.boxShadow = "0 12px 26px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(255,180,90,0.05)";
       buttonTray.style.zIndex = "2";
+      buttonTray.style.minHeight = `${size + (narrow ? 12 : 16)}px`;
     }
 
     applyButtonChrome(telegramBtn, { size });
-    telegramBtn.style.color = "#c9f1ff";
+    telegramBtn.style.color = "#e7be77";
 
     applyButtonChrome(langBtn, { size });
 
     applyButtonChrome(walletBtn, { size });
-    walletBtn.style.font = `${narrow ? 800 : 900} ${narrow ? 16 : 18}px system-ui`;
+    walletBtn.style.font = "inherit";
     walletBtn.style.lineHeight = "1";
   }
 
@@ -402,7 +413,6 @@ export function startHud(store, i18n) {
       if (weaponIcon?.classList?.contains("hudMiniIcon")) weaponIcon.style.display = "none";
     } catch (_) {}
   }
-
 
   function updateHud() {
     bindAvatarImgEventsOnce();
