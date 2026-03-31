@@ -771,7 +771,11 @@ class TradeScene {
     const selectedIndex = Number.isFinite(Number(wheelState.selectedIndex)) ? Number(wheelState.selectedIndex) : 0;
     const rotation = this._getWheelRotation(trade, pool);
 
-    const boxH = 392;
+    const cy = y + 160;
+    const radius = Math.min(122, Math.floor(Math.min(w * 0.31, 122)));
+    const rewardCardY = Math.round(cy + radius + 18);
+    const rewardCardH = 92;
+    const boxH = Math.max(392, rewardCardY + rewardCardH + 12 - y);
     this.drawCard(ctx, x, y, w, boxH);
 
     ctx.fillStyle = "#fff";
@@ -784,8 +788,6 @@ class TradeScene {
     ctx.fillText(this.wheelAnim ? "Çark dönüyor..." : "Okun gösterdiği dilim birebir ödül verir.", x + 16, y + 48);
 
     const cx = x + w / 2;
-    const cy = y + 160;
-    const radius = Math.min(122, Math.floor(Math.min(w * 0.31, 122)));
     const slice = (Math.PI * 2) / pool.length;
 
     ctx.save();
@@ -806,6 +808,7 @@ class TradeScene {
     ctx.fillStyle = rim;
     ctx.fill();
 
+    const TAU = Math.PI * 2;
     for (let i = 0; i < pool.length; i += 1) {
       const start = rotation + i * slice;
       const end = start + slice;
@@ -830,14 +833,18 @@ class TradeScene {
       const mid = start + slice / 2;
       ctx.save();
       ctx.rotate(mid);
+      const normalizedMid = ((mid % TAU) + TAU) % TAU;
+      const flip = normalizedMid > Math.PI / 2 && normalizedMid < (Math.PI * 3) / 2;
+      if (flip) ctx.rotate(Math.PI);
+      const dir = flip ? -1 : 1;
       const reward = pool[i];
-      this._drawArtThumb(ctx, radius * 0.44, -22, 40, 40, reward.item || reward, shortRewardLabel(reward));
+      this._drawArtThumb(ctx, dir > 0 ? radius * 0.44 : (-radius * 0.44 - 40), -22, 40, 40, reward.item || reward, shortRewardLabel(reward));
       ctx.fillStyle = "#fff7e6";
       ctx.font = "900 10px system-ui";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const label = shortRewardLabel(reward).replace(/\+/g, '');
-      ctx.fillText(label, radius * 0.62, 28);
+      ctx.fillText(label, radius * 0.62 * dir, 28);
       ctx.restore();
     }
 
@@ -855,22 +862,22 @@ class TradeScene {
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.28)";
     ctx.beginPath();
-    ctx.moveTo(cx, y + 58);
-    ctx.lineTo(cx - 16, y + 92);
-    ctx.lineTo(cx + 16, y + 92);
+    ctx.moveTo(cx, y + 92);
+    ctx.lineTo(cx - 16, y + 58);
+    ctx.lineTo(cx + 16, y + 58);
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = "#f8df9d";
     ctx.beginPath();
-    ctx.moveTo(cx, y + 54);
-    ctx.lineTo(cx - 14, y + 84);
-    ctx.lineTo(cx + 14, y + 84);
+    ctx.moveTo(cx, y + 88);
+    ctx.lineTo(cx - 14, y + 58);
+    ctx.lineTo(cx + 14, y + 58);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
 
     const reward = wheelState.reward || pool[selectedIndex] || pool[0];
-    this._drawRewardCard(ctx, x + 14, y + 278, w - 28, 92, reward, true);
+    this._drawRewardCard(ctx, x + 14, rewardCardY, w - 28, rewardCardH, reward, true);
     return boxH;
   }
 
