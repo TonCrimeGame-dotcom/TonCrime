@@ -1,4 +1,4 @@
-import { supabase } from "../supabase.js";
+import { fetchBackendJson, supabase } from "../supabase.js";
 
 const CHAT_STARTING_LEVEL = 0;
 const CHAT_DEMO_PATTERN = /^(test|demo|deneme|sample|ornek|ornk)([\s\d!?.-]|$)/i;
@@ -124,9 +124,7 @@ export function startChat(store) {
   };
 
   let chatAuthPromise = null;
-  let chatTransport = "auto";
-  let warnedHistoryFallback = false;
-  let warnedSendFallback = false;
+  let chatTransport = "backend";
 
   ensureChatStyle();
   ensureProfileModal();
@@ -162,24 +160,6 @@ export function startChat(store) {
     };
   };
 
-  function getBackendCandidates() {
-    const raw = [
-      window.TONCRIME_BACKEND_URL,
-      window.__TONCRIME_BACKEND_URL__,
-      localStorage.getItem("toncrime_backend_url"),
-      localStorage.getItem("backendUrl"),
-      "https://toncrime.onrender.com",
-    ];
-
-    const out = [];
-    for (const item of raw) {
-      const value = String(item || "").trim().replace(/\/$/, "");
-      if (!value || out.includes(value)) continue;
-      out.push(value);
-    }
-    return out;
-  }
-
   async function ensureChatAuthOnce() {
     try {
       const session = await supabase.auth.getSession();
@@ -187,7 +167,6 @@ export function startChat(store) {
       if (currentUser) return currentUser;
     } catch {}
 
-    if (chatTransport === "backend") return null;
     if (chatAuthPromise) return chatAuthPromise;
 
     chatAuthPromise = Promise.resolve(
@@ -201,76 +180,9 @@ export function startChat(store) {
   }
 
   async function resolveChatTransport() {
-    if (chatTransport === "backend") return "backend";
-
-    if (chatTransport === "supabase") {
-      try {
-        const session = await supabase.auth.getSession();
-        if (session?.data?.session?.user) return "supabase";
-      } catch {}
-      chatTransport = "backend";
-      return "backend";
-    }
-
-    const authUser = await ensureChatAuthOnce().catch(() => null);
-    if (authUser) {
-      chatTransport = "supabase";
-      return "supabase";
-    }
-
+    await ensureChatAuthOnce().catch(() => null);
     chatTransport = "backend";
     return "backend";
-  }
-
-  function switchToBackend(reason, kind = "history") {
-    chatTransport = "backend";
-
-    if (kind === "send") {
-      if (!warnedSendFallback) {
-        warnedSendFallback = true;
-        console.warn(
-          "[CHAT] supabase send unavailable, switched to backend:",
-          reason?.message || reason || "auth unavailable"
-        );
-      }
-      return;
-    }
-
-    if (!warnedHistoryFallback) {
-      warnedHistoryFallback = true;
-      console.warn(
-        "[CHAT] supabase history unavailable, switched to backend:",
-        reason?.message || reason || "auth unavailable"
-      );
-    }
-  }
-
-  async function fetchChatBackend(path, options = {}) {
-    let lastErr = null;
-
-    for (const base of getBackendCandidates()) {
-      const url = `${base}${path}`;
-      try {
-        const res = await fetch(url, {
-          ...options,
-          headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {}),
-          },
-        });
-
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.ok) {
-          lastErr = new Error(json?.error || `HTTP ${res.status}`);
-          continue;
-        }
-        return json;
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-
-    throw lastErr || new Error("chat backend unavailable");
   }
 
   function loadFallbackMessages() {
@@ -546,33 +458,15 @@ export function startChat(store) {
   }
 
   async function loadHistory() {
-    const transport = await resolveChatTransport();
-
-    if (transport === "backend") {
-      try {
-        const json = await fetchChatBackend("/public/chat/history");
-        applyMessages(
-          Array.isArray(json?.items) ? json.items : Array.isArray(json?.messages) ? json.messages : []
-        );
-      } catch (err) {
-        console.error("[CHAT] backend history failed:", err);
-        applyMessages(loadFallbackMessages());
-      }
-      return;
-    }
-
     try {
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .select("*")
-        .order("created_at", { ascending: true })
-        .limit(MAX_MESSAGES);
-
-      if (error) throw error;
-      applyMessages(data || []);
+      await resolveChatTransport();
+      const json = await fetchBackendJson("/public/chat/history");
+      applyMessages(
+        Array.isArray(json?.items) ? json.items : Array.isArray(json?.messages) ? json.messages : []
+      );
     } catch (err) {
-      switchToBackend(err, "history");
-      return loadHistory();
+      console.error("[CHAT] backend history failed:", err);
+      applyMessages(loadFallbackMessages());
     }
   }
 
@@ -580,10 +474,6 @@ export function startChat(store) {
     try {
       localStorage.removeItem(LOCAL_CACHE_KEY);
     } catch {}
-
-    try {
-      await fetchChatBackend("/public/chat/cleanup-demo", { method: "POST" });
-    } catch (_) {}
   }
 
   async function send() {
@@ -593,42 +483,32 @@ export function startChat(store) {
     input.value = "";
     updateComposerState();
 
-    const payload = { username: username(), text, player_meta: playerMeta() };
-    const transport = await resolveChatTransport();
-
-    if (transport === "backend") {
-      try {
-        const json = await fetchChatBackend("/public/chat/send", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        if (json?.item || json?.message) addMessage(json.item || json.message);
-      } catch (err) {
-        console.error("[CHAT] backend send failed:", err);
-        input.value = text;
-        updateComposerState();
-      }
-      return;
-    }
+    const payload = {
+      identity_key: typeof window.tcGetIdentityKey === "function" ? window.tcGetIdentityKey() : "",
+      profile_key: typeof window.tcGetProfileKey === "function" ? window.tcGetProfileKey() : "",
+      username: username(),
+      text,
+      player_meta: playerMeta(),
+    };
 
     try {
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert(payload)
-        .select("*")
-        .single();
-
-      if (error) throw error;
-      if (data) addMessage(data);
+      await resolveChatTransport();
+      const json = await fetchBackendJson("/public/chat/send", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (json?.item || json?.message) addMessage(json.item || json.message);
     } catch (err) {
-      switchToBackend(err, "send");
+      console.error("[CHAT] backend send failed:", err);
       input.value = text;
       updateComposerState();
-      return send();
     }
   }
 
-  function setupRealtime() {
+  async function setupRealtime() {
+    const authUser = await ensureChatAuthOnce().catch(() => null);
+    if (!authUser?.id) return;
+
     try {
       if (state.channel) {
         supabase.removeChannel(state.channel);
@@ -816,7 +696,7 @@ export function startChat(store) {
   restoreOpenState();
   bindUi();
   applyLanguage();
-  setupRealtime();
+  setupRealtime().catch((err) => console.warn("[CHAT] realtime bootstrap failed:", err));
   cleanupDemoMessages()
     .finally(() => loadHistory())
     .catch((err) => console.error("[CHAT] initial history failed:", err));
@@ -827,8 +707,8 @@ export function startChat(store) {
     loadHistory,
     closeProfileCard,
     setTransport(mode) {
-      if (mode === "supabase" || mode === "backend" || mode === "auto") {
-        chatTransport = mode;
+      if (mode === "backend" || mode === "auto") {
+        chatTransport = "backend";
       }
     },
   };
