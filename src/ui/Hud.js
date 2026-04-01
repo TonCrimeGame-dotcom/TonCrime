@@ -1,4 +1,4 @@
-﻿export function startHud(store, i18n) {
+export function startHud(store, i18n) {
   const root = document.getElementById("hudTop");
   const row = document.getElementById("hudRow");
 
@@ -559,14 +559,16 @@
     elWeaponBonus.title = "";
     elWeaponBonus.style.display = "none";
 
+    const level = Math.max(0, Number(p.level ?? 0));
     const xp = Math.max(0, Number(p.xp || 0));
-    const xpToNext = Math.max(1, Number(p.xpToNext || 100));
-    const xpPct = Math.max(3, clamp01(xp / xpToNext) * 100);
+    const starterTrack = level === 0 && xp <= 0 && Number(p.xpToNext || 0) <= 0;
+    const xpToNext = starterTrack ? 0 : Math.max(1, Number(p.xpToNext || 100));
+    const xpPct = xpToNext > 0 ? Math.max(3, clamp01(xp / xpToNext) * 100) : 0;
     elXpFill.style.width = `${xpPct}%`;
-    elXpText.textContent = `LVL ${Number(p.level || 1)} - ${xp}/${xpToNext}`;
+    elXpText.textContent = `LVL ${level} - ${xp}/${xpToNext}`;
 
     const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 10));
+    const energyMax = Math.max(1, Math.min(100, Number(p.energyMax || 100)));
     const energyPct = Math.max(3, clamp01(energy / energyMax) * 100);
     elEnergyFill.style.width = `${energyPct}%`;
 
