@@ -1188,7 +1188,7 @@ class TradeScene {
   _wheelRewardVisual(reward) {
     const type = String(reward?.type || "").toLowerCase();
     const amount = Math.max(0, Number(reward?.amount || reward?.coins || 0));
-    const shortLabel = shortRewardLabel(reward).replace(/\+/g, "").trim();
+    const weaponShort = /m134/i.test(String(reward?.weaponName || reward?.label || "")) ? "M134" : "BARRET";
 
     if (type === "coins") {
       return {
@@ -1196,8 +1196,8 @@ class TradeScene {
         subtitle: "YTON",
         category: "YTON",
         accent: reward?.accent || "#f4c45d",
-        imageSrc: "./src/assets/yton.png",
-        glyph: null,
+        imageSrc: "",
+        glyph: "yton",
       };
     }
 
@@ -1214,12 +1214,12 @@ class TradeScene {
 
     if (type === "weapon") {
       return {
-        title: shortLabel || "SILAH",
-        subtitle: "SILAH",
+        title: "SILAH",
+        subtitle: weaponShort,
         category: "SILAH",
         accent: reward?.accent || "#f0a96c",
-        imageSrc: reward?.imageSrc || (String(reward?.weaponId || "").toLowerCase().includes("m134") ? "./src/assets/m134.png" : "./src/assets/barrett.png"),
-        glyph: null,
+        imageSrc: "",
+        glyph: "weapon",
       };
     }
 
@@ -1227,31 +1227,31 @@ class TradeScene {
       const kind = String(reward?.item?.kind || "").toLowerCase();
       if (kind === "girls") {
         return {
-          title: shortLabel || "KADIN",
-          subtitle: "KADIN",
+          title: "KADIN",
+          subtitle: "",
           category: "KADIN",
           accent: reward?.accent || "#efbb78",
-          imageSrc: reward?.imageSrc || reward?.item?.imageSrc || "./src/assets/g_star1.png",
-          glyph: null,
+          imageSrc: "",
+          glyph: "girls",
         };
       }
       if (kind === "goods") {
         return {
-          title: shortLabel || "OT",
-          subtitle: "OT",
+          title: "OT",
+          subtitle: "",
           category: "OT",
           accent: reward?.accent || "#afc86e",
-          imageSrc: reward?.imageSrc || "./src/assets/weed.png",
-          glyph: null,
+          imageSrc: "",
+          glyph: "weed",
         };
       }
       return {
-        title: shortLabel || "ICKI",
-        subtitle: "ICKI",
+        title: "ICKI",
+        subtitle: "",
         category: "ICKI",
         accent: reward?.accent || "#efb76b",
-        imageSrc: reward?.imageSrc || "./src/assets/drink.png",
-        glyph: null,
+        imageSrc: "",
+        glyph: "drink",
       };
     }
 
@@ -1268,8 +1268,8 @@ class TradeScene {
 
     if (type === "combo") {
       return {
-        title: `${amount}`,
-        subtitle: "FULL",
+        title: "FULL",
+        subtitle: `${amount || 0}`,
         category: "FULL",
         accent: reward?.accent || "#96d7ff",
         imageSrc: "",
@@ -1282,8 +1282,8 @@ class TradeScene {
       subtitle: "ODUL",
       category: "ODUL",
       accent: reward?.accent || "#f1b965",
-      imageSrc: reward?.imageSrc || reward?.item?.imageSrc || "",
-      glyph: "",
+      imageSrc: "",
+      glyph: "yton",
     };
   }
 
@@ -1305,6 +1305,98 @@ class TradeScene {
       ctx.lineTo(size * 0.20, size * 0.12);
       ctx.closePath();
       ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (glyph === "yton") {
+      ctx.lineWidth = Math.max(2, size * 0.06);
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.36, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = `900 ${Math.max(18, Math.floor(size * 0.38))}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Y", 0, 1);
+      ctx.restore();
+      return;
+    }
+
+    if (glyph === "weapon") {
+      ctx.fillRect(-size * 0.34, -size * 0.08, size * 0.48, size * 0.16);
+      ctx.fillRect(size * 0.08, -size * 0.14, size * 0.22, size * 0.10);
+      ctx.fillRect(size * 0.26, -size * 0.04, size * 0.18, size * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.08, size * 0.02);
+      ctx.lineTo(-size * 0.18, size * 0.34);
+      ctx.lineTo(-size * 0.04, size * 0.34);
+      ctx.lineTo(size * 0.02, size * 0.10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.34, -size * 0.08);
+      ctx.lineTo(-size * 0.48, -size * 0.18);
+      ctx.lineTo(-size * 0.44, -size * 0.02);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (glyph === "drink") {
+      ctx.lineWidth = Math.max(2.4, size * 0.06);
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.18, -size * 0.34);
+      ctx.lineTo(size * 0.18, -size * 0.34);
+      ctx.lineTo(size * 0.08, -size * 0.02);
+      ctx.lineTo(-size * 0.08, -size * 0.02);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, -size * 0.02);
+      ctx.lineTo(0, size * 0.22);
+      ctx.moveTo(-size * 0.16, size * 0.22);
+      ctx.lineTo(size * 0.16, size * 0.22);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (glyph === "girls") {
+      ctx.lineWidth = Math.max(2.4, size * 0.06);
+      ctx.beginPath();
+      ctx.arc(0, -size * 0.10, size * 0.22, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, size * 0.12);
+      ctx.lineTo(0, size * 0.42);
+      ctx.moveTo(-size * 0.16, size * 0.28);
+      ctx.lineTo(size * 0.16, size * 0.28);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (glyph === "weed") {
+      ctx.lineWidth = Math.max(2, size * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(0, size * 0.38);
+      ctx.lineTo(0, -size * 0.34);
+      ctx.stroke();
+      const leaves = [
+        [-0.26, 0.08, -0.04, -0.22],
+        [0.26, 0.08, 0.04, -0.22],
+        [-0.18, -0.04, -0.02, -0.34],
+        [0.18, -0.04, 0.02, -0.34],
+        [0, -0.10, 0, -0.44],
+      ];
+      for (const [dx, dy, tx, ty] of leaves) {
+        ctx.beginPath();
+        ctx.moveTo(0, size * 0.10);
+        ctx.quadraticCurveTo(size * dx, size * dy, size * tx, size * ty);
+        ctx.quadraticCurveTo(size * dx * 0.28, size * (dy - 0.04), 0, size * 0.10);
+        ctx.stroke();
+      }
       ctx.restore();
       return;
     }
@@ -1332,7 +1424,6 @@ class TradeScene {
   _drawWheelBadge(ctx, reward, x, y, size, highlight = false) {
     const meta = this._wheelRewardVisual(reward);
     const glow = String(meta.accent || "#f1b965");
-    const art = meta.imageSrc ? this._runtimeImage(meta.imageSrc) : null;
 
     ctx.save();
     ctx.translate(x, y);
@@ -1377,16 +1468,19 @@ class TradeScene {
     ctx.beginPath();
     ctx.arc(0, 0, size * 0.54, 0, Math.PI * 2);
     ctx.clip();
-    if (art) {
-      drawContainImage(ctx, art, -size * 0.5, -size * 0.5, size, size);
-    } else {
-      const fill = ctx.createRadialGradient(0, -size * 0.12, size * 0.08, 0, 0, size * 0.54);
-      fill.addColorStop(0, "rgba(255,236,181,0.16)");
-      fill.addColorStop(1, "rgba(255,214,120,0.05)");
-      ctx.fillStyle = fill;
-      ctx.fillRect(-size, -size, size * 2, size * 2);
-      this._drawWheelGlyph(ctx, meta.glyph || meta.category, 0, 0, size, "#fff6de");
+    const fill = ctx.createRadialGradient(0, -size * 0.12, size * 0.08, 0, 0, size * 0.54);
+    fill.addColorStop(0, "rgba(255,236,181,0.16)");
+    fill.addColorStop(1, "rgba(255,214,120,0.05)");
+    ctx.fillStyle = fill;
+    ctx.fillRect(-size, -size, size * 2, size * 2);
+    for (let i = -2; i <= 2; i += 1) {
+      ctx.strokeStyle = `rgba(255,230,184,${i === 0 ? 0.12 : 0.05})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * (0.18 + Math.abs(i) * 0.08), -Math.PI * 0.72, Math.PI * 0.26);
+      ctx.stroke();
     }
+    this._drawWheelGlyph(ctx, meta.glyph || meta.category, 0, 0, size, "#fff6de");
     const glass = ctx.createLinearGradient(0, -size * 0.58, 0, size * 0.20);
     glass.addColorStop(0, "rgba(255,255,255,0.30)");
     glass.addColorStop(0.45, "rgba(255,255,255,0.08)");
@@ -1596,11 +1690,22 @@ class TradeScene {
       const reward = pool[i];
       const badgeSize = mode === "premium" ? 54 : 48;
       const badgeX = radius * 0.62;
-      const badgeY = -8;
-      const plaqueW = mode === "premium" ? 92 : 74;
-      const plaqueH = mode === "premium" ? 28 : 24;
-      this._drawWheelBadge(ctx, reward, badgeX, badgeY, badgeSize, highlightSlice);
-      this._drawWheelBadgePlaque(ctx, badgeX - plaqueW / 2, badgeY + badgeSize * 0.72, plaqueW, plaqueH, reward, highlightSlice);
+      const badgeY = -12;
+      const meta = this._drawWheelBadge(ctx, reward, badgeX, badgeY, badgeSize, highlightSlice);
+      const title = String(meta.title || "").trim();
+      const subtitle = String(meta.subtitle || "").trim();
+
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = highlightSlice ? "#fff8eb" : "rgba(255,242,214,0.96)";
+      ctx.font = `900 ${mode === "premium" ? 11 : 10}px system-ui`;
+      ctx.fillText(title, badgeX, badgeY + badgeSize * 0.86);
+
+      if (subtitle) {
+        ctx.fillStyle = highlightSlice ? "rgba(255,242,214,0.88)" : "rgba(255,233,192,0.72)";
+        ctx.font = `800 ${mode === "premium" ? 8 : 7}px system-ui`;
+        ctx.fillText(subtitle, badgeX, badgeY + badgeSize * 1.08);
+      }
       ctx.restore();
     }
 
