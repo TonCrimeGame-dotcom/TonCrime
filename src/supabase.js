@@ -9,7 +9,7 @@ const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
-const AUTH_PATCH_VERSION = "2026-04-01-backend-auth-fallback-1";
+const AUTH_PATCH_VERSION = "2026-04-01-secure-backend-session-1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -34,6 +34,9 @@ function nowMs() { return Date.now(); }
 
 function getTelegramUser() {
   try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
+}
+export function getTelegramInitData() {
+  try { return String(window.Telegram?.WebApp?.initData || "").trim(); } catch { return ""; }
 }
 function makeRandomId() {
   try {
@@ -103,7 +106,7 @@ function getIdentityCandidates() {
   return out;
 }
 
-function getBackendCandidates() {
+export function getBackendCandidates() {
   const raw = [
     window.TONCRIME_BACKEND_URL,
     window.__TONCRIME_BACKEND_URL__,
@@ -121,7 +124,14 @@ function getBackendCandidates() {
   return out;
 }
 
-async function fetchBackendJson(path, options = {}) {
+export function withTelegramInitDataHeaders(headers = {}) {
+  const initData = getTelegramInitData();
+  return initData
+    ? { ...headers, "X-Telegram-Init-Data": initData }
+    : { ...headers };
+}
+
+export async function fetchBackendJson(path, options = {}) {
   let lastErr = null;
 
   for (const base of getBackendCandidates()) {
@@ -130,10 +140,10 @@ async function fetchBackendJson(path, options = {}) {
     try {
       const res = await fetch(url, {
         ...options,
-        headers: {
+        headers: withTelegramInitDataHeaders({
           "Content-Type": "application/json",
           ...(options.headers || {}),
-        },
+        }),
       });
 
       const json = await res.json().catch(() => null);
@@ -269,7 +279,7 @@ async function tryAnonymousAuth(identityKey) {
   return null;
 }
 
-async function tryBackendCredentialAuth(identityKey) {
+async function tryBackendSessionAuth(identityKey) {
   if (!identityKey) return null;
 
   try {
@@ -280,31 +290,36 @@ async function tryBackendCredentialAuth(identityKey) {
         "Player"
       ).trim() || "Player";
 
-    const ensured = await fetchBackendJson("/public/ensure-auth-user", {
+    const ensured = await fetchBackendJson("/public/auth/session", {
       method: "POST",
       body: JSON.stringify({
         identity_key: identityKey,
+        profile_key: getProfileKey(),
         username,
       }),
     });
 
-    const email = String(ensured?.email || "").trim();
-    const password = String(ensured?.password || "").trim();
-    if (!email || !password) return null;
+    const accessToken = String(ensured?.session?.access_token || "").trim();
+    const refreshToken = String(ensured?.session?.refresh_token || "").trim();
+    if (!accessToken || !refreshToken) return null;
 
-    const res = await supabase.auth.signInWithPassword({ email, password });
+    const res = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
     if (res?.error) {
-      warnOnce("[AUTH] backend credential sign-in failed:", res.error);
+      warnOnce("[AUTH] backend session set failed:", res.error);
       return null;
     }
 
-    if (res?.data?.user) {
+    const sessionUser = res?.data?.user || res?.data?.session?.user || null;
+    if (sessionUser?.id) {
       clearAuthCooldown("backend_auth_success");
       rememberSuccessfulIdentity(identityKey);
-      return res.data.user;
+      return sessionUser;
     }
   } catch (err) {
-    warnOnce("[AUTH] backend credential auth unavailable:", err);
+    warnOnce("[AUTH] backend session auth unavailable:", err);
   }
 
   return null;
@@ -340,7 +355,7 @@ export async function ensureAuthSession() {
     }
 
     for (const identityKey of candidates) {
-      const backendUser = await tryBackendCredentialAuth(identityKey);
+      const backendUser = await tryBackendSessionAuth(identityKey);
       if (backendUser?.id) return backendUser;
     }
 
@@ -395,6 +410,9 @@ window.tcGetIdentityKey = getIdentityKey;
 window.tcGetProfileKey = getProfileKey;
 window.tcBindProfileToCurrentAuth = bindProfileToCurrentAuth;
 window.tcClearAuthCooldown = tcClearAuthCooldown;
+window.tcGetTelegramInitData = getTelegramInitData;
+window.tcGetBackendCandidates = getBackendCandidates;
+window.tcFetchBackendJson = fetchBackendJson;
 
 try {
   supabase.auth.onAuthStateChange((event, session) => {
