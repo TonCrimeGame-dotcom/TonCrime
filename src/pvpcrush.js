@@ -41,7 +41,7 @@
   const SPECIAL_META = {
     [SPECIAL.BULLET]: { label: { tr: "KURSUN", en: "BULLET" }, color: "#f9d66d", badge: "K" },
     [SPECIAL.ROCKET]: { label: { tr: "ROKET", en: "ROCKET" }, color: "#ff8a5b", badge: "R" },
-    [SPECIAL.BOMB]: { label: { tr: "BOMBA", en: "BOMB" }, color: "#7cc6ff", badge: "B" },
+    [SPECIAL.BOMB]: { label: { tr: "BOMBA", en: "BOMB" }, color: "#ff9a52", badge: "B" },
   };
 
   const ICON_PATHS = {
@@ -318,6 +318,25 @@
 
   function randInt(min, max) {
     return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function easeOutCubic(t) {
+    const x = clamp(t, 0, 1);
+    return 1 - Math.pow(1 - x, 3);
+  }
+
+  function easeInCubic(t) {
+    const x = clamp(t, 0, 1);
+    return x * x * x;
+  }
+
+  function easeInOutCubic(t) {
+    const x = clamp(t, 0, 1);
+    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
   }
 
   function choice(arr) {
@@ -714,6 +733,7 @@
         color: SPECIAL_META[group.special]?.color || "#ffd166",
         len: Math.max(4, Number(group.cells?.length || 4)),
         cell: { r: group.anchor.r, c: group.anchor.c },
+        special: group.special,
       });
     }
 
@@ -903,6 +923,8 @@
         color: SPECIAL_META[special]?.color || "#ffd166",
         len: Math.max(4, targets.length),
         cell: { r: cell.r, c: cell.c },
+        special,
+        targets: targets.map((target) => ({ r: target.r, c: target.c })),
       }],
       specialSpawns: [],
       special,
@@ -1015,6 +1037,18 @@
     }
 
     if (!specialMeta) return;
+    if (special === SPECIAL.BULLET) {
+      drawPistolTileOverlay(ctx, x, y, size, animT);
+      return;
+    }
+    if (special === SPECIAL.ROCKET) {
+      drawRocketTileOverlay(ctx, x, y, size, animT);
+      return;
+    }
+    if (special === SPECIAL.BOMB) {
+      drawBombTileOverlay(ctx, x, y, size, animT);
+      return;
+    }
 
     const pulse = 0.72 + 0.28 * Math.sin((animT || 0) * 0.01);
     const badgeW = Math.max(18, Math.floor(size * 0.34));
@@ -1042,6 +1076,290 @@
     ctx.font = `900 ${Math.max(9, Math.floor(size * 0.16))}px system-ui, Arial`;
     ctx.fillStyle = "#fff4db";
     ctx.fillText(specialMeta.badge, badgeX + badgeW * 0.5, badgeY + badgeH * 0.54);
+  }
+
+  function drawBombTileOverlay(ctx, x, y, size, animT) {
+    const t = Number(animT || Date.now());
+    const pulse = 0.72 + 0.28 * Math.sin(t * 0.01);
+    const cx = x + size * 0.74;
+    const cy = y + size * 0.72;
+    const radius = Math.max(10, size * 0.19);
+
+    ctx.save();
+    ctx.globalAlpha = 0.98;
+
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + radius * 0.95, radius * 0.95, radius * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const orb = ctx.createRadialGradient(
+      cx - radius * 0.4,
+      cy - radius * 0.45,
+      radius * 0.18,
+      cx,
+      cy,
+      radius * 1.1
+    );
+    orb.addColorStop(0, "#58595d");
+    orb.addColorStop(0.28, "#2d2f35");
+    orb.addColorStop(0.7, "#101216");
+    orb.addColorStop(1, "#050608");
+    ctx.fillStyle = orb;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = Math.max(1, radius * 0.08);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 0.92, Math.PI * 0.88, Math.PI * 1.73);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.26)";
+    ctx.beginPath();
+    ctx.ellipse(cx - radius * 0.34, cy - radius * 0.42, radius * 0.28, radius * 0.19, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.58;
+    ctx.beginPath();
+    ctx.ellipse(cx - radius * 0.13, cy - radius * 0.26, radius * 0.12, radius * 0.08, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.98;
+
+    const capW = radius * 0.72;
+    const capH = radius * 0.34;
+    const capX = cx - capW * 0.5;
+    const capY = cy - radius - capH * 0.18;
+    fillRoundRect(ctx, capX, capY, capW, capH, capH * 0.42, "#2e3138");
+    strokeRoundRect(ctx, capX, capY, capW, capH, capH * 0.42, "rgba(255,255,255,0.18)", Math.max(1, radius * 0.05));
+
+    ctx.strokeStyle = "#8a6438";
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(2, radius * 0.11);
+    ctx.beginPath();
+    ctx.moveTo(cx + radius * 0.04, capY + capH * 0.12);
+    ctx.quadraticCurveTo(cx + radius * 0.42, cy - radius * 1.18, cx + radius * 0.88, cy - radius * 0.92);
+    ctx.stroke();
+
+    const sparkX = cx + radius * 0.9;
+    const sparkY = cy - radius * 0.9;
+    const flare = ctx.createRadialGradient(sparkX, sparkY, 1, sparkX, sparkY, radius * 0.68);
+    flare.addColorStop(0, `rgba(255,248,210,${0.95 * pulse})`);
+    flare.addColorStop(0.24, `rgba(255,188,74,${0.9 * pulse})`);
+    flare.addColorStop(0.65, `rgba(255,92,34,${0.72 * pulse})`);
+    flare.addColorStop(1, "rgba(255,92,34,0)");
+    ctx.fillStyle = flare;
+    ctx.beginPath();
+    ctx.arc(sparkX, sparkY, radius * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (let i = 0; i < 7; i++) {
+      const ang = -Math.PI * 0.25 + i * (Math.PI / 6);
+      const len = radius * (0.3 + (i % 2 ? 0.16 : 0.06)) * pulse;
+      ctx.strokeStyle = i % 2 ? "#ffecad" : "#ff7a2e";
+      ctx.lineWidth = Math.max(1, radius * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(sparkX, sparkY);
+      ctx.lineTo(sparkX + Math.cos(ang) * len, sparkY + Math.sin(ang) * len);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawPistolShape(ctx, x, y, w, h, opts = {}) {
+    const muzzle = clamp(Number(opts.muzzle || 0), 0, 1);
+    const body = ctx.createLinearGradient(x, y, x + w, y + h);
+    body.addColorStop(0, "#4a4c50");
+    body.addColorStop(0.3, "#16181b");
+    body.addColorStop(0.72, "#090a0c");
+    body.addColorStop(1, "#24272b");
+
+    fillRoundRect(ctx, x + w * 0.12, y + h * 0.18, w * 0.58, h * 0.2, h * 0.06, body);
+    fillRoundRect(ctx, x + w * 0.22, y + h * 0.34, w * 0.42, h * 0.12, h * 0.05, "#0f1114");
+    fillRoundRect(ctx, x + w * 0.54, y + h * 0.18, w * 0.08, h * 0.22, h * 0.04, "#202328");
+    fillRoundRect(ctx, x + w * 0.18, y + h * 0.36, w * 0.09, h * 0.08, h * 0.03, "#060708");
+
+    ctx.fillStyle = "#0a0b0d";
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.46, y + h * 0.38);
+    ctx.lineTo(x + w * 0.62, y + h * 0.38);
+    ctx.lineTo(x + w * 0.74, y + h * 0.98);
+    ctx.lineTo(x + w * 0.58, y + h * 0.98);
+    ctx.lineTo(x + w * 0.48, y + h * 0.62);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = Math.max(1, h * 0.035);
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.18, y + h * 0.24);
+    ctx.lineTo(x + w * 0.54, y + h * 0.22);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,0.14)";
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.28, y + h * 0.25, w * 0.08, h * 0.05, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#17191d";
+    ctx.lineWidth = Math.max(1, h * 0.04);
+    ctx.beginPath();
+    ctx.arc(x + w * 0.51, y + h * 0.5, w * 0.07, Math.PI * 0.1, Math.PI * 1.08, false);
+    ctx.stroke();
+
+    ctx.fillStyle = "#060708";
+    ctx.beginPath();
+    ctx.arc(x + w * 0.14, y + h * 0.28, h * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1b1d21";
+    ctx.beginPath();
+    ctx.arc(x + w * 0.14, y + h * 0.28, h * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (muzzle > 0.01) {
+      const mx = x + w * 0.08;
+      const my = y + h * 0.28;
+      const flare = ctx.createRadialGradient(mx, my, 1, mx, my, w * (0.18 + muzzle * 0.26));
+      flare.addColorStop(0, `rgba(255,245,214,${0.95 * muzzle})`);
+      flare.addColorStop(0.2, `rgba(255,196,88,${0.92 * muzzle})`);
+      flare.addColorStop(0.55, `rgba(255,102,28,${0.7 * muzzle})`);
+      flare.addColorStop(1, "rgba(255,102,28,0)");
+      ctx.fillStyle = flare;
+      ctx.beginPath();
+      ctx.arc(mx, my, w * (0.2 + muzzle * 0.26), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = `rgba(255,168,64,${0.9 * muzzle})`;
+      ctx.beginPath();
+      ctx.moveTo(mx, my - h * 0.1);
+      ctx.lineTo(mx - w * (0.28 + muzzle * 0.18), my);
+      ctx.lineTo(mx, my + h * 0.1);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  function drawPistolTileOverlay(ctx, x, y, size, animT) {
+    const pulse = 0.74 + 0.26 * Math.sin(Number(animT || Date.now()) * 0.008);
+    const w = size * 0.62;
+    const h = size * 0.42;
+    const px = x + size * 0.2;
+    const py = y + size * 0.44;
+
+    ctx.save();
+    const glow = ctx.createRadialGradient(px + w * 0.28, py + h * 0.34, 2, px + w * 0.4, py + h * 0.42, size * 0.46);
+    glow.addColorStop(0, `rgba(255,168,72,${0.18 * pulse})`);
+    glow.addColorStop(1, "rgba(255,168,72,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(px + w * 0.36, py + h * 0.36, size * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    drawPistolShape(ctx, px, py, w, h, { muzzle: 0.18 * pulse });
+    ctx.restore();
+  }
+
+  function drawRocketSprite(ctx, cx, cy, size, opts = {}) {
+    const flame = clamp(Number(opts.flame || 0), 0, 1);
+    const rotation = Number(opts.rotation || 0);
+    const bodyW = size * 0.42;
+    const bodyH = size * 0.74;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (rotation) ctx.rotate(rotation);
+
+    if (flame > 0.01) {
+      const flameLen = bodyH * (0.24 + flame * 0.34);
+      const fy = bodyH * 0.48;
+      const plume = ctx.createRadialGradient(0, fy + flameLen * 0.2, 2, 0, fy + flameLen * 0.2, bodyW * 0.9);
+      plume.addColorStop(0, `rgba(255,247,214,${0.94 * flame})`);
+      plume.addColorStop(0.3, `rgba(255,184,74,${0.9 * flame})`);
+      plume.addColorStop(0.62, `rgba(255,86,18,${0.72 * flame})`);
+      plume.addColorStop(1, "rgba(255,86,18,0)");
+      ctx.fillStyle = plume;
+      ctx.beginPath();
+      ctx.ellipse(0, fy + flameLen * 0.08, bodyW * 0.7, flameLen, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const body = ctx.createLinearGradient(-bodyW * 0.5, -bodyH * 0.45, bodyW * 0.5, bodyH * 0.45);
+    body.addColorStop(0, "#f4f6f8");
+    body.addColorStop(0.32, "#bfc4c8");
+    body.addColorStop(0.72, "#eef1f4");
+    body.addColorStop(1, "#8a8f93");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(0, -bodyH * 0.52);
+    ctx.lineTo(bodyW * 0.48, -bodyH * 0.2);
+    ctx.lineTo(bodyW * 0.46, bodyH * 0.28);
+    ctx.lineTo(bodyW * 0.26, bodyH * 0.5);
+    ctx.lineTo(-bodyW * 0.26, bodyH * 0.5);
+    ctx.lineTo(-bodyW * 0.46, bodyH * 0.28);
+    ctx.lineTo(-bodyW * 0.48, -bodyH * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#d72619";
+    ctx.beginPath();
+    ctx.moveTo(0, -bodyH * 0.56);
+    ctx.lineTo(bodyW * 0.24, -bodyH * 0.26);
+    ctx.lineTo(-bodyW * 0.24, -bodyH * 0.26);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#191b1f";
+    fillRoundRect(ctx, -bodyW * 0.34, -bodyH * 0.08, bodyW * 0.68, bodyH * 0.08, bodyH * 0.03, "#1d2024");
+
+    ctx.fillStyle = "#cc2517";
+    ctx.beginPath();
+    ctx.moveTo(-bodyW * 0.34, bodyH * 0.08);
+    ctx.lineTo(-bodyW * 0.74, bodyH * 0.2);
+    ctx.lineTo(-bodyW * 0.42, bodyH * 0.42);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(bodyW * 0.34, bodyH * 0.08);
+    ctx.lineTo(bodyW * 0.74, bodyH * 0.2);
+    ctx.lineTo(bodyW * 0.42, bodyH * 0.42);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, bodyH * 0.06);
+    ctx.lineTo(bodyW * 0.17, bodyH * 0.46);
+    ctx.lineTo(-bodyW * 0.17, bodyH * 0.46);
+    ctx.closePath();
+    ctx.fill();
+
+    const glass = ctx.createRadialGradient(0, 0, 1, 0, 0, bodyW * 0.22);
+    glass.addColorStop(0, "#dff6ff");
+    glass.addColorStop(0.35, "#7bbef9");
+    glass.addColorStop(1, "#0d4f9b");
+    ctx.fillStyle = glass;
+    ctx.beginPath();
+    ctx.arc(0, 0, bodyW * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(12,20,34,0.45)";
+    ctx.lineWidth = Math.max(1, size * 0.03);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawRocketTileOverlay(ctx, x, y, size, animT) {
+    const pulse = 0.74 + 0.26 * Math.sin(Number(animT || Date.now()) * 0.009);
+    ctx.save();
+    const cx = x + size * 0.72;
+    const cy = y + size * 0.52;
+    const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, size * 0.42);
+    glow.addColorStop(0, `rgba(255,132,48,${0.16 * pulse})`);
+    glow.addColorStop(1, "rgba(255,132,48,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    drawRocketSprite(ctx, cx, cy, size * 0.62, { flame: 0.14 * pulse });
+    ctx.restore();
   }
 
   function makeArenaMarkup() {
@@ -1347,6 +1665,8 @@
     _turnTicker: null,
     _audioCtx: null,
     _shakeUntil: 0,
+    _shakeStartedAt: 0,
+    _shakePower: 0,
     _matchCtx: null,
     _onlineChannel: null,
     _onlineReady: false,
@@ -1354,6 +1674,7 @@
     _remoteSwipe: null,
     _remoteSwipeUntil: 0,
     _remoteSwapAnim: null,
+    _localSwapAnim: null,
     _hiddenTileIds: null,
     _resultOverlay: null,
     _fxReplayToken: 0,
@@ -1452,6 +1773,14 @@
         if (!navigator?.vibrate) return;
         navigator.vibrate(pattern);
       } catch (_) {}
+    },
+
+    _kickShake(durationMs, power = 1) {
+      const now = performance.now();
+      const duration = Math.max(80, Number(durationMs || 0));
+      this._shakeStartedAt = now;
+      this._shakeUntil = Math.max(Number(this._shakeUntil || 0), now + duration);
+      this._shakePower = Math.max(Number(this._shakePower || 0), Number(power || 0));
     },
 
     _isTurnIntroActive() {
@@ -1706,6 +2035,19 @@
       return true;
     },
 
+    _startLocalSwapAnimation(boardBefore, from, to) {
+      if (!boardBefore || !from || !to) return false;
+      this._localSwapAnim = {
+        from: { r: Number(from.r), c: Number(from.c) },
+        to: { r: Number(to.r), c: Number(to.c) },
+        startAt: performance.now(),
+        duration: 210,
+        board: cloneBoard(boardBefore),
+      };
+      this._render();
+      return true;
+    },
+
     _tickRemoteSwapAnimation(now = performance.now()) {
       const anim = this._remoteSwapAnim;
       if (!anim) return false;
@@ -1715,6 +2057,15 @@
       const nextMeta = anim.nextMeta || {};
       this._remoteSwapAnim = null;
       this._applyNetworkState(nextState, nextMeta);
+      return false;
+    },
+
+    _tickLocalSwapAnimation(now = performance.now()) {
+      const anim = this._localSwapAnim;
+      if (!anim) return false;
+      const t = clamp((now - anim.startAt) / anim.duration, 0, 1);
+      if (t < 1) return true;
+      this._localSwapAnim = null;
       return false;
     },
 
@@ -2040,6 +2391,7 @@
       this._remoteSwipe = null;
       this._remoteSwipeUntil = 0;
       this._remoteSwapAnim = null;
+      this._localSwapAnim = null;
       this._hiddenTileIds = new Set();
       this._resultOverlay = null;
       this._fxReplayToken += 1;
@@ -2375,9 +2727,9 @@
         const cy = rect.y + rect.h / 2;
         const count = burst.kind === "extra" ? 18 + burst.len * 2 : 10 + burst.len * 2;
 
-        this._flashAlpha = 0.24 + Math.min(0.28, burst.len * 0.04);
+        this._flashAlpha = Math.max(this._flashAlpha, 0.3 + Math.min(0.34, burst.len * 0.045));
         this._flashColor = color;
-        this._shakeUntil = Date.now() + 90 + burst.len * 28;
+        this._kickShake(120 + burst.len * 30, 0.72 + burst.len * 0.06);
         this._playExplosionSound(burst.len + (burst.kind === "extra" ? 2 : 0));
         this._vibrate(burst.kind === "extra" ? [12, 20, 22] : [10, 14, 10]);
 
@@ -2391,6 +2743,174 @@
           color,
           big: burst.kind === "extra",
         });
+
+        if (burst.special === SPECIAL.BOMB && burst.kind === "special") {
+          this._flashAlpha = Math.max(this._flashAlpha, 0.62);
+          this._flashColor = "#ffb45c";
+          this._kickShake(460, 1.8);
+          this._playExplosionSound(burst.len + 7);
+          this._vibrate([16, 22, 28]);
+
+          this._effects.push({
+            type: "bomb_blast",
+            x: cx,
+            y: cy,
+            r: rect.w * 0.18,
+            maxR: rect.w * 1.9,
+            life: 0,
+            duration: 520,
+            color: "#ff9b45",
+          });
+
+          this._effects.push({
+            type: "bomb_core",
+            x: cx,
+            y: cy,
+            r: rect.w * 0.12,
+            maxR: rect.w * 0.85,
+            life: 0,
+            duration: 300,
+            color: "#fff0bf",
+          });
+
+          for (let i = 0; i < 18; i++) {
+            const angle = (Math.PI * 2 * i) / 18 + Math.random() * 0.22;
+            const speed = 1.8 + Math.random() * 2.8;
+            this._effects.push({
+              type: "bomb_fire",
+              x: cx,
+              y: cy,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              radius: 5 + Math.random() * 8,
+              life: 0,
+              duration: 300 + Math.random() * 180,
+              color: i % 2 ? "#ff6f2d" : "#ffcd6e",
+            });
+          }
+
+          for (let i = 0; i < 16; i++) {
+            const angle = (Math.PI * 2 * i) / 16 + Math.random() * 0.3;
+            const speed = 0.7 + Math.random() * 1.6;
+            this._effects.push({
+              type: "bomb_smoke",
+              x: cx,
+              y: cy,
+              vx: Math.cos(angle) * speed * 0.8,
+              vy: Math.sin(angle) * speed * 0.65 - (0.25 + Math.random() * 0.45),
+              radius: rect.w * (0.09 + Math.random() * 0.14),
+              life: 0,
+              duration: 640 + Math.random() * 260,
+              color: i % 3 === 0 ? "rgba(82,72,62,0.72)" : "rgba(58,52,48,0.7)",
+            });
+          }
+
+          for (let i = 0; i < 10; i++) {
+            this._effects.push({
+              type: "bomb_chunk",
+              x: cx,
+              y: cy,
+              vx: -1.8 + Math.random() * 3.6,
+              vy: -2.8 - Math.random() * 2.4,
+              size: 4 + Math.random() * 4,
+              life: 0,
+              duration: 420 + Math.random() * 180,
+              color: i % 2 ? "#4d3a2d" : "#2d261f",
+            });
+          }
+        }
+
+        if (burst.special === SPECIAL.BULLET && burst.kind === "special") {
+          const rowRects = this._tileRects
+            .filter((tileRect) => tileRect.r === burst.cell?.r)
+            .sort((a, b) => a.c - b.c);
+          if (rowRects.length) {
+            const first = rowRects[0];
+            const last = rowRects[rowRects.length - 1];
+            const rowY = first.y + first.h * 0.5;
+            const gunW = first.w * 1.18;
+            const gunH = first.h * 0.72;
+            const gunX = first.x - gunW * 0.58;
+            const gunY = rowY - gunH * 0.42;
+            const bulletStartX = gunX + gunW * 0.88;
+            const bulletEndX = last.x + last.w * 0.88;
+
+            this._flashAlpha = Math.max(this._flashAlpha, 0.32);
+            this._flashColor = "#ffcd73";
+            this._kickShake(250, 1.08);
+            this._playExplosionSound(6 + burst.len);
+            this._vibrate([10, 16, 10]);
+
+            this._effects.push({
+              type: "bullet_row",
+              x1: bulletStartX,
+              x2: bulletEndX,
+              y: rowY,
+              gunX,
+              gunY,
+              gunW,
+              gunH,
+              rowTop: first.y + first.h * 0.18,
+              rowBottom: first.y + first.h * 0.82,
+              life: 0,
+              duration: 360,
+              color: "#ffbf5d",
+              seed: Math.random() * Math.PI * 2,
+            });
+
+            this._effects.push({
+              type: "bullet_shell",
+              x: gunX + gunW * 0.42,
+              y: gunY + gunH * 0.14,
+              vx: 1.1 + Math.random() * 0.7,
+              vy: -2.4 - Math.random() * 1.1,
+              size: Math.max(4, first.w * 0.14),
+              rot: -0.4,
+              vr: 0.32 + Math.random() * 0.25,
+              life: 0,
+              duration: 420,
+              color: "#d9a24e",
+            });
+          }
+        }
+
+        if (burst.special === SPECIAL.ROCKET && burst.kind === "special") {
+          const targets = Array.isArray(burst.targets) && burst.targets.length
+            ? burst.targets
+            : [burst.cell];
+          const uniqueTargets = [];
+          const seenTargets = new Set();
+          for (const target of targets) {
+            const key = cellKey(target?.r, target?.c);
+            if (!target || seenTargets.has(key)) continue;
+            seenTargets.add(key);
+            uniqueTargets.push(target);
+          }
+
+          this._flashAlpha = Math.max(this._flashAlpha, 0.3);
+          this._flashColor = "#ff8a45";
+          this._kickShake(340, 1.24);
+          this._playExplosionSound(5 + uniqueTargets.length);
+          this._vibrate([12, 18, 18]);
+
+          uniqueTargets.forEach((target, idx) => {
+            const rect = this._tileRects.find((tileRect) => tileRect.r === target?.r && tileRect.c === target?.c);
+            if (!rect) return;
+            this._effects.push({
+              type: "rocket_drop",
+              startX: rect.x + rect.w * (0.5 + (-0.18 + Math.random() * 0.36)),
+              startY: -rect.h * (1.2 + Math.random() * 0.6),
+              endX: rect.x + rect.w * 0.5,
+              endY: rect.y + rect.h * 0.5,
+              life: 0,
+              duration: 320 + idx * 40 + randInt(0, 70),
+              size: rect.w * (0.78 + Math.random() * 0.12),
+              color,
+              wobble: rect.w * (0.04 + Math.random() * 0.04) * (Math.random() > 0.5 ? 1 : -1),
+              seed: Math.random() * Math.PI * 2,
+            });
+          });
+        }
 
         for (let i = 0; i < count; i++) {
           const angle = (Math.PI * 2 * i) / count + Math.random() * 0.35;
@@ -2450,7 +2970,7 @@
           dirty = true;
           this._effects = this._effects.filter((fx) => {
             if (!fx._last) fx._last = now;
-            const dt = Math.max(8, now - fx._last);
+            const dt = clamp(now - fx._last, 8, 28);
             fx._last = now;
             fx.life += dt;
 
@@ -2462,6 +2982,24 @@
               fx.x += fx.vx * (dt / 16.6667);
               fx.y += fx.vy * (dt / 16.6667);
               fx.vy += 0.07 * (dt / 16.6667);
+            } else if (fx.type === "bomb_fire") {
+              fx.x += fx.vx * (dt / 16.6667);
+              fx.y += fx.vy * (dt / 16.6667);
+              fx.vx *= 0.985;
+              fx.vy *= 0.985;
+            } else if (fx.type === "bomb_smoke") {
+              fx.x += fx.vx * (dt / 16.6667);
+              fx.y += fx.vy * (dt / 16.6667);
+              fx.radius *= 1.006 + dt / 5000;
+            } else if (fx.type === "bomb_chunk") {
+              fx.x += fx.vx * (dt / 16.6667);
+              fx.y += fx.vy * (dt / 16.6667);
+              fx.vy += 0.11 * (dt / 16.6667);
+            } else if (fx.type === "bullet_shell") {
+              fx.x += fx.vx * (dt / 16.6667);
+              fx.y += fx.vy * (dt / 16.6667);
+              fx.vy += 0.1 * (dt / 16.6667);
+              fx.rot += fx.vr * (dt / 16.6667);
             } else if (fx.type === "label") {
               fx.y -= 0.34 * (dt / 16.6667);
             } else if (fx.type === "ring") {
@@ -2486,14 +3024,27 @@
 
         if (this._flashAlpha > 0.001) {
           dirty = true;
-          this._flashAlpha *= 0.86;
+          this._flashAlpha *= 0.9;
         } else {
           this._flashAlpha = 0;
+        }
+
+        if (now < Number(this._shakeUntil || 0)) {
+          dirty = true;
+        } else if (this._shakeUntil || this._shakePower) {
+          this._shakeUntil = 0;
+          this._shakeStartedAt = 0;
+          this._shakePower = 0;
         }
 
         if (this._remoteSwapAnim) {
           dirty = true;
           this._tickRemoteSwapAnimation(now);
+        }
+
+        if (this._localSwapAnim) {
+          dirty = true;
+          this._tickLocalSwapAnimation(now);
         }
 
         if (dirty) this._render();
@@ -2566,6 +3117,7 @@
       if (!this._running || this._locked || this._state?.matchmaking) return;
       this._locked = true;
 
+      const boardBefore = cloneBoard(this._state.board);
       const swapped = swapCells(this._state.board, a, b);
       const evalNow = evaluateBoard(swapped);
       if (!evalNow.hasAction) {
@@ -2577,9 +3129,10 @@
       }
 
       this._state.board = swapped;
+      this._startLocalSwapAnimation(boardBefore, a, b);
       this._state.turnMadeAction = true;
       this._render();
-      await this._sleep(140);
+      await this._sleep(180);
       const turnFx = await this._resolveTurn("me", { initialResolution: evalNow });
 
       if (!this._running) return;
@@ -2710,11 +3263,13 @@
         await this._sleep(randInt(180, 320));
         await this._activateSpecialTile(action.cell, "enemy");
       } else {
+        const boardBefore = cloneBoard(this._state.board);
         this._state.board = swapCells(this._state.board, action.a, action.b);
+        this._startLocalSwapAnimation(boardBefore, action.a, action.b);
         this._state.info = this._text("opponentPlaying", "Rakip oynuyor");
         this._updateHud();
         this._render();
-        await this._sleep(randInt(160, 320));
+        await this._sleep(randInt(190, 340));
         await this._resolveTurn("enemy");
       }
 
@@ -2747,9 +3302,19 @@
 
         this._render();
         this._spawnMatchEffects(res.fxBursts);
+        const hasBulletFx = res.fxBursts.some((burst) => burst?.kind === "special" && burst?.special === SPECIAL.BULLET);
+        const hasRocketFx = res.fxBursts.some((burst) => burst?.kind === "special" && burst?.special === SPECIAL.ROCKET);
+        const hasBombFx = res.fxBursts.some((burst) => burst?.kind === "special" && burst?.special === SPECIAL.BOMB);
+        const leadFxMs = hasRocketFx ? 420 : (hasBulletFx ? 320 : (hasBombFx ? 180 : 0));
+        if (leadFxMs > 0) {
+          await this._sleep(leadFxMs);
+        }
 
         const nextBoard = applyResolution(board, res);
-        const drops = buildDropSpecs(board, nextBoard);
+        const drops = buildDropSpecs(board, nextBoard).map((drop) => ({
+          ...drop,
+          delay: Number(drop.delay || 0) + leadFxMs,
+        }));
         board = nextBoard;
         this._state.board = board;
         this._spawnRainDrops(drops);
@@ -2760,9 +3325,11 @@
             color: b.color,
             len: b.len,
             cell: b.cell ? { r: b.cell.r, c: b.cell.c } : null,
+            special: b.special || null,
+            targets: Array.isArray(b.targets) ? b.targets.map((target) => ({ r: target.r, c: target.c })) : null,
           })),
           drops: drops.map((d) => ({ ...d })),
-          waitMs: 260,
+          waitMs: 200 + leadFxMs,
         });
         this._state.info = this._format(
           "comboStatus",
@@ -2771,7 +3338,7 @@
         );
         this._updateHud();
         this._render();
-        await this._sleep(250);
+        await this._sleep(180);
         res = evaluateBoard(board);
       }
 
@@ -2996,6 +3563,156 @@
           ctx.beginPath();
           ctx.arc(fx.x, fx.y, fx.radius * (0.8 + (1 - t) * 0.35), 0, Math.PI * 2);
           ctx.fill();
+        } else if (fx.type === "bomb_blast") {
+          const blastT = easeOutCubic(t);
+          ctx.globalAlpha = alpha * 0.82;
+          const blast = ctx.createRadialGradient(fx.x, fx.y, fx.r * 0.15, fx.x, fx.y, fx.maxR * (0.28 + blastT * 0.72));
+          blast.addColorStop(0, "rgba(255,245,210,0.95)");
+          blast.addColorStop(0.22, "rgba(255,190,86,0.92)");
+          blast.addColorStop(0.55, "rgba(255,96,26,0.58)");
+          blast.addColorStop(1, "rgba(255,96,26,0)");
+          ctx.fillStyle = blast;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, fx.maxR * (0.22 + blastT * 0.82), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "bomb_core") {
+          const coreT = easeOutCubic(t);
+          ctx.globalAlpha = alpha;
+          const coreR = fx.maxR * (0.26 + coreT * 0.74);
+          const core = ctx.createRadialGradient(fx.x, fx.y, 1, fx.x, fx.y, coreR);
+          core.addColorStop(0, "rgba(255,255,240,1)");
+          core.addColorStop(0.38, "rgba(255,214,120,0.94)");
+          core.addColorStop(1, "rgba(255,214,120,0)");
+          ctx.fillStyle = core;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, coreR, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "bomb_fire") {
+          ctx.globalAlpha = alpha * 0.9;
+          ctx.fillStyle = fx.color;
+          ctx.beginPath();
+          ctx.ellipse(fx.x, fx.y, fx.radius * (0.7 + alpha), fx.radius * 0.48, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "bomb_smoke") {
+          ctx.globalAlpha = alpha * 0.58;
+          ctx.fillStyle = fx.color;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, fx.radius * (0.78 + (1 - alpha) * 0.65), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "bomb_chunk") {
+          ctx.globalAlpha = alpha * 0.85;
+          fillRoundRect(ctx, fx.x - fx.size * 0.5, fx.y - fx.size * 0.5, fx.size, fx.size, 2, fx.color);
+        } else if (fx.type === "bullet_row") {
+          const travel = easeOutCubic(clamp(fx.life / fx.duration, 0, 1));
+          const bulletX = lerp(fx.x1, fx.x2, travel);
+          const trailX = Math.max(fx.x1, bulletX - (fx.x2 - fx.x1) * 0.28);
+          ctx.globalAlpha = alpha * 0.5;
+          const lane = ctx.createLinearGradient(fx.x1, fx.y, fx.x2, fx.y);
+          lane.addColorStop(0, "rgba(255,132,34,0)");
+          lane.addColorStop(0.16, "rgba(255,164,62,0.32)");
+          lane.addColorStop(0.45, "rgba(255,214,122,0.48)");
+          lane.addColorStop(1, "rgba(255,164,62,0)");
+          ctx.fillStyle = lane;
+          fillRoundRect(ctx, fx.x1, fx.rowTop, Math.max(10, bulletX - fx.x1), Math.max(6, fx.rowBottom - fx.rowTop), (fx.rowBottom - fx.rowTop) * 0.45, lane);
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(fx.gunX + fx.gunW, fx.gunY);
+          ctx.scale(-1, 1);
+          drawPistolShape(ctx, 0, 0, fx.gunW, fx.gunH, { muzzle: Math.max(0, 1 - travel * 2.2) });
+          ctx.restore();
+
+          const trail = ctx.createLinearGradient(trailX, fx.y, bulletX, fx.y);
+          trail.addColorStop(0, "rgba(255,178,72,0)");
+          trail.addColorStop(0.3, "rgba(255,178,72,0.72)");
+          trail.addColorStop(1, "rgba(255,240,210,0.95)");
+          ctx.strokeStyle = trail;
+          ctx.lineWidth = Math.max(5, (fx.rowBottom - fx.rowTop) * 0.52);
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(trailX, fx.y);
+          ctx.lineTo(bulletX, fx.y);
+          ctx.stroke();
+
+          for (let i = 0; i < 4; i++) {
+            const sparkTravel = clamp(travel - i * 0.1, 0, 1);
+            if (sparkTravel <= 0) continue;
+            const sparkX = lerp(fx.x1, fx.x2, sparkTravel);
+            const sparkY = fx.y + Math.sin((sparkTravel * 18) + Number(fx.seed || 0) + i) * (fx.rowBottom - fx.rowTop) * 0.18;
+            const spark = ctx.createRadialGradient(sparkX, sparkY, 1, sparkX, sparkY, 10 + i * 2);
+            spark.addColorStop(0, `rgba(255,248,220,${0.95 * alpha})`);
+            spark.addColorStop(0.45, `rgba(255,180,72,${0.72 * alpha})`);
+            spark.addColorStop(1, "rgba(255,120,32,0)");
+            ctx.fillStyle = spark;
+            ctx.beginPath();
+            ctx.arc(sparkX, sparkY, 10 + i * 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          const flare = ctx.createRadialGradient(bulletX, fx.y, 1, bulletX, fx.y, 18);
+          flare.addColorStop(0, "rgba(255,255,244,1)");
+          flare.addColorStop(0.3, "rgba(255,214,112,0.95)");
+          flare.addColorStop(1, "rgba(255,118,24,0)");
+          ctx.fillStyle = flare;
+          ctx.beginPath();
+          ctx.arc(bulletX, fx.y, 18, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "#f1c77a";
+          ctx.beginPath();
+          ctx.ellipse(bulletX, fx.y, 11, 4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#fff2d2";
+          ctx.beginPath();
+          ctx.ellipse(bulletX + 3, fx.y - 0.5, 4, 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "bullet_shell") {
+          ctx.save();
+          ctx.translate(fx.x, fx.y);
+          ctx.rotate(Number(fx.rot || 0));
+          ctx.globalAlpha = alpha * 0.92;
+          fillRoundRect(ctx, -fx.size * 0.7, -fx.size * 0.35, fx.size * 1.4, fx.size * 0.7, fx.size * 0.22, fx.color);
+          ctx.strokeStyle = "rgba(110,72,22,0.75)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-fx.size * 0.55, -fx.size * 0.28, fx.size * 1.1, fx.size * 0.56);
+          ctx.restore();
+        } else if (fx.type === "rocket_drop") {
+          const travel = easeInCubic(clamp(fx.life / fx.duration, 0, 1));
+          const wobble = Math.sin(Number(fx.seed || 0) + travel * Math.PI * 2.6) * Number(fx.wobble || 0) * (1 - travel * 0.35);
+          const rocketX = lerp(fx.startX, fx.endX, travel) + wobble;
+          const rocketY = lerp(fx.startY, fx.endY, travel);
+          const trail = ctx.createLinearGradient(rocketX, rocketY - fx.size * 1.55, rocketX, rocketY + fx.size * 0.1);
+          trail.addColorStop(0, "rgba(120,120,120,0)");
+          trail.addColorStop(0.32, `rgba(120,120,120,${0.28 * alpha})`);
+          trail.addColorStop(1, `rgba(255,132,42,${0.82 * alpha})`);
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = trail;
+          ctx.lineWidth = Math.max(6, fx.size * 0.24);
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(rocketX, rocketY - fx.size * 1.18);
+          ctx.lineTo(rocketX, rocketY - fx.size * 0.04);
+          ctx.stroke();
+
+          drawRocketSprite(ctx, rocketX, rocketY, fx.size, { flame: 0.9, rotation: Math.PI });
+
+          if (travel > 0.72) {
+            const impactT = easeOutCubic(clamp((travel - 0.72) / 0.28, 0, 1));
+            const blast = ctx.createRadialGradient(rocketX, rocketY, 1, rocketX, rocketY, fx.size * (0.25 + impactT * 0.85));
+            blast.addColorStop(0, `rgba(255,244,210,${0.95 * alpha})`);
+            blast.addColorStop(0.25, `rgba(255,184,72,${0.85 * alpha})`);
+            blast.addColorStop(1, "rgba(255,98,32,0)");
+            ctx.fillStyle = blast;
+            ctx.beginPath();
+            ctx.arc(rocketX, rocketY, fx.size * (0.35 + impactT * 0.9), 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = `rgba(255,228,148,${0.42 * alpha})`;
+            ctx.lineWidth = Math.max(3, fx.size * 0.08);
+            ctx.beginPath();
+            ctx.arc(rocketX, rocketY, fx.size * (0.28 + impactT * 0.7), 0, Math.PI * 2);
+            ctx.stroke();
+          }
         } else if (fx.type === "spark") {
           ctx.globalAlpha = alpha;
           ctx.fillStyle = fx.color;
@@ -3097,7 +3814,7 @@
     },
 
     _renderRemoteSwap(ctx) {
-      const anim = this._remoteSwapAnim;
+      const anim = this._remoteSwapAnim || this._localSwapAnim;
       if (!anim?.from || !anim?.to || !anim?.board) return;
       const fromRect = this._tileRects.find((t) => t.r === anim.from.r && t.c === anim.from.c);
       const toRect = this._tileRects.find((t) => t.r === anim.to.r && t.c === anim.to.c);
@@ -3108,6 +3825,7 @@
 
       const t = clamp((performance.now() - anim.startAt) / anim.duration, 0, 1);
       const ease = t < 0.55 ? 2.4 * t * t : 1 - Math.pow(-2 * t + 2, 2.4) / 2;
+      const swapGlow = Math.sin(t * Math.PI);
       const mix = (a, b) => a + (b - a) * ease;
       const pad = 2;
       const drawMoving = (tile, src, dst) => {
@@ -3126,12 +3844,17 @@
         fillRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, "rgba(255,255,255,0.10)");
         const glowR = src.w * 0.58;
         const glow = ctx.createRadialGradient(x + src.w / 2, y + src.h / 2, 2, x + src.w / 2, y + src.h / 2, glowR);
-        glow.addColorStop(0, meta.color + "99");
+        glow.addColorStop(0, meta.color + "cc");
         glow.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = glow;
         ctx.beginPath();
         ctx.arc(x + src.w / 2, y + src.h / 2, glowR, 0, Math.PI * 2);
         ctx.fill();
+        ctx.globalAlpha = 0.26 * swapGlow;
+        ctx.strokeStyle = meta.color + "dd";
+        ctx.lineWidth = 2;
+        strokeRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, ctx.strokeStyle, 2);
+        ctx.globalAlpha = 1;
         renderCrushTile(ctx, tile, x + pad, y + pad, src.w - 4, false, Date.now());
       };
 
@@ -3154,8 +3877,16 @@
 
       ctx.clearRect(0, 0, w, h);
       ctx.save();
-      if (Date.now() < this._shakeUntil) {
-        ctx.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+      const shakeNow = performance.now();
+      if (shakeNow < Number(this._shakeUntil || 0)) {
+        const total = Math.max(1, Number(this._shakeUntil || 0) - Number(this._shakeStartedAt || shakeNow));
+        const progress = clamp((shakeNow - Number(this._shakeStartedAt || shakeNow)) / total, 0, 1);
+        const fade = 1 - easeOutCubic(progress);
+        const amp = (2.6 + 3.8 * clamp(Number(this._shakePower || 0), 0, 2.2)) * fade;
+        ctx.translate(
+          Math.sin(shakeNow * 0.055) * amp,
+          Math.cos(shakeNow * 0.043) * amp * 0.72
+        );
       }
 
       const boardPad = clamp(Math.round(w * 0.018), 6, 10);
@@ -3202,10 +3933,11 @@
           const tile = this._state.board[r][c];
           const selected = this._selected && this._selected.r === r && this._selected.c === c;
           const radius = Math.max(10, Math.floor(cell * 0.18));
+          const swapAnim = this._remoteSwapAnim || this._localSwapAnim;
           const hiddenByRemoteAnim = !!(
-            this._remoteSwapAnim && (
-              (this._remoteSwapAnim.from.r === r && this._remoteSwapAnim.from.c === c) ||
-              (this._remoteSwapAnim.to.r === r && this._remoteSwapAnim.to.c === c)
+            swapAnim && (
+              (swapAnim.from.r === r && swapAnim.from.c === c) ||
+              (swapAnim.to.r === r && swapAnim.to.c === c)
             )
           );
 
