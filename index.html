@@ -52,6 +52,10 @@
       --sal: env(safe-area-inset-left, 0px);
       --tc-app-width: 100vw;
       --tc-app-height: 100vh;
+      --tc-app-left: 0px;
+      --tc-app-top: 0px;
+      --tc-app-radius: 0px;
+      --tc-app-shadow: none;
     }
 
     html, body {
@@ -77,12 +81,15 @@
 
     #game {
       position: fixed;
-      left: 0;
-      top: 0;
+      left: var(--tc-app-left);
+      top: var(--tc-app-top);
       width: var(--tc-app-width);
       height: var(--tc-app-height);
       display: block;
       z-index: 1;
+      border-radius: var(--tc-app-radius);
+      box-shadow: var(--tc-app-shadow);
+      background: #08090d;
     }
 
     #safe {
