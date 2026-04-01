@@ -50,13 +50,17 @@
       --sar: env(safe-area-inset-right, 0px);
       --sab: env(safe-area-inset-bottom, 0px);
       --sal: env(safe-area-inset-left, 0px);
+      --tc-app-width: 100vw;
+      --tc-app-height: 100vh;
     }
 
     html, body {
       margin: 0;
       padding: 0;
-      height: 100%;
-      width: 100%;
+      height: var(--tc-app-height);
+      width: var(--tc-app-width);
+      min-height: var(--tc-app-height);
+      min-width: var(--tc-app-width);
       background: #0b0b0f;
       overflow: hidden;
       touch-action: none;
@@ -67,14 +71,16 @@
     body {
       position: fixed;
       inset: 0;
+      height: var(--tc-app-height);
+      width: var(--tc-app-width);
     }
 
     #game {
       position: fixed;
       left: 0;
       top: 0;
-      width: 100vw;
-      height: 100vh;
+      width: var(--tc-app-width);
+      height: var(--tc-app-height);
       display: block;
       z-index: 1;
     }
