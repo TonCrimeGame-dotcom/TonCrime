@@ -1400,6 +1400,15 @@ class TradeScene {
     if (!listings.length) return 0;
     return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
   }
+
+  _isBackendManagedMarketListing(listing) {
+    return !!(
+      listing?.serverManaged ||
+      listing?.inventoryItemId ||
+      listing?.businessProductId
+    );
+  }
+
   _getTelegramId() {
     const s = this.store.get();
     return String(
@@ -1458,11 +1467,6 @@ class TradeScene {
     };
   }
 
-  async _rpc(name, params = {}) {
-    const { data, error } = await supabase.rpc(name, params);
-    if (error) throw error;
-    return data;
-  }
   _ensurePlayerMarketShop() {
     const s = this.store.get();
     const playerName = String(s.player?.username || "Player");
@@ -1695,42 +1699,20 @@ class TradeScene {
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
 
     try {
-      const profileId = await this._getProfileId();
-
-      const { data: invRow, error: invError } = await supabase
-        .from("inventory_items")
-        .select("id, profile_id, item_key, item_name, quantity, meta")
-        .eq("profile_id", profileId)
-        .eq("item_key", String(item.id))
-        .maybeSingle();
-
-      if (invError) throw invError;
-      if (!invRow?.id) {
-        throw new Error(this._ui("Backend inventory kaydi bulunamadi", "Backend inventory row was not found"));
-      }
-
-      const { data: marketBusiness, error: bizError } = await supabase
-        .from("businesses")
-        .select("id, name, business_type, owner_id")
-        .eq("owner_id", profileId)
-        .eq("business_type", "blackmarket")
-        .maybeSingle();
-
-      if (bizError) throw bizError;
-
-      if (!marketBusiness?.id) {
-        throw new Error(this._ui("Inventory ilani icin blackmarket gerekli", "A blackmarket business is required for inventory listings"));
-      }
-
-      const result = await this._rpc("create_market_listing", {
-        p_seller_profile_id: profileId,
-        p_business_id: marketBusiness.id,
-        p_inventory_item_id: invRow.id,
-        p_quantity: qty,
-        p_price_yton: price,
+      const json = await fetchBackendJson("/public/market/list-inventory", {
+        method: "POST",
+        body: JSON.stringify({
+          item_key: String(item.id),
+          quantity: qty,
+          price_yton: price,
+        }),
       });
-
-      const row = Array.isArray(result) ? result[0] : result;
+      const row = json?.item || null;
+      const marketBusiness = json?.business || null;
+      const inventoryItemId = String(json?.inventory_item_id || "");
+      if (!row || !marketBusiness?.id) {
+        throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
+      }
 
       const state2 = this.store.get();
       const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
@@ -1748,12 +1730,12 @@ class TradeScene {
         shop = {
           id: "shop_" + marketBusiness.id,
           businessId: String(marketBusiness.id),
-          type: "blackmarket",
+          type: String(marketBusiness.business_type || "blackmarket"),
           icon: "BM",
           imageKey: "blackmarket",
           imageSrc: "./src/assets/BlackMarket.png",
           name: marketBusiness.name || "Black Market",
-          ownerId: String(profileId),
+          ownerId: String(this._getTelegramId() || window.tcGetProfileKey?.() || ""),
           ownerName: String(state2.player?.username || "Player"),
           online: true,
           theme: "dark",
@@ -1777,8 +1759,9 @@ class TradeScene {
         energyGain: Number(item.energyGain || 0),
         usable: !!item.usable,
         desc: item.desc || this._ui("Envanter urunu", "Inventory item"),
-        inventoryItemId: String(invRow.id),
+        inventoryItemId: inventoryItemId,
         businessId: String(marketBusiness.id),
+        serverManaged: true,
       });
 
       for (const sh of shops) {
@@ -1804,7 +1787,7 @@ class TradeScene {
     }
   }
 
-  _buyMarketItem(shopId, itemId) {
+  async _buyMarketItem(shopId, itemId) {
     const s = this.store.get();
     const listings = (s.market?.listings || []).map((x) => ({ ...x }));
     const items = (s.inventory?.items || []).map((x) => ({ ...x }));
@@ -1816,12 +1799,123 @@ class TradeScene {
 
     const listing = listings[idx];
     const price = Number(listing.price || 0);
-    if (Number(s.coins || 0) < price) {
-      this._showToast(this._ui("Yetersiz yton", "Not enough yton"));
-      return;
-    }
     if (Number(listing.stock || 0) <= 0) {
       this._showToast(this._ui("Stok tukendi", "Out of stock"));
+      return;
+    }
+
+    if (this._isBackendManagedMarketListing(listing)) {
+      try {
+        const json = await fetchBackendJson("/public/market/buy", {
+          method: "POST",
+          body: JSON.stringify({
+            listing_id: String(listing.id),
+            quantity: 1,
+          }),
+        });
+
+        const purchased = json?.item || null;
+        const unitPrice = Math.max(1, Number(json?.unit_price || price || 1));
+        const buyerCoins = Math.max(0, Number(json?.buyer_coins ?? (Number(s.coins || 0) - unitPrice)));
+        const remainingStock = Math.max(0, Number(json?.remaining_stock ?? (Number(listing.stock || 0) - 1)));
+        const state2 = this.store.get();
+        const listings2 = (state2.market?.listings || []).map((x) => ({ ...x }));
+        const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
+        const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
+        const salesHistory = (state2.market?.salesHistory || []).map((x) => ({ ...x }));
+        const idx2 = listings2.findIndex((x) => String(x.id) === String(itemId) && String(x.shopId) === String(shopId));
+        const targetListing = idx2 >= 0 ? listings2[idx2] : { ...listing };
+
+        if (!purchased?.name) {
+          throw new Error(this._ui("Pazar verisi eksik", "Market response is incomplete"));
+        }
+
+        if (remainingStock <= 0 && idx2 >= 0) listings2.splice(idx2, 1);
+        else {
+          targetListing.stock = remainingStock;
+          if (idx2 >= 0) listings2[idx2] = targetListing;
+        }
+
+        const existing = items2.find(
+          (x) =>
+            String(x.id || "") === String(purchased.itemKey || "") ||
+            String(x.name || "").toLowerCase() === String(purchased.name || "").toLowerCase()
+        );
+
+        if (existing) {
+          existing.qty = Number(existing.qty || 0) + 1;
+        } else {
+          items2.unshift({
+            id: String(purchased.itemKey || "market_buy_" + Date.now()),
+            kind: purchased.kind || this._inventoryKindFor(targetListing),
+            icon: purchased.icon || targetListing.icon || "IT",
+            imageKey: purchased.imageKey || targetListing.imageKey || "",
+            imageSrc: purchased.imageSrc || targetListing.imageSrc || "",
+            name: purchased.name || targetListing.itemName,
+            rarity: purchased.rarity || targetListing.rarity || "common",
+            qty: 1,
+            usable: !!purchased.usable,
+            sellable: purchased.sellable !== false,
+            marketable: purchased.marketable !== false,
+            energyGain: Number(purchased.energyGain || targetListing.energyGain || 0),
+            sellPrice: Math.max(1, Number(purchased.sellPrice || Math.floor(unitPrice * 0.7))),
+            marketPrice: unitPrice,
+            desc: purchased.desc || targetListing.desc || this._ui("Pazardan alindi.", "Bought from the market."),
+          });
+        }
+
+        salesHistory.unshift({
+          id: "sale_" + Date.now(),
+          shopId,
+          itemName: purchased.name || targetListing.itemName,
+          qty: 1,
+          price: unitPrice,
+          soldAt: Date.now(),
+        });
+        if (salesHistory.length > 240) salesHistory.length = 240;
+
+        for (const shop of shops) {
+          shop.totalListings = listings2.filter((x) => x.shopId === shop.id).length;
+          const stats = salesHistory
+            .filter((x) => x.shopId === shop.id)
+            .reduce(
+              (acc, row) => {
+                acc.units += Number(row.qty || 0);
+                acc.revenue += Number(row.qty || 0) * Number(row.price || 0);
+                acc.lastSaleAt = Math.max(acc.lastSaleAt, Number(row.soldAt || 0));
+                return acc;
+              },
+              { units: 0, revenue: 0, lastSaleAt: 0 }
+            );
+          shop.totalSold = stats.units;
+          shop.totalRevenue = stats.revenue;
+          shop.lastSaleAt = stats.lastSaleAt;
+        }
+
+        this.store.set({
+          coins: buyerCoins,
+          inventory: {
+            ...(state2.inventory || {}),
+            items: items2,
+          },
+          market: {
+            ...(state2.market || {}),
+            shops,
+            listings: listings2,
+            salesHistory,
+          },
+        });
+
+        this._showToast(this._ui(`${purchased.name || targetListing.itemName || "Urun"} satin alindi`, `${purchased.name || targetListing.itemName || "Item"} purchased`));
+      } catch (err) {
+        console.error("market_buy error:", err);
+        this._showToast(err?.message || this._ui("Satin alma basarisiz", "Purchase failed"));
+      }
+      return;
+    }
+
+    if (Number(s.coins || 0) < price) {
+      this._showToast(this._ui("Yetersiz yton", "Not enough yton"));
       return;
     }
 
@@ -2143,17 +2237,19 @@ class TradeScene {
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
 
     try {
-      const profileId = await this._getProfileId();
-
-      const result = await this._rpc("create_market_listing", {
-        p_seller_profile_id: profileId,
-        p_business_id: bizId,
-        p_business_product_id: productId,
-        p_quantity: qty,
-        p_price_yton: price,
+      const json = await fetchBackendJson("/public/market/list-business-product", {
+        method: "POST",
+        body: JSON.stringify({
+          business_id: String(bizId),
+          business_product_id: String(productId),
+          quantity: qty,
+          price_yton: price,
+        }),
       });
-
-      const row = Array.isArray(result) ? result[0] : result;
+      const row = json?.item || null;
+      if (!row) {
+        throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
+      }
 
       const state2 = this.store.get();
       const businesses2 = (state2.businesses?.owned || []).map((b) => ({
@@ -2211,6 +2307,7 @@ class TradeScene {
         desc: product.desc || this._ui("Isletme urunu", "Business product"),
         businessId: bizId,
         businessProductId: productId,
+        serverManaged: true,
       });
 
       for (const sh of shops) {
