@@ -355,6 +355,25 @@ const DAMAGE = {
     };
   }
 
+  function quadPoints(cx, cy, topWidth, bottomWidth, height) {
+    const halfH = height * 0.5;
+    const topY = cy - halfH;
+    const bottomY = cy + halfH;
+    return [
+      { x: cx - topWidth * 0.5, y: topY },
+      { x: cx + topWidth * 0.5, y: topY },
+      { x: cx + bottomWidth * 0.5, y: bottomY },
+      { x: cx - bottomWidth * 0.5, y: bottomY },
+    ];
+  }
+
+  function edgePoint(a, b, t) {
+    return {
+      x: lerp(a.x, b.x, t),
+      y: lerp(a.y, b.y, t),
+    };
+  }
+
   function regularPolygonPoints(cx, cy, radius, sides = 8, rotation = Math.PI / 8) {
     const points = [];
     for (let i = 0; i < sides; i++) {
@@ -372,36 +391,72 @@ const DAMAGE = {
     const h = Math.max(180, Number(height || 0));
     const cx = w * 0.5;
     const cy = h * 0.565;
-    const outerR = Math.min(w * 0.49, h * 0.43);
-    const wallInnerR = outerR * 0.885;
-    const floorR = outerR * 0.79;
-    const iconR = floorR * 0.88;
-    const outerPoints = regularPolygonPoints(cx, cy, outerR, 8, Math.PI / 8);
-    const wallInnerPoints = regularPolygonPoints(cx, cy, wallInnerR, 8, Math.PI / 8);
-    const floorPoints = regularPolygonPoints(cx, cy, floorR, 8, Math.PI / 8);
-    const iconPoints = regularPolygonPoints(cx, cy, iconR, 8, Math.PI / 8);
+    const outerHeight = h * 0.76;
+    const wallHeight = outerHeight * 0.92;
+    const floorHeight = outerHeight * 0.82;
+    const iconHeight = floorHeight * 0.72;
+    const outerTopWidth = w * 0.62;
+    const outerBottomWidth = w * 0.88;
+    const wallTopWidth = outerTopWidth * 0.9;
+    const wallBottomWidth = outerBottomWidth * 0.9;
+    const floorTopWidth = outerTopWidth * 0.8;
+    const floorBottomWidth = outerBottomWidth * 0.8;
+    const iconTopWidth = floorTopWidth * 0.84;
+    const iconBottomWidth = floorBottomWidth * 0.84;
+    const outerPoints = quadPoints(cx, cy, outerTopWidth, outerBottomWidth, outerHeight);
+    const wallInnerPoints = quadPoints(cx, cy, wallTopWidth, wallBottomWidth, wallHeight);
+    const floorPoints = quadPoints(cx, cy, floorTopWidth, floorBottomWidth, floorHeight);
+    const iconPoints = quadPoints(cx, cy, iconTopWidth, iconBottomWidth, iconHeight);
+    const outerBounds = polygonBounds(outerPoints);
+    const floorBounds = polygonBounds(floorPoints);
     const iconBounds = polygonBounds(iconPoints);
-    const ringSize = floorR * 1.16;
+    const outerW = outerBounds.maxX - outerBounds.minX;
+    const outerH = outerBounds.maxY - outerBounds.minY;
+    const ringSize = Math.min(floorBounds.maxX - floorBounds.minX, floorBounds.maxY - floorBounds.minY) * 0.76;
     const ringRect = {
       x: cx - ringSize * 0.5,
-      y: cy - ringSize * 0.505,
-      size: ringSize,
+      y: cy - ringSize * 0.5,
+      w: ringSize,
+      h: ringSize,
     };
+    const coreSize = ringSize * 0.42;
+    const coreRect = {
+      x: cx - coreSize * 0.5,
+      y: cy - coreSize * 0.5,
+      w: coreSize,
+      h: coreSize,
+    };
+    const lightPoints = [
+      outerPoints[0],
+      edgePoint(outerPoints[0], outerPoints[1], 0.5),
+      outerPoints[1],
+      edgePoint(outerPoints[1], outerPoints[2], 0.5),
+      outerPoints[2],
+      edgePoint(outerPoints[2], outerPoints[3], 0.5),
+      outerPoints[3],
+      edgePoint(outerPoints[3], outerPoints[0], 0.5),
+    ];
     return {
       width: w,
       height: h,
       cx,
       cy,
-      outerR,
-      wallInnerR,
-      floorR,
-      iconR,
+      outerR: Math.max(outerW, outerH) * 0.5,
+      wallInnerR: Math.min(wallTopWidth, wallHeight) * 0.5,
+      floorR: Math.min(floorTopWidth, floorHeight) * 0.5,
+      iconR: Math.min(iconTopWidth, iconHeight) * 0.5,
+      outerW,
+      outerH,
+      outerBounds,
+      floorBounds,
       outerPoints,
       wallInnerPoints,
       floorPoints,
       iconPoints,
       iconBounds,
       ringRect,
+      coreRect,
+      lightPoints,
     };
   }
 
@@ -1619,7 +1674,7 @@ const DAMAGE = {
         arena.iconBounds.maxX - arena.iconBounds.minX,
         arena.iconBounds.maxY - arena.iconBounds.minY
       );
-      const size = clamp(Math.round(zoneSpan * rand(0.26, 0.34)), 52, 88);
+      const size = clamp(Math.round(zoneSpan * rand(0.2, 0.28)), 52, 88);
       let centerX = arena.cx;
       let centerY = arena.cy;
       for (let i = 0; i < 48; i++) {
@@ -2157,7 +2212,7 @@ _handleTap(x, y) {
       cageGrad.addColorStop(1, "rgba(7,10,18,0.98)");
       fillRoundRect(ctx, 0, 0, w, h, 18, cageGrad);
 
-      const ambient = ctx.createRadialGradient(arena.cx, arena.cy, 8, arena.cx, arena.cy, arena.outerR * 1.45);
+      const ambient = ctx.createRadialGradient(arena.cx, arena.cy, 8, arena.cx, arena.cy, arena.outerR * 1.18);
       ambient.addColorStop(0, "rgba(255,255,255,0.06)");
       ambient.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = ambient;
@@ -2167,11 +2222,11 @@ _handleTap(x, y) {
       ctx.globalAlpha = 0.55;
       ctx.fillStyle = "rgba(0,0,0,0.34)";
       ctx.beginPath();
-      ctx.ellipse(arena.cx, arena.cy + arena.outerR * 0.98, arena.outerR * 0.92, arena.outerR * 0.22, 0, 0, Math.PI * 2);
+      ctx.ellipse(arena.cx, arena.outerBounds.maxY + arena.outerH * 0.09, arena.outerW * 0.34, arena.outerH * 0.08, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
 
-      const wallGrad = ctx.createLinearGradient(arena.cx - arena.outerR, arena.cy - arena.outerR, arena.cx + arena.outerR, arena.cy + arena.outerR);
+      const wallGrad = ctx.createLinearGradient(arena.outerBounds.minX, arena.outerBounds.minY, arena.outerBounds.maxX, arena.outerBounds.maxY);
       wallGrad.addColorStop(0, "#34383f");
       wallGrad.addColorStop(0.22, "#111317");
       wallGrad.addColorStop(0.55, "#07080b");
@@ -2179,12 +2234,13 @@ _handleTap(x, y) {
       fillPolygon(ctx, arena.outerPoints, wallGrad);
       strokePolygon(ctx, arena.outerPoints, "rgba(255,255,255,0.12)", 2);
 
-      const wallInsetGrad = ctx.createLinearGradient(arena.cx, arena.cy - arena.wallInnerR, arena.cx, arena.cy + arena.wallInnerR);
+      fillPolygon(ctx, arena.wallInnerPoints, "rgba(11,13,18,0.96)");
+      const wallInsetGrad = ctx.createLinearGradient(arena.cx, arena.outerBounds.minY, arena.cx, arena.outerBounds.maxY);
       wallInsetGrad.addColorStop(0, "rgba(255,255,255,0.18)");
       wallInsetGrad.addColorStop(1, "rgba(0,0,0,0.18)");
       strokePolygon(ctx, arena.wallInnerPoints, wallInsetGrad, 2.2);
 
-      const floorGrad = ctx.createRadialGradient(arena.cx, arena.cy - arena.floorR * 0.18, 8, arena.cx, arena.cy, arena.floorR * 1.08);
+      const floorGrad = ctx.createLinearGradient(arena.cx, arena.floorBounds.minY, arena.cx, arena.floorBounds.maxY);
       floorGrad.addColorStop(0, "#f4f4f0");
       floorGrad.addColorStop(0.48, "#dad9d4");
       floorGrad.addColorStop(1, "#bdb9b2");
@@ -2192,22 +2248,21 @@ _handleTap(x, y) {
       strokePolygon(ctx, arena.floorPoints, "rgba(80,80,80,0.26)", 1.4);
 
       const ring = arena.ringRect;
-      ctx.lineWidth = Math.max(2, ring.size * 0.018);
+      ctx.lineWidth = Math.max(2, Math.min(ring.w, ring.h) * 0.018);
       ctx.strokeStyle = "#255bcb";
-      ctx.strokeRect(ring.x, ring.y, ring.size, ring.size);
+      ctx.strokeRect(ring.x, ring.y, ring.w, ring.h);
       ctx.strokeStyle = "#bf3131";
       ctx.beginPath();
-      ctx.moveTo(ring.x + ring.size * 0.5, ring.y);
-      ctx.lineTo(ring.x + ring.size, ring.y);
-      ctx.lineTo(ring.x + ring.size, ring.y + ring.size);
-      ctx.lineTo(ring.x + ring.size * 0.5, ring.y + ring.size);
+      ctx.moveTo(ring.x + ring.w * 0.5, ring.y);
+      ctx.lineTo(ring.x + ring.w, ring.y);
+      ctx.lineTo(ring.x + ring.w, ring.y + ring.h);
+      ctx.lineTo(ring.x + ring.w * 0.5, ring.y + ring.h);
       ctx.stroke();
       ctx.strokeStyle = "rgba(30,30,32,0.7)";
-      ctx.lineWidth = Math.max(2, ring.size * 0.012);
-      const coreSize = ring.size * 0.5;
-      ctx.strokeRect(arena.cx - coreSize * 0.5, arena.cy - coreSize * 0.5, coreSize, coreSize);
+      ctx.lineWidth = Math.max(2, Math.min(ring.w, ring.h) * 0.012);
+      ctx.strokeRect(arena.coreRect.x, arena.coreRect.y, arena.coreRect.w, arena.coreRect.h);
 
-      arena.outerPoints.forEach((point, idx) => {
+      arena.lightPoints.forEach((point, idx) => {
         const light = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, arena.outerR * 0.095);
         const tint = idx % 2 ? "rgba(255,244,210,0.86)" : "rgba(255,255,255,0.9)";
         light.addColorStop(0, tint);
@@ -2215,7 +2270,7 @@ _handleTap(x, y) {
         light.addColorStop(1, "rgba(255,232,176,0)");
         ctx.fillStyle = light;
         ctx.beginPath();
-        ctx.arc(point.x, point.y, arena.outerR * 0.07, 0, Math.PI * 2);
+        ctx.arc(point.x, point.y, arena.outerR * 0.045, 0, Math.PI * 2);
         ctx.fill();
       });
 
