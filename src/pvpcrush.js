@@ -2448,7 +2448,6 @@
       const timeLeft = activeTimeText;
       if (this._els.meMoves) this._els.meMoves.textContent = `${moveLabel}: ${s.meMoves} • ${roundLabel}: ${s.meActionLeft}/2 • ${timeLabel}: ${s.turn === "me" && !s.matchmaking && !s.finished ? timeLeft : "--:--"}`;
       if (this._els.enemyMoves) this._els.enemyMoves.textContent = `${moveLabel}: ${s.enemyMoves} • ${roundLabel}: ${s.enemyActionLeft}/2 • ${timeLabel}: ${s.turn === "enemy" && !s.matchmaking && !s.finished ? timeLeft : "--:--"}`;
-      if (this._els.turn) {
       if (this._els.meMoves) {
         this._els.meMoves.textContent = `${moveLabel}: ${s.meMoves} - ${roundLabel}: ${s.meActionLeft}/2 - ${timeLabel}: ${meTurnMs == null ? "--:--" : fmtTurnTime(meTurnMs)}`;
       }
@@ -2497,9 +2496,10 @@
       }
 
       this._state.board = swapped;
+      this._state.turnMadeAction = true;
       this._render();
       await this._sleep(140);
-      const turnFx = await this._resolveTurn("me");
+      const turnFx = await this._resolveTurn("me", { initialResolution: evalNow });
 
       if (!this._running) return;
       if (this._checkFinish()) {
@@ -2534,6 +2534,74 @@
       }
     },
 
+    async _activateSpecialTile(cell, actor = "me") {
+      if (!this._running || this._state?.matchmaking) return;
+      if (actor === "me" && (this._locked || this._state?.turn !== "me")) return;
+      if (actor === "enemy" && this._state?.turn !== "enemy") return;
+
+      const tile = this._state?.board?.[cell?.r]?.[cell?.c];
+      const special = getTileSpecial(tile);
+      if (!tile || !special) {
+        if (actor === "me") this._locked = false;
+        return;
+      }
+
+      this._locked = true;
+      this._selected = null;
+      this._state.turnMadeAction = true;
+      this._state.info = pvpCrushSpecialLabel(special) || this._state.info;
+      this._render();
+      await this._sleep(actor === "me" ? 110 : 180);
+
+      const resolution = buildSpecialResolution(this._state.board, cell);
+      if (!resolution?.hasAction) {
+        this._locked = actor !== "me";
+        return;
+      }
+
+      const turnFx = await this._resolveTurn(actor, { initialResolution: resolution });
+      if (!this._running) return;
+
+      if (this._checkFinish()) {
+        if (actor === "me" && this._isRealtimeMatch()) {
+          this._bumpNetworkSeq();
+          await this._broadcastOnline("finish_sync", {
+            state: this._toNetworkState(),
+            move: { special: special, at: { r: cell.r, c: cell.c } },
+            fxTimeline: turnFx?.fxTimeline || [],
+          });
+        }
+        return;
+      }
+
+      if (actor === "me" && this._isRealtimeMatch()) {
+        this._bumpNetworkSeq();
+        await this._broadcastOnline("state_sync", {
+          state: this._toNetworkState(),
+          move: { special: special, at: { r: cell.r, c: cell.c } },
+          toastKey: "opponentPlayed",
+          fxTimeline: turnFx?.fxTimeline || [],
+        });
+        this._locked = this._state.turn !== "me";
+        return;
+      }
+
+      if (actor === "enemy") {
+        if (this._state.turn === "enemy") {
+          this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(650, 1150));
+        } else {
+          this._locked = false;
+        }
+        return;
+      }
+
+      if (this._state.turn === "enemy") {
+        this._turnTimer = setTimeout(() => this._enemyPlay(), randInt(700, 1250));
+      } else {
+        this._locked = false;
+      }
+    },
+
     async _enemyPlay() {
       if (this._isRealtimeMatch()) return;
       if (!this._running || !this._state || this._state.turn !== "enemy" || this._state.matchmaking) return;
@@ -2545,23 +2613,29 @@
       this._render();
       await this._sleep(thinking);
 
-      const move = calcBotMove(this._state.board, this._state.enemyHp);
-      if (!move) {
-        this._beginTurn("me");
+      const action = calcBotAction(this._state.board, this._state.enemyHp);
+      if (!action) {
         this._state.info = this._text("opponentNoMove", "Rakip hamle bulamadi");
-        this._updateHud();
-        this._render();
         this._toast(this._text("opponentNoMove", "Rakip hamle bulamadi"));
-        this._locked = false;
+        this._finishGame(true, this._text("opponentNoMove", "Rakip hamle bulamadi"));
         return;
       }
 
-      this._state.board = swapCells(this._state.board, move.a, move.b);
-      this._state.info = this._text("opponentPlaying", "Rakip oynuyor");
-      this._updateHud();
-      this._render();
-      await this._sleep(randInt(160, 320));
-      await this._resolveTurn("enemy");
+      this._state.turnMadeAction = true;
+      if (action.kind === "special") {
+        this._state.info = this._text("opponentPlaying", "Rakip oynuyor");
+        this._updateHud();
+        this._render();
+        await this._sleep(randInt(180, 320));
+        await this._activateSpecialTile(action.cell, "enemy");
+      } else {
+        this._state.board = swapCells(this._state.board, action.a, action.b);
+        this._state.info = this._text("opponentPlaying", "Rakip oynuyor");
+        this._updateHud();
+        this._render();
+        await this._sleep(randInt(160, 320));
+        await this._resolveTurn("enemy");
+      }
 
       if (!this._running) return;
       if (this._checkFinish()) return;
@@ -2573,17 +2647,17 @@
       }
     },
 
-    async _resolveTurn(actor) {
+    async _resolveTurn(actor, opts = {}) {
       let board = this._state.board;
       let chain = 0;
       let totalDamage = 0;
       let totalHeal = 0;
       let totalExtra = 0;
       const fxTimeline = [];
+      let res = opts.initialResolution || evaluateBoard(board);
+      this._state.turnMadeAction = true;
 
-      while (true) {
-        const res = evaluateBoard(board);
-        if (!res.hasAction) break;
+      while (res?.hasAction) {
 
         chain += 1;
         totalDamage += res.damage;
@@ -2617,6 +2691,7 @@
         this._updateHud();
         this._render();
         await this._sleep(250);
+        res = evaluateBoard(board);
       }
 
       if (!hasAnyPossibleMove(board)) {
@@ -2649,8 +2724,9 @@
         if (this._state.meMoves <= 0 || this._state.meActionLeft <= 0) {
           this._beginTurn("enemy");
         } else {
-          this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
           this._state.turn = "me";
+          this._state.turnBannerText = "";
+          this._state.turnBannerUntil = 0;
         }
       } else {
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1);
@@ -2675,8 +2751,9 @@
         if (this._state.enemyMoves <= 0 || this._state.enemyActionLeft <= 0) {
           this._beginTurn("me");
         } else {
-          this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
           this._state.turn = "enemy";
+          this._state.turnBannerText = "";
+          this._state.turnBannerUntil = 0;
         }
       }
 
@@ -2839,6 +2916,44 @@
         }
       }
       ctx.globalAlpha = 1;
+    },
+
+    _renderTurnBanner(ctx, w, h) {
+      const text = String(this._state?.turnBannerText || "");
+      const until = Number(this._state?.turnBannerUntil || 0);
+      if (!text || !until) return;
+
+      const left = until - Date.now();
+      if (left <= 0 || this._state?.finished) {
+        this._state.turnBannerText = "";
+        this._state.turnBannerUntil = 0;
+        return;
+      }
+
+      const t = clamp(1 - left / TURN_BANNER_MS, 0, 1);
+      const alpha = t < 0.2 ? t / 0.2 : (t > 0.82 ? (1 - t) / 0.18 : 1);
+      const y = h * 0.5 - 12 * Math.sin(t * Math.PI);
+      const glowColor = "rgba(255,126,74," + (0.22 * alpha).toFixed(3) + ")";
+      const halo = ctx.createRadialGradient(w * 0.5, y, 10, w * 0.5, y, Math.min(w, h) * 0.34);
+      halo.addColorStop(0, glowColor);
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(w * 0.5, y, Math.min(w, h) * 0.26, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `900 ${Math.max(28, Math.floor(Math.min(w, h) * 0.085))}px system-ui, Arial`;
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.strokeText(text, w * 0.5, y);
+      ctx.shadowBlur = 28;
+      ctx.shadowColor = "#ff7a4a";
+      ctx.fillStyle = "#ffd784";
+      ctx.fillText(text, w * 0.5, y);
+      ctx.restore();
     },
 
     _renderResultOverlay(ctx, w, h) {
@@ -3019,6 +3134,7 @@
 
       this._renderRemoteSwap(ctx);
       this._renderEffects(ctx);
+      this._renderTurnBanner(ctx, w, h);
       this._renderResultOverlay(ctx, w, h);
 
       ctx.textAlign = "left";
