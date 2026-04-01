@@ -1,5 +1,8 @@
 import { supabase } from "../supabase.js";
 
+const CHAT_STARTING_LEVEL = 0;
+const CHAT_DEMO_PATTERN = /^(test|demo|deneme|sample|ornek|ornk)([\s\d!?.-]|$)/i;
+
 const COPY = {
   tr: {
     title: "Sohbet",
@@ -60,6 +63,17 @@ const copyOf = (store) => COPY[langOf(store)] || COPY.tr;
 const parseTime = (value) => {
   const ts = new Date(value).getTime();
   return Number.isFinite(ts) ? ts : 0;
+};
+
+const readLevel = (value, fallback = CHAT_STARTING_LEVEL) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.max(CHAT_STARTING_LEVEL, Math.floor(num)) : fallback;
+};
+
+const isDemoMessage = (row) => {
+  const text = String(row?.text || row?.message || "").trim().toLowerCase();
+  const username = String(row?.username || row?.player_meta?.username || "").trim().toLowerCase();
+  return CHAT_DEMO_PATTERN.test(text) || CHAT_DEMO_PATTERN.test(username);
 };
 
 function makeProfileLine(label, value) {
@@ -137,7 +151,7 @@ export function startChat(store) {
     return {
       username: username(),
       telegramId: telegramId(),
-      level: Number(player.level || 1),
+      level: readLevel(player.level),
       premium: !!(snapshot.premium || player.premium || player.isPremium),
       clan: String(clan.name || clan.tag || ""),
       rating: Number(snapshot.pvp?.rating || 1000),
@@ -176,7 +190,11 @@ export function startChat(store) {
     if (chatTransport === "backend") return null;
     if (chatAuthPromise) return chatAuthPromise;
 
-    chatAuthPromise = Promise.resolve(null).finally(() => {
+    chatAuthPromise = Promise.resolve(
+      typeof window.tcEnsureAuthSession === "function"
+        ? window.tcEnsureAuthSession().catch(() => null)
+        : null
+    ).finally(() => {
       chatAuthPromise = null;
     });
     return chatAuthPromise;
@@ -259,7 +277,7 @@ export function startChat(store) {
     try {
       const raw = localStorage.getItem(LOCAL_CACHE_KEY);
       const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr : [];
+      return Array.isArray(arr) ? arr.filter((item) => !isDemoMessage(item)) : [];
     } catch {
       return [];
     }
@@ -301,7 +319,7 @@ export function startChat(store) {
         isBot: !!meta.isBot,
         premium: !!meta.premium,
         clan: String(meta.clan || ""),
-        level: Number(meta.level || 1),
+        level: readLevel(meta.level),
         rating: Number(meta.rating || 1000),
         wins: Number(meta.wins || 0),
         losses: Number(meta.losses || 0),
@@ -318,7 +336,9 @@ export function startChat(store) {
 
   function visibleMessages() {
     return sortedMessages().filter(
-      (message) => String(message?.player_meta?.kind || "").toLowerCase() !== "activity"
+      (message) =>
+        String(message?.player_meta?.kind || "").toLowerCase() !== "activity" &&
+        !isDemoMessage(message)
     );
   }
 
@@ -327,6 +347,7 @@ export function startChat(store) {
   }
 
   function addMessage(row, shouldRender = true) {
+    if (isDemoMessage(row)) return;
     const message = normalizeMessage(row);
     state.messageMap.set(message.id, message);
     if (shouldRender) renderMessages();
@@ -336,6 +357,7 @@ export function startChat(store) {
   function applyMessages(rows = []) {
     state.messageMap.clear();
     for (const row of rows) {
+      if (isDemoMessage(row)) continue;
       const message = normalizeMessage(row);
       state.messageMap.set(message.id, message);
     }
@@ -463,7 +485,7 @@ export function startChat(store) {
 
     if (body) {
       body.innerHTML = "";
-      body.appendChild(makeProfileLine(copy.profileLevel, String(Number(meta.level || 1))));
+      body.appendChild(makeProfileLine(copy.profileLevel, String(readLevel(meta.level))));
       body.appendChild(makeProfileLine(copy.profileClan, String(meta.clan || copy.none)));
       body.appendChild(makeProfileLine(copy.profileRating, String(Number(meta.rating || 1000))));
       body.appendChild(makeProfileLine(copy.profileWins, String(Number(meta.wins || 0))));
@@ -552,6 +574,16 @@ export function startChat(store) {
       switchToBackend(err, "history");
       return loadHistory();
     }
+  }
+
+  async function cleanupDemoMessages() {
+    try {
+      localStorage.removeItem(LOCAL_CACHE_KEY);
+    } catch {}
+
+    try {
+      await fetchChatBackend("/public/chat/cleanup-demo", { method: "POST" });
+    } catch (_) {}
   }
 
   async function send() {
@@ -785,7 +817,9 @@ export function startChat(store) {
   bindUi();
   applyLanguage();
   setupRealtime();
-  loadHistory().catch((err) => console.error("[CHAT] initial history failed:", err));
+  cleanupDemoMessages()
+    .finally(() => loadHistory())
+    .catch((err) => console.error("[CHAT] initial history failed:", err));
   startPolling();
 
   const api = {
