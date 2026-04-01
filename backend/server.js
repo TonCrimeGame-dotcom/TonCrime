@@ -30,6 +30,13 @@ const ADMIN_RATE_LIMIT_WINDOW_MS = Number(process.env.ADMIN_RATE_LIMIT_WINDOW_MS
 const ADMIN_RATE_LIMIT_MAX = Number(process.env.ADMIN_RATE_LIMIT_MAX || 120);
 const MAX_ADMIN_NOTE_LEN = 500;
 const PAYOUT_MEMO = String(process.env.TON_PAYOUT_MEMO || 'TonCrime payout');
+const CHAT_DEMO_PATTERNS = [
+  'deneme%',
+  'demo%',
+  'test%',
+  'sample%',
+  'ornek%',
+];
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -348,14 +355,36 @@ app.post('/public/ensure-auth-user', async (req, res) => {
   }
 });
 
+app.get('/public/profile', async (req, res) => {
+  try {
+    const identityKey = String(req.query.identity_key || req.query.telegram_id || '').trim();
+
+    if (!identityKey) {
+      return res.status(400).json({ ok: false, error: 'identity_key is required' });
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('telegram_id', identityKey)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return res.json({ ok: true, item: data || null });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'profile fetch failed' });
+  }
+});
+
 app.post('/public/profile-sync', async (req, res) => {
   try {
-    const identityKey = String(req.body?.identity_key || '').trim();
+    const identityKey = String(req.body?.identity_key || req.body?.telegram_id || '').trim();
     const username = String(req.body?.username || 'Player').trim().slice(0, 24) || 'Player';
-    const level = Math.max(1, asNumber(req.body?.level, 1));
+    const level = Math.max(0, asNumber(req.body?.level, 0));
     const coins = Math.max(0, asNumber(req.body?.coins, 0));
     const energy = Math.max(0, asNumber(req.body?.energy, 0));
-    const energyMax = Math.max(1, asNumber(req.body?.energy_max, energy || 1));
+    const energyMax = Math.min(100, Math.max(1, asNumber(req.body?.energy_max, energy || 1)));
     const age = req.body?.age == null ? null : asNumber(req.body?.age, null);
 
     if (!identityKey) {
@@ -384,6 +413,22 @@ app.post('/public/profile-sync', async (req, res) => {
     return res.json({ ok: true, item: data });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message || 'profile-sync failed' });
+  }
+});
+
+app.post('/public/chat/cleanup-demo', async (_req, res) => {
+  try {
+    const filters = CHAT_DEMO_PATTERNS.map((pattern) => `text.ilike.${pattern}`).join(',');
+    const { error } = await supabase
+      .from('chat_messages')
+      .delete()
+      .or(filters);
+
+    if (error) throw error;
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'chat cleanup failed' });
   }
 });
 
