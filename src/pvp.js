@@ -958,6 +958,69 @@
       }
     }
 
+    async _waitForUsableMatchById(sb, matchId, userId, mode, stake, timeoutMs = 2200) {
+      if (!sb || !matchId) return null;
+      const started = Date.now();
+
+      while (Date.now() - started < Math.max(300, Number(timeoutMs || 0))) {
+        const match = await this._fetchMatchById(sb, matchId);
+        if (this._isUsableMatch(match, userId, mode, stake)) {
+          return match;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 220));
+      }
+
+      return null;
+    }
+
+    _normalizeOpponentForGame(opponentData, matchCtx = null) {
+      const raw = opponentData && typeof opponentData === "object" ? { ...opponentData } : {};
+      const genericNamePattern = /^(player\s*\d*|oyuncu\s*\d*)$/i;
+      const rawName = String(raw.username || "").trim();
+      const ctxName = String(
+        matchCtx?.opponentUsername ||
+        (
+          matchCtx?.amIPlayer1
+            ? matchCtx?.player2Username
+            : matchCtx?.player1Username
+        ) ||
+        ""
+      ).trim();
+
+      const username = (
+        rawName && !genericNamePattern.test(rawName)
+          ? rawName
+          : (ctxName && !genericNamePattern.test(ctxName) ? ctxName : this._text("opponent"))
+      ) || this._text("opponent");
+
+      const level = Math.max(
+        STARTING_LEVEL,
+        Number(
+          raw.level ??
+          raw.rankLevel ??
+          matchCtx?.opponentLevel ??
+          STARTING_LEVEL
+        ) || STARTING_LEVEL
+      );
+
+      const rank = Math.max(
+        100,
+        Number(raw.rank ?? raw.rating ?? this._getPlayerMeta().rank ?? 1000) || 1000
+      );
+
+      const isBot = typeof raw.isBot === "boolean"
+        ? raw.isBot
+        : !!matchCtx?.isBotMatch;
+
+      return {
+        ...raw,
+        username,
+        level,
+        rank,
+        isBot,
+      };
+    }
+
     _buildFallbackOpponentFromRpc(payload, userId) {
       const rpc = this._normalizeRpcPayload(payload);
       if (!rpc) return null;
@@ -1068,12 +1131,24 @@
       const fallbackCtx = this._buildFallbackMatchContextFromRpc(rpc, userId, sceneModeId);
       if (!fallbackCtx?.matchId) return false;
 
-      this.rtMatchStarted = true;
-      this.onMatchFound(
-        this._buildFallbackOpponentFromRpc(rpc, userId) || this._makeOpponent(),
-        fallbackCtx
+      const waitedMatch = await this._waitForUsableMatchById(
+        sb,
+        fallbackCtx.matchId,
+        userId,
+        mode,
+        stake,
+        2200
       );
-      return true;
+      if (this._isUsableMatch(waitedMatch, userId, mode, stake)) {
+        this.rtMatchStarted = true;
+        this.onMatchFound(
+          this._buildOpponentFromMatch(waitedMatch, userId),
+          this._buildMatchContext(waitedMatch, userId, sceneModeId)
+        );
+        return true;
+      }
+
+      return false;
     }
 
     _clearRealtime() {
@@ -1475,6 +1550,7 @@
       };
       const player = { ...(s.player || {}) };
       const economy = ECONOMY[id];
+      const normalizedOpponent = this._normalizeOpponentForGame(opponentData, matchCtx);
 
       pvp.selectedMode = id;
       pvp.source = this.source || "general";
@@ -1552,7 +1628,7 @@
         const dom = ensurePvpDom(this._lang());
 
         if (dom.status) dom.status.textContent = this._text("statusLoading");
-        if (dom.opponent) dom.opponent.textContent = (opponentData?.username || "ShadowWolf");
+        if (dom.opponent) dom.opponent.textContent = (normalizedOpponent.username || this._text("opponent"));
         if (dom.spinner) dom.spinner.classList.remove("hidden");
 
         if (id === "grid") {
@@ -1574,24 +1650,16 @@
           });
 
           window.TonCrimePVP.setMatchContext?.(matchCtx || null);
-          window.TonCrimePVP.setOpponent?.({
-            username: opponentData?.username || "ShadowWolf",
-            isBot: !!(opponentData?.isBot ?? true),
-            level: opponentData?.level ?? 1,
-          });
+          window.TonCrimePVP.setOpponent?.(normalizedOpponent);
           try {
-            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin);
           } catch (_) {}
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: opponentData?.username || "ShadowWolf",
-                  isBot: !!(opponentData?.isBot ?? true),
-                  level: opponentData?.level ?? 1,
-                });
+                window.TonCrimePVP.setOpponent?.(normalizedOpponent);
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
                 window.TonCrimePVP.start?.();
@@ -1646,24 +1714,16 @@
           });
 
           window.TonCrimePVP.setMatchContext?.(matchCtx || null);
-          window.TonCrimePVP.setOpponent?.({
-            username: opponentData?.username || "ShadowWolf",
-            isBot: !!(opponentData?.isBot ?? true),
-            level: opponentData?.level ?? 1,
-          });
+          window.TonCrimePVP.setOpponent?.(normalizedOpponent);
           try {
-            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin);
           } catch (_) {}
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: opponentData?.username || "ShadowWolf",
-                  isBot: !!(opponentData?.isBot ?? true),
-                  level: opponentData?.level ?? 1,
-                });
+                window.TonCrimePVP.setOpponent?.(normalizedOpponent);
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
                 window.TonCrimePVP.start?.();
@@ -1718,24 +1778,16 @@
           });
 
           window.TonCrimePVP.setMatchContext?.(matchCtx || null);
-          window.TonCrimePVP.setOpponent?.({
-            username: opponentData?.username || "ShadowWolf",
-            isBot: !!(opponentData?.isBot ?? true),
-            level: opponentData?.level ?? 1,
-          });
+          window.TonCrimePVP.setOpponent?.(normalizedOpponent);
           try {
-            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
+            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin);
           } catch (_) {}
 
           if (dom.startBtn) {
             dom.startBtn.style.display = "";
             dom.startBtn.onclick = async () => {
               try {
-                window.TonCrimePVP.setOpponent?.({
-                  username: opponentData?.username || "ShadowWolf",
-                  isBot: !!(opponentData?.isBot ?? true),
-                  level: opponentData?.level ?? 1
-                });
+                window.TonCrimePVP.setOpponent?.(normalizedOpponent);
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
                 window.TonCrimePVP.start?.();
