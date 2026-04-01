@@ -585,6 +585,9 @@ class TradeScene {
 
   _rewardText(reward) {
     if (!reward) return this._ui("Odul alindi", "Reward claimed");
+    if (String(reward?.type || "").toLowerCase() === "empty") {
+      return this._ui("Bu dilim bos gecti", "This slice was empty");
+    }
     if (this._lang() === "en") return reward.textEn || reward.text || reward.label || "Reward claimed";
     return reward.textTr || reward.text || reward.label || "Odul alindi";
   }
@@ -903,24 +906,12 @@ class TradeScene {
   _premiumSpinRewards() {
     return [
       {
-        id: "premium_floor_combo",
-        type: "combo",
-        fullEnergy: true,
-        coins: 50,
-        textTr: "Full enerji +50 yton",
-        textEn: "Full energy +50 yton",
-        label: "FULL + 50",
-        accent: "#80d8ff",
-      },
-      {
-        id: "premium_combo_150",
-        type: "combo",
-        fullEnergy: true,
-        coins: 150,
-        textTr: "Full enerji +150 yton",
-        textEn: "Full energy +150 yton",
-        label: "FULL + 150",
-        accent: "#9ce4ff",
+        id: "premium_empty",
+        type: "empty",
+        textTr: "Bu dilim bos gecti",
+        textEn: "This slice was empty",
+        label: "BOS",
+        accent: "#6a4a23",
       },
       {
         id: "premium_yton_350",
@@ -932,6 +923,90 @@ class TradeScene {
         accent: "#ffd45b",
       },
       {
+        id: "premium_energy_25",
+        type: "energy",
+        amount: 25,
+        textTr: "+25 enerji",
+        textEn: "+25 energy",
+        label: "25 ENERGY",
+        accent: "#f0c26f",
+      },
+      {
+        id: "premium_drink",
+        type: "item",
+        textTr: "Club Prosecco kazandin",
+        textEn: "You won Club Prosecco",
+        label: "CLUB PROSECCO",
+        accent: "#f0b66b",
+        imageSrc: "./src/assets/drink.png",
+        item: {
+          id: "premium_drink_" + Date.now(),
+          kind: "consumable",
+          icon: "CP",
+          imageSrc: "./src/assets/club.png",
+          name: "Club Prosecco",
+          rarity: "rare",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 11,
+          sellPrice: 34,
+          marketPrice: 44,
+          desc: "Kulup ici icecek.",
+        },
+      },
+      {
+        id: "premium_weed",
+        type: "item",
+        textTr: "White Widow kazandin",
+        textEn: "You won White Widow",
+        label: "WHITE WIDOW",
+        accent: "#d4c061",
+        imageSrc: "./src/assets/weed.png",
+        item: {
+          id: "premium_weed_" + Date.now(),
+          kind: "goods",
+          icon: "WW",
+          imageSrc: "./src/assets/white.png",
+          name: "White Widow",
+          rarity: "rare",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 12,
+          sellPrice: 22,
+          marketPrice: 36,
+          desc: "Enerji icin kullanilabilir.",
+        },
+      },
+      {
+        id: "premium_girl",
+        type: "item",
+        textTr: "Scarlett Blaze kazandin",
+        textEn: "You won Scarlett Blaze",
+        label: "SCARLETT BLAZE",
+        accent: "#f0bf72",
+        imageSrc: "./src/assets/g_star1.png",
+        item: {
+          id: "premium_girl_" + Date.now(),
+          kind: "girls",
+          icon: "SB",
+          imageSrc: "./src/assets/g_star1.png",
+          name: "Scarlett Blaze",
+          rarity: "epic",
+          qty: 1,
+          usable: true,
+          sellable: true,
+          marketable: true,
+          energyGain: 22,
+          sellPrice: 65,
+          marketPrice: 95,
+          desc: "Vip servis.",
+        },
+      },
+      {
         id: "premium_barrett",
         type: "weapon",
         weaponId: "barrett_m82",
@@ -941,6 +1016,7 @@ class TradeScene {
         textEn: "You won Barrett M82",
         label: "BARRETT M82",
         accent: "#ffb37a",
+        imageSrc: "./src/assets/barrett.png",
       },
       {
         id: "premium_m134",
@@ -952,6 +1028,7 @@ class TradeScene {
         textEn: "You won M134 Minigun",
         label: "M134 MINIGUN",
         accent: "#ff9b5a",
+        imageSrc: "./src/assets/m134.png",
       },
     ];
   }
@@ -1108,27 +1185,278 @@ class TradeScene {
     return [prev, reward, next];
   }
 
+  _wheelRewardVisual(reward) {
+    const type = String(reward?.type || "").toLowerCase();
+    const amount = Math.max(0, Number(reward?.amount || reward?.coins || 0));
+    const shortLabel = shortRewardLabel(reward).replace(/\+/g, "").trim();
+
+    if (type === "coins") {
+      return {
+        title: `${amount}`,
+        subtitle: "YTON",
+        category: "YTON",
+        accent: reward?.accent || "#f4c45d",
+        imageSrc: "./src/assets/yton.png",
+        glyph: null,
+      };
+    }
+
+    if (type === "energy") {
+      return {
+        title: `${amount}`,
+        subtitle: "ENERJI",
+        category: "ENERJI",
+        accent: reward?.accent || "#e0b96c",
+        imageSrc: "",
+        glyph: "energy",
+      };
+    }
+
+    if (type === "weapon") {
+      return {
+        title: shortLabel || "SILAH",
+        subtitle: "SILAH",
+        category: "SILAH",
+        accent: reward?.accent || "#f0a96c",
+        imageSrc: reward?.imageSrc || (String(reward?.weaponId || "").toLowerCase().includes("m134") ? "./src/assets/m134.png" : "./src/assets/barrett.png"),
+        glyph: null,
+      };
+    }
+
+    if (type === "item") {
+      const kind = String(reward?.item?.kind || "").toLowerCase();
+      if (kind === "girls") {
+        return {
+          title: shortLabel || "KADIN",
+          subtitle: "KADIN",
+          category: "KADIN",
+          accent: reward?.accent || "#efbb78",
+          imageSrc: reward?.imageSrc || reward?.item?.imageSrc || "./src/assets/g_star1.png",
+          glyph: null,
+        };
+      }
+      if (kind === "goods") {
+        return {
+          title: shortLabel || "OT",
+          subtitle: "OT",
+          category: "OT",
+          accent: reward?.accent || "#afc86e",
+          imageSrc: reward?.imageSrc || "./src/assets/weed.png",
+          glyph: null,
+        };
+      }
+      return {
+        title: shortLabel || "ICKI",
+        subtitle: "ICKI",
+        category: "ICKI",
+        accent: reward?.accent || "#efb76b",
+        imageSrc: reward?.imageSrc || "./src/assets/drink.png",
+        glyph: null,
+      };
+    }
+
+    if (type === "empty") {
+      return {
+        title: "BOS",
+        subtitle: "SANS",
+        category: "BOS",
+        accent: reward?.accent || "#7b5630",
+        imageSrc: "",
+        glyph: "empty",
+      };
+    }
+
+    if (type === "combo") {
+      return {
+        title: `${amount}`,
+        subtitle: "FULL",
+        category: "FULL",
+        accent: reward?.accent || "#96d7ff",
+        imageSrc: "",
+        glyph: "energy",
+      };
+    }
+
+    return {
+      title: shortLabel || "ODUL",
+      subtitle: "ODUL",
+      category: "ODUL",
+      accent: reward?.accent || "#f1b965",
+      imageSrc: reward?.imageSrc || reward?.item?.imageSrc || "",
+      glyph: "",
+    };
+  }
+
+  _drawWheelGlyph(ctx, glyph, x, y, size, color = "#fff4d2") {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    if (glyph === "energy") {
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.14, -size * 0.52);
+      ctx.lineTo(size * 0.02, -size * 0.08);
+      ctx.lineTo(-size * 0.16, -size * 0.08);
+      ctx.lineTo(size * 0.16, size * 0.52);
+      ctx.lineTo(size * 0.04, size * 0.12);
+      ctx.lineTo(size * 0.20, size * 0.12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (glyph === "empty") {
+      ctx.lineWidth = Math.max(4, size * 0.1);
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.36, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-size * 0.28, size * 0.28);
+      ctx.lineTo(size * 0.28, -size * 0.28);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    ctx.font = `900 ${Math.max(16, Math.floor(size * 0.42))}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(glyph || "T").slice(0, 3), 0, 0);
+    ctx.restore();
+  }
+
+  _drawWheelBadge(ctx, reward, x, y, size, highlight = false) {
+    const meta = this._wheelRewardVisual(reward);
+    const glow = String(meta.accent || "#f1b965");
+    const art = meta.imageSrc ? this._runtimeImage(meta.imageSrc) : null;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.globalAlpha = 0.34;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.54, size * 0.56, size * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (highlight) {
+      const aura = ctx.createRadialGradient(0, 0, size * 0.18, 0, 0, size * 1.05);
+      aura.addColorStop(0, "rgba(255,244,210,0.38)");
+      aura.addColorStop(0.45, `${glow}55`);
+      aura.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, 0, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const outer = ctx.createLinearGradient(-size, -size, size, size);
+    outer.addColorStop(0, "rgba(255,232,178,0.96)");
+    outer.addColorStop(0.2, glow);
+    outer.addColorStop(0.75, "rgba(92,51,15,0.98)");
+    outer.addColorStop(1, "rgba(255,213,120,0.86)");
+    ctx.fillStyle = outer;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.72, 0, Math.PI * 2);
+    ctx.fill();
+
+    const inner = ctx.createRadialGradient(-size * 0.14, -size * 0.22, size * 0.12, 0, 0, size * 0.72);
+    inner.addColorStop(0, "rgba(38,24,12,0.96)");
+    inner.addColorStop(0.58, "rgba(18,12,8,0.98)");
+    inner.addColorStop(1, "rgba(8,6,4,0.98)");
+    ctx.fillStyle = inner;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.60, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.54, 0, Math.PI * 2);
+    ctx.clip();
+    if (art) {
+      drawContainImage(ctx, art, -size * 0.5, -size * 0.5, size, size);
+    } else {
+      const fill = ctx.createRadialGradient(0, -size * 0.12, size * 0.08, 0, 0, size * 0.54);
+      fill.addColorStop(0, "rgba(255,236,181,0.16)");
+      fill.addColorStop(1, "rgba(255,214,120,0.05)");
+      ctx.fillStyle = fill;
+      ctx.fillRect(-size, -size, size * 2, size * 2);
+      this._drawWheelGlyph(ctx, meta.glyph || meta.category, 0, 0, size, "#fff6de");
+    }
+    const glass = ctx.createLinearGradient(0, -size * 0.58, 0, size * 0.20);
+    glass.addColorStop(0, "rgba(255,255,255,0.30)");
+    glass.addColorStop(0.45, "rgba(255,255,255,0.08)");
+    glass.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = glass;
+    ctx.fillRect(-size, -size, size * 2, size * 1.2);
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(255,244,215,0.52)";
+    ctx.lineWidth = Math.max(1.4, size * 0.06);
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.60, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    return meta;
+  }
+
+  _drawWheelBadgePlaque(ctx, x, y, w, h, reward, highlight = false) {
+    const meta = this._wheelRewardVisual(reward);
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, highlight ? "rgba(255,224,155,0.22)" : "rgba(255,232,190,0.10)");
+    grad.addColorStop(1, highlight ? "rgba(102,58,18,0.34)" : "rgba(44,26,11,0.36)");
+    ctx.fillStyle = grad;
+    fillRoundRect(ctx, x, y, w, h, Math.min(16, h / 2));
+    ctx.strokeStyle = highlight ? "rgba(255,226,162,0.44)" : "rgba(255,228,186,0.14)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, x, y, w, h, Math.min(16, h / 2));
+
+    ctx.fillStyle = highlight ? "#fff8ea" : "rgba(255,245,219,0.92)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `900 ${Math.max(10, Math.floor(h * 0.38))}px system-ui`;
+    textFit(ctx, meta.title, x + w / 2, y + h / 2 + 4, w - 14);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
   _drawRewardCard(ctx, x, y, w, h, reward, highlight = false) {
     const accent = reward?.accent || "#f3b35b";
     const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, highlight ? "rgba(255,201,110,0.24)" : "rgba(10,14,20,0.42)");
-    grad.addColorStop(1, highlight ? "rgba(98,52,10,0.30)" : "rgba(6,10,16,0.52)");
+    grad.addColorStop(0, highlight ? "rgba(255,201,110,0.22)" : "rgba(16,11,7,0.56)");
+    grad.addColorStop(1, highlight ? "rgba(98,52,10,0.34)" : "rgba(8,7,6,0.72)");
     ctx.fillStyle = grad;
     fillRoundRect(ctx, x, y, w, h, 22);
     ctx.strokeStyle = highlight ? "rgba(255,216,134,0.78)" : "rgba(255,255,255,0.10)";
     ctx.lineWidth = highlight ? 1.6 : 1;
     strokeRoundRect(ctx, x, y, w, h, 22);
 
-    this._drawArtThumb(ctx, x + 14, y + 14, 68, h - 28, reward?.item || reward, reward?.label || this._rewardText(reward) || "ODUL");
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = accent;
+    fillRoundRect(ctx, x + 14, y + 14, 112, 22, 11);
+    ctx.restore();
+
+    const typeMeta = this._wheelRewardVisual(reward);
+    this._drawWheelBadge(ctx, reward, x + 58, y + h / 2, 36, highlight);
+
+    ctx.fillStyle = "#ffe2a3";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = "800 10px system-ui";
+    ctx.fillText(typeMeta.category, x + 94, y + 25);
 
     ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
     ctx.font = "900 14px system-ui";
-    textFit(ctx, reward?.label || this._rewardText(reward) || "Odul", x + 94, y + 28, w - 164);
+    textFit(ctx, reward?.label || this._rewardText(reward) || "Odul", x + 94, y + 50, w - 164);
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    textFit(ctx, this._rewardText(reward), x + 94, y + 48, w - 164);
+    textFit(ctx, this._rewardText(reward), x + 94, y + 70, w - 164);
 
     if (highlight) {
       ctx.fillStyle = accent;
@@ -1148,11 +1476,11 @@ class TradeScene {
     const selectedIndex = Number.isFinite(Number(wheelState.selectedIndex)) ? Number(wheelState.selectedIndex) : 0;
     const rotation = this._getWheelRotation(trade, pool);
 
-    const cy = y + 160;
-    const radius = Math.min(122, Math.floor(Math.min(w * 0.31, 122)));
-    const rewardCardY = Math.round(cy + radius + 18);
+    const cy = y + 180;
+    const radius = Math.min(mode === "premium" ? 138 : 130, Math.floor(Math.min(w * (mode === "premium" ? 0.34 : 0.32), mode === "premium" ? 138 : 130)));
+    const rewardCardY = Math.round(cy + radius + 24);
     const rewardCardH = 92;
-    const boxH = Math.max(392, rewardCardY + rewardCardH + 12 - y);
+    const boxH = Math.max(430, rewardCardY + rewardCardH + 14 - y);
     this.drawCard(ctx, x, y, w, boxH);
 
     ctx.fillStyle = "#fff";
@@ -1178,45 +1506,85 @@ class TradeScene {
 
     const cx = x + w / 2;
     const slice = (Math.PI * 2) / pool.length;
+    const selectedAccent = pool[selectedIndex]?.accent || "#f3bb65";
 
     ctx.save();
-    ctx.globalAlpha = 0.16;
+    ctx.globalAlpha = 0.22;
     ctx.fillStyle = "#000";
     ctx.beginPath();
-    ctx.ellipse(cx, cy + radius + 12, radius * 0.92, 20, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + radius + 16, radius * 0.94, 24, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
     ctx.save();
     ctx.translate(cx, cy);
+    const halo = ctx.createRadialGradient(0, 0, radius * 0.22, 0, 0, radius + 26);
+    halo.addColorStop(0, "rgba(0,0,0,0)");
+    halo.addColorStop(0.65, "rgba(255,198,98,0.05)");
+    halo.addColorStop(1, "rgba(255,198,98,0.22)");
+    ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(0, 0, radius + 8, 0, Math.PI * 2);
-    const rim = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius + 8);
-    rim.addColorStop(0, "rgba(0,0,0,0)");
-    rim.addColorStop(1, "rgba(255,215,120,0.30)");
-    ctx.fillStyle = rim;
+    ctx.arc(0, 0, radius + 26, 0, Math.PI * 2);
     ctx.fill();
+
+    const rimOuter = ctx.createLinearGradient(-radius, -radius, radius, radius);
+    rimOuter.addColorStop(0, "rgba(255,232,178,0.98)");
+    rimOuter.addColorStop(0.2, "rgba(245,195,96,0.98)");
+    rimOuter.addColorStop(0.65, "rgba(102,63,19,0.98)");
+    rimOuter.addColorStop(1, "rgba(255,214,121,0.96)");
+    ctx.fillStyle = rimOuter;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius + 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(12,8,6,0.98)";
+    ctx.beginPath();
+    ctx.arc(0, 0, radius + 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    const rimInner = ctx.createLinearGradient(-radius, -radius, radius, radius);
+    rimInner.addColorStop(0, "rgba(255,236,197,0.42)");
+    rimInner.addColorStop(1, "rgba(86,55,19,0.24)");
+    ctx.strokeStyle = rimInner;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius - 4, 0, Math.PI * 2);
+    ctx.stroke();
 
     const TAU = Math.PI * 2;
     for (let i = 0; i < pool.length; i += 1) {
       const start = rotation + i * slice;
       const end = start + slice;
+      const highlightSlice = !this.wheelAnim && i === selectedIndex;
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, start, end);
       ctx.closePath();
-      const seg = ctx.createLinearGradient(-radius, -radius, radius, radius);
-      if (i % 2 === 0) {
-        seg.addColorStop(0, "rgba(206,152,55,0.96)");
-        seg.addColorStop(1, "rgba(126,84,22,0.96)");
+      const seg = ctx.createRadialGradient(
+        Math.cos(start + slice / 2) * radius * 0.12,
+        Math.sin(start + slice / 2) * radius * 0.12,
+        radius * 0.08,
+        0,
+        0,
+        radius
+      );
+      if (highlightSlice) {
+        seg.addColorStop(0, "rgba(255,228,164,0.98)");
+        seg.addColorStop(0.45, "rgba(203,144,45,0.98)");
+        seg.addColorStop(1, "rgba(99,61,19,0.98)");
+      } else if (i % 2 === 0) {
+        seg.addColorStop(0, "rgba(194,139,44,0.98)");
+        seg.addColorStop(0.55, "rgba(154,107,32,0.96)");
+        seg.addColorStop(1, "rgba(96,61,16,0.98)");
       } else {
-        seg.addColorStop(0, "rgba(165,116,36,0.96)");
-        seg.addColorStop(1, "rgba(95,62,15,0.96)");
+        seg.addColorStop(0, "rgba(166,116,34,0.98)");
+        seg.addColorStop(0.55, "rgba(131,88,24,0.96)");
+        seg.addColorStop(1, "rgba(78,50,14,0.98)");
       }
       ctx.fillStyle = seg;
       ctx.fill();
-      ctx.strokeStyle = "rgba(255,240,208,0.42)";
-      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = highlightSlice ? "rgba(255,246,214,0.74)" : "rgba(255,240,208,0.20)";
+      ctx.lineWidth = highlightSlice ? 2.2 : 1.2;
       ctx.stroke();
 
       const mid = start + slice / 2;
@@ -1225,44 +1593,92 @@ class TradeScene {
       const normalizedMid = ((mid % TAU) + TAU) % TAU;
       const flip = normalizedMid > Math.PI / 2 && normalizedMid < (Math.PI * 3) / 2;
       if (flip) ctx.rotate(Math.PI);
-      const dir = flip ? -1 : 1;
       const reward = pool[i];
-      this._drawArtThumb(ctx, dir > 0 ? radius * 0.44 : (-radius * 0.44 - 40), -22, 40, 40, reward.item || reward, shortRewardLabel(reward));
-      ctx.fillStyle = "#fff7e6";
-      ctx.font = "900 10px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const label = shortRewardLabel(reward).replace(/\+/g, '');
-      ctx.fillText(label, radius * 0.62 * dir, 28);
+      const badgeSize = mode === "premium" ? 54 : 48;
+      const badgeX = radius * 0.62;
+      const badgeY = -8;
+      const plaqueW = mode === "premium" ? 92 : 74;
+      const plaqueH = mode === "premium" ? 28 : 24;
+      this._drawWheelBadge(ctx, reward, badgeX, badgeY, badgeSize, highlightSlice);
+      this._drawWheelBadgePlaque(ctx, badgeX - plaqueW / 2, badgeY + badgeSize * 0.72, plaqueW, plaqueH, reward, highlightSlice);
       ctx.restore();
     }
 
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(0, 0, 26, 0, Math.PI * 2);
-    const hub = ctx.createRadialGradient(0, 0, 4, 0, 0, 28);
-    hub.addColorStop(0, "rgba(65,36,9,0.98)");
-    hub.addColorStop(1, "rgba(20,11,6,0.98)");
+    ctx.arc(0, 0, radius - 10, 0, Math.PI * 2);
+    ctx.clip();
+    const gloss = ctx.createLinearGradient(0, -radius, 0, radius * 0.22);
+    gloss.addColorStop(0, "rgba(255,255,255,0.26)");
+    gloss.addColorStop(0.35, "rgba(255,255,255,0.10)");
+    gloss.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gloss;
+    ctx.fillRect(-radius, -radius, radius * 2, radius * 1.2);
+    ctx.restore();
+
+    for (let i = 0; i < 6; i += 1) {
+      const ang = (-Math.PI / 2) + (TAU / 6) * i;
+      const px = Math.cos(ang) * (radius + 7);
+      const py = Math.sin(ang) * (radius + 7);
+      const stud = ctx.createRadialGradient(px - 2, py - 2, 1, px, py, 10);
+      stud.addColorStop(0, "rgba(255,250,227,0.98)");
+      stud.addColorStop(0.35, "rgba(247,202,110,0.95)");
+      stud.addColorStop(1, "rgba(113,70,21,0.98)");
+      ctx.fillStyle = stud;
+      ctx.beginPath();
+      ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 32, 0, Math.PI * 2);
+    const hub = ctx.createRadialGradient(-4, -6, 3, 0, 0, 34);
+    hub.addColorStop(0, "rgba(84,52,18,0.98)");
+    hub.addColorStop(0.45, "rgba(38,22,10,0.98)");
+    hub.addColorStop(1, "rgba(15,9,6,0.98)");
     ctx.fillStyle = hub;
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,235,192,0.18)";
+    ctx.strokeStyle = "rgba(255,235,192,0.24)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(28,14,7,0.98)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,214,120,0.36)";
     ctx.stroke();
     ctx.restore();
 
     ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillStyle = "rgba(0,0,0,0.34)";
     ctx.beginPath();
-    ctx.moveTo(cx, y + 92);
-    ctx.lineTo(cx - 16, y + 58);
-    ctx.lineTo(cx + 16, y + 58);
+    ctx.moveTo(cx, y + 98);
+    ctx.lineTo(cx - 20, y + 50);
+    ctx.lineTo(cx + 20, y + 50);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#f8df9d";
+
+    const beam = ctx.createRadialGradient(cx, y + 68, 6, cx, y + 68, 34);
+    beam.addColorStop(0, "rgba(255,245,207,0.46)");
+    beam.addColorStop(1, "rgba(255,212,118,0)");
+    ctx.fillStyle = beam;
     ctx.beginPath();
-    ctx.moveTo(cx, y + 88);
-    ctx.lineTo(cx - 14, y + 58);
-    ctx.lineTo(cx + 14, y + 58);
+    ctx.arc(cx, y + 68, 34, 0, Math.PI * 2);
+    ctx.fill();
+
+    const pointer = ctx.createLinearGradient(cx, y + 48, cx, y + 100);
+    pointer.addColorStop(0, "#fff0c9");
+    pointer.addColorStop(0.5, selectedAccent);
+    pointer.addColorStop(1, "#7e4a16");
+    ctx.fillStyle = pointer;
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 94);
+    ctx.lineTo(cx - 18, y + 52);
+    ctx.lineTo(cx + 18, y + 52);
     ctx.closePath();
     ctx.fill();
+    ctx.strokeStyle = "rgba(255,248,228,0.52)";
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
     ctx.restore();
 
     const reward = wheelState.reward || pool[selectedIndex] || pool[0];
@@ -1625,39 +2041,6 @@ class TradeScene {
     });
 
     this._showToast(this._ui(`+${gain} enerji`, `+${gain} energy`));
-  }
-
-  _sellInventoryItem(itemId) {
-    const s = this.store.get();
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const idx = items.findIndex((x) => x.id === itemId);
-    if (idx < 0) return;
-
-    const item = items[idx];
-    if (!item.sellable) {
-      this._showToast(this._ui("Bu item satilamaz", "This item cannot be sold"));
-      return;
-    }
-    if (Number(item.qty || 0) <= 0) {
-      this._showToast(this._ui("Stok yok", "Out of stock"));
-      return;
-    }
-
-    const gain = Number(item.sellPrice || 0);
-    item.qty = Math.max(0, Number(item.qty || 0) - 1);
-
-    if (item.qty <= 0) items.splice(idx, 1);
-    else items[idx] = item;
-
-    this.store.set({
-      coins: Number(s.coins || 0) + gain,
-      inventory: {
-        ...(s.inventory || {}),
-        items,
-      },
-    });
-
-    this._showToast(`+${gain} yton`);
   }
 
   async _listInventoryItem(itemId) {
@@ -2401,9 +2784,6 @@ class TradeScene {
           case "use_item":
             this._useInventoryItem(h.itemId);
             return;
-          case "sell_item":
-            this._sellInventoryItem(h.itemId);
-            return;
           case "list_item":
             this._listInventoryItem(h.itemId);
             return;
@@ -2846,13 +3226,13 @@ for (const p of products) {
   textFit(ctx, this._ui(`Stok ${fmtNum(p.qty)} - Taban ${fmtNum(p.price)} yton`, `Stock ${fmtNum(p.qty)} - Base ${fmtNum(p.price)} yton`), x + 66, rowY + 34, w - 194);
 
   const useRect = { x: x + w - 130, y: rowY + 13, w: 48, h: 24 };
-  const sellRect = { x: x + w - 76, y: rowY + 13, w: 56, h: 24 };
+  const listRect = { x: x + w - 76, y: rowY + 13, w: 56, h: 24 };
 
   this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
-  this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
+  this.hitButtons.push({ rect: listRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
 
   this._drawButton(ctx, useRect, this._ui("Kullan", "Use"), "gold");
-  this._drawButton(ctx, sellRect, this._ui("Sat", "List"), "muted");
+  this._drawButton(ctx, listRect, this._ui("Listele", "List"), "muted");
 
   rowY += 62;
 }
@@ -2945,13 +3325,6 @@ for (const p of products) {
         );
         this._drawButton(ctx, rect, this._ui("Kullan", "Use"), "gold");
         bx += 60;
-      }
-
-      if (item.sellable) {
-        const rect = { x: bx, y: btnY + 2, w: 42, h: 24 };
-        this.hitButtons.push({ rect, action: "sell_item", itemId: item.id });
-        this._drawButton(ctx, rect, this._ui("Sat", "Sell"), "muted");
-        bx += 48;
       }
 
       if (item.marketable) {
