@@ -1,4 +1,6 @@
 (function () {
+  const STARTING_LEVEL = 0;
+
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
   }
@@ -91,7 +93,13 @@
   }
 
   function getWalletYton(state = null) {
-    return Number(state?.wallet?.yton || 0);
+    return Number(
+      state?.wallet?.yton ??
+      state?.coins ??
+      state?.yton ??
+      state?.player?.coins ??
+      0
+    );
   }
 
   function patchWalletYton(state = null, nextYton = 0) {
@@ -100,6 +108,7 @@
         ...(state?.wallet || {}),
         yton: Number(nextYton || 0),
       },
+      yton: Number(nextYton || 0),
       coins: Number(nextYton || 0),
     };
   }
@@ -851,6 +860,10 @@
           userId = res?.data?.user?.id || null;
           if (userId) return userId;
         }
+        if (typeof window.tcWaitForAuthSession === "function") {
+          const waitedUser = await window.tcWaitForAuthSession(6000).catch(() => null);
+          if (waitedUser?.id) return waitedUser.id;
+        }
         return null;
       } catch (_) {
         return null;
@@ -866,7 +879,7 @@
           tg?.username ||
           [tg?.first_name, tg?.last_name].filter(Boolean).join(" ") ||
           "Player",
-        level: Math.max(1, Number(s?.player?.level || 1)),
+        level: Math.max(STARTING_LEVEL, Number(s?.player?.level ?? STARTING_LEVEL)),
         rank: Math.max(100, Number(s?.player?.rank || 1000)),
       };
     }
@@ -974,7 +987,7 @@
 
       return {
         username,
-        level: Math.max(1, Number(levelRaw || 1)),
+        level: Math.max(STARTING_LEVEL, Number(levelRaw ?? STARTING_LEVEL)),
         rank: Math.max(100, Number(rankRaw || this._getPlayerMeta().rank || 1000)),
         isBot: !!(rpc.is_bot_match ?? rpc.isBotMatch),
       };
@@ -1564,7 +1577,7 @@
           window.TonCrimePVP.setOpponent?.({
             username: opponentData?.username || "ShadowWolf",
             isBot: !!(opponentData?.isBot ?? true),
-            level: opponentData?.level || 1,
+            level: opponentData?.level ?? 1,
           });
           try {
             window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
@@ -1577,7 +1590,7 @@
                 window.TonCrimePVP.setOpponent?.({
                   username: opponentData?.username || "ShadowWolf",
                   isBot: !!(opponentData?.isBot ?? true),
-                  level: opponentData?.level || 1,
+                  level: opponentData?.level ?? 1,
                 });
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
@@ -1636,7 +1649,7 @@
           window.TonCrimePVP.setOpponent?.({
             username: opponentData?.username || "ShadowWolf",
             isBot: !!(opponentData?.isBot ?? true),
-            level: opponentData?.level || 1,
+            level: opponentData?.level ?? 1,
           });
           try {
             window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
@@ -1649,7 +1662,7 @@
                 window.TonCrimePVP.setOpponent?.({
                   username: opponentData?.username || "ShadowWolf",
                   isBot: !!(opponentData?.isBot ?? true),
-                  level: opponentData?.level || 1,
+                  level: opponentData?.level ?? 1,
                 });
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
@@ -1708,7 +1721,7 @@
           window.TonCrimePVP.setOpponent?.({
             username: opponentData?.username || "ShadowWolf",
             isBot: !!(opponentData?.isBot ?? true),
-            level: opponentData?.level || 1,
+            level: opponentData?.level ?? 1,
           });
           try {
             window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, opponentData, !!didWin);
@@ -1721,7 +1734,7 @@
                 window.TonCrimePVP.setOpponent?.({
                   username: opponentData?.username || "ShadowWolf",
                   isBot: !!(opponentData?.isBot ?? true),
-                  level: opponentData?.level || 1
+                  level: opponentData?.level ?? 1
                 });
                 window.TonCrimePVP.reset?.();
                 await new Promise((r) => setTimeout(r, 120));
@@ -1892,7 +1905,7 @@
         ctx.fillText(this.matchOpponent.username || this._text("opponent"), cx, boxY + 104);
         ctx.font = "700 16px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.82)";
-        ctx.fillText(`Level ${this.matchOpponent.level || 1}`, cx, boxY + 132);
+        ctx.fillText(`Level ${this.matchOpponent.level ?? STARTING_LEVEL}`, cx, boxY + 132);
         const left = Math.max(0, 3000 - (Date.now() - this.matchFoundAt));
         ctx.font = "500 14px system-ui, Arial";
         ctx.fillStyle = "rgba(255,255,255,0.72)";
