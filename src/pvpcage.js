@@ -371,20 +371,20 @@ const DAMAGE = {
     const w = Math.max(220, Number(width || 0));
     const h = Math.max(180, Number(height || 0));
     const cx = w * 0.5;
-    const cy = h * 0.54;
-    const outerR = Math.min(w * 0.39, h * 0.47);
-    const wallInnerR = outerR * 0.86;
-    const floorR = outerR * 0.73;
-    const iconR = floorR * 0.84;
+    const cy = h * 0.565;
+    const outerR = Math.min(w * 0.49, h * 0.43);
+    const wallInnerR = outerR * 0.885;
+    const floorR = outerR * 0.79;
+    const iconR = floorR * 0.88;
     const outerPoints = regularPolygonPoints(cx, cy, outerR, 8, Math.PI / 8);
     const wallInnerPoints = regularPolygonPoints(cx, cy, wallInnerR, 8, Math.PI / 8);
     const floorPoints = regularPolygonPoints(cx, cy, floorR, 8, Math.PI / 8);
     const iconPoints = regularPolygonPoints(cx, cy, iconR, 8, Math.PI / 8);
     const iconBounds = polygonBounds(iconPoints);
-    const ringSize = floorR * 1.06;
+    const ringSize = floorR * 1.16;
     const ringRect = {
       x: cx - ringSize * 0.5,
-      y: cy - ringSize * 0.5,
+      y: cy - ringSize * 0.505,
       size: ringSize,
     };
     return {
@@ -460,7 +460,7 @@ const DAMAGE = {
         inset: 0;
         display: flex;
         flex-direction: column;
-        padding: 10px;
+        padding: 8px;
         box-sizing: border-box;
         color: #fff;
         user-select: none;
@@ -470,7 +470,7 @@ const DAMAGE = {
         position: relative;
         flex: 0 0 auto;
         padding-top: 4px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
       }
 
       #arena .tc-cage-x {
@@ -528,14 +528,14 @@ const DAMAGE = {
       }
 
       #arena .tc-cage-sub {
-        margin-top: 6px;
+        margin-top: 4px;
         font: 800 11px system-ui, Arial;
         color: rgba(255,255,255,0.74);
         letter-spacing: .4px;
       }
 
       #arena .tc-cage-bar-shell {
-        margin-top: 10px;
+        margin-top: 8px;
         height: 14px;
         border-radius: 999px;
         overflow: hidden;
@@ -556,8 +556,8 @@ const DAMAGE = {
         display: grid;
         grid-template-columns: 1fr 76px 1fr;
         align-items: center;
-        gap: 10px;
-        margin-bottom: 10px;
+        gap: 8px;
+        margin-bottom: 8px;
       }
 
       #arena .tc-cage-vs {
@@ -567,19 +567,19 @@ const DAMAGE = {
       }
 
       #arena .tc-cage-card {
-        min-height: 72px;
+        min-height: 64px;
         border-radius: 16px;
         border: 1px solid rgba(255,255,255,0.12);
         background: rgba(255,255,255,0.05);
         backdrop-filter: blur(8px);
-        padding: 10px 12px;
+        padding: 8px 10px;
         box-sizing: border-box;
       }
 
       #arena .tc-cage-name {
         font: 900 13px system-ui, Arial;
         color: rgba(255,255,255,0.96);
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -610,7 +610,7 @@ const DAMAGE = {
       #arena .tc-cage-stage {
         position: relative;
         flex: 1 1 auto;
-        min-height: 280px;
+        min-height: clamp(360px, 52vh, 640px);
         border-radius: 20px;
         overflow: hidden;
         background:
@@ -649,7 +649,7 @@ const DAMAGE = {
       #arena .tc-cage-toast.on { opacity: 1; }
 
       #arena .tc-cage-rule {
-        margin-top: 8px;
+        margin-top: 6px;
         text-align: center;
         font: 800 11px system-ui, Arial;
         color: rgba(255,255,255,0.65);
@@ -2197,7 +2197,7 @@ _handleTap(x, y) {
       ctx.stroke();
       ctx.strokeStyle = "rgba(30,30,32,0.7)";
       ctx.lineWidth = Math.max(2, ring.size * 0.012);
-      const coreSize = ring.size * 0.46;
+      const coreSize = ring.size * 0.5;
       ctx.strokeRect(arena.cx - coreSize * 0.5, arena.cy - coreSize * 0.5, coreSize, coreSize);
 
       arena.outerPoints.forEach((point, idx) => {
