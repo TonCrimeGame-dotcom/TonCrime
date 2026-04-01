@@ -41,6 +41,10 @@ const STARTING_XP_TO_NEXT = 0;
 const DEFAULT_XP_TO_NEXT = 100;
 const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
+const DESKTOP_SHELL_MIN_VIEWPORT = 900;
+const DESKTOP_SHELL_MAX_WIDTH = 560;
+const DESKTOP_SHELL_MAX_HEIGHT = 980;
+const DESKTOP_SHELL_ASPECT = 9 / 16;
 
 let _viewportLockHeight = 0;
 let _viewportLockWidth = 0;
@@ -73,6 +77,71 @@ function getViewportSize() {
   };
 }
 
+function isDesktopTelegramShell(viewportW = window.innerWidth || 0, viewportH = window.innerHeight || 0) {
+  const tg = window.Telegram?.WebApp;
+  if (!tg) return false;
+
+  const ua = String(window.navigator?.userAgent || "");
+  const coarsePointer = !!window.matchMedia?.("(pointer: coarse)")?.matches;
+  const mobileUa = /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(ua);
+  const longSide = Math.max(Number(viewportW || 0), Number(viewportH || 0));
+
+  return !coarsePointer && !mobileUa && longSide >= DESKTOP_SHELL_MIN_VIEWPORT;
+}
+
+function getDesktopTelegramShellFrame(viewportW, viewportH) {
+  const safeViewportW = Math.max(360, Math.floor(viewportW || window.innerWidth || 360));
+  const safeViewportH = Math.max(520, Math.floor(viewportH || window.innerHeight || 520));
+  const margin = Math.max(16, Math.min(36, Math.round(Math.min(safeViewportW, safeViewportH) * 0.03)));
+  const maxWidth = Math.max(360, Math.min(DESKTOP_SHELL_MAX_WIDTH, safeViewportW - margin * 2));
+  const maxHeight = Math.max(520, Math.min(DESKTOP_SHELL_MAX_HEIGHT, safeViewportH - margin * 2));
+
+  let width = maxWidth;
+  let height = Math.round(width / DESKTOP_SHELL_ASPECT);
+
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = Math.round(height * DESKTOP_SHELL_ASPECT);
+  }
+
+  const left = Math.max(0, Math.floor((safeViewportW - width) / 2));
+  const top = Math.max(0, Math.floor((safeViewportH - height) / 2));
+
+  return {
+    width,
+    height,
+    left,
+    top,
+    right: Math.max(0, safeViewportW - left - width),
+    bottom: Math.max(0, safeViewportH - top - height),
+  };
+}
+
+function applyViewportFrame(frame, desktopShell = false) {
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--tc-app-width", `${Math.max(1, Math.floor(frame.width || 1))}px`);
+  rootStyle.setProperty("--tc-app-height", `${Math.max(1, Math.floor(frame.height || 1))}px`);
+  rootStyle.setProperty("--tc-app-left", `${Math.max(0, Math.floor(frame.left || 0))}px`);
+  rootStyle.setProperty("--tc-app-top", `${Math.max(0, Math.floor(frame.top || 0))}px`);
+  rootStyle.setProperty("--tc-app-radius", desktopShell ? "26px" : "0px");
+  rootStyle.setProperty(
+    "--tc-app-shadow",
+    desktopShell ? "0 24px 70px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,255,255,0.08)" : "none"
+  );
+
+  if (desktopShell) {
+    rootStyle.setProperty("--sal", `${Math.max(0, Math.floor(frame.left || 0))}px`);
+    rootStyle.setProperty("--sat", `${Math.max(0, Math.floor(frame.top || 0))}px`);
+    rootStyle.setProperty("--sar", `${Math.max(0, Math.floor(frame.right || 0))}px`);
+    rootStyle.setProperty("--sab", `${Math.max(0, Math.floor(frame.bottom || 0))}px`);
+  } else {
+    rootStyle.removeProperty("--sal");
+    rootStyle.removeProperty("--sat");
+    rootStyle.removeProperty("--sar");
+    rootStyle.removeProperty("--sab");
+  }
+}
+
 function syncTelegramViewportLock() {
   const tg = window.Telegram?.WebApp;
   const orientation =
@@ -97,12 +166,19 @@ function syncTelegramViewportLock() {
     toFiniteNumber(window.innerWidth, 0)
   );
 
+  if (isDesktopTelegramShell(nextWidth, nextHeight)) {
+    const frame = getDesktopTelegramShellFrame(nextWidth, nextHeight);
+    _viewportLockHeight = frame.height;
+    _viewportLockWidth = frame.width;
+    applyViewportFrame(frame, true);
+    return;
+  }
+
   _viewportLockHeight = Math.max(_viewportLockHeight || 0, nextHeight || 0);
   _viewportLockWidth = Math.max(_viewportLockWidth || 0, nextWidth || 0);
 
   const { w, h } = getViewportSize();
-  document.documentElement.style.setProperty("--tc-app-width", `${w}px`);
-  document.documentElement.style.setProperty("--tc-app-height", `${h}px`);
+  applyViewportFrame({ width: w, height: h, left: 0, top: 0, right: 0, bottom: 0 }, false);
 }
 
 function initTelegramViewport() {
@@ -120,7 +196,11 @@ function initTelegramViewport() {
       tg.disableVerticalSwipes();
     }
 
-    if (typeof tg.requestFullscreen === "function") {
+    if (isDesktopTelegramShell(window.innerWidth || 0, window.innerHeight || 0)) {
+      if (typeof tg.exitFullscreen === "function") {
+        Promise.resolve(tg.exitFullscreen()).catch(() => null);
+      }
+    } else if (typeof tg.requestFullscreen === "function") {
       Promise.resolve(tg.requestFullscreen()).catch(() => null);
     }
 
@@ -175,8 +255,8 @@ function normalizeGlobalUi(store) {
 
   if (canvas) {
     canvas.style.position = "fixed";
-    canvas.style.left = "0";
-    canvas.style.top = "0";
+    canvas.style.left = "var(--tc-app-left, 0px)";
+    canvas.style.top = "var(--tc-app-top, 0px)";
     canvas.style.zIndex = "1000";
   }
 
