@@ -1190,9 +1190,13 @@
       }
     },
 
+    _getRealtimeClient() {
+      return window.tcSupabase || window.supabase || null;
+    },
+
     _isOnlineMatch() {
       const ctx = this._matchCtx || {};
-      return !!(ctx.matchId && ctx.userId && !ctx.isBotMatch && ctx.player1Id && ctx.player2Id && window.supabase);
+      return !!(ctx.matchId && ctx.userId && !ctx.isBotMatch && ctx.player1Id && ctx.player2Id && this._getRealtimeClient());
     },
 
     _isAuthoritativePeer() {
@@ -1326,9 +1330,10 @@
       s.resultReasonVars = snapshot.resultReasonVars || null;
 
       if (!this._isAuthoritativePeer() && snapshot.reason === "tumble_hit") {
+        const actorLocal = snapshot.turnOwner === mySide ? "me" : "enemy";
         const res = evaluateBoard(s.board, s.inBonus && s.bonusOwner === s.turn);
-        if (res?.remove?.length) s.markedRemove = new Set(res.remove);
-        if (res?.damage > 0) this._spawnHitFx(res.hits, s.turn === "me");
+        if (res?.remove?.size) s.markedRemove = new Set(res.remove);
+        if (res?.damage > 0) this._spawnHitFx(res.hits, actorLocal === "me");
       }
 
       if (!this._isAuthoritativePeer() && snapshot.reason === "roll_ready" && s.spinIntroMap) {
@@ -1381,7 +1386,8 @@
     _setupSync() {
       this._clearSync();
       if (!this._isOnlineMatch()) return;
-      const sb = window.supabase;
+      const sb = this._getRealtimeClient();
+      if (!sb?.channel) return;
       const channelName = `toncrime-slot-sync-${this._matchCtx.matchId}`;
       this._syncChannel = sb
         .channel(channelName, { config: { broadcast: { self: false, ack: false } } })
@@ -1619,15 +1625,16 @@
     _beginMatchWatch() {
       this._stopMatchWatch();
       const matchId = this._matchCtx?.matchId;
-      if (!matchId || !window.supabase) return;
+      if (!matchId || !this._getRealtimeClient()) return;
       this._matchWatchTimer = setInterval(() => {
         this._pollMatchStateOnce().catch?.(() => {});
       }, MATCH_WATCH_MS);
     },
 
     async _pollMatchStateOnce() {
-      if (!this._matchCtx?.matchId || !window.supabase || this._state?.finished) return;
-      const { data } = await window.supabase
+      const sb = this._getRealtimeClient();
+      if (!this._matchCtx?.matchId || !sb || this._state?.finished) return;
+      const { data } = await sb
         .from("pvp_matches")
         .select("id,status,winner_user_id,player1_id,player2_id")
         .eq("id", this._matchCtx.matchId)
