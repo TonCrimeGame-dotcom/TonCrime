@@ -572,15 +572,10 @@ export function startHud(store, i18n) {
     const energyPct = Math.max(3, clamp01(energy / energyMax) * 100);
     elEnergyFill.style.width = `${energyPct}%`;
 
-    const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
-    const lastAt = Number(p.lastEnergyAt || Date.now());
-    const now = Date.now();
-    const untilNext = energy >= energyMax ? 0 : Math.max(0, interval - (now - lastAt));
-
     elEnergyText.textContent =
       energy >= energyMax
         ? `ENERGY ${energy}/${energyMax} - FULL`
-        : `ENERGY ${energy}/${energyMax} - ${fmtMMSS(untilNext)}`;
+        : `ENERGY ${energy}/${energyMax} - DAILY RESET`;
 
     const avatarUrl = getAvatarUrl(p);
     const initials = getInitials(username);
