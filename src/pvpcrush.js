@@ -3,7 +3,8 @@
   const START_HP = 1000;
   const START_MOVES = 12;
   const ACTIONS_PER_TURN = 2;
-  const TURN_TIME_MS = 40000;
+  const TURN_TIME_MS = 30000;
+  const TURN_BANNER_MS = 1300;
   const DRAG_THRESHOLD = 16;
 
   const TILE = {
@@ -12,6 +13,12 @@
     SLAP: "slap",
     HEAD: "head",
     WEED: "weed",
+  };
+
+  const SPECIAL = {
+    BULLET: "bullet",
+    ROCKET: "rocket",
+    BOMB: "bomb",
   };
 
   const NORMAL_TYPES = [TILE.PUNCH, TILE.KICK, TILE.SLAP, TILE.HEAD, TILE.WEED];
@@ -29,6 +36,12 @@
     [TILE.SLAP]: { id: "slap", emoji: "🖐️", label: "TOKAT", color: "#7cb6ff", damage: SLOT_DAMAGE.slap, bad: false, heal: false, assetKey: "slap" },
     [TILE.HEAD]: { id: "brain", emoji: "🧠", label: "BEYİN", color: "#ff6464", damage: SLOT_DAMAGE.head, bad: false, heal: false, assetKey: "brain" },
     [TILE.WEED]: { id: "weed", emoji: "🌿", label: "OT", color: "#33dd77", damage: 0, bad: false, heal: true, assetKey: "weed" },
+  };
+
+  const SPECIAL_META = {
+    [SPECIAL.BULLET]: { label: { tr: "KURSUN", en: "BULLET" }, color: "#f9d66d", badge: "K" },
+    [SPECIAL.ROCKET]: { label: { tr: "ROKET", en: "ROCKET" }, color: "#ff8a5b", badge: "R" },
+    [SPECIAL.BOMB]: { label: { tr: "BOMBA", en: "BOMB" }, color: "#7cc6ff", badge: "B" },
   };
 
   const ICON_PATHS = {
@@ -95,6 +108,12 @@
       timeUpTurnEnemy: "Sure doldu • sira rakipte",
       timeUp: "Sure doldu",
       opponentTimedOut: "Rakibin suresi doldu",
+      turnBanner: "SIRA SENDE",
+      timeoutLose: "Hamle gelmedi â€¢ raund kaybi",
+      timeoutWin: "Rakip oynamadi â€¢ kazandin",
+      specialBullet: "KURSUN",
+      specialRocket: "ROKET",
+      specialBomb: "BOMBA",
       invalidMove: "Gecersiz hamle",
       opponentPlayed: "Rakip oynadi",
       thinkingStarted: "Dusunme suresi basladi",
@@ -153,6 +172,12 @@
       timeUpTurnEnemy: "Time up • opponent turn",
       timeUp: "Time up",
       opponentTimedOut: "Opponent timed out",
+      turnBanner: "YOUR TURN",
+      timeoutLose: "No move made â€¢ round lost",
+      timeoutWin: "Opponent did not play â€¢ you won",
+      specialBullet: "BULLET",
+      specialRocket: "ROCKET",
+      specialBomb: "BOMB",
       invalidMove: "Invalid move",
       opponentPlayed: "Opponent played",
       thinkingStarted: "Thinking time started",
@@ -231,6 +256,13 @@
     return pvpCrushFormat("matchCount", { len }, `${len}`);
   }
 
+  function pvpCrushSpecialLabel(special) {
+    const meta = SPECIAL_META[special] || null;
+    if (!meta) return "";
+    const code = getPvpCrushLang();
+    return meta.label?.[code] || meta.label?.tr || String(special || "").toUpperCase();
+  }
+
   function clamp(n, min, max) {
     return Math.max(min, Math.min(max, n));
   }
@@ -282,8 +314,25 @@
     return "tile_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
   }
 
-  function createTile(type) {
-    return { id: makeId(), type };
+  function createTile(type, extras = null) {
+    return { id: makeId(), type, special: extras?.special || null };
+  }
+
+  function getTileType(tile) {
+    return String(tile?.type || "");
+  }
+
+  function getTileSpecial(tile) {
+    return String(tile?.special || "");
+  }
+
+  function cellKey(r, c) {
+    return `${r}:${c}`;
+  }
+
+  function parseCellKey(key) {
+    const parts = String(key || "").split(":").map(Number);
+    return { r: Number(parts[0] || 0), c: Number(parts[1] || 0) };
   }
 
   function cloneBoard(board) {
@@ -299,8 +348,8 @@
       const nextRow = Array.isArray(nextBoard[r]) ? nextBoard[r] : [];
       const cols = Math.min(prevRow.length || 0, nextRow.length || 0, GRID);
       for (let c = 0; c < cols; c++) {
-        const a = prevRow[c]?.type || null;
-        const b = nextRow[c]?.type || null;
+        const a = getTileType(prevRow[c]) || null;
+        const b = getTileType(nextRow[c]) || null;
         if (a !== b) out.push({ r, c });
       }
     }
@@ -324,7 +373,7 @@
   }
 
   function boardSignature(board) {
-    return board.map((row) => row.map((c) => (c ? c.type[0] : "_")).join("")).join("|");
+    return board.map((row) => row.map((c) => (c ? `${getTileType(c)[0] || "_" }${getTileSpecial(c) ? "!" : ""}` : "_")).join("")).join("|");
   }
 
   function getWeightedType(seedBias) {
@@ -347,9 +396,9 @@
           c += 1;
           continue;
         }
-        const t = cell.type;
+        const t = getTileType(cell);
         let end = c + 1;
-        while (end < GRID && board[r][end] && board[r][end].type === t) end += 1;
+        while (end < GRID && board[r][end] && getTileType(board[r][end]) === t) end += 1;
         const len = end - c;
         if (len >= 3) {
           const cells = [];
@@ -368,9 +417,9 @@
           r += 1;
           continue;
         }
-        const t = cell.type;
+        const t = getTileType(cell);
         let end = r + 1;
-        while (end < GRID && board[end][c] && board[end][c].type === t) end += 1;
+        while (end < GRID && board[end][c] && getTileType(board[end][c]) === t) end += 1;
         const len = end - r;
         if (len >= 3) {
           const cells = [];
@@ -382,6 +431,71 @@
     }
 
     return matches;
+  }
+
+  function buildMatchGroups(matches) {
+    const groups = [];
+    const visited = new Set();
+    const cellSets = matches.map((match) => new Set(match.cells.map((cell) => cellKey(cell.r, cell.c))));
+
+    for (let i = 0; i < matches.length; i++) {
+      if (visited.has(i)) continue;
+      const queue = [i];
+      visited.add(i);
+      const groupedMatches = [];
+      const groupedCellKeys = new Set();
+
+      while (queue.length) {
+        const idx = queue.shift();
+        const match = matches[idx];
+        groupedMatches.push(match);
+        cellSets[idx].forEach((key) => groupedCellKeys.add(key));
+
+        for (let j = 0; j < matches.length; j++) {
+          if (visited.has(j)) continue;
+          if (matches[j]?.type !== match?.type) continue;
+          const shareCell = Array.from(cellSets[j]).some((key) => groupedCellKeys.has(key));
+          if (!shareCell) continue;
+          visited.add(j);
+          queue.push(j);
+        }
+      }
+
+      const uniqueCells = Array.from(groupedCellKeys).map(parseCellKey);
+      const hasHorizontal = groupedMatches.some((match) => match.dir === "h");
+      const hasVertical = groupedMatches.some((match) => match.dir === "v");
+      const longestMatch = groupedMatches.slice().sort((a, b) => Number(b.len || 0) - Number(a.len || 0))[0] || groupedMatches[0];
+      const intersectionKey = hasHorizontal && hasVertical
+        ? Array.from(groupedCellKeys).find((key) => {
+          let h = false;
+          let v = false;
+          for (const match of groupedMatches) {
+            if (!cellSets[matches.indexOf(match)]?.has(key)) continue;
+            if (match.dir === "h") h = true;
+            if (match.dir === "v") v = true;
+          }
+          return h && v;
+        })
+        : null;
+      const anchor = intersectionKey
+        ? parseCellKey(intersectionKey)
+        : (longestMatch?.cells?.[Math.floor((longestMatch.cells.length || 1) / 2)] || uniqueCells[0] || null);
+
+      let special = null;
+      if (hasHorizontal && hasVertical && uniqueCells.length >= 5) special = SPECIAL.BOMB;
+      else if (Number(longestMatch?.len || 0) >= 5) special = SPECIAL.ROCKET;
+      else if (Number(longestMatch?.len || 0) === 4) special = SPECIAL.BULLET;
+
+      groups.push({
+        type: longestMatch?.type || "",
+        cells: uniqueCells,
+        matches: groupedMatches,
+        anchor,
+        special,
+      });
+    }
+
+    return groups;
   }
 
   function hasAnyPossibleMove(board) {
@@ -463,6 +577,13 @@
     return next;
   }
 
+  function buildSpecialSpawnLabel(special) {
+    const label = pvpCrushSpecialLabel(special);
+    if (!label) return "";
+    if (getPvpCrushLang() === "en") return `${label} READY`;
+    return `${label} HAZIR`;
+  }
+
   function getExtraMoveCount(len) {
     if (len >= 6) return 3;
     if (len === 5) return 2;
@@ -490,6 +611,7 @@
     let heal = 0;
     let extraMoves = 0;
     const fxBursts = [];
+    const specialSpawns = [];
 
     for (const m of matches) {
       const bonus = Math.max(0, m.len - 3);
@@ -522,8 +644,28 @@
       if (m.type === TILE.WEED) heal += 10 + bonus * 3;
 
       for (const cell of m.cells) {
-        remove.add(cell.r + ":" + cell.c);
+        remove.add(cellKey(cell.r, cell.c));
       }
+    }
+
+    const matchGroups = buildMatchGroups(matches);
+    for (const group of matchGroups) {
+      if (!group?.special || !group.anchor) continue;
+      const anchorKey = cellKey(group.anchor.r, group.anchor.c);
+      remove.delete(anchorKey);
+      specialSpawns.push({
+        r: group.anchor.r,
+        c: group.anchor.c,
+        type: group.type,
+        special: group.special,
+      });
+      fxBursts.push({
+        kind: "special_create",
+        label: buildSpecialSpawnLabel(group.special),
+        color: SPECIAL_META[group.special]?.color || "#ffd166",
+        len: Math.max(4, Number(group.cells?.length || 4)),
+        cell: { r: group.anchor.r, c: group.anchor.c },
+      });
     }
 
     return {
@@ -534,6 +676,7 @@
       heal,
       extraMoves,
       fxBursts,
+      specialSpawns,
     };
   }
 
@@ -542,6 +685,10 @@
     for (const key of resolution.remove) {
       const [r, c] = key.split(":").map(Number);
       next[r][c] = null;
+    }
+    for (const spawn of resolution.specialSpawns || []) {
+      if (!inBounds(spawn.r, spawn.c)) continue;
+      next[spawn.r][spawn.c] = createTile(spawn.type, { special: spawn.special });
     }
     return collapseBoard(next);
   }
@@ -563,6 +710,7 @@
         out.push({
           id: tile.id,
           type: tile.type,
+          special: tile.special || null,
           r,
           c,
           delay: seq * 45 + randInt(0, 35),
@@ -620,8 +768,127 @@
     return best;
   }
 
-  function drawTileIcon(ctx, tileType, x, y, size, selected, animT) {
-    const meta = TILE_META[tileType] || TILE_META[TILE.PUNCH];
+  function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function collectBoardCells(board) {
+    const out = [];
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        if (board?.[r]?.[c]) out.push({ r, c });
+      }
+    }
+    return out;
+  }
+
+  function buildSpecialTargets(board, cell, special) {
+    if (!inBounds(cell?.r, cell?.c)) return [];
+
+    if (special === SPECIAL.BULLET) {
+      return Array.from({ length: GRID }, (_, c) => ({ r: cell.r, c }));
+    }
+
+    if (special === SPECIAL.BOMB) {
+      const out = [];
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const rr = cell.r + dr;
+          const cc = cell.c + dc;
+          if (inBounds(rr, cc)) out.push({ r: rr, c: cc });
+        }
+      }
+      return out;
+    }
+
+    if (special === SPECIAL.ROCKET) {
+      const pool = collectBoardCells(board)
+        .filter((pos) => !(pos.r === cell.r && pos.c === cell.c));
+      shuffleInPlace(pool);
+      return [cell, ...pool.slice(0, 5)];
+    }
+
+    return [cell];
+  }
+
+  function summarizeDestroyedTiles(board, targets) {
+    let damage = 0;
+    let heal = 0;
+
+    for (const cell of targets) {
+      const tile = board?.[cell.r]?.[cell.c];
+      const type = getTileType(tile);
+      if (type === TILE.PUNCH) damage += SLOT_DAMAGE.punch;
+      if (type === TILE.KICK) damage += SLOT_DAMAGE.kick;
+      if (type === TILE.SLAP) damage += SLOT_DAMAGE.slap;
+      if (type === TILE.HEAD) damage += SLOT_DAMAGE.head;
+      if (type === TILE.WEED) heal += 10;
+    }
+
+    return { damage, heal };
+  }
+
+  function buildSpecialResolution(board, cell) {
+    const tile = board?.[cell?.r]?.[cell?.c];
+    const special = getTileSpecial(tile);
+    if (!tile || !special) return null;
+
+    const targets = buildSpecialTargets(board, cell, special);
+    const remove = new Set(targets.map((target) => cellKey(target.r, target.c)));
+    const summary = summarizeDestroyedTiles(board, targets);
+
+    return {
+      hasAction: remove.size > 0,
+      matches: [],
+      remove,
+      damage: summary.damage,
+      heal: summary.heal,
+      extraMoves: 0,
+      fxBursts: [{
+        kind: "special",
+        label: pvpCrushSpecialLabel(special),
+        color: SPECIAL_META[special]?.color || "#ffd166",
+        len: Math.max(4, targets.length),
+        cell: { r: cell.r, c: cell.c },
+      }],
+      specialSpawns: [],
+      special,
+    };
+  }
+
+  function calcBotAction(board, hpBias) {
+    let bestSpecial = null;
+    for (const cell of collectBoardCells(board)) {
+      const tile = board?.[cell.r]?.[cell.c];
+      const special = getTileSpecial(tile);
+      if (!special) continue;
+      const targets = buildSpecialTargets(board, cell, special);
+      const summary = summarizeDestroyedTiles(board, targets);
+      const score =
+        summary.damage * 2.7 +
+        summary.heal * (hpBias < 45 ? 2.2 : 1.1) +
+        targets.length * 6 +
+        (special === SPECIAL.BOMB ? 18 : special === SPECIAL.ROCKET ? 14 : 10);
+      if (!bestSpecial || score > bestSpecial.score) {
+        bestSpecial = { kind: "special", cell, score };
+      }
+    }
+
+    const bestMove = calcBotMove(board, hpBias);
+    if (!bestSpecial) return bestMove ? { kind: "swap", ...bestMove } : null;
+    if (!bestMove || bestSpecial.score >= Number(bestMove.score || 0) + 10) return bestSpecial;
+    return { kind: "swap", ...bestMove };
+  }
+
+  function drawTileIcon(ctx, tileLike, x, y, size, selected, animT) {
+    const tile = tileLike && typeof tileLike === "object" ? tileLike : { type: tileLike, special: null };
+    const meta = TILE_META[getTileType(tile)] || TILE_META[TILE.PUNCH];
+    const special = getTileSpecial(tile);
+    const specialMeta = SPECIAL_META[special] || null;
     const img = ICON_IMAGES[meta.assetKey];
     const r = Math.max(8, Math.floor(size * 0.18));
 
@@ -659,6 +926,73 @@
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
     ctx.fillText(meta.emoji, x + size / 2, y + size / 2 + 1);
+  }
+
+  function renderCrushTile(ctx, tileLike, x, y, size, selected, animT) {
+    const tile = tileLike && typeof tileLike === "object" ? tileLike : { type: tileLike, special: null };
+    const meta = TILE_META[getTileType(tile)] || TILE_META[TILE.PUNCH];
+    const special = getTileSpecial(tile);
+    const specialMeta = SPECIAL_META[special] || null;
+    const img = ICON_IMAGES[meta.assetKey];
+    const r = Math.max(8, Math.floor(size * 0.18));
+
+    const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
+    tileGrad.addColorStop(0, meta.color + "22");
+    tileGrad.addColorStop(1, meta.color + "0a");
+    fillRoundRect(ctx, x, y, size, size, r, tileGrad);
+
+    if (selected) {
+      const pulse = 0.7 + 0.3 * Math.sin((animT || 0) * 0.006);
+      strokeRoundRect(ctx, x, y, size, size, r, meta.color + Math.round(pulse * 255).toString(16).padStart(2, "0"), 2.5);
+    } else {
+      strokeRoundRect(ctx, x, y, size, size, r, meta.color + "33", 1);
+    }
+
+    ctx.fillStyle = meta.color + "bb";
+    ctx.beginPath();
+    ctx.arc(x + size - 7, y + 7, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (img && img.complete && (img.naturalWidth || img.width)) {
+      const pad = Math.max(3, Math.floor(size * 0.1));
+      const drawSize = Math.max(8, size - pad * 2);
+      ctx.drawImage(img, x + pad, y + pad, drawSize, drawSize);
+    } else {
+      ctx.font = `900 ${Math.floor(size * 0.47)}px system-ui, Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(meta.emoji, x + size / 2, y + size / 2 + 1);
+    }
+
+    if (!specialMeta) return;
+
+    const pulse = 0.72 + 0.28 * Math.sin((animT || 0) * 0.01);
+    const badgeW = Math.max(18, Math.floor(size * 0.34));
+    const badgeH = Math.max(14, Math.floor(size * 0.24));
+    const badgeX = x + size - badgeW - 5;
+    const badgeY = y + size - badgeH - 5;
+    const glow = ctx.createRadialGradient(
+      badgeX + badgeW * 0.5,
+      badgeY + badgeH * 0.5,
+      2,
+      badgeX + badgeW * 0.5,
+      badgeY + badgeH * 0.5,
+      badgeW
+    );
+    glow.addColorStop(0, specialMeta.color + "bb");
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(badgeX + badgeW * 0.5, badgeY + badgeH * 0.5, badgeW * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    fillRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, Math.max(6, Math.floor(badgeH * 0.45)), "rgba(8,10,18,0.88)");
+    strokeRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, Math.max(6, Math.floor(badgeH * 0.45)), specialMeta.color + Math.round(pulse * 255).toString(16).padStart(2, "0"), 1.5);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `900 ${Math.max(9, Math.floor(size * 0.16))}px system-ui, Arial`;
+    ctx.fillStyle = "#fff4db";
+    ctx.fillText(specialMeta.badge, badgeX + badgeW * 0.5, badgeY + badgeH * 0.54);
   }
 
   function makeArenaMarkup() {
@@ -1071,10 +1405,25 @@
       } catch (_) {}
     },
 
-    _beginTurn(turn) {
+    _isTurnIntroActive() {
+      return !!(this._state && Number(this._state.turnBannerUntil || 0) > Date.now());
+    },
+
+    _isTurnInputBlocked() {
+      if (!this._state || this._state.turn !== "me") return false;
+      return this._isTurnIntroActive();
+    },
+
+    _beginTurn(turn, opts = {}) {
       if (!this._state) return;
+      const now = Date.now();
+      const showBanner = turn === "me" && opts.showBanner !== false;
       this._state.turn = turn;
-      this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+      this._state.turnMadeAction = false;
+      this._state.turnTimerStartsAt = showBanner ? now + TURN_BANNER_MS : now;
+      this._state.turnDeadlineAt = this._state.turnTimerStartsAt + TURN_TIME_MS;
+      this._state.turnBannerText = showBanner ? this._text("turnBanner", "SIRA SENDE") : "";
+      this._state.turnBannerUntil = showBanner ? now + TURN_BANNER_MS : 0;
       if (turn === "me") this._state.meActionLeft = ACTIONS_PER_TURN;
       else this._state.enemyActionLeft = ACTIONS_PER_TURN;
       this._updateHud();
@@ -1084,11 +1433,25 @@
     _forceTurnTimeout(turn) {
       if (!this._state || this._state.finished || this._state.turn !== turn) return;
       const isOnline = this._isRealtimeMatch();
+      const didPlayRound = !!this._state.turnMadeAction;
       if (turn === "me") {
+        if (!didPlayRound) {
+          this._state.info = this._text("timeoutLose", "Hamle gelmedi â€¢ raund kaybi");
+          this._toast(this._text("timeoutLose", "Hamle gelmedi â€¢ raund kaybi"));
+          this._finishGame(false, this._text("timeoutLose", "Hamle gelmedi â€¢ raund kaybi"));
+          if (isOnline) {
+            this._bumpNetworkSeq();
+            this._broadcastOnline("finish_sync", {
+              state: this._toNetworkState(),
+              toastKey: "timeoutLose",
+            }).catch?.(() => {});
+          }
+          return;
+        }
         this._state.meActionLeft = 0;
         this._state.info = this._text("timeUpTurnEnemy", "Sure doldu • sira rakipte");
         this._toast(this._text("timeUp", "Sure doldu"));
-        this._beginTurn("enemy");
+        this._beginTurn("enemy", { showBanner: false });
         this._locked = true;
         if (this._running && !this._checkFinish()) {
           if (isOnline) {
@@ -1103,12 +1466,31 @@
           }
         }
       } else {
-        if (isOnline) return;
+        if (!didPlayRound) {
+          this._state.info = this._text("timeoutWin", "Rakip oynamadi â€¢ kazandin");
+          this._toast(this._text("timeoutWin", "Rakip oynamadi â€¢ kazandin"));
+          this._finishGame(true, this._text("timeoutWin", "Rakip oynamadi â€¢ kazandin"));
+          if (isOnline) {
+            this._bumpNetworkSeq();
+            this._broadcastOnline("finish_sync", {
+              state: this._toNetworkState(),
+              toastKey: "timeoutWin",
+            }).catch?.(() => {});
+          }
+          return;
+        }
         this._state.enemyActionLeft = 0;
         this._state.info = this._text("opponentTimedOut", "Rakibin suresi doldu");
         this._toast(this._text("opponentTimedOut", "Rakibin suresi doldu"));
         this._beginTurn("me");
         this._locked = false;
+        if (isOnline) {
+          this._bumpNetworkSeq();
+          this._broadcastOnline("state_sync", {
+            state: this._toNetworkState(),
+            toastKey: "opponentTimedOut",
+          }).catch?.(() => {});
+        }
       }
     },
 
@@ -1116,6 +1498,10 @@
       clearInterval(this._turnTicker);
       this._turnTicker = setInterval(() => {
         if (!this._state || this._state.finished || this._state.matchmaking) return;
+        if (Number(this._state.turnTimerStartsAt || 0) > Date.now()) {
+          this._updateHud();
+          return;
+        }
         const left = Number(this._state.turnDeadlineAt || 0) - Date.now();
         if (left <= 0) {
           this._forceTurnTimeout(this._state.turn);
@@ -1123,6 +1509,14 @@
         }
         this._updateHud();
       }, 200);
+    },
+
+    _getDisplayedTurnMs(turn) {
+      if (!this._state || this._state.turn !== turn || this._state.matchmaking || this._state.finished) return null;
+      const now = Date.now();
+      const startsAt = Number(this._state.turnTimerStartsAt || 0);
+      if (now < startsAt) return TURN_TIME_MS;
+      return Math.max(0, Number(this._state.turnDeadlineAt || 0) - now);
     },
 
     async init(opts = {}) {
@@ -1231,6 +1625,14 @@
           : (amIPlayer1 ? "player2" : "player1"),
         info: this._state.info || "",
         finished: !!this._state.finished,
+        turnMadeAction: !!this._state.turnMadeAction,
+        turnClockActive: Date.now() >= Number(this._state.turnTimerStartsAt || 0),
+        turnRemainingMs: Math.max(
+          0,
+          Date.now() >= Number(this._state.turnTimerStartsAt || 0)
+            ? Number(this._state.turnDeadlineAt || 0) - Date.now()
+            : TURN_TIME_MS
+        ),
       };
     },
 
@@ -1279,6 +1681,12 @@
         Number(netState.seq || this._state.networkSeq || 1)
       );
 
+      const prevTurn = this._state.turn;
+      const nextTurn = (
+        (netState.activePlayer === "player1" && amIPlayer1) ||
+        (netState.activePlayer === "player2" && !amIPlayer1)
+      ) ? "me" : "enemy";
+
       this._state.board = nextBoard;
       this._state.meHp = amIPlayer1 ? Number(netState.player1Hp) : Number(netState.player2Hp);
       this._state.enemyHp = amIPlayer1 ? Number(netState.player2Hp) : Number(netState.player1Hp);
@@ -1286,14 +1694,23 @@
       this._state.enemyMoves = amIPlayer1 ? Number(netState.player2Moves) : Number(netState.player1Moves);
       this._state.meActionLeft = amIPlayer1 ? Number(netState.player1ActionLeft) : Number(netState.player2ActionLeft);
       this._state.enemyActionLeft = amIPlayer1 ? Number(netState.player2ActionLeft) : Number(netState.player1ActionLeft);
-      this._state.turn = (
-        (netState.activePlayer === "player1" && amIPlayer1) ||
-        (netState.activePlayer === "player2" && !amIPlayer1)
-      ) ? "me" : "enemy";
+      this._state.turn = nextTurn;
+      this._state.turnMadeAction = !!netState.turnMadeAction;
       this._state.info = netState.info || this._state.info || "";
       this._state.finished = !!netState.finished;
       this._state.matchmaking = false;
-      this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+      if (nextTurn !== prevTurn) {
+        this._beginTurn(nextTurn, { showBanner: nextTurn === "me" });
+        this._state.meActionLeft = amIPlayer1 ? Number(netState.player1ActionLeft) : Number(netState.player2ActionLeft);
+        this._state.enemyActionLeft = amIPlayer1 ? Number(netState.player2ActionLeft) : Number(netState.player1ActionLeft);
+        this._state.turnMadeAction = !!netState.turnMadeAction;
+      } else if (nextTurn === "enemy") {
+        const remainingMs = clamp(Number(netState.turnRemainingMs || TURN_TIME_MS), 0, TURN_TIME_MS);
+        this._state.turnTimerStartsAt = Date.now();
+        this._state.turnDeadlineAt = Date.now() + remainingMs;
+        this._state.turnBannerText = "";
+        this._state.turnBannerUntil = 0;
+      }
 
       this._locked = this._state.finished ? true : this._state.turn !== "me";
 
@@ -1479,14 +1896,12 @@
       if (this._isRealtimeMatch()) {
         await this._setupOnlineRoom();
         const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
-        this._state.turn = amIPlayer1 ? "me" : "enemy";
-        this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+        this._beginTurn(amIPlayer1 ? "me" : "enemy", { showBanner: amIPlayer1 });
         this._state.info = amIPlayer1
           ? this._format("opponentReadyFirstYou", { name: this._opponentName() }, `${this._opponentName()} hazir • ilk sira sende`)
           : this._format("opponentReadyFirstEnemy", { name: this._opponentName() }, `${this._opponentName()} hazir • ilk sira rakipte`);
       } else {
-        this._state.turn = "me";
-        this._state.turnDeadlineAt = Date.now() + TURN_TIME_MS;
+        this._beginTurn("me", { showBanner: true });
         this._state.info = this._format("opponentReady", { name: this._opponentName() }, `${this._opponentName()} hazir`);
       }
 
@@ -1568,7 +1983,11 @@
         info: this._text("matchReady", "Mac hazir"),
         matchmaking: false,
         finished: false,
+        turnMadeAction: false,
+        turnTimerStartsAt: Date.now(),
         turnDeadlineAt: Date.now() + TURN_TIME_MS,
+        turnBannerText: "",
+        turnBannerUntil: 0,
         networkSeq: 1,
       };
       this._lastRemoteStateSeq = 0;
@@ -1642,7 +2061,7 @@
       };
 
       const onDown = (ev) => {
-        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking) return;
+        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking || this._isTurnInputBlocked()) return;
         const p = getPos(ev);
         const hit = this._hitTile(p.x, p.y);
         if (!hit) return;
@@ -1657,7 +2076,7 @@
       };
 
       const onMove = (ev) => {
-        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking) return;
+        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking || this._isTurnInputBlocked()) return;
         if (!this._dragStart || !this._dragFromTile || this._dragConsumed) return;
         const p = getPos(ev);
         const dx = p.x - this._dragStart.x;
@@ -1673,7 +2092,7 @@
       };
 
       const onUp = (ev) => {
-        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking) return;
+        if (!this._running || this._locked || this._state?.turn !== "me" || this._state?.matchmaking || this._isTurnInputBlocked()) return;
         if (this._releaseGuard) return;
         this._releaseGuard = true;
 
@@ -1700,6 +2119,13 @@
           return;
         }
         if (this._selected && this._selected.r === hit.r && this._selected.c === hit.c) {
+          const tile = this._state?.board?.[hit.r]?.[hit.c];
+          if (getTileSpecial(tile)) {
+            this._selected = null;
+            this._activateSpecialTile(hit);
+            ev.preventDefault?.();
+            return;
+          }
           this._render();
           return;
         }
@@ -2004,6 +2430,10 @@
       const timeLabel = this._text("time", "Sure");
       const meScale = clamp(s.meHp, 0, START_HP) / START_HP;
       const enemyScale = clamp(s.enemyHp, 0, START_HP) / START_HP;
+      const meTurnMs = this._getDisplayedTurnMs("me");
+      const enemyTurnMs = this._getDisplayedTurnMs("enemy");
+      const activeTurnMs = s.turn === "me" ? meTurnMs : enemyTurnMs;
+      const activeTimeText = fmtTurnTime(activeTurnMs == null ? 0 : activeTurnMs);
 
       this._els.meFill.style.transform = `scaleX(${meScale})`;
       this._els.enemyFill.style.transform = `scaleX(${enemyScale})`;
@@ -2015,9 +2445,16 @@
       if (this._els.rootMeText) this._els.rootMeText.textContent = `${Math.round(s.meHp)} / ${START_HP}`;
       if (this._els.rootEnemyText) this._els.rootEnemyText.textContent = `${Math.round(s.enemyHp)} / ${START_HP}`;
 
-      const timeLeft = fmtTurnTime(Math.max(0, Number(s.turnDeadlineAt || 0) - Date.now()));
+      const timeLeft = activeTimeText;
       if (this._els.meMoves) this._els.meMoves.textContent = `${moveLabel}: ${s.meMoves} • ${roundLabel}: ${s.meActionLeft}/2 • ${timeLabel}: ${s.turn === "me" && !s.matchmaking && !s.finished ? timeLeft : "--:--"}`;
       if (this._els.enemyMoves) this._els.enemyMoves.textContent = `${moveLabel}: ${s.enemyMoves} • ${roundLabel}: ${s.enemyActionLeft}/2 • ${timeLabel}: ${s.turn === "enemy" && !s.matchmaking && !s.finished ? timeLeft : "--:--"}`;
+      if (this._els.turn) {
+      if (this._els.meMoves) {
+        this._els.meMoves.textContent = `${moveLabel}: ${s.meMoves} - ${roundLabel}: ${s.meActionLeft}/2 - ${timeLabel}: ${meTurnMs == null ? "--:--" : fmtTurnTime(meTurnMs)}`;
+      }
+      if (this._els.enemyMoves) {
+        this._els.enemyMoves.textContent = `${moveLabel}: ${s.enemyMoves} - ${roundLabel}: ${s.enemyActionLeft}/2 - ${timeLabel}: ${enemyTurnMs == null ? "--:--" : fmtTurnTime(enemyTurnMs)}`;
+      }
 
       if (this._els.turn) {
         if (s.matchmaking) {
@@ -2398,7 +2835,7 @@
           const ease = 1 - Math.pow(1 - tt, 3);
           const y = fx.y + (fx.toY - fx.y) * ease;
           ctx.globalAlpha = Math.min(1, 0.35 + tt * 0.8);
-          drawTileIcon(ctx, fx.tileType, fx.x, y, fx.size, false, Date.now());
+          renderCrushTile(ctx, { type: fx.tileType, special: fx.special || null }, fx.x, y, fx.size, false, Date.now());
         }
       }
       ctx.globalAlpha = 1;
@@ -2456,7 +2893,7 @@
           const gx = mix(src.x, dst.x) - (dst.x - src.x) * lag;
           const gy = mix(src.y, dst.y) - (dst.y - src.y) * lag;
           ctx.globalAlpha = 0.12 / ghost;
-          drawTileIcon(ctx, tile.type, gx + pad, gy + pad, src.w - 4, false, Date.now());
+          renderCrushTile(ctx, tile, gx + pad, gy + pad, src.w - 4, false, Date.now());
         }
         ctx.globalAlpha = 1;
         fillRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, "rgba(255,255,255,0.10)");
@@ -2468,7 +2905,7 @@
         ctx.beginPath();
         ctx.arc(x + src.w / 2, y + src.h / 2, glowR, 0, Math.PI * 2);
         ctx.fill();
-        drawTileIcon(ctx, tile.type, x + pad, y + pad, src.w - 4, false, Date.now());
+        renderCrushTile(ctx, tile, x + pad, y + pad, src.w - 4, false, Date.now());
       };
 
       ctx.save();
@@ -2564,7 +3001,7 @@
             ctx.arc(x + cell / 2, y + cell / 2, glowR, 0, Math.PI * 2);
             ctx.fill();
 
-            drawTileIcon(ctx, tile.type, x + 2, y + 2, cell - 4, selected, Date.now());
+            renderCrushTile(ctx, tile, x + 2, y + 2, cell - 4, selected, Date.now());
           } else {
             strokeRoundRect(ctx, x + 2, y + 2, cell - 4, cell - 4, radius, "rgba(255,255,255,0.06)", 1);
           }
