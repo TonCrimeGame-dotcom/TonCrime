@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { fetchBackendJson } from "./supabase.js";
+import { fetchBackendJson, getBackendCandidates } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -45,6 +45,9 @@ const DESKTOP_SHELL_MIN_VIEWPORT = 900;
 const DESKTOP_SHELL_MAX_WIDTH = 560;
 const DESKTOP_SHELL_MAX_HEIGHT = 980;
 const DESKTOP_SHELL_ASPECT = 9 / 16;
+const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
+const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
+const SINGLE_SESSION_OVERLAY_ID = "tc-single-session-lock";
 
 let _viewportLockHeight = 0;
 let _viewportLockWidth = 0;
@@ -663,6 +666,162 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
+function safeLocalRead(key) {
+  try {
+    return String(localStorage.getItem(key) || "");
+  } catch {
+    return "";
+  }
+}
+
+function safeLocalWrite(key, value) {
+  try {
+    localStorage.setItem(key, String(value ?? ""));
+  } catch {}
+}
+
+function makeRuntimeToken(prefix = "id") {
+  try {
+    const buf = new Uint8Array(12);
+    crypto.getRandomValues(buf);
+    const token = [...buf].map((part) => part.toString(16).padStart(2, "0")).join("");
+    return `${prefix}_${token}`;
+  } catch {
+    return `${prefix}_${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
+  }
+}
+
+function getSingleSessionDeviceId() {
+  let value = safeLocalRead(SINGLE_SESSION_DEVICE_KEY).trim();
+  if (!value) {
+    value = makeRuntimeToken("dev");
+    safeLocalWrite(SINGLE_SESSION_DEVICE_KEY, value);
+  }
+  return value;
+}
+
+function detectSingleSessionDeviceLabel() {
+  const ua = String(window.navigator?.userAgent || "");
+  const desktopShell = isDesktopTelegramShell(window.innerWidth || 0, window.innerHeight || 0);
+  if (desktopShell) return "PC Telegram";
+  if (/iphone/i.test(ua)) return "iPhone Telegram";
+  if (/ipad/i.test(ua)) return "iPad Telegram";
+  if (/android/i.test(ua)) return "Android Telegram";
+  return "Telegram Device";
+}
+
+const _singleSessionState = {
+  deviceId: getSingleSessionDeviceId(),
+  sessionId: makeRuntimeToken("sess"),
+  deviceLabel: detectSingleSessionDeviceLabel(),
+  claimed: false,
+  locked: false,
+  supported: true,
+  heartbeatTimer: 0,
+  heartbeatBusy: false,
+};
+
+function ensureSingleSessionOverlay() {
+  let root = document.getElementById(SINGLE_SESSION_OVERLAY_ID);
+  if (root) return root;
+
+  root = document.createElement("div");
+  root.id = SINGLE_SESSION_OVERLAY_ID;
+  root.style.position = "fixed";
+  root.style.inset = "0";
+  root.style.zIndex = "99999";
+  root.style.display = "none";
+  root.style.alignItems = "center";
+  root.style.justifyContent = "center";
+  root.style.padding = "24px";
+  root.style.background = "rgba(6, 8, 14, 0.86)";
+  root.style.backdropFilter = "blur(8px)";
+
+  const card = document.createElement("div");
+  card.style.width = "min(92vw, 420px)";
+  card.style.padding = "24px 22px";
+  card.style.borderRadius = "24px";
+  card.style.border = "1px solid rgba(255,255,255,0.12)";
+  card.style.background = "linear-gradient(180deg, rgba(23,26,39,0.96), rgba(14,16,26,0.96))";
+  card.style.boxShadow = "0 24px 60px rgba(0,0,0,0.42)";
+  card.style.color = "#f7f2e9";
+  card.style.fontFamily = "system-ui, -apple-system, Segoe UI, sans-serif";
+  card.style.textAlign = "center";
+
+  const title = document.createElement("div");
+  title.textContent = "Oturum Başka Cihazda Açık";
+  title.style.fontSize = "22px";
+  title.style.fontWeight = "800";
+  title.style.letterSpacing = "0.02em";
+  title.style.marginBottom = "10px";
+
+  const body = document.createElement("div");
+  body.setAttribute("data-role", "message");
+  body.textContent = "Bu Telegram hesabı şu anda başka bir cihazda aktif.";
+  body.style.fontSize = "15px";
+  body.style.lineHeight = "1.5";
+  body.style.opacity = "0.92";
+  body.style.marginBottom = "18px";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Tekrar Dene";
+  button.style.border = "0";
+  button.style.borderRadius = "14px";
+  button.style.padding = "12px 18px";
+  button.style.cursor = "pointer";
+  button.style.fontWeight = "700";
+  button.style.background = "linear-gradient(180deg, #ffb25a, #ff7b32)";
+  button.style.color = "#1a1007";
+  button.addEventListener("click", () => {
+    claimSingleSession(true).catch(() => null);
+  });
+
+  card.appendChild(title);
+  card.appendChild(body);
+  card.appendChild(button);
+  root.appendChild(card);
+  document.body.appendChild(root);
+  return root;
+}
+
+function stopSingleSessionHeartbeat() {
+  if (_singleSessionState.heartbeatTimer) {
+    clearInterval(_singleSessionState.heartbeatTimer);
+    _singleSessionState.heartbeatTimer = 0;
+  }
+  _singleSessionState.heartbeatBusy = false;
+}
+
+function lockSingleSession(message = "Bu Telegram hesabı şu anda başka bir cihazda aktif.") {
+  _singleSessionState.locked = true;
+  _singleSessionState.claimed = false;
+  stopSingleSessionHeartbeat();
+
+  const overlay = ensureSingleSessionOverlay();
+  const messageNode = overlay.querySelector('[data-role="message"]');
+  if (messageNode) {
+    messageNode.textContent = message;
+  }
+  overlay.style.display = "flex";
+
+  try {
+    window.tcEngine?.stop?.();
+  } catch {}
+}
+
+function unlockSingleSession() {
+  _singleSessionState.locked = false;
+  const overlay = document.getElementById(SINGLE_SESSION_OVERLAY_ID);
+  if (overlay) overlay.style.display = "none";
+
+  if (window.tcEngineStarted) {
+    try {
+      window.tcEngine?.start?.();
+    } catch {}
+  }
+}
+
 /* ===== CLOUD PROFILE SYNC ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
@@ -681,6 +840,123 @@ function getProfileIdentityKey() {
     window.tcGetProfileKey?.(store) ||
     ""
   ).trim();
+}
+
+function buildSingleSessionPayload() {
+  const identityKey = getProfileIdentityKey();
+  if (!identityKey) return null;
+
+  const player = store.get()?.player || {};
+  return {
+    identity_key: identityKey,
+    telegram_id: identityKey,
+    username: String(
+      player.username ||
+      getTelegramUser()?.username ||
+      [getTelegramUser()?.first_name, getTelegramUser()?.last_name].filter(Boolean).join(" ") ||
+      "Player"
+    ).trim() || "Player",
+    device_id: _singleSessionState.deviceId,
+    session_id: _singleSessionState.sessionId,
+    device_label: _singleSessionState.deviceLabel,
+    tg_init_data: String(window.Telegram?.WebApp?.initData || "").trim(),
+  };
+}
+
+async function releaseSingleSession(useBeacon = false) {
+  const payload = buildSingleSessionPayload();
+  if (!payload || !_singleSessionState.claimed) return;
+
+  stopSingleSessionHeartbeat();
+  _singleSessionState.claimed = false;
+
+  if (useBeacon && typeof navigator.sendBeacon === "function") {
+    const body = JSON.stringify(payload);
+    for (const base of getBackendCandidates()) {
+      try {
+        const ok = navigator.sendBeacon(
+          `${String(base || "").replace(/\/$/, "")}/public/session/release`,
+          new Blob([body], { type: "application/json" })
+        );
+        if (ok) return;
+      } catch {}
+    }
+  }
+
+  try {
+    await fetchBackendJson("/public/session/release", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  } catch {}
+}
+
+function startSingleSessionHeartbeat() {
+  stopSingleSessionHeartbeat();
+  if (_singleSessionState.locked || !_singleSessionState.claimed || _singleSessionState.supported === false) {
+    return;
+  }
+
+  _singleSessionState.heartbeatTimer = window.setInterval(async () => {
+    if (_singleSessionState.heartbeatBusy || _singleSessionState.locked) return;
+
+    const payload = buildSingleSessionPayload();
+    if (!payload) return;
+
+    _singleSessionState.heartbeatBusy = true;
+    try {
+      const json = await fetchBackendJson("/public/session/heartbeat", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (json?.supported === false) {
+        _singleSessionState.supported = false;
+        stopSingleSessionHeartbeat();
+        return;
+      }
+    } catch (err) {
+      const msg = String(err?.message || "").toLowerCase();
+      if (
+        msg.includes("session_replaced") ||
+        msg.includes("session_active_elsewhere") ||
+        msg.includes("session_missing")
+      ) {
+        lockSingleSession("Bu hesap başka bir cihazda aktif kaldığı için burada oyun durduruldu.");
+      }
+    } finally {
+      _singleSessionState.heartbeatBusy = false;
+    }
+  }, SINGLE_SESSION_HEARTBEAT_MS);
+}
+
+async function claimSingleSession(force = false) {
+  const payload = buildSingleSessionPayload();
+  if (!payload) return false;
+  if (_singleSessionState.claimed && !force && !_singleSessionState.locked) return true;
+
+  try {
+    const json = await fetchBackendJson("/public/session/claim", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    _singleSessionState.claimed = true;
+    _singleSessionState.supported = json?.supported !== false;
+    unlockSingleSession();
+    if (_singleSessionState.supported) {
+      startSingleSessionHeartbeat();
+    }
+    return true;
+  } catch (err) {
+    const msg = String(err?.message || "").toLowerCase();
+    if (msg.includes("session_active_elsewhere")) {
+      lockSingleSession("Bu Telegram hesabı başka bir cihazda açık. Önce oradaki oturumu kapatıp sonra tekrar deneyin.");
+      return false;
+    }
+    console.warn("Single session claim failed:", err);
+    return false;
+  }
 }
 
 function buildProfilePayload() {
@@ -703,6 +979,9 @@ function buildProfilePayload() {
     pvp_losses: readPvpCount(pvp.losses, 0),
     pvp_rating: readPvpRating(pvp.rating, 1000),
     pvp_last_match_at: toIsoTimestamp(pvp.lastMatchAt || pvp.last_match_at),
+    device_id: _singleSessionState.deviceId,
+    session_id: _singleSessionState.sessionId,
+    device_label: _singleSessionState.deviceLabel,
     updated_at: new Date().toISOString(),
   };
 }
@@ -870,6 +1149,7 @@ async function syncProfileToBackend(payload) {
 }
 
 async function syncProfileToCloud(force = false) {
+  if (_singleSessionState.locked) return;
   if (_profileSyncBusy) return;
   if (_profileSyncRetryAfter && Date.now() < _profileSyncRetryAfter) return;
 
@@ -897,6 +1177,7 @@ async function syncProfileToCloud(force = false) {
 }
 
 async function syncLeaderboardFromCloud(force = false) {
+  if (_singleSessionState.locked) return;
   if (_leaderboardSyncBusy) return;
   if (_leaderboardSyncRetryAfter && Date.now() < _leaderboardSyncRetryAfter) return;
   if (!force && Date.now() - _lastLeaderboardSyncAt < 10_000) return;
@@ -933,6 +1214,13 @@ async function bootstrapPlayerProfile() {
       await window.tcBindProfileToCurrentAuth(identityKey).catch(() => null);
     }
 
+    if (identityKey) {
+      const claimed = await claimSingleSession().catch(() => false);
+      if (!claimed && _singleSessionState.locked) {
+        return false;
+      }
+    }
+
     const restored = await restoreProfileFromCloud(identityKey);
     if (!restored) {
       ensureStarterProfileState();
@@ -960,6 +1248,26 @@ window.addEventListener("tc:pvp:leaderboard-sync-now", () => {
   _lastLeaderboardSyncAt = 0;
   syncProfileToCloud(true).catch(() => null);
   syncLeaderboardFromCloud(true).catch(() => null);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !_singleSessionState.locked) {
+    claimSingleSession().catch(() => null);
+  }
+});
+
+window.addEventListener("focus", () => {
+  if (!_singleSessionState.locked) {
+    claimSingleSession().catch(() => null);
+  }
+});
+
+window.addEventListener("pagehide", () => {
+  releaseSingleSession(true).catch(() => null);
+});
+
+window.addEventListener("beforeunload", () => {
+  releaseSingleSession(true).catch(() => null);
 });
 
 (function profileSyncLoop() {
@@ -1677,6 +1985,8 @@ window.addEventListener("tc:openPvp", () => {
 
 /* ===== ENGINE ===== */
 const engine = new Engine({ canvas, ctx, input, scenes });
+window.tcEngine = engine;
+window.tcEngineStarted = false;
 
 /* ===== KEEP SAFE AREA UPDATED ===== */
 (function safeAreaLoop() {
@@ -1748,3 +2058,7 @@ normalizeGlobalUi(store);
 /* ===== START ===== */
 scenes.go("boot");
 engine.start();
+window.tcEngineStarted = true;
+if (_singleSessionState.locked) {
+  engine.stop();
+}
