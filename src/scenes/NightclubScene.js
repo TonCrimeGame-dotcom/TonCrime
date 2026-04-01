@@ -1,4 +1,4 @@
-﻿
+
 function chance(prob) {
   return Math.random() < Number(prob || 0);
 }
@@ -20,6 +20,8 @@ const NIGHTCLUB_RESET_TIMEZONE = "Europe/Istanbul";
 const NIGHTCLUB_DIZZY_DURATION_MS = 3000;
 const NIGHTCLUB_DIZZY_SWAY_PX = 10;
 const NIGHTCLUB_DIZZY_TILT_RAD = 0.014;
+const STARTING_LEVEL = 0;
+const DEFAULT_XP_TO_NEXT = 100;
 
 export class NightclubScene {
   constructor({ store, input, i18n, assets, scenes }) {
@@ -632,9 +634,9 @@ export class NightclubScene {
     const s = this.store.get() || {};
     const p = s.player || {};
     let loss = Math.max(0, Number(amount || 0));
-    let level = Math.max(1, Number(p.level || 1));
+    let level = Math.max(STARTING_LEVEL, Number(p.level ?? STARTING_LEVEL));
     let xp = Math.max(0, Number(p.xp || 0));
-    let xpToNext = Math.max(1, Number(p.xpToNext || 100));
+    let xpToNext = Math.max(1, Number(p.xpToNext || DEFAULT_XP_TO_NEXT));
 
     while (loss > 0) {
       if (xp >= loss) {
@@ -644,9 +646,9 @@ export class NightclubScene {
       }
 
       loss -= xp;
-      if (level > 1) {
+      if (level > STARTING_LEVEL) {
         level -= 1;
-        xpToNext = 100;
+        xpToNext = DEFAULT_XP_TO_NEXT;
         xp = xpToNext;
         continue;
       }
@@ -669,7 +671,7 @@ export class NightclubScene {
       level,
       xp,
       xpLost: Math.max(0, Number(amount || 0)),
-      levelDropped: level < Math.max(1, Number(p.level || 1)),
+      levelDropped: level < Math.max(STARTING_LEVEL, Number(p.level ?? STARTING_LEVEL)),
     };
   }
 
