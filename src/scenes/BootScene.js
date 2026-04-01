@@ -1,8 +1,9 @@
 export class BootScene {
-  constructor({ assets, i18n, scenes } = {}) {
+  constructor({ assets, i18n, scenes, readyPromise } = {}) {
     this.assets = assets;
     this.i18n = i18n;
     this.scenes = scenes;
+    this.readyPromise = readyPromise || null;
     this._started = false;
   }
 
@@ -10,24 +11,41 @@ export class BootScene {
     if (this._started) return;
     this._started = true;
 
+    this._boot();
+  }
+
+  async _boot() {
+    const waitForReady = async () => {
+      try {
+        await Promise.resolve(this.readyPromise);
+      } catch (err) {
+        console.error("[BootScene] app ready error:", err);
+      }
+    };
+
     try {
       if (typeof this.assets?.loadAll === "function") {
-        Promise.resolve(this.assets.loadAll()).finally(() => {
-          this.scenes?.go?.("intro");
-        });
+        await Promise.allSettled([
+          Promise.resolve(this.assets.loadAll()),
+          waitForReady(),
+        ]);
+        this.scenes?.go?.("intro");
         return;
       }
 
       if (typeof this.assets?.load === "function") {
-        Promise.resolve(this.assets.load()).finally(() => {
-          this.scenes?.go?.("intro");
-        });
+        await Promise.allSettled([
+          Promise.resolve(this.assets.load()),
+          waitForReady(),
+        ]);
+        this.scenes?.go?.("intro");
         return;
       }
     } catch (err) {
       console.error("[BootScene] asset load error:", err);
     }
 
+    await waitForReady();
     this.scenes?.go?.("intro");
   }
 
