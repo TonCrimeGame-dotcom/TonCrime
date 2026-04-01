@@ -1,32 +1,56 @@
 const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
+const STARTING_YTON = 100;
+const STARTING_LEVEL = 0;
+const STARTING_XP = 0;
+const STARTING_XP_TO_NEXT = 0;
+const MAX_PLAYER_ENERGY = 100;
+
 function safeGetLocalStorage(key) {
-  try { return localStorage.getItem(key) || ""; } catch { return ""; }
+  try {
+    return localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
 }
+
 function safeSetLocalStorage(key, value) {
-  try { localStorage.setItem(key, value); } catch {}
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
 }
+
 function randomProfilePart() {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
       return crypto.randomUUID().replaceAll("-", "");
     }
   } catch {}
+
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
 }
+
 function getTelegramWebAppUser() {
-  try { return window.Telegram?.WebApp?.initDataUnsafe?.user || null; } catch { return null; }
+  try {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+  } catch {
+    return null;
+  }
 }
+
 function getRuntimeProfileKey(store = null) {
   const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
   if (fromStore) return fromStore;
+
   const tgUser = getTelegramWebAppUser();
   const tgId = String(tgUser?.id || "").trim();
   if (tgId) return tgId;
+
   let guestKey = safeGetLocalStorage(PROFILE_KEY_STORAGE).trim();
   if (!guestKey) {
     guestKey = `guest_${randomProfilePart()}`;
     safeSetLocalStorage(PROFILE_KEY_STORAGE, guestKey);
   }
+
   return guestKey;
 }
 
@@ -67,8 +91,8 @@ export class IntroScene {
     if (this.lock) return;
 
     if (this.stage === "splash" && this.input.justPressed()) {
-      this.stage = "warning";
       const s = this.store.get();
+      this.stage = "warning";
       this.store.set({
         intro: {
           ...(s.intro || {}),
@@ -87,25 +111,33 @@ export class IntroScene {
     if (this.lock) return;
     this.lock = true;
 
-    const age = Number(window.prompt("Yaşınızı girin:", "18"));
+    const age = Number(window.prompt("Yasinizi girin:", "18"));
     if (!Number.isFinite(age) || age < 18) {
-      window.alert("Bu oyun sadece 18+ içindir.");
+      window.alert("Bu oyun sadece 18+ icindir.");
       this.lock = false;
       return;
     }
 
     const tgUser = getTelegramWebAppUser();
     const telegramId = getRuntimeProfileKey(this.store);
+    let username =
+      tgUser?.username ||
+      [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+      window.prompt("Kullanici adi gir:", "Player") ||
+      "Player";
 
-    let username = tgUser?.username || window.prompt("Kullanıcı adı gir:", "Player") || "Player";
     username = String(username).trim().slice(0, 24) || "Player";
 
     const state = this.store.get();
     const prevPlayer = state.player || {};
-    const startEnergyMax = Math.max(50, Number(prevPlayer.energyMax || 50));
-    const startEnergy = Math.max(50, Math.min(startEnergyMax, Number(prevPlayer.energy || startEnergyMax)));
 
     this.store.set({
+      coins: STARTING_YTON,
+      yton: STARTING_YTON,
+      wallet: {
+        ...(state.wallet || {}),
+        yton: STARTING_YTON,
+      },
       intro: {
         ...(state.intro || {}),
         splashSeen: true,
@@ -117,9 +149,13 @@ export class IntroScene {
         telegramId,
         username,
         age,
-        level: 1,
-        energy: startEnergy,
-        energyMax: startEnergyMax,
+        level: STARTING_LEVEL,
+        xp: STARTING_XP,
+        xpToNext: STARTING_XP_TO_NEXT,
+        weaponName: "Silah Yok",
+        weaponBonus: "+0%",
+        energy: MAX_PLAYER_ENERGY,
+        energyMax: MAX_PLAYER_ENERGY,
         lastEnergyAt: Date.now(),
       },
     });
@@ -148,7 +184,7 @@ export class IntroScene {
       ctx.fillStyle = "white";
       ctx.textAlign = "center";
       ctx.font = "18px system-ui";
-      ctx.fillText("Devam etmek için dokun", w / 2, h - 60);
+      ctx.fillText("Devam etmek icin dokun", w / 2, h - 60);
     }
 
     if (this.stage === "warning") {
@@ -162,8 +198,8 @@ export class IntroScene {
       ctx.fillText("+18 UYARI", w / 2, 150);
 
       ctx.font = "16px system-ui";
-      ctx.fillText("Bu oyun cinsellik, şiddet ve yasaklı madde içerir.", w / 2, 210);
-      ctx.fillText("Devam etmek için dokun.", w / 2, 250);
+      ctx.fillText("Bu oyun siddet, cinsellik ve yasakli madde icerir.", w / 2, 210);
+      ctx.fillText("Devam etmek icin dokun.", w / 2, 250);
     }
   }
 }
