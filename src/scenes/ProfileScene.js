@@ -1169,9 +1169,9 @@ export class ProfileScene {
     const h = L.heroH;
     const clanName = String(state?.clan?.name || state?.clan?.tag || this._text("noClan"));
     const username = String(p.username || "Player").trim() || "Player";
-    const level = Math.max(1, Number(p.level || 1));
+    const level = Math.max(0, Number(p.level ?? 0));
     const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const energyMax = Math.max(1, Math.min(100, Number(p.energyMax || 100)));
     const rating = Math.max(0, Number(pvp.rating || 1000));
 
     fillRoundRect(ctx, x, y, w, h, 22, "rgba(10,12,16,0.18)");
@@ -1314,7 +1314,7 @@ export class ProfileScene {
     const totalFight = wins + losses;
     const winRate = totalFight > 0 ? Math.round((wins / totalFight) * 100) : 0;
     const energy = Math.max(0, Number(p.energy || 0));
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
+    const energyMax = Math.max(1, Math.min(100, Number(p.energyMax || 100)));
     const rating = Math.max(0, Number(pvp.rating || 1000));
 
     const gap = 12;
