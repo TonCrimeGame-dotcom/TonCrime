@@ -1,4 +1,6 @@
-﻿import { supabase } from "../supabase.js";
+import { supabase } from "../supabase.js";
+
+import { fetchBackendJson } from "../supabase.js";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -1408,18 +1410,19 @@ class TradeScene {
   }
 
   async _getProfileId() {
-    const telegramId = this._getTelegramId();
-    if (!telegramId) {
-      throw new Error("telegram_id bulunamadi");
+    const profileKey = String(
+      this._getTelegramId() ||
+      window.tcGetProfileKey?.() ||
+      ""
+    ).trim();
+    if (!profileKey) {
+      throw new Error("profile key bulunamadi");
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("telegram_id", telegramId)
-      .maybeSingle();
-
-    if (error) throw error;
+    const json = await fetchBackendJson(
+      `/public/profile?identity_key=${encodeURIComponent(profileKey)}`
+    );
+    const data = json?.item || null;
     if (!data?.id) {
       throw new Error("Profil bulunamadi");
     }
