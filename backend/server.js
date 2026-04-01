@@ -45,6 +45,12 @@ const IDENTITY_AUTH_SECRET = String(
   process.env.ADMIN_API_KEY ||
   ''
 ).trim();
+const SINGLE_DEVICE_SESSION_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.SINGLE_DEVICE_SESSION_TTL_MS || 60_000)
+);
+const SINGLE_DEVICE_SESSION_ID_MAX = 96;
+const SINGLE_DEVICE_LABEL_MAX = 48;
 const MAX_ADMIN_NOTE_LEN = 500;
 const PAYOUT_MEMO = String(process.env.TON_PAYOUT_MEMO || 'TonCrime payout');
 const CHAT_DEMO_PATTERNS = [
@@ -339,6 +345,25 @@ function isTelegramAuthIdentityKey(value) {
   return /^tg_\d{4,20}$/.test(String(value || '').trim());
 }
 
+function sanitizeSessionToken(value, maxLen = SINGLE_DEVICE_SESSION_ID_MAX) {
+  return String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '')
+    .slice(0, Math.max(8, maxLen));
+}
+
+function sanitizeDeviceLabel(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, SINGLE_DEVICE_LABEL_MAX);
+}
+
+function isSingleSessionColumnError(err) {
+  const msg = String(err?.message || '').toLowerCase();
+  return msg.includes('active_session_') || (msg.includes('column') && msg.includes('profiles'));
+}
+
 function safeEqualHex(left, right) {
   const a = Buffer.from(String(left || '').trim().toLowerCase(), 'hex');
   const b = Buffer.from(String(right || '').trim().toLowerCase(), 'hex');
@@ -606,6 +631,321 @@ async function getProfileByKey(profileKey) {
 
   if (error) throw error;
   return data || null;
+}
+
+async function ensureProfileRecordForIdentity(profileKey, username = 'Player') {
+  const payload = {
+    telegram_id: profileKey,
+    username: sanitizeUsername(username || 'Player'),
+    level: 0,
+    coins: 100,
+    energy: 100,
+    energy_max: 100,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert(payload, { onConflict: 'telegram_id' })
+    .select('telegram_id, username')
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function readSingleSessionProfile(profileKey) {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('telegram_id, username, active_session_id, active_session_device_id, active_session_device_label, active_session_claimed_at, active_session_seen_at')
+      .eq('telegram_id', profileKey)
+      .maybeSingle();
+
+    if (error) throw error;
+    return { supported: true, row: data || null };
+  } catch (err) {
+    if (isSingleSessionColumnError(err)) {
+      return { supported: false, row: null };
+    }
+    throw err;
+  }
+}
+
+function isSingleSessionRowStale(row) {
+  const lastSeenAt = new Date(
+    row?.active_session_seen_at ||
+    row?.active_session_claimed_at ||
+    0
+  ).getTime();
+  if (!Number.isFinite(lastSeenAt) || lastSeenAt <= 0) return true;
+  return (Date.now() - lastSeenAt) > SINGLE_DEVICE_SESSION_TTL_MS;
+}
+
+async function updateSingleSessionClaim(profileKey, claimPayload, mode = 'empty', matchValue = null) {
+  try {
+    let query = supabase
+      .from('profiles')
+      .update(claimPayload)
+      .eq('telegram_id', profileKey)
+      .select('telegram_id, username, active_session_id, active_session_device_id, active_session_device_label, active_session_claimed_at, active_session_seen_at')
+      .maybeSingle();
+
+    if (mode === 'empty') {
+      query = query.is('active_session_id', null);
+    } else if (mode === 'session' && matchValue) {
+      query = query.eq('active_session_id', matchValue);
+    } else if (mode === 'device' && matchValue) {
+      query = query.eq('active_session_device_id', matchValue);
+    } else if (mode === 'stale' && matchValue) {
+      query = query.lte('active_session_seen_at', matchValue);
+    } else if (mode === 'stale-null-seen') {
+      query = query.is('active_session_seen_at', null);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return { supported: true, row: data || null };
+  } catch (err) {
+    if (isSingleSessionColumnError(err)) {
+      return { supported: false, row: null };
+    }
+    throw err;
+  }
+}
+
+function buildSingleSessionSummary(row = null) {
+  if (!row || typeof row !== 'object') return null;
+  return {
+    device_label: sanitizeDeviceLabel(row.active_session_device_label || ''),
+    claimed_at: toIsoTimestampOrNull(row.active_session_claimed_at),
+    seen_at: toIsoTimestampOrNull(row.active_session_seen_at),
+  };
+}
+
+async function claimSingleDeviceSession({
+  profileKey,
+  username = 'Player',
+  deviceId,
+  sessionId,
+  deviceLabel = '',
+}) {
+  const safeProfileKey = sanitizeIdentityKey(profileKey);
+  const safeSessionId = sanitizeSessionToken(sessionId);
+  const safeDeviceId = sanitizeSessionToken(deviceId);
+  const safeDeviceLabel = sanitizeDeviceLabel(deviceLabel);
+
+  if (!safeProfileKey || !safeSessionId || !safeDeviceId) {
+    const err = new Error('session identifiers required');
+    err.status = 400;
+    throw err;
+  }
+
+  await ensureProfileRecordForIdentity(safeProfileKey, username);
+  const state = await readSingleSessionProfile(safeProfileKey);
+  if (!state.supported) {
+    return { ok: true, supported: false, row: null };
+  }
+
+  const current = state.row || null;
+  const nowIso = new Date().toISOString();
+  let mode = 'empty';
+  let matchValue = null;
+
+  if (current?.active_session_id) {
+    const currentSessionId = sanitizeSessionToken(current.active_session_id);
+    const currentDeviceId = sanitizeSessionToken(current.active_session_device_id);
+
+    if (currentSessionId === safeSessionId) {
+      mode = 'session';
+      matchValue = safeSessionId;
+    } else if (currentDeviceId && currentDeviceId === safeDeviceId) {
+      mode = 'device';
+      matchValue = safeDeviceId;
+    } else if (isSingleSessionRowStale(current)) {
+      mode = current?.active_session_seen_at ? 'stale' : 'stale-null-seen';
+      matchValue = new Date(Date.now() - SINGLE_DEVICE_SESSION_TTL_MS).toISOString();
+    } else {
+      return {
+        ok: false,
+        supported: true,
+        status: 409,
+        error: 'session_active_elsewhere',
+        row: current,
+      };
+    }
+  }
+
+  const claimPayload = {
+    active_session_id: safeSessionId,
+    active_session_device_id: safeDeviceId,
+    active_session_device_label: safeDeviceLabel || null,
+    active_session_claimed_at:
+      current?.active_session_id === safeSessionId || sanitizeSessionToken(current?.active_session_device_id) === safeDeviceId
+        ? toIsoTimestampOrNull(current?.active_session_claimed_at) || nowIso
+        : nowIso,
+    active_session_seen_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const claimed = await updateSingleSessionClaim(safeProfileKey, claimPayload, mode, matchValue);
+  if (!claimed.supported) {
+    return { ok: true, supported: false, row: null };
+  }
+  if (claimed.row) {
+    return { ok: true, supported: true, row: claimed.row };
+  }
+
+  const refreshed = await readSingleSessionProfile(safeProfileKey);
+  if (!refreshed.supported) {
+    return { ok: true, supported: false, row: null };
+  }
+  if (
+    refreshed.row?.active_session_id &&
+    sanitizeSessionToken(refreshed.row.active_session_id) !== safeSessionId &&
+    sanitizeSessionToken(refreshed.row.active_session_device_id) !== safeDeviceId &&
+    !isSingleSessionRowStale(refreshed.row)
+  ) {
+    return {
+      ok: false,
+      supported: true,
+      status: 409,
+      error: 'session_active_elsewhere',
+      row: refreshed.row,
+    };
+  }
+
+  return {
+    ok: false,
+    supported: true,
+    status: 409,
+    error: 'session_claim_failed',
+    row: refreshed.row || current,
+  };
+}
+
+async function heartbeatSingleDeviceSession({ profileKey, deviceId, sessionId }) {
+  const safeProfileKey = sanitizeIdentityKey(profileKey);
+  const safeSessionId = sanitizeSessionToken(sessionId);
+  const safeDeviceId = sanitizeSessionToken(deviceId);
+
+  if (!safeProfileKey || !safeSessionId || !safeDeviceId) {
+    const err = new Error('session identifiers required');
+    err.status = 400;
+    throw err;
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        active_session_seen_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('telegram_id', safeProfileKey)
+      .eq('active_session_id', safeSessionId)
+      .eq('active_session_device_id', safeDeviceId)
+      .select('telegram_id, username, active_session_id, active_session_device_id, active_session_device_label, active_session_claimed_at, active_session_seen_at')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) {
+      return { ok: true, supported: true, row: data };
+    }
+  } catch (err) {
+    if (isSingleSessionColumnError(err)) {
+      return { ok: true, supported: false, row: null };
+    }
+    throw err;
+  }
+
+  const refreshed = await readSingleSessionProfile(safeProfileKey);
+  if (!refreshed.supported) {
+    return { ok: true, supported: false, row: null };
+  }
+
+  if (!refreshed.row?.active_session_id) {
+    return { ok: false, supported: true, status: 409, error: 'session_missing', row: refreshed.row };
+  }
+
+  if (
+    sanitizeSessionToken(refreshed.row.active_session_id) !== safeSessionId ||
+    sanitizeSessionToken(refreshed.row.active_session_device_id) !== safeDeviceId
+  ) {
+    return { ok: false, supported: true, status: 409, error: 'session_replaced', row: refreshed.row };
+  }
+
+  return { ok: false, supported: true, status: 409, error: 'session_missing', row: refreshed.row };
+}
+
+async function releaseSingleDeviceSession({ profileKey, deviceId, sessionId }) {
+  const safeProfileKey = sanitizeIdentityKey(profileKey);
+  const safeSessionId = sanitizeSessionToken(sessionId);
+  const safeDeviceId = sanitizeSessionToken(deviceId);
+
+  if (!safeProfileKey || !safeSessionId || !safeDeviceId) {
+    return { ok: true, supported: true, released: false };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        active_session_id: null,
+        active_session_device_id: null,
+        active_session_device_label: null,
+        active_session_claimed_at: null,
+        active_session_seen_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('telegram_id', safeProfileKey)
+      .eq('active_session_id', safeSessionId)
+      .eq('active_session_device_id', safeDeviceId)
+      .select('telegram_id')
+      .maybeSingle();
+
+    if (error) throw error;
+    return { ok: true, supported: true, released: !!data };
+  } catch (err) {
+    if (isSingleSessionColumnError(err)) {
+      return { ok: true, supported: false, released: false };
+    }
+    throw err;
+  }
+}
+
+async function assertSingleDeviceSessionAccess(profileKey, body = {}) {
+  const safeSessionId = sanitizeSessionToken(body?.session_id);
+  const safeDeviceId = sanitizeSessionToken(body?.device_id);
+
+  if (!safeSessionId || !safeDeviceId) {
+    return { ok: true, supported: true, skipped: true };
+  }
+
+  const state = await readSingleSessionProfile(profileKey);
+  if (!state.supported) {
+    return { ok: true, supported: false, skipped: true };
+  }
+
+  const row = state.row || null;
+  if (!row?.active_session_id) {
+    return { ok: true, supported: true, skipped: true };
+  }
+
+  const rowSessionId = sanitizeSessionToken(row.active_session_id);
+  const rowDeviceId = sanitizeSessionToken(row.active_session_device_id);
+  if (rowSessionId === safeSessionId && rowDeviceId === safeDeviceId) {
+    return { ok: true, supported: true, skipped: false };
+  }
+
+  return {
+    ok: false,
+    supported: true,
+    status: 409,
+    error: 'session_active_elsewhere',
+    row,
+  };
 }
 
 function readProfilePvpStats(row = {}) {
@@ -1324,11 +1664,110 @@ app.get('/public/pvp/leaderboard', makePublicRateLimit('pvp-leaderboard', 60_000
   }
 });
 
+app.post('/public/session/claim', makePublicRateLimit('session-claim', 60_000, 120), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const result = await claimSingleDeviceSession({
+      profileKey: identity.profileKey,
+      username: req.body?.username || identity.username || 'Player',
+      deviceId: req.body?.device_id,
+      sessionId: req.body?.session_id,
+      deviceLabel: req.body?.device_label,
+    });
+
+    if (!result.ok) {
+      return res.status(result.status || 409).json({
+        ok: false,
+        error: result.error || 'session claim failed',
+        supported: result.supported !== false,
+        active_session: buildSingleSessionSummary(result.row),
+      });
+    }
+
+    return res.json({
+      ok: true,
+      supported: result.supported !== false,
+      profile_key: identity.profileKey,
+      active_session: buildSingleSessionSummary(result.row),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'session claim failed' });
+  }
+});
+
+app.post('/public/session/heartbeat', makePublicRateLimit('session-heartbeat', 60_000, 240), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const result = await heartbeatSingleDeviceSession({
+      profileKey: identity.profileKey,
+      deviceId: req.body?.device_id,
+      sessionId: req.body?.session_id,
+    });
+
+    if (!result.ok) {
+      return res.status(result.status || 409).json({
+        ok: false,
+        error: result.error || 'session heartbeat failed',
+        supported: result.supported !== false,
+        active_session: buildSingleSessionSummary(result.row),
+      });
+    }
+
+    return res.json({
+      ok: true,
+      supported: result.supported !== false,
+      active_session: buildSingleSessionSummary(result.row),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'session heartbeat failed' });
+  }
+});
+
+app.post('/public/session/release', makePublicRateLimit('session-release', 60_000, 240), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const result = await releaseSingleDeviceSession({
+      profileKey: identity.profileKey,
+      deviceId: req.body?.device_id,
+      sessionId: req.body?.session_id,
+    });
+
+    return res.json({
+      ok: true,
+      supported: result.supported !== false,
+      released: !!result.released,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'session release failed' });
+  }
+});
+
 app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120), async (req, res) => {
   try {
     const identity = resolveIdentityContext(req, { allowGuest: true });
     if (!identity.ok) {
       return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const sessionAccess = await assertSingleDeviceSessionAccess(identity.profileKey, req.body);
+    if (!sessionAccess.ok) {
+      return res.status(sessionAccess.status || 409).json({
+        ok: false,
+        error: sessionAccess.error || 'session_active_elsewhere',
+        active_session: buildSingleSessionSummary(sessionAccess.row),
+      });
     }
 
     const username = sanitizeUsername(req.body?.username || identity.username || 'Player');
