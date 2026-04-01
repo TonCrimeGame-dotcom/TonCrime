@@ -263,6 +263,7 @@ export class NightclubScene {
     const pvp = s.pvp || {};
     const nightclub = this._syncDailyToleranceState();
     const playerName = this._playerName();
+    const playerId = String(s?.player?.telegramId || s?.player?.id || "player_main");
     const opponentName = String(detail?.opponent?.username || "Rakip");
     const now = Date.now();
 
@@ -274,10 +275,11 @@ export class NightclubScene {
     const prevBoard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.map((x) => ({ ...x })) : [];
     const prevHistory = Array.isArray(pvp.history) ? pvp.history.map((x) => ({ ...x })) : [];
 
-    let meEntry = prevBoard.find((x) => x.id === "player_main");
+    let meEntry = prevBoard.find((x) => String(x?.id || x?.telegram_id || x?.telegramId || "") === playerId);
     if (!meEntry) {
       meEntry = {
-        id: "player_main",
+        id: playerId,
+        name: playerName,
         username: playerName,
         wins: 0,
         losses: 0,
@@ -287,6 +289,7 @@ export class NightclubScene {
       prevBoard.push(meEntry);
     }
 
+    meEntry.name = playerName;
     meEntry.username = playerName;
     meEntry.wins = wins;
     meEntry.losses = losses;
@@ -319,6 +322,7 @@ export class NightclubScene {
         wins,
         losses,
         rating,
+        lastMatchAt: now,
         currentOpponent: detail?.opponent || null,
         leaderboard: rankedBoard,
         history: prevHistory.slice(0, 30),
