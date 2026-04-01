@@ -3488,17 +3488,24 @@
         const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
         const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
         const playerName = String(state?.player?.username || "Player");
+        const playerId = String(state?.player?.telegramId || state?.player?.id || "player_main");
 
         pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
         pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
         pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 18 : -12), 0, 99999);
         pvp.currentOpponent = opponent;
         pvp.recentMatches = [resultItem, ...recentMatches];
+        pvp.lastMatchAt = now;
 
         const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
-        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
+        const nextBoard = leaderboard.filter((x) => {
+          if (!x) return false;
+          const rowId = String(x.id || x.telegram_id || x.telegramId || "").trim();
+          if (rowId) return rowId !== playerId;
+          return x.name !== playerName;
+        });
         nextBoard.push({
-          id: String(state?.player?.id || "player_main"),
+          id: playerId,
           name: playerName,
           wins: Number(pvp.wins || 0),
           losses: Number(pvp.losses || 0),
