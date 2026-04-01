@@ -887,14 +887,20 @@ export class ProfileScene {
       const pvp = { ...(s.pvp || {}) };
       const p = s.player || {};
       const username = String(p.username || "Player").trim() || "Player";
+      const selfId = String(p.telegramId || p.id || "player_main").trim() || "player_main";
       const board = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.map((x) => ({ ...x })) : [];
       const wins = Math.max(0, Number(pvp.wins || 0));
       const losses = Math.max(0, Number(pvp.losses || 0));
       const rating = Math.max(0, Number(pvp.rating || 1000));
       const score = rating + wins * 8;
-      const next = board.filter((x) => x && String(x.name || "") !== username);
+      const next = board.filter((x) => {
+        if (!x) return false;
+        const rowId = String(x.id || x.telegram_id || x.telegramId || "").trim();
+        if (rowId) return rowId !== selfId;
+        return String(x.name || "") !== username;
+      });
       next.push({
-        id: String(p.telegramId || p.id || "player_main"),
+        id: selfId,
         name: username,
         wins,
         losses,
@@ -1667,6 +1673,7 @@ export class ProfileScene {
   drawRankingContent(ctx, state, x, y, w, h, L) {
     const p = state.player || {};
     const username = String(p.username || "Player").trim() || "Player";
+    const selfId = String(p.telegramId || p.id || "player_main").trim() || "player_main";
     const board = Array.isArray(state?.pvp?.leaderboard) ? state.pvp.leaderboard.slice() : [];
     board.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
     const list = board.length ? board.slice(0, 12) : [{ name: username, wins: 0, losses: 0, rating: 1000, score: 1000 }];
@@ -1676,7 +1683,8 @@ export class ProfileScene {
 
     list.forEach((item, index) => {
       const rowH = L.mobile ? 44 : 40;
-      const isMe = String(item.name || "") === username;
+      const itemId = String(item.id || item.telegram_id || item.telegramId || "").trim();
+      const isMe = itemId ? itemId === selfId : String(item.name || "") === username;
       this.drawCard(ctx, x + 8, rowY, w - 16, rowH);
       if (isMe) fillRoundRect(ctx, x + 8, rowY, w - 16, rowH, 18, "rgba(243,187,102,0.10)");
       ctx.textAlign = "left";
@@ -1684,7 +1692,7 @@ export class ProfileScene {
       ctx.fillStyle = isMe ? "#ffd494" : "rgba(255,255,255,0.96)";
       ctx.font = "700 14px system-ui";
       ctx.fillText(`#${index + 1}`, x + 22, rowY + 25);
-      textFit(ctx, String(item.name || "Player"), x + 62, rowY + 25, w - 220);
+      textFit(ctx, String(item.name || item.username || "Player"), x + 62, rowY + 25, w - 220);
       ctx.textAlign = "right";
       ctx.fillStyle = "rgba(255,255,255,0.72)";
       ctx.font = "500 12px system-ui";
