@@ -815,13 +815,14 @@ const DAMAGE = {
       const seq = Number(raw?.seq || 0);
       const known = Math.max(Number(this._lastRemoteIconSeq || 0), Number(this._state?.currentIcon?.seq || 0));
       if (seq && seq < known) return false;
+      if (seq && seq === known && Number(this._state?.currentIcon?.seq || 0) === seq) return false;
       if (seq) this._lastRemoteIconSeq = seq;
       return true;
     },
 
     _acceptRemoteResolvedIcon(raw) {
       const seq = Number(raw?.seq || 0);
-      if (seq && seq < Number(this._lastRemoteResolvedSeq || 0)) return false;
+      if (seq && seq <= Number(this._lastRemoteResolvedSeq || 0)) return false;
       if (seq) {
         this._lastRemoteResolvedSeq = seq;
         this._lastRemoteIconSeq = Math.max(Number(this._lastRemoteIconSeq || 0), seq);
