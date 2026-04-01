@@ -51,6 +51,11 @@ function cleanupFloatingInputs() {
   } catch (_) {}
 }
 
+const STARTING_LEVEL = 0;
+const STARTING_XP = 0;
+const STARTING_XP_TO_NEXT = 0;
+const MAX_PLAYER_ENERGY = 100;
+
 export class HomeScene {
   constructor({ store, input, i18n, assets, scenes }) {
     this.assets = assets;
@@ -80,13 +85,13 @@ export class HomeScene {
       this.store.set({
         player: {
           username: "Player",
-          level: 1,
-          xp: 30,
-          xpToNext: 100,
+          level: STARTING_LEVEL,
+          xp: STARTING_XP,
+          xpToNext: STARTING_XP_TO_NEXT,
           weaponName: "Silah Yok",
           weaponBonus: "+0%",
-          energy: 10,
-          energyMax: 10,
+          energy: MAX_PLAYER_ENERGY,
+          energyMax: MAX_PLAYER_ENERGY,
           energyIntervalMs: 5 * 60 * 1000,
           lastEnergyAt: Date.now(),
         },
@@ -96,8 +101,11 @@ export class HomeScene {
 
     const p = s.player || {};
     const patch = {};
-    if (p.energy == null) patch.energy = 10;
-    if (p.energyMax == null) patch.energyMax = 10;
+    if (p.level == null) patch.level = STARTING_LEVEL;
+    if (p.xp == null) patch.xp = STARTING_XP;
+    if (p.xpToNext == null) patch.xpToNext = STARTING_XP_TO_NEXT;
+    if (p.energy == null) patch.energy = MAX_PLAYER_ENERGY;
+    if (p.energyMax == null) patch.energyMax = MAX_PLAYER_ENERGY;
     if (p.energyIntervalMs == null) patch.energyIntervalMs = 5 * 60 * 1000;
     if (p.lastEnergyAt == null) patch.lastEnergyAt = Date.now();
 
