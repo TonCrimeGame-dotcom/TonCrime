@@ -167,6 +167,18 @@ function asNumber(value, defaultValue = 0) {
   return Number.isFinite(n) ? n : defaultValue;
 }
 
+function asInteger(value, defaultValue = 0) {
+  return Math.max(0, Math.floor(asNumber(value, defaultValue)));
+}
+
+function toIsoTimestampOrNull(value) {
+  if (value == null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  const time = date.getTime();
+  if (!Number.isFinite(time)) return null;
+  return new Date(time).toISOString();
+}
+
 function isUuidLike(value) {
   return /^[0-9a-fA-F-]{8,}$/.test(String(value || ''));
 }
@@ -593,6 +605,71 @@ async function getProfileByKey(profileKey) {
     .maybeSingle();
 
   if (error) throw error;
+  return data || null;
+}
+
+function readProfilePvpStats(row = {}) {
+  return {
+    wins: asInteger(row?.pvp_wins ?? row?.wins, 0),
+    losses: asInteger(row?.pvp_losses ?? row?.losses, 0),
+    rating: asInteger(row?.pvp_rating ?? row?.rating, 1000),
+    lastMatchAt: toIsoTimestampOrNull(row?.pvp_last_match_at ?? row?.last_match_at ?? row?.updated_at),
+  };
+}
+
+function buildPvpLeaderboardEntry(row = {}) {
+  const stats = readProfilePvpStats(row);
+  const username = sanitizeUsername(row?.username || 'Player');
+
+  return {
+    id: String(row?.id || row?.telegram_id || username).trim() || username,
+    telegram_id: String(row?.telegram_id || '').trim(),
+    name: username,
+    level: Math.max(0, asInteger(row?.level, 0)),
+    wins: stats.wins,
+    losses: stats.losses,
+    rating: stats.rating,
+    score: stats.rating + stats.wins * 8,
+    updatedAt: stats.lastMatchAt || toIsoTimestampOrNull(row?.updated_at) || new Date(0).toISOString(),
+  };
+}
+
+async function tryPersistProfilePvpStats(profileKey, rawPatch = {}) {
+  const patch = {};
+
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'pvp_wins')) {
+    patch.pvp_wins = asInteger(rawPatch.pvp_wins, 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'pvp_losses')) {
+    patch.pvp_losses = asInteger(rawPatch.pvp_losses, 0);
+  }
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'pvp_rating')) {
+    patch.pvp_rating = asInteger(rawPatch.pvp_rating, 1000);
+  }
+  if (Object.prototype.hasOwnProperty.call(rawPatch, 'pvp_last_match_at')) {
+    patch.pvp_last_match_at = toIsoTimestampOrNull(rawPatch.pvp_last_match_at);
+  }
+
+  if (!Object.keys(patch).length) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      ...patch,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('telegram_id', profileKey)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    if (msg.includes('column') && msg.includes('pvp_')) {
+      return null;
+    }
+    throw error;
+  }
+
   return data || null;
 }
 
@@ -1194,6 +1271,59 @@ app.get('/public/profile', makePublicRateLimit('profile-read', 60_000, 120), asy
   }
 });
 
+app.get('/public/pvp/leaderboard', makePublicRateLimit('pvp-leaderboard', 60_000, 180), async (req, res) => {
+  try {
+    const limit = Math.max(5, Math.min(100, asInteger(req.query.limit, 50)));
+    let rows = [];
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, telegram_id, username, level, updated_at, pvp_wins, pvp_losses, pvp_rating, pvp_last_match_at')
+        .order('pvp_rating', { ascending: false })
+        .order('pvp_wins', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .limit(Math.max(limit * 4, 120));
+
+      if (error) throw error;
+      rows = data || [];
+    } catch (err) {
+      const msg = String(err?.message || '').toLowerCase();
+      if (!(msg.includes('pvp_') || msg.includes('column'))) throw err;
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .limit(500);
+
+      if (error) throw error;
+      rows = data || [];
+    }
+
+    const items = rows
+      .map((row) => buildPvpLeaderboardEntry(row))
+      .filter((item) => item.id && item.name)
+      .sort((a, b) => {
+        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const ratingDiff = Number(b.rating || 0) - Number(a.rating || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+        const winsDiff = Number(b.wins || 0) - Number(a.wins || 0);
+        if (winsDiff !== 0) return winsDiff;
+        return String(a.updatedAt || '').localeCompare(String(b.updatedAt || '')) * -1;
+      })
+      .slice(0, limit)
+      .map((item, index) => ({
+        ...item,
+        rank: index + 1,
+      }));
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'pvp leaderboard failed' });
+  }
+});
+
 app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120), async (req, res) => {
   try {
     const identity = resolveIdentityContext(req, { allowGuest: true });
@@ -1207,6 +1337,12 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
     const energy = Math.max(0, asNumber(req.body?.energy, 0));
     const energyMax = Math.min(100, Math.max(1, asNumber(req.body?.energy_max, energy || 1)));
     const age = req.body?.age == null ? null : asNumber(req.body?.age, null);
+    const pvpPatch = {
+      pvp_wins: req.body?.pvp_wins,
+      pvp_losses: req.body?.pvp_losses,
+      pvp_rating: req.body?.pvp_rating,
+      pvp_last_match_at: req.body?.pvp_last_match_at,
+    };
 
     const payload = {
       telegram_id: identity.profileKey,
@@ -1227,7 +1363,15 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
 
     if (error) throw error;
 
-    return res.json({ ok: true, item: data });
+    let finalData = data;
+    const pvpData = await tryPersistProfilePvpStats(identity.profileKey, pvpPatch);
+    if (pvpData) {
+      finalData = pvpData;
+    } else if (Object.values(pvpPatch).some((value) => value != null)) {
+      finalData = await getProfileByKey(identity.profileKey).catch(() => data) || data;
+    }
+
+    return res.json({ ok: true, item: finalData });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message || 'profile-sync failed' });
   }
