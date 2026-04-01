@@ -1683,7 +1683,7 @@
           window.TonCrimePVP.setMatchContext?.(matchCtx || null);
           window.TonCrimePVP.setOpponent?.(normalizedOpponent);
           try {
-            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin);
+            window.TonCrimePVP.onMatchFinished = (didWin, resultMeta) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin, resultMeta || null);
           } catch (_) {}
 
           if (dom.startBtn) {
@@ -1747,7 +1747,7 @@
           window.TonCrimePVP.setMatchContext?.(matchCtx || null);
           window.TonCrimePVP.setOpponent?.(normalizedOpponent);
           try {
-            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin);
+            window.TonCrimePVP.onMatchFinished = (didWin, resultMeta) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin, resultMeta || null);
           } catch (_) {}
 
           if (dom.startBtn) {
@@ -1811,7 +1811,7 @@
           window.TonCrimePVP.setMatchContext?.(matchCtx || null);
           window.TonCrimePVP.setOpponent?.(normalizedOpponent);
           try {
-            window.TonCrimePVP.onMatchFinished = (didWin) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin);
+            window.TonCrimePVP.onMatchFinished = (didWin, resultMeta) => this._finishBetMatchIfNeeded(matchCtx, normalizedOpponent, !!didWin, resultMeta || null);
           } catch (_) {}
 
           if (dom.startBtn) {
@@ -1865,12 +1865,13 @@
     }
 
 
-    async _finishBetMatchIfNeeded(matchCtx, opponentData, didWin) {
+    async _finishBetMatchIfNeeded(matchCtx, opponentData, didWin, resultMeta = null) {
       try {
         if (!matchCtx?.matchId) return;
         const sb = this._getSupabase();
         const userId = await this._getAuthUserId();
         if (!sb || !userId) return;
+        const finishReason = String(resultMeta?.reason || (didWin ? "win" : "loss")).trim() || (didWin ? "win" : "loss");
         const opponentId = String(matchCtx.player1Id || "") === String(userId)
           ? (matchCtx.player2Id || null)
           : (matchCtx.player1Id || null);
@@ -1879,7 +1880,7 @@
         const { data, error } = await sb.rpc("finish_pvp_match", {
           p_match_id: matchCtx.matchId,
           p_winner_user_id: winnerId,
-          p_reason: didWin ? "win" : "loss",
+          p_reason: finishReason,
         });
         if (error) {
           console.error("[TonCrime] finish_pvp_match error:", error);
