@@ -120,6 +120,7 @@ class Store {
 
         energy: 100,
         energyMax: 100,
+        lastEnergyResetKey: "",
 
         hp: 100,
         hpMax: 100,
@@ -506,6 +507,9 @@ class Store {
     player.energy = Number.isFinite(rawEnergy)
       ? Math.max(0, Math.min(player.energyMax, rawEnergy))
       : 0;
+    if (typeof player.lastEnergyResetKey !== "string") {
+      player.lastEnergyResetKey = "";
+    }
 
     const playerName = String(player.username || "Player");
     const econUnlocked = !!(merged.premium || merged.isPremium) || Number(player.level ?? 0) >= 50;
