@@ -712,8 +712,62 @@ const DAMAGE = {
       return this._isPlayer1Local() ? "enemy" : "me";
     },
 
+    _getCanvasMetrics() {
+      const canvas = this._els?.canvas || null;
+      const rect = canvas?.getBoundingClientRect?.() || null;
+      return {
+        width: Math.max(220, Math.round(rect?.width || canvas?.clientWidth || 0 || 220)),
+        height: Math.max(180, Math.round(rect?.height || canvas?.clientHeight || 0 || 180)),
+      };
+    },
+
+    _normalizeSerializedIconGeometry(raw) {
+      const metrics = this._getCanvasMetrics();
+      const sourceW = Math.max(1, Number(raw?.canvasW || 0) || metrics.width);
+      const sourceH = Math.max(1, Number(raw?.canvasH || 0) || metrics.height);
+      const rawXRatio = Number(raw?.xRatio);
+      const rawYRatio = Number(raw?.yRatio);
+      const rawWRatio = Number(raw?.wRatio);
+      const rawHRatio = Number(raw?.hRatio);
+      const xRatio = Number.isFinite(rawXRatio) ? rawXRatio : (Number(raw?.x || 0) / sourceW);
+      const yRatio = Number.isFinite(rawYRatio) ? rawYRatio : (Number(raw?.y || 0) / sourceH);
+      const wRatio = Number.isFinite(rawWRatio) ? rawWRatio : (Number(raw?.w || 64) / sourceW);
+      const hRatio = Number.isFinite(rawHRatio) ? rawHRatio : (Number(raw?.h || 64) / sourceH);
+      const w = clamp(Math.round(metrics.width * Math.max(0.08, wRatio || 0)), 52, Math.max(52, metrics.width - 8));
+      const h = clamp(Math.round(metrics.height * Math.max(0.08, hRatio || 0)), 52, Math.max(52, metrics.height - 8));
+      return {
+        x: clamp(Math.round(metrics.width * Math.max(0, xRatio || 0)), 0, Math.max(0, metrics.width - w)),
+        y: clamp(Math.round(metrics.height * Math.max(0, yRatio || 0)), 0, Math.max(0, metrics.height - h)),
+        w,
+        h,
+        xRatio: Math.max(0, xRatio || 0),
+        yRatio: Math.max(0, yRatio || 0),
+        wRatio: Math.max(0.08, wRatio || 0),
+        hRatio: Math.max(0.08, hRatio || 0),
+        canvasW: metrics.width,
+        canvasH: metrics.height,
+      };
+    },
+
+    _refreshIconGeometry(iconLike) {
+      if (!iconLike) return iconLike;
+      const geometry = this._normalizeSerializedIconGeometry(iconLike);
+      iconLike.x = geometry.x;
+      iconLike.y = geometry.y;
+      iconLike.w = geometry.w;
+      iconLike.h = geometry.h;
+      iconLike.xRatio = geometry.xRatio;
+      iconLike.yRatio = geometry.yRatio;
+      iconLike.wRatio = geometry.wRatio;
+      iconLike.hRatio = geometry.hRatio;
+      iconLike.canvasW = geometry.canvasW;
+      iconLike.canvasH = geometry.canvasH;
+      return iconLike;
+    },
+
     _serializeIcon(cur) {
       if (!cur) return null;
+      const metrics = this._getCanvasMetrics();
       return {
         id: cur.id,
         label: this._iconLabel(cur.id, cur.label),
@@ -726,6 +780,12 @@ const DAMAGE = {
         y: cur.y,
         w: cur.w,
         h: cur.h,
+        xRatio: metrics.width > 0 ? Number(cur.x || 0) / metrics.width : 0,
+        yRatio: metrics.height > 0 ? Number(cur.y || 0) / metrics.height : 0,
+        wRatio: metrics.width > 0 ? Number(cur.w || 64) / metrics.width : 0,
+        hRatio: metrics.height > 0 ? Number(cur.h || 64) / metrics.height : 0,
+        canvasW: metrics.width,
+        canvasH: metrics.height,
         seq: cur.seq || 0,
         bornAtEpoch: cur.bornAtEpoch || Date.now(),
         expiresAtEpoch: cur.expiresAtEpoch || (Date.now() + ICON_LIFE_MS),
@@ -782,6 +842,7 @@ const DAMAGE = {
       const bornEpoch = Number(raw.bornAtEpoch || nowEpoch);
       const bornLag = Math.max(0, nowEpoch - bornEpoch);
       const remainingMs = Math.max(REMOTE_MIN_ICON_MS, Number(raw.expiresAtEpoch || (nowEpoch + ICON_LIFE_MS)) - nowEpoch);
+      const geometry = this._normalizeSerializedIconGeometry(raw);
       this._state.currentIcon = {
         id: raw.id,
         label: this._iconLabel(raw.id, raw.label),
@@ -790,10 +851,16 @@ const DAMAGE = {
         bad: !!raw.bad,
         heal: !!raw.heal,
         flash: raw.flash,
-        x: Number(raw.x || 0),
-        y: Number(raw.y || 0),
-        w: Number(raw.w || 64),
-        h: Number(raw.h || 64),
+        x: geometry.x,
+        y: geometry.y,
+        w: geometry.w,
+        h: geometry.h,
+        xRatio: geometry.xRatio,
+        yRatio: geometry.yRatio,
+        wRatio: geometry.wRatio,
+        hRatio: geometry.hRatio,
+        canvasW: geometry.canvasW,
+        canvasH: geometry.canvasH,
         seq: Number(raw.seq || 0),
         bornAtEpoch: bornEpoch,
         expiresAtEpoch: nowEpoch + remainingMs,
@@ -879,6 +946,7 @@ const DAMAGE = {
       const nowEpoch = Date.now();
       const nowPerf = performance.now();
       const holdMs = Math.max(RESOLVED_GHOST_MS, REMOTE_MIN_ICON_MS);
+      const geometry = this._normalizeSerializedIconGeometry(raw);
       this._state.currentIcon = {
         id: raw.id,
         label: this._iconLabel(raw.id, raw.label),
@@ -887,10 +955,16 @@ const DAMAGE = {
         bad: !!raw.bad,
         heal: !!raw.heal,
         flash: raw.flash,
-        x: Number(raw.x || 0),
-        y: Number(raw.y || 0),
-        w: Number(raw.w || 64),
-        h: Number(raw.h || 64),
+        x: geometry.x,
+        y: geometry.y,
+        w: geometry.w,
+        h: geometry.h,
+        xRatio: geometry.xRatio,
+        yRatio: geometry.yRatio,
+        wRatio: geometry.wRatio,
+        hRatio: geometry.hRatio,
+        canvasW: geometry.canvasW,
+        canvasH: geometry.canvasH,
         seq: Number(raw.seq || 0),
         bornAtEpoch: nowEpoch - 60,
         expiresAtEpoch: nowEpoch + holdMs,
@@ -1994,6 +2068,7 @@ _handleTap(x, y) {
     _drawCurrentIcon(ctx) {
       const cur = this._state?.currentIcon;
       if (!cur) return;
+      this._refreshIconGeometry(cur);
 
       const now = performance.now();
       const lifeT = clamp((now - cur.bornAt) / ICON_LIFE_MS, 0, 1);
