@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { supabase } from "./supabase.js";
+import { fetchBackendJson } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -483,11 +483,10 @@ function bootstrapTelegramUser() {
 }
 bootstrapTelegramUser();
 
-/* ===== SUPABASE PROFILE SYNC ===== */
+/* ===== CLOUD PROFILE SYNC ===== */
 let _lastProfileSyncAt = 0;
 let _profileSyncBusy = false;
 let _lastProfilePayload = "";
-let _profileSyncEnabled = true;
 let _profileSyncRetryAfter = 0;
 let _profileBootstrapPromise = null;
 
@@ -498,54 +497,6 @@ function getProfileIdentityKey() {
     window.tcGetProfileKey?.(store) ||
     ""
   ).trim();
-}
-
-function getBackendCandidates() {
-  const raw = [
-    window.TONCRIME_BACKEND_URL,
-    window.__TONCRIME_BACKEND_URL__,
-    localStorage.getItem("toncrime_backend_url"),
-    localStorage.getItem("backendUrl"),
-    "https://toncrime.onrender.com",
-  ];
-
-  const out = [];
-  for (const item of raw) {
-    const value = String(item || "").trim().replace(/\/$/, "");
-    if (!value || out.includes(value)) continue;
-    out.push(value);
-  }
-  return out;
-}
-
-async function fetchBackendJson(path, options = {}) {
-  let lastErr = null;
-
-  for (const base of getBackendCandidates()) {
-    const url = `${base}${path}`;
-
-    try {
-      const res = await fetch(url, {
-        ...options,
-        headers: {
-          "Content-Type": "application/json",
-          ...(options.headers || {}),
-        },
-      });
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        lastErr = new Error(json?.error || `HTTP ${res.status}`);
-        continue;
-      }
-
-      return json;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-
-  throw lastErr || new Error("backend unavailable");
 }
 
 function buildProfilePayload() {
@@ -627,30 +578,6 @@ function applyRemoteProfile(profile) {
   return true;
 }
 
-async function fetchProfileFromSupabase(identityKey) {
-  if (!_profileSyncEnabled || !identityKey) return null;
-
-  try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("telegram_id", identityKey)
-      .maybeSingle();
-
-    if (error) {
-      if (isSupabaseProfileSyncBlocked(error)) {
-        _profileSyncEnabled = false;
-      }
-      throw error;
-    }
-
-    return data || null;
-  } catch (err) {
-    console.warn("Supabase profile fetch failed:", err);
-    return null;
-  }
-}
-
 async function fetchProfileFromBackend(identityKey) {
   if (!identityKey) return null;
   try {
@@ -670,47 +597,7 @@ async function restoreProfileFromCloud(identityKey = getProfileIdentityKey()) {
   const backendProfile = await fetchProfileFromBackend(identityKey);
   if (applyRemoteProfile(backendProfile)) return true;
 
-  const supabaseProfile = await fetchProfileFromSupabase(identityKey);
-  if (applyRemoteProfile(supabaseProfile)) return true;
-
   return false;
-}
-
-function isSupabaseProfileSyncBlocked(error) {
-  const code = String(error?.code || "").trim();
-  const status = Number(error?.status || error?.statusCode || 0);
-  const message = String(error?.message || "").toLowerCase();
-  return (
-    code === "42501" ||
-    status === 401 ||
-    status === 403 ||
-    message.includes("row-level security")
-  );
-}
-
-async function syncProfileToSupabase(payload) {
-  if (!_profileSyncEnabled) return false;
-
-  try {
-    const { error } = await supabase
-      .from("profiles")
-      .upsert(payload, { onConflict: "telegram_id" });
-
-    if (error) {
-      if (isSupabaseProfileSyncBlocked(error)) {
-        _profileSyncEnabled = false;
-        console.warn("Supabase profile sync disabled:", error);
-      } else {
-        console.error("Supabase profile sync error:", error);
-      }
-      return false;
-    }
-
-    return true;
-  } catch (err) {
-    console.error("Supabase profile sync fatal:", err);
-    return false;
-  }
 }
 
 async function syncProfileToBackend(payload) {
@@ -738,10 +625,7 @@ async function syncProfileToCloud(force = false) {
   _profileSyncBusy = true;
 
   try {
-    let synced = await syncProfileToSupabase(payload);
-    if (!synced) {
-      synced = await syncProfileToBackend(payload);
-    }
+    const synced = await syncProfileToBackend(payload);
 
     if (!synced) {
       _profileSyncRetryAfter = Date.now() + 30000;
