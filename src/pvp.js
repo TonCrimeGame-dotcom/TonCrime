@@ -944,6 +944,33 @@
       return true;
     }
 
+    _matchCreatedAtMs(match) {
+      const raw = match?.created_at ?? match?.inserted_at ?? match?.started_at ?? null;
+      if (!raw) return 0;
+      const ms = Date.parse(raw);
+      return Number.isFinite(ms) ? ms : 0;
+    }
+
+    _isReadyLiveMatch(match, userId, mode, stake) {
+      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+
+      const player1Id = String(match?.player1_id || "").trim();
+      const player2Id = String(match?.player2_id || "").trim();
+      if (!player1Id || !player2Id || player1Id === player2Id) return false;
+
+      const status = String(match?.status || match?.state || "").trim().toLowerCase();
+      if (["finished", "ended", "cancelled", "canceled", "abandoned", "expired", "closed"].includes(status)) {
+        return false;
+      }
+
+      const createdAtMs = this._matchCreatedAtMs(match);
+      if (createdAtMs && this.matchStartedAt && createdAtMs + 1500 < this.matchStartedAt) {
+        return false;
+      }
+
+      return true;
+    }
+
     async _fetchMatchById(sb, matchId) {
       if (!sb || !matchId) return null;
       try {
@@ -964,7 +991,7 @@
 
       while (Date.now() - started < Math.max(300, Number(timeoutMs || 0))) {
         const match = await this._fetchMatchById(sb, matchId);
-        if (this._isUsableMatch(match, userId, mode, stake)) {
+        if (this._isReadyLiveMatch(match, userId, mode, stake)) {
           return match;
         }
         await new Promise((resolve) => setTimeout(resolve, 220));
@@ -1090,7 +1117,7 @@
     _handleRealtimeMatchPayload(payload, userId, mode, stake, sceneModeId) {
       const match = payload?.new || payload || null;
       if (this.rtMatchStarted || this.matchState !== "searching") return false;
-      if (!this._isUsableMatch(match, userId, mode, stake)) return false;
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) return false;
 
       this.rtMatchStarted = true;
       this.onMatchFound(
@@ -1112,14 +1139,14 @@
       if (!hasMatchSignal) return false;
 
       let match = rpc.match || rpc.match_row || rpc.matchRecord || null;
-      if (!this._isUsableMatch(match, userId, mode, stake)) {
+      if (!this._isReadyLiveMatch(match, userId, mode, stake)) {
         const matchId = rpc.match_id || rpc.matchId || rpc.id || match?.id || null;
         if (matchId) {
           match = await this._fetchMatchById(sb, matchId);
         }
       }
 
-      if (this._isUsableMatch(match, userId, mode, stake)) {
+      if (this._isReadyLiveMatch(match, userId, mode, stake)) {
         this.rtMatchStarted = true;
         this.onMatchFound(
           this._buildOpponentFromMatch(match, userId),
@@ -1139,7 +1166,7 @@
         stake,
         2200
       );
-      if (this._isUsableMatch(waitedMatch, userId, mode, stake)) {
+      if (this._isReadyLiveMatch(waitedMatch, userId, mode, stake)) {
         this.rtMatchStarted = true;
         this.onMatchFound(
           this._buildOpponentFromMatch(waitedMatch, userId),
@@ -1277,6 +1304,10 @@
       }
 
       try {
+        try {
+          await cancelBetPvp(sb, mode, stake);
+        } catch (_) {}
+
         const { data: queueData, error: queueError } = await enqueueBetPvp(sb, mode, stake);
         if (queueError) throw queueError;
 
@@ -1867,15 +1898,22 @@
 
     async _pollMatchedQueueOrMatch(sb, userId, mode, stake, sceneModeId) {
       try {
-        const { data: queueRow } = await sb
-          .from("pvp_match_queue")
-          .select("match_id, status")
-          .eq("user_id", userId)
-          .eq("game_mode", mode)
-          .eq("stake_yton", stake)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let queueRow = null;
+        try {
+          const queueResp = await sb
+            .from("pvp_match_queue")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("game_mode", mode)
+            .eq("stake_yton", stake)
+            .limit(5);
+          const queueRows = Array.isArray(queueResp?.data) ? queueResp.data : [];
+          queueRow = queueRows.sort((a, b) => {
+            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
+            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
+            return tb - ta;
+          })[0] || null;
+        } catch (_) {}
 
         if (queueRow?.match_id) {
           const { data: matchRow } = await sb
@@ -1884,7 +1922,7 @@
             .eq("id", queueRow.match_id)
             .maybeSingle();
 
-          if (matchRow && !this.rtMatchStarted && this.matchState === "searching") {
+          if (this._isReadyLiveMatch(matchRow, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
             this.rtMatchStarted = true;
             this.onMatchFound(
               this._buildOpponentFromMatch(matchRow, userId),
@@ -1894,17 +1932,24 @@
           }
         }
 
-        const { data: directMatch } = await sb
-          .from("pvp_matches")
-          .select("*")
-          .eq("game_mode", mode)
-          .eq("stake_yton", stake)
-          .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let directMatch = null;
+        try {
+          const directResp = await sb
+            .from("pvp_matches")
+            .select("*")
+            .eq("game_mode", mode)
+            .eq("stake_yton", stake)
+            .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+            .limit(10);
+          const directRows = Array.isArray(directResp?.data) ? directResp.data : [];
+          directMatch = directRows.sort((a, b) => {
+            const ta = Date.parse(a?.updated_at || a?.created_at || 0) || 0;
+            const tb = Date.parse(b?.updated_at || b?.created_at || 0) || 0;
+            return tb - ta;
+          })[0] || null;
+        } catch (_) {}
 
-        if (directMatch && !this.rtMatchStarted && this.matchState === "searching") {
+        if (this._isReadyLiveMatch(directMatch, userId, mode, stake) && !this.rtMatchStarted && this.matchState === "searching") {
           this.rtMatchStarted = true;
           this.onMatchFound(
             this._buildOpponentFromMatch(directMatch, userId),
