@@ -1020,6 +1020,7 @@
     _syncSessionId: `slot_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
     _lastSentSeq: 0,
     _lastAppliedSeq: 0,
+    _lastAppliedFingerprint: "",
     _lastSyncTs: 0,
     _resultReported: false,
     onMatchFinished: null,
@@ -1277,6 +1278,36 @@
       };
     },
 
+    _snapshotFingerprint(snapshot) {
+      if (!snapshot) return "";
+      try {
+        return JSON.stringify({
+          reason: String(snapshot.reason || ""),
+          board: snapshot.board || null,
+          p1Hp: Number(snapshot.p1Hp || 0),
+          p2Hp: Number(snapshot.p2Hp || 0),
+          p1Spins: Number(snapshot.p1Spins || 0),
+          p2Spins: Number(snapshot.p2Spins || 0),
+          turnOwner: String(snapshot.turnOwner || ""),
+          finished: !!snapshot.finished,
+          spinning: !!snapshot.spinning,
+          inBonus: !!snapshot.inBonus,
+          bonusOwner: snapshot.bonusOwner || null,
+          bonusSpinsLeft: Number(snapshot.bonusSpinsLeft || 0),
+          bonusMultiplierBank: Number(snapshot.bonusMultiplierBank || 0),
+          displayedMultiplier: Number(snapshot.displayedMultiplier || 0),
+          tumbleIndex: Number(snapshot.tumbleIndex || 0),
+          infoKey: String(snapshot.infoKey || ""),
+          info: String(snapshot.info || ""),
+          decisionEndsAt: Number(snapshot.decisionEndsAt || 0),
+          resultReasonKey: String(snapshot.resultReasonKey || ""),
+          winnerSide: snapshot.winnerSide || null,
+        });
+      } catch (_) {
+        return "";
+      }
+    },
+
     _broadcastState(reason = "sync") {
       if (!this._isAuthoritativePeer()) return false;
       const snapshot = this._buildCanonicalSnapshot(reason);
@@ -1290,6 +1321,15 @@
       if (!opts.force && seq && seq <= normalizeSeq(this._lastAppliedSeq)) return;
       if (seq) this._lastAppliedSeq = seq;
       this._lastSyncTs = Date.now();
+      const passiveSync = snapshot.reason === "heartbeat" || snapshot.reason === "sync_reply";
+      if (!opts.force && !this._isAuthoritativePeer() && passiveSync && !snapshot.finished && (this._remoteSpinAnimating || this._remoteDropAnimating)) {
+        return;
+      }
+      const fingerprint = this._snapshotFingerprint(snapshot);
+      if (!opts.force && !this._isAuthoritativePeer() && passiveSync && fingerprint && fingerprint === this._lastAppliedFingerprint) {
+        return;
+      }
+      this._lastAppliedFingerprint = fingerprint;
 
       const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
       const mySide = amIPlayer1 ? "p1" : "p2";
@@ -1421,6 +1461,7 @@
       this._resultReported = false;
       this._lastSentSeq = 0;
       this._lastAppliedSeq = 0;
+      this._lastAppliedFingerprint = "";
       this._setupState();
       this._hideResultOverlay();
       this._updateHud();
