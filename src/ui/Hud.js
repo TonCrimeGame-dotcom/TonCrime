@@ -43,6 +43,18 @@ export function startHud(store, i18n) {
     return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+  function getTelegramChromeTopOffset() {
+    const tg = window.Telegram?.WebApp;
+    const mobile = window.innerWidth <= 720;
+    const isIOS =
+      /iphone|ipad|ipod/i.test(navigator.userAgent || "") ||
+      String(tg?.platform || "").toLowerCase().includes("ios");
+
+    if (!tg || !mobile) return 0;
+    if (isIOS) return window.innerWidth <= 420 ? 46 : 50;
+    return window.innerWidth <= 420 ? 34 : 38;
+  }
+
   function getInitials(name) {
     const raw = String(name || "").trim();
     if (!raw) return "P";
@@ -516,7 +528,6 @@ export function startHud(store, i18n) {
   root.style.pointerEvents = "auto";
   root.style.left = "max(var(--sal), 0px)";
   root.style.right = "max(var(--sar), 0px)";
-  root.style.top = "max(var(--sat), 0px)";
 
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
@@ -537,6 +548,9 @@ export function startHud(store, i18n) {
     applyButtonsStyle();
     updateDynamicLabels();
     hideDefaultMiniIcons();
+
+    const telegramChromeTopOffset = getTelegramChromeTopOffset();
+    root.style.top = `calc(max(var(--sat), 0px) + ${telegramChromeTopOffset}px)`;
 
     const s = store.get() || {};
     const p = s.player || {};
@@ -612,7 +626,10 @@ export function startHud(store, i18n) {
     const safeTop = Number(ui.safe?.y || 0);
     const trayHeight = buttonTray ? buttonTray.offsetHeight + 8 : 0;
     const premiumHeight = premiumBtn && premiumBtn.style.display !== "none" ? premiumBtn.offsetHeight + 8 : 0;
-    const reservedTop = Math.max(72, root.offsetHeight + Math.max(trayHeight, premiumHeight) + safeTop + 6);
+    const reservedTop = Math.max(
+      72 + telegramChromeTopOffset,
+      root.offsetHeight + Math.max(trayHeight, premiumHeight) + safeTop + telegramChromeTopOffset + 6
+    );
 
     if (Math.abs(lastReservedTop - reservedTop) > 1) {
       lastReservedTop = reservedTop;
