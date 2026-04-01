@@ -40,6 +40,7 @@ const STARTING_XP = 0;
 const STARTING_XP_TO_NEXT = 0;
 const DEFAULT_XP_TO_NEXT = 100;
 const MAX_PLAYER_ENERGY = 100;
+const APP_TIMEZONE = "Europe/Istanbul";
 
 let _viewportLockHeight = 0;
 let _viewportLockWidth = 0;
@@ -264,6 +265,7 @@ const defaultState = {
     energyMax: MAX_PLAYER_ENERGY,
     energyIntervalMs: 5 * 60 * 1000,
     lastEnergyAt: Date.now(),
+    lastEnergyResetKey: dayKey(),
   },
 
   stars: {
@@ -355,6 +357,7 @@ function buildStarterStatePatch(source = store.get()) {
       energyMax: MAX_PLAYER_ENERGY,
       energyIntervalMs: 5 * 60 * 1000,
       lastEnergyAt: Date.now(),
+      lastEnergyResetKey: dayKey(),
     },
   };
 }
@@ -385,10 +388,24 @@ window.visualViewport?.addEventListener?.("resize", () => {
 });
 
 function dayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: APP_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+
+    const year = parts.find((part) => part.type === "year")?.value || "0000";
+    const month = parts.find((part) => part.type === "month")?.value || "00";
+    const day = parts.find((part) => part.type === "day")?.value || "00";
+    return `${year}-${month}-${day}`;
+  } catch {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+  }
 }
 
 function ensureDailyMissionReset() {
@@ -411,6 +428,29 @@ function ensureDailyMissionReset() {
   });
 }
 ensureDailyMissionReset();
+
+function ensureDailyEnergyReset() {
+  const s = store.get();
+  const p = s.player || {};
+  const today = dayKey();
+  if (String(p.lastEnergyResetKey || "") === today) return;
+
+  const energyMax = Math.max(
+    1,
+    Math.min(MAX_PLAYER_ENERGY, Number(p.energyMax || MAX_PLAYER_ENERGY))
+  );
+
+  store.set({
+    player: {
+      ...p,
+      energy: energyMax,
+      energyMax,
+      lastEnergyAt: Date.now(),
+      lastEnergyResetKey: today,
+    },
+  });
+}
+ensureDailyEnergyReset();
 
 /* ===== TELEGRAM USER INIT ===== */
 function getTelegramUser() {
@@ -769,37 +809,11 @@ let _lastSaveAt = 0;
   requestAnimationFrame(autosaveLoop);
 })();
 
-/* ===== ENERGY REGEN ===== */
-function tickEnergy() {
-  const s = store.get();
-  const p = s.player;
-  if (!p) return;
-
-  const now = Date.now();
-  const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
-  const maxE = Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(p.energyMax || MAX_PLAYER_ENERGY)));
-  const e = Math.max(0, Math.min(maxE, Number(p.energy || 0)));
-
-  if (e >= maxE) return;
-
-  const elapsed = now - Number(p.lastEnergyAt || now);
-  if (elapsed < interval) return;
-
-  const gained = Math.floor(elapsed / interval);
-  if (gained <= 0) return;
-
-  const newE = Math.min(maxE, e + gained);
-  const newLast = Number(p.lastEnergyAt || now) + gained * interval;
-
-  store.set({
-    player: {
-      ...p,
-      energy: newE,
-      lastEnergyAt: newLast,
-    },
-  });
+/* ===== DAILY ENERGY RESET ===== */
+function tickDailyEnergyReset() {
+  ensureDailyEnergyReset();
 }
-setInterval(tickEnergy, 1000);
+setInterval(tickDailyEnergyReset, 60 * 1000);
 
 /* ===== I18N ===== */
 const i18n = new I18n(store);
