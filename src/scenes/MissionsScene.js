@@ -2,6 +2,11 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+const STARTING_LEVEL = 0;
+const STARTING_XP_TO_NEXT = 0;
+const DEFAULT_XP_TO_NEXT = 100;
+const MAX_PLAYER_ENERGY = 100;
+
 function pointInRect(px, py, rect) {
   return !!rect && px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
 }
@@ -258,11 +263,16 @@ export class MissionsScene {
     this.store.set({
       player: {
         ...player,
-        level: Number(player.level || 1),
+        level: Math.max(STARTING_LEVEL, Number(player.level ?? STARTING_LEVEL)),
         xp: Number(player.xp || 0),
-        xpToNext: Math.max(1, Number(player.xpToNext || 100)),
+        xpToNext:
+          Math.max(STARTING_LEVEL, Number(player.level ?? STARTING_LEVEL)) === STARTING_LEVEL &&
+          Number(player.xp || 0) <= 0 &&
+          Number(player.xpToNext || 0) <= 0
+            ? STARTING_XP_TO_NEXT
+            : Math.max(1, Number(player.xpToNext || DEFAULT_XP_TO_NEXT)),
         energy: Number(player.energy || 0),
-        energyMax: Math.max(1, Number(player.energyMax || 100)),
+        energyMax: Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(player.energyMax || MAX_PLAYER_ENERGY))),
       },
       missions: {
         dailyAdWatched: Math.max(0, Number(missions.dailyAdWatched || 0)),
@@ -294,13 +304,16 @@ export class MissionsScene {
     const player = s.player || {};
 
     let xp = Number(player.xp || 0) + Number(amount || 0);
-    let level = Number(player.level || 1);
-    let xpToNext = Math.max(1, Number(player.xpToNext || 100));
+    let level = Math.max(STARTING_LEVEL, Number(player.level ?? STARTING_LEVEL));
+    let xpToNext =
+      level === STARTING_LEVEL && Number(player.xp || 0) <= 0 && Number(player.xpToNext || 0) <= 0
+        ? DEFAULT_XP_TO_NEXT
+        : Math.max(1, Number(player.xpToNext || DEFAULT_XP_TO_NEXT));
 
     while (xp >= xpToNext) {
       xp -= xpToNext;
       level += 1;
-      xpToNext = 100;
+      xpToNext = DEFAULT_XP_TO_NEXT;
     }
 
     this._setPlayer({ xp, level, xpToNext });
@@ -309,14 +322,14 @@ export class MissionsScene {
   _fillEnergyToMax() {
     const player = this._playerState();
     this._setPlayer({
-      energy: Math.max(1, Number(player.energyMax || 100)),
+      energy: Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(player.energyMax || MAX_PLAYER_ENERGY))),
       lastEnergyAt: Date.now(),
     });
   }
 
   _grantEnergy(amount) {
     const player = this._playerState();
-    const maxEnergy = Math.max(1, Number(player.energyMax || 100));
+    const maxEnergy = Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(player.energyMax || MAX_PLAYER_ENERGY)));
     const nextEnergy = clamp(Number(player.energy || 0) + Number(amount || 0), 0, maxEnergy);
     this._setPlayer({ energy: nextEnergy, lastEnergyAt: Date.now() });
   }
@@ -401,7 +414,7 @@ export class MissionsScene {
       return true;
     }
 
-    if (type === "level" && Number(player.level || 1) >= 55 && Number(missions.levelClaimedAt || 0) !== 55) {
+    if (type === "level" && Number(player.level ?? STARTING_LEVEL) >= 55 && Number(missions.levelClaimedAt || 0) !== 55) {
       this._setMissions({ levelClaimedAt: 55 });
       this._grantCoins(50);
       this._grantXP(25);
@@ -920,7 +933,7 @@ export class MissionsScene {
       },
       {
         title: this._ui("Level Gorevi", "Level Mission"),
-        badge: `${Math.max(1, Number(player.level || 1))}/55`,
+        badge: `${Math.max(STARTING_LEVEL, Number(player.level ?? STARTING_LEVEL))}/55`,
         description: this._ui(
           "55 level ve uzeri odulu acar.",
           "Reach level 55 or above to unlock the reward."
@@ -928,16 +941,16 @@ export class MissionsScene {
         reward: Number(missions.levelClaimedAt || 0) === 55
           ? this._ui("Odul alindi", "Reward claimed")
           : this._ui("Odul: +50 coin ve +25 XP", "Reward: +50 coins and +25 XP"),
-        progress: clamp(Number(player.level || 1) / 55, 0, 1),
+        progress: clamp(Number(player.level ?? STARTING_LEVEL) / 55, 0, 1),
         progressLabel: this._ui(
-          `Seviye ${Math.max(1, Number(player.level || 1))} / 55`,
-          `Level ${Math.max(1, Number(player.level || 1))} / 55`
+          `Seviye ${Math.max(STARTING_LEVEL, Number(player.level ?? STARTING_LEVEL))} / 55`,
+          `Level ${Math.max(STARTING_LEVEL, Number(player.level ?? STARTING_LEVEL))} / 55`
         ),
         buttons: [
           {
             label: Number(missions.levelClaimedAt || 0) === 55 ? this._ui("Alindi", "Claimed") : this._ui("Odulu Al", "Claim"),
             action: "claim:level",
-            disabled: Number(missions.levelClaimedAt || 0) === 55 || Number(player.level || 1) < 55,
+            disabled: Number(missions.levelClaimedAt || 0) === 55 || Number(player.level ?? STARTING_LEVEL) < 55,
           },
         ],
       },
