@@ -1,3427 +1,1894 @@
-import { supabase } from "../supabase.js";
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import crypto from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
+import { TonClient, WalletContractV4, internal, toNano, SendMode } from '@ton/ton';
+import { beginCell, Address } from '@ton/core';
+import { mnemonicToPrivateKey } from '@ton/crypto';
 
-import { fetchBackendJson } from "../supabase.js";
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '1mb' }));
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function pointInRect(px, py, r) {
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-}
-
-function roundRectPath(ctx, x, y, w, h, r) {
-  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
-function fillRoundRect(ctx, x, y, w, h, r) {
-  roundRectPath(ctx, x, y, w, h, r);
-  ctx.fill();
-}
-
-function strokeRoundRect(ctx, x, y, w, h, r) {
-  roundRectPath(ctx, x, y, w, h, r);
-  ctx.stroke();
-}
-
-function fmtNum(n) {
-  return Number(n || 0).toLocaleString("tr-TR");
-}
-
-function fmtTokenAmount(n) {
-  const value = Number(n || 0);
-  if (!Number.isFinite(value)) return "0";
-  return value.toLocaleString("tr-TR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: Number.isInteger(value) ? 0 : 6,
-  });
-}
-
-function roundTokenAmount(value, fractionDigits = 6) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric)) return 0;
-  const factor = 10 ** fractionDigits;
-  return Math.round((numeric + Number.EPSILON) * factor) / factor;
-}
-
-function rarityColor(r) {
-  switch (String(r || "").toLowerCase()) {
-    case "common":
-      return "#b9a98a";
-    case "rare":
-      return "#d2b06a";
-    case "epic":
-      return "#e4bf74";
-    case "legendary":
-      return "#ffcc66";
-    default:
-      return "#b9a98a";
+/* =========================
+   ENV
+========================= */
+const required = [
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'ADMIN_API_KEY',
+];
+for (const key of required) {
+  if (!process.env[key]) {
+    throw new Error(`Missing env var: ${key}`);
   }
 }
 
-function typeLabel(type) {
-  switch (type) {
-    case "nightclub":
-      return "Nightclub";
-    case "coffeeshop":
-      return "CoffeeShop";
-    case "brothel":
-      return "Brothel";
-    default:
-      return "Business";
+const PORT = Number(process.env.PORT || 8787);
+const ADMIN_API_KEY = String(process.env.ADMIN_API_KEY);
+const ADMIN_RATE_LIMIT_WINDOW_MS = Number(process.env.ADMIN_RATE_LIMIT_WINDOW_MS || 60_000);
+const ADMIN_RATE_LIMIT_MAX = Number(process.env.ADMIN_RATE_LIMIT_MAX || 120);
+const PUBLIC_RATE_LIMIT_WINDOW_MS = Number(process.env.PUBLIC_RATE_LIMIT_WINDOW_MS || 60_000);
+const PUBLIC_RATE_LIMIT_MAX = Number(process.env.PUBLIC_RATE_LIMIT_MAX || 90);
+const CHAT_SEND_WINDOW_MS = Number(process.env.CHAT_SEND_WINDOW_MS || 10_000);
+const CHAT_SEND_MAX = Number(process.env.CHAT_SEND_MAX || 5);
+const TELEGRAM_BOT_TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const TELEGRAM_INIT_DATA_MAX_AGE_SEC = Math.max(
+  60,
+  Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SEC || 3600)
+);
+const ALLOW_INSECURE_PUBLIC_IDENTITY = String(process.env.ALLOW_INSECURE_PUBLIC_IDENTITY || '').trim() === '1';
+const IDENTITY_AUTH_SECRET = String(
+  process.env.IDENTITY_AUTH_SECRET ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.ADMIN_API_KEY ||
+  ''
+).trim();
+const MAX_ADMIN_NOTE_LEN = 500;
+const PAYOUT_MEMO = String(process.env.TON_PAYOUT_MEMO || 'TonCrime payout');
+const CHAT_DEMO_PATTERNS = [
+  'deneme%',
+  'demo%',
+  'test%',
+  'sample%',
+  'ornek%',
+];
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
+
+/* =========================
+   SIMPLE RATE LIMIT
+========================= */
+const rateBuckets = new Map();
+const publicRateBuckets = new Map();
+const chatSendBuckets = new Map();
+
+function getClientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (typeof xf === 'string' && xf.trim()) {
+    return xf.split(',')[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+function adminRateLimit(req, res, next) {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const bucket = rateBuckets.get(ip) || { count: 0, resetAt: now + ADMIN_RATE_LIMIT_WINDOW_MS };
+
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + ADMIN_RATE_LIMIT_WINDOW_MS;
+  }
+
+  bucket.count += 1;
+  rateBuckets.set(ip, bucket);
+
+  res.setHeader('X-RateLimit-Limit', String(ADMIN_RATE_LIMIT_MAX));
+  res.setHeader('X-RateLimit-Remaining', String(Math.max(0, ADMIN_RATE_LIMIT_MAX - bucket.count)));
+  res.setHeader('X-RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+
+  if (bucket.count > ADMIN_RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+
+  next();
+}
+
+function takeRateLimitBucket(bucketMap, key, windowMs, max) {
+  const now = Date.now();
+  const bucket = bucketMap.get(key) || { count: 0, resetAt: now + windowMs };
+
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + windowMs;
+  }
+
+  bucket.count += 1;
+  bucketMap.set(key, bucket);
+
+  return {
+    limited: bucket.count > max,
+    remaining: Math.max(0, max - bucket.count),
+    resetAt: bucket.resetAt,
+  };
+}
+
+function makePublicRateLimit(prefix, windowMs = PUBLIC_RATE_LIMIT_WINDOW_MS, max = PUBLIC_RATE_LIMIT_MAX) {
+  return (req, res, next) => {
+    const bucketKey = `${prefix}:${getClientIp(req)}`;
+    const rate = takeRateLimitBucket(publicRateBuckets, bucketKey, windowMs, max);
+
+    res.setHeader('X-Public-RateLimit-Limit', String(max));
+    res.setHeader('X-Public-RateLimit-Remaining', String(rate.remaining));
+    res.setHeader('X-Public-RateLimit-Reset', String(Math.ceil(rate.resetAt / 1000)));
+
+    if (rate.limited) {
+      return res.status(429).json({ ok: false, error: 'Too many requests' });
+    }
+
+    next();
+  };
+}
+
+/* =========================
+   HELPERS
+========================= */
+function requireAdmin(req, res, next) {
+  const token = req.headers['x-admin-key'];
+  if (!token || token !== ADMIN_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+function getAdminIdentity(req) {
+  const raw = String(req.headers['x-admin-user'] || 'admin').trim();
+  return raw.slice(0, 120) || 'admin';
+}
+
+function sanitizeNote(input, fallback = '') {
+  const value = String(input ?? fallback).trim();
+  return value.slice(0, MAX_ADMIN_NOTE_LEN);
+}
+
+function sanitizeUsername(value, fallback = 'Player') {
+  const safe = String(value ?? fallback).trim().replace(/\s+/g, ' ').slice(0, 24);
+  return safe || fallback;
+}
+
+function asNumber(value, defaultValue = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : defaultValue;
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-fA-F-]{8,}$/.test(String(value || ''));
+}
+
+async function logAdminAction({
+  req,
+  action,
+  targetId = null,
+  note = '',
+  meta = null,
+}) {
+  try {
+    await supabase.from('admin_logs').insert({
+      action: String(action || '').slice(0, 80),
+      admin_id: getAdminIdentity(req),
+      target_id: targetId && isUuidLike(targetId) ? targetId : null,
+      note: sanitizeNote(note),
+      meta: meta ? JSON.stringify(meta).slice(0, 5000) : null,
+      ip_address: getClientIp(req),
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[admin_logs insert failed]', err?.message || err);
   }
 }
 
-function iconForType(type) {
-  switch (type) {
-    case "nightclub":
-      return "NB";
-    case "coffeeshop":
-      return "CF";
-    case "brothel":
-      return "BR";
-    default:
-      return "MK";
+async function getWithdrawLimits() {
+  const { data, error } = await supabase
+    .from('withdraw_limits')
+    .select('*')
+    .eq('id', 1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`withdraw_limits read failed: ${error.message}`);
   }
+
+  return {
+    min_amount: asNumber(data?.min_amount, 1),
+    max_amount: asNumber(data?.max_amount, 100),
+    daily_limit: asNumber(data?.daily_limit, 500),
+  };
 }
 
+async function getTodayPaidTotalForProfile(profileId) {
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
 
-function getPointer(input) {
-  return (
-    input?.pointer ||
-    input?.p ||
-    input?.mouse ||
-    input?.state?.pointer ||
-    { x: 0, y: 0 }
+  const { data, error } = await supabase
+    .from('withdraw_requests')
+    .select('ton_amount')
+    .eq('profile_id', profileId)
+    .eq('status', 'paid')
+    .gte('paid_at', start.toISOString());
+
+  if (error) {
+    throw new Error(`daily paid total read failed: ${error.message}`);
+  }
+
+  return (data || []).reduce((sum, row) => sum + asNumber(row.ton_amount, 0), 0);
+}
+
+function validateTonAddressOrThrow(addressText) {
+  const raw = String(addressText || '').trim();
+
+  if (!raw) {
+    throw new Error('Wallet address is required');
+  }
+
+  let parsed;
+  try {
+    parsed = Address.parse(raw);
+  } catch {
+    throw new Error('Invalid TON wallet address');
+  }
+
+  const normalizedBounceable = parsed.toString({ urlSafe: true, bounceable: true });
+  const normalizedNonBounceable = parsed.toString({ urlSafe: true, bounceable: false });
+
+  return {
+    raw,
+    normalized: normalizedNonBounceable,
+    bounceable: normalizedBounceable,
+    nonBounceable: normalizedNonBounceable,
+  };
+}
+
+async function sendTon({ toAddress, tonAmount }) {
+  if (!process.env.TON_RPC_ENDPOINT) throw new Error('Missing TON_RPC_ENDPOINT');
+  if (!process.env.TON_WALLET_MNEMONIC) throw new Error('Missing TON_WALLET_MNEMONIC');
+
+  const client = new TonClient({ endpoint: process.env.TON_RPC_ENDPOINT });
+  const keyPair = await mnemonicToPrivateKey(
+    String(process.env.TON_WALLET_MNEMONIC).trim().split(/\s+/)
   );
-}
 
-function justPressed(input) {
-  if (typeof input?.justPressed === "function") return !!input.justPressed();
-  if (typeof input?.isJustPressed === "function") {
-    return (
-      !!input.isJustPressed("pointer") ||
-      !!input.isJustPressed("mouseLeft") ||
-      !!input.isJustPressed("touch")
-    );
-  }
-  return !!input?._justPressed || !!input?.mousePressed;
-}
+  const wallet = WalletContractV4.create({
+    workchain: Number(process.env.TON_WALLET_WORKCHAIN || 0),
+    publicKey: keyPair.publicKey,
+  });
 
-function justReleased(input) {
-  if (typeof input?.justReleased === "function") return !!input.justReleased();
-  if (typeof input?.isJustReleased === "function") {
-    return (
-      !!input.isJustReleased("pointer") ||
-      !!input.isJustReleased("mouseLeft") ||
-      !!input.isJustReleased("touch")
-    );
-  }
-  return !!input?._justReleased || !!input?.mouseReleased;
-}
+  const openedWallet = client.open(wallet);
+  const seqnoBefore = await openedWallet.getSeqno();
 
-function isDown(input) {
-  if (typeof input?.isDown === "function") return !!input.isDown();
-  return !!input?.pointer?.down || !!input?.mouseDown || !!input?.state?.pointer?.down;
-}
+  await openedWallet.sendTransfer({
+    secretKey: keyPair.secretKey,
+    seqno: seqnoBefore,
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
+    messages: [
+      internal({
+        to: Address.parse(toAddress),
+        value: toNano(String(tonAmount)),
+        bounce: false,
+        body: beginCell()
+          .storeUint(0, 32)
+          .storeStringTail(PAYOUT_MEMO)
+          .endCell(),
+      }),
+    ],
+  });
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const PREMIUM_COST_TON = 100;
-const FREE_SPIN_LIMIT = 3;
-const PREMIUM_WHEEL_COST = 1000;
-const PRODUCTION_CLAIM_MS = 60 * 60 * 1000;
-
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
-
-function isCompletedAdResult(result) {
-  if (result == null) return true;
-  if (typeof result === "boolean") return result;
-
-  if (typeof result === "object") {
-    if (typeof result.rewarded === "boolean") return result.rewarded;
-    if (typeof result.completed === "boolean") return result.completed;
-    if (typeof result.success === "boolean") return result.success;
-
-    const status = String(result.status || result.state || result.result || "").toLowerCase();
-    if (status && /(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
+  let seqnoAfter = seqnoBefore;
+  const started = Date.now();
+  while (Date.now() - started < 20_000) {
+    try {
+      seqnoAfter = await openedWallet.getSeqno();
+      if (seqnoAfter > seqnoBefore) break;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
-  return true;
+  return {
+    tx_hash: `wallet:${wallet.address.toString()}|seqno:${seqnoBefore}`,
+    seqno_before: seqnoBefore,
+    seqno_after: seqnoAfter,
+    admin_wallet: wallet.address.toString(),
+  };
 }
 
-async function waitForRichAdsController(timeoutMs = 1800) {
-  const direct = window.tcRichAdsController || window.TelegramAdsController;
-  if (direct && typeof direct.triggerInterstitialVideo === "function") return direct;
 
-  const pending = window.tcRichAdsReady;
-  if (!pending || typeof pending.then !== "function") return null;
+function sanitizeIdentityKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '_')
+    .slice(0, 48);
+}
 
+function isGuestIdentityKey(value) {
+  return /^guest_[a-z0-9._-]{4,48}$/.test(String(value || ''));
+}
+
+function isTelegramProfileKey(value) {
+  return /^\d{4,20}$/.test(String(value || '').trim());
+}
+
+function isTelegramAuthIdentityKey(value) {
+  return /^tg_\d{4,20}$/.test(String(value || '').trim());
+}
+
+function safeEqualHex(left, right) {
+  const a = Buffer.from(String(left || '').trim().toLowerCase(), 'hex');
+  const b = Buffer.from(String(right || '').trim().toLowerCase(), 'hex');
+  if (!a.length || !b.length || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function readTelegramInitData(req) {
+  return String(
+    req.headers['x-telegram-init-data'] ||
+    req.body?.tg_init_data ||
+    req.query?.tg_init_data ||
+    ''
+  ).trim();
+}
+
+function buildTelegramDataCheckString(params) {
+  return [...params.entries()]
+    .filter(([key]) => key !== 'hash' && key !== 'signature')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+}
+
+function verifyTelegramInitData(rawInitData) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return { ok: false, reason: 'telegram_bot_token_missing' };
+  }
+
+  const initData = String(rawInitData || '').trim();
+  if (!initData) {
+    return { ok: false, reason: 'missing_init_data' };
+  }
+
+  const params = new URLSearchParams(initData);
+  const providedHash = String(params.get('hash') || '').trim().toLowerCase();
+  if (!providedHash) {
+    return { ok: false, reason: 'missing_hash' };
+  }
+
+  const dataCheckString = buildTelegramDataCheckString(params);
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(TELEGRAM_BOT_TOKEN).digest();
+  const expectedHash = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex');
+  if (!safeEqualHex(providedHash, expectedHash)) {
+    return { ok: false, reason: 'invalid_hash' };
+  }
+
+  const authDate = asNumber(params.get('auth_date'), 0);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!authDate || authDate > nowSec + 60 || nowSec - authDate > TELEGRAM_INIT_DATA_MAX_AGE_SEC) {
+    return { ok: false, reason: 'stale_auth_date' };
+  }
+
+  let user = null;
   try {
-    const controller = await Promise.race([
-      pending,
-      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-    ]);
-    return controller && typeof controller.triggerInterstitialVideo === "function" ? controller : null;
-  } catch (_) {
-    return null;
+    const rawUser = params.get('user');
+    user = rawUser ? JSON.parse(rawUser) : null;
+  } catch {
+    return { ok: false, reason: 'invalid_user_payload' };
   }
+
+  if (!user?.id) {
+    return { ok: false, reason: 'missing_user' };
+  }
+
+  return {
+    ok: true,
+    authDate,
+    user,
+  };
 }
 
-function getImgSafe(assets, key) {
-  try {
-    if (!assets) return null;
+function resolveIdentityContext(req, { allowGuest = false } = {}) {
+  const requestedIdentityKey = sanitizeIdentityKey(
+    req.body?.identity_key ||
+    req.query?.identity_key ||
+    ''
+  );
+  const requestedProfileKey = sanitizeIdentityKey(
+    req.body?.profile_key ||
+    req.query?.profile_key ||
+    req.body?.telegram_id ||
+    req.query?.telegram_id ||
+    requestedIdentityKey
+  );
+  const requestedUsername = sanitizeUsername(
+    req.body?.username || req.query?.username || 'Player'
+  );
+  const telegram = verifyTelegramInitData(readTelegramInitData(req));
 
-    if (typeof assets.get === "function") {
-      const img = assets.get(key);
-      if (img) return img;
-    }
-
-    if (assets.images && assets.images[key]) return assets.images[key];
-    if (assets[key]) return assets[key];
-
-    return null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function textFit(ctx, text, x, y, maxWidth) {
-  const value = String(text || "");
-  if (!maxWidth || ctx.measureText(value).width <= maxWidth) {
-    ctx.fillText(value, x, y);
-    return;
-  }
-  let out = value;
-  while (out.length > 1 && ctx.measureText(`${out}...`).width > maxWidth) out = out.slice(0, -1);
-  ctx.fillText(`${out}...`, x, y);
-}
-
-function drawCoverImage(ctx, img, x, y, w, h) {
-  if (!img || !img.complete || !(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) return false;
-  const iw = img.naturalWidth || img.width;
-  const ih = img.naturalHeight || img.height;
-  const scale = Math.max(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) * 0.5;
-  const dy = y + (h - dh) * 0.5;
-  ctx.drawImage(img, dx, dy, dw, dh);
-  return true;
-}
-
-function drawContainImage(ctx, img, x, y, w, h) {
-  if (!img || !img.complete || !(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) return false;
-  const iw = img.naturalWidth || img.width;
-  const ih = img.naturalHeight || img.height;
-  const scale = Math.min(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) * 0.5;
-  const dy = y + (h - dh) * 0.5;
-  ctx.drawImage(img, dx, dy, dw, dh);
-  return true;
-}
-
-function shortRewardLabel(reward) {
-  const raw = String(reward?.label || reward?.text || reward?.name || "ODUL").replace(/\s+/g, " ").trim();
-  if (!raw) return "ODUL";
-  if (raw.length <= 14) return raw;
-  const parts = raw.split(" ");
-  return parts.slice(0, 2).join(" ").slice(0, 14);
-}
-
-class TradeScene {
-  constructor({ store, input, i18n, assets, scenes }) {
-    this.store = store;
-    this.input = input;
-    this.i18n = i18n;
-    this.assets = assets;
-    this.scenes = scenes;
-
-    this.scrollY = 0;
-    this.maxScroll = 0;
-
-    this.dragging = false;
-    this.downY = 0;
-    this.startScrollY = 0;
-    this.moved = 0;
-    this.clickCandidate = false;
-
-    this.hitBack = null;
-    this.hitTabs = [];
-    this.hitButtons = [];
-
-    this.toastText = "";
-    this.toastUntil = 0;
-    this.runtimeImages = new Map();
-    this.wheelAnim = null;
-    this.lastTs = Date.now();
-    this.adBusy = false;
-  }
-
-  onEnter() {
-    const s = this.store.get();
-    const trade = s.trade || {};
-
-    this.scrollY = 0;
-    this.maxScroll = 0;
-    this.dragging = false;
-    this.moved = 0;
-    this.clickCandidate = false;
-    this.wheelAnim = null;
-    this.lastTs = Date.now();
-    this.adBusy = false;
-
-    this._ensureTradeState();
-    this._refreshBusinessProduction();
-
-    this.store.set({
-      trade: {
-        ...trade,
-        activeTab: trade.activeTab || "premium",
-        selectedBusinessId: trade.selectedBusinessId || null,
-        selectedInventoryCategory: trade.selectedInventoryCategory || "all",
-        selectedMarketFilter: trade.selectedMarketFilter || "all",
-        selectedShopId: trade.selectedShopId || null,
-        selectedShopItemId: trade.selectedShopItemId || null,
-        view: trade.view || "main",
-        searchQuery: trade.searchQuery || "",
-        freeSpinDay: trade.freeSpinDay || "",
-        freeSpinUsed: Number(trade.freeSpinUsed || 0),
-        premiumPreviewType: trade.premiumPreviewType || "nightclub",
-        lootWheel: trade.lootWheel || {
-          mode: "free",
-          selectedIndex: 0,
-          rotation: 0,
-          reward: null,
-          updatedAt: 0,
-        },
-        crateReveal: trade.crateReveal || null,
-      },
-    });
-  }
-
-  _lang() {
-    return this.i18n?.getLang?.() === "en" ? "en" : "tr";
-  }
-
-  _ui(tr, en) {
-    return this._lang() === "en" ? en : tr;
-  }
-
-  _num(n) {
-    return Number(n || 0).toLocaleString(this._lang() === "en" ? "en-US" : "tr-TR");
-  }
-
-  _player() {
-    return this.store.get()?.player || {};
-  }
-
-  _wallet() {
-    return this.store.get()?.wallet || {};
-  }
-
-  _isPremium() {
-    const s = this.store.get();
-    const p = s?.player || {};
-    return !!(s?.premium || s?.isPremium || p?.premium || p?.isPremium || p?.membership === "premium");
-  }
-
-  _canOwnBusiness() {
-    return this._isPremium() || Number(this._player().level || 1) >= 50;
-  }
-
-  _ensureTradeState() {
-    const s = this.store.get();
-    const trade = s.trade || {};
-    const wallet = s.wallet || {};
-    const market = s.market || {};
-    const player = s.player || {};
-    const unlocked = this._isPremium() || Number(player.level || 1) >= 50;
-
-    this.store.set({
-      player: {
-        ...player,
-        membership: this._isPremium() ? "premium" : player.membership || "standard",
-        canOwnBusiness: unlocked,
-        canWithdraw: unlocked,
-      },
-      trade: {
-        ...trade,
-        activeTab: trade.activeTab || "premium",
-        freeSpinDay: trade.freeSpinDay || "",
-        freeSpinUsed: Number(trade.freeSpinUsed || 0),
-        premiumPreviewType: trade.premiumPreviewType || "nightclub",
-      },
-      wallet: {
-        connectedAddress: "",
-        walletAddressInput: "",
-        tonBalance: 0,
-        depositAddress: "",
-        convertYtonInput: "",
-        convertTonInput: "",
-        conversionMode: "",
-        withdrawTonInput: "",
-        ...wallet,
-      },
-      market: {
-        ...market,
-        shops: Array.isArray(market.shops) ? market.shops : [],
-        listings: Array.isArray(market.listings) ? market.listings : [],
-        salesHistory: Array.isArray(market.salesHistory) ? market.salesHistory : [],
-      },
-    });
-  }
-
-  _trade() {
-    return this.store.get().trade || {};
-  }
-
-  _setTrade(patch = {}) {
-    const s = this.store.get();
-    this.store.set({
-      trade: {
-        ...(s.trade || {}),
-        ...patch,
-      },
-    });
-  }
-
-  _safeRect(w, h) {
-    const s = this.store.get();
-    const safe = s?.ui?.safe || { x: 0, y: 0, w, h };
-    const topReserved = Number(s?.ui?.hudReservedTop || 110);
-    const bottomReserved = Number(s?.ui?.chatReservedBottom || 82);
+  if (telegram.ok) {
+    const tgUser = telegram.user || {};
+    const profileKey = String(tgUser.id || '').trim();
+    const authIdentityKey = `tg_${profileKey}`;
+    const telegramName = sanitizeUsername(
+      tgUser.username ||
+      [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') ||
+      requestedUsername
+    );
 
     return {
-      x: safe.x + 10,
-      y: safe.y + topReserved,
-      w: safe.w - 20,
-      h: safe.h - topReserved - bottomReserved - 10,
+      ok: true,
+      verified: true,
+      isGuest: false,
+      profileKey,
+      authIdentityKey,
+      username: telegramName,
+      telegramUser: tgUser,
     };
   }
 
-
-  _runtimeImage(src) {
-    const key = String(src || "").trim();
-    if (!key) return null;
-    if (!this.runtimeImages.has(key)) {
-      const img = new Image();
-      img.decoding = "async";
-      img.src = key;
-      this.runtimeImages.set(key, img);
+  if (ALLOW_INSECURE_PUBLIC_IDENTITY) {
+    const fallbackKey = requestedProfileKey || requestedIdentityKey;
+    if (fallbackKey) {
+      const normalizedProfileKey = isTelegramAuthIdentityKey(fallbackKey)
+        ? fallbackKey.replace(/^tg_/, '')
+        : fallbackKey;
+      return {
+        ok: true,
+        verified: false,
+        isGuest: isGuestIdentityKey(fallbackKey),
+        profileKey: normalizedProfileKey,
+        authIdentityKey: isTelegramAuthIdentityKey(fallbackKey)
+          ? fallbackKey
+          : isTelegramProfileKey(normalizedProfileKey)
+            ? `tg_${normalizedProfileKey}`
+            : fallbackKey,
+        username: requestedUsername,
+        telegramUser: null,
+        insecureFallback: true,
+      };
     }
-    const img = this.runtimeImages.get(key);
-    if (!img || img._failed) return null;
-    return img;
   }
 
-  _pushSystemChat(text) {
-    const s = this.store.get();
-    const chat = Array.isArray(s.chatLog) ? s.chatLog.slice(-79) : [];
-    chat.push({
-      id: "trade_" + Date.now(),
-      type: "system",
-      username: "SYSTEM",
-      text: String(text || ""),
-      createdAt: Date.now(),
-    });
-    this.store.set({ chatLog: chat });
-  }
-
-  _businessDefs() {
+  if (allowGuest && isGuestIdentityKey(requestedProfileKey || requestedIdentityKey)) {
+    const guestKey = requestedProfileKey || requestedIdentityKey;
     return {
-      nightclub: {
-        price: 1000,
-        nameTr: "Nightclub",
-        nameEn: "Nightclub",
-        theme: "neon",
-        icon: "NB",
-        imageKey: "nightclub",
-        imageSrc: "./src/assets/nightclub.jpg",
-        products: [
-          { key: "street_whiskey", icon: "SW", imageSrc: "./src/assets/street.png", name: "Street Whiskey", rarity: "common", qty: 0, price: 27, energyGain: 8, desc: "Nightclub urunu." },
-          { key: "club_prosecco", icon: "CP", imageSrc: "./src/assets/club.png", name: "Club Prosecco", rarity: "rare", qty: 0, price: 33, energyGain: 11, desc: "Kulup ici icecek." },
-          { key: "blue_venom", icon: "BV", imageSrc: "./src/assets/mafia.png", name: "Blue Venom", rarity: "epic", qty: 0, price: 40, energyGain: 13, desc: "VIP kokteyl." },
-        ],
-      },
-      coffeeshop: {
-        price: 850,
-        nameTr: "Coffeeshop",
-        nameEn: "Coffeeshop",
-        theme: "green",
-        icon: "CF",
-        imageKey: "coffeeshop",
-        imageSrc: "./src/assets/coffeeshop.jpg",
-        products: [
-          { key: "white_widow", icon: "WW", imageSrc: "./src/assets/white.png", name: "White Widow", rarity: "rare", qty: 0, price: 36, energyGain: 12, desc: "Coffeeshop urunu." },
-          { key: "og_kush", icon: "OG", imageSrc: "./src/assets/og.png", name: "OG Kush", rarity: "epic", qty: 0, price: 48, energyGain: 16, desc: "Klasik kush." },
-          { key: "moon_rocks", icon: "MR", imageSrc: "./src/assets/diamond.png", name: "Moon Rocks", rarity: "legendary", qty: 0, price: 62, energyGain: 18, desc: "Nadir urun." },
-        ],
-      },
-      brothel: {
-        price: 1200,
-        nameTr: "Genelev",
-        nameEn: "Brothel",
-        theme: "red",
-        icon: "BR",
-        imageKey: "xxx",
-        imageSrc: "./src/assets/xxx.jpg",
-        products: [
-          { key: "scarlett_blaze", icon: "SB", imageSrc: "./src/assets/g_star1.png", name: "Scarlett Blaze", rarity: "epic", qty: 0, price: 95, energyGain: 22, desc: "Vip servis." },
-          { key: "ruby_vane", icon: "RV", imageSrc: "./src/assets/g_star2.png", name: "Ruby Vane", rarity: "legendary", qty: 0, price: 120, energyGain: 26, desc: "Deluxe servis." },
-          { key: "luna_hart", icon: "LH", imageSrc: "./src/assets/g_star3.png", name: "Luna Hart", rarity: "legendary", qty: 0, price: 145, energyGain: 30, desc: "Elite servis." },
-        ],
-      },
+      ok: true,
+      verified: false,
+      isGuest: true,
+      profileKey: guestKey,
+      authIdentityKey: guestKey,
+      username: requestedUsername,
+      telegramUser: null,
     };
   }
 
-  _businessDefByType(type) {
-    return this._businessDefs()[String(type || "").toLowerCase()] || null;
+  if (isTelegramAuthIdentityKey(requestedIdentityKey) || isTelegramProfileKey(requestedProfileKey)) {
+    return {
+      ok: false,
+      status: 401,
+      error: TELEGRAM_BOT_TOKEN
+        ? 'Verified Telegram session required'
+        : 'TELEGRAM_BOT_TOKEN is required for Telegram verification',
+    };
   }
 
-  _createBusinessRecord(type, name, source = "shop") {
-    const def = this._businessDefByType(type);
-    if (!def) return null;
+  return {
+    ok: false,
+    status: 401,
+    error: allowGuest
+      ? 'Valid Telegram session or guest identity is required'
+      : 'Valid Telegram session is required',
+  };
+}
 
-    const businessId = `biz_${type}_${Date.now()}`;
-    const player = this._player();
-    const products = (def.products || []).map((product, idx) => ({
-      ...product,
-      id: `${businessId}_p${idx + 1}`,
+function buildIdentityEmail(identityKey) {
+  return `${sanitizeIdentityKey(identityKey) || 'guest_unknown'}@toncrime.local`;
+}
+
+function buildIdentityPassword(identityKey) {
+  const safe = sanitizeIdentityKey(identityKey) || 'guest_unknown';
+  const digest = crypto
+    .createHmac('sha256', IDENTITY_AUTH_SECRET || 'toncrime_identity_secret')
+    .update(safe)
+    .digest('hex')
+    .slice(0, 40);
+  return `TonCrime_${digest}_Auth!`;
+}
+
+async function findAuthUserByEmail(email) {
+  let page = 1;
+  const target = String(email || '').trim().toLowerCase();
+
+  while (page <= 20) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (error) throw error;
+
+    const users = Array.isArray(data?.users) ? data.users : [];
+    const found = users.find((item) => String(item?.email || '').trim().toLowerCase() === target);
+    if (found) return found;
+    if (users.length < 200) break;
+    page += 1;
+  }
+
+  return null;
+}
+
+async function ensureIdentityAuthUser(identityKey, username = 'Player') {
+  const email = buildIdentityEmail(identityKey);
+  const password = buildIdentityPassword(identityKey);
+  const safeUsername = sanitizeUsername(username);
+  const identityMeta = {
+    identity_key: sanitizeIdentityKey(identityKey),
+    username: safeUsername,
+  };
+  let userId = null;
+
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: identityMeta,
+  });
+  userId = data?.user?.id || null;
+
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const duplicate = msg.includes('already') || msg.includes('exists') || msg.includes('registered') || msg.includes('duplicate');
+    if (!duplicate) throw error;
+
+    const existingUser = await findAuthUserByEmail(email);
+    if (!existingUser?.id) {
+      throw new Error('Existing auth user could not be resolved');
+    }
+
+    const { error: updateError } = await supabase.auth.admin.updateUserById(existingUser.id, {
+      password,
+      user_metadata: {
+        ...(existingUser.user_metadata || {}),
+        ...identityMeta,
+      },
+    });
+    if (updateError) throw updateError;
+    userId = existingUser.id;
+  }
+
+  return { email, password, userId };
+}
+
+async function signInIdentityAuthUser(identityKey, username = 'Player') {
+  const { email, password, userId } = await ensureIdentityAuthUser(identityKey, username);
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    userId,
+    user: data?.user || data?.session?.user || null,
+    session: data?.session || null,
+  };
+}
+
+async function getProfileByKey(profileKey) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('telegram_id', profileKey)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+function isDemoChatText(text) {
+  const normalized = String(text || '').trim().toLowerCase();
+  return /^(test|demo|deneme|sample|ornek|ornk)([\s\d!?.-]|$)/i.test(normalized);
+}
+
+function assertChatSendAllowed(identityKey, req) {
+  const bucketKey = `chat:${sanitizeIdentityKey(identityKey) || getClientIp(req)}`;
+  const rate = takeRateLimitBucket(chatSendBuckets, bucketKey, CHAT_SEND_WINDOW_MS, CHAT_SEND_MAX);
+  if (rate.limited) {
+    const error = new Error('Slow down');
+    error.status = 429;
+    throw error;
+  }
+}
+
+function readRowQuantity(row, keys = []) {
+  for (const key of keys) {
+    const value = Number(row?.[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function readRowText(row, keys = [], fallback = '') {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return fallback;
+}
+
+function hasOwn(row, key) {
+  return !!row && Object.prototype.hasOwnProperty.call(row, key);
+}
+
+function detectQuantityKey(row) {
+  return ['quantity', 'qty', 'stock_qty', 'remaining_qty', 'stock'].find((key) => hasOwn(row, key)) || '';
+}
+
+function detectPriceKey(row) {
+  return ['price_yton', 'price', 'unit_price', 'market_price'].find((key) => hasOwn(row, key)) || '';
+}
+
+function readBooleanish(row, keys = [], fallback = false) {
+  for (const key of keys) {
+    if (!hasOwn(row, key)) continue;
+    const value = row?.[key];
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+      const text = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'y', 'on'].includes(text)) return true;
+      if (['false', '0', 'no', 'n', 'off'].includes(text)) return false;
+    }
+  }
+  return fallback;
+}
+
+function normalizeMarketItemKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+}
+
+function inferMarketItemKind(source = {}, businessType = '') {
+  const explicit = readRowText(source, ['kind', 'item_kind', 'category']);
+  if (explicit) return explicit;
+
+  const type = String(
+    businessType ||
+    readRowText(source, ['business_type', 'type'])
+  ).trim().toLowerCase();
+
+  if (type === 'brothel') return 'girls';
+  if (type === 'nightclub') return 'consumable';
+  if (type === 'coffeeshop') return 'goods';
+
+  const raw = [
+    readRowText(source, ['name', 'item_name', 'title']),
+    readRowText(source, ['desc', 'description']),
+    readRowText(source, ['item_key', 'product_key', 'key']),
+  ].join(' ').toLowerCase();
+
+  if (/(scarlett|ruby|luna|service|escort|girl)/.test(raw)) return 'girls';
+  if (/(widow|kush|moon|weed|rocks)/.test(raw)) return 'goods';
+  if (/(whiskey|prosecco|champagne|venom|drink|cocktail|energy)/.test(raw)) return 'consumable';
+
+  return 'rare';
+}
+
+function sanitizeMarketId(value) {
+  return String(value || '').trim().slice(0, 120);
+}
+
+function sanitizeMarketQuantity(value, fallback = 1) {
+  return Math.max(1, Math.min(9999, Math.floor(asNumber(value, fallback))));
+}
+
+function sanitizeMarketPrice(value, fallback = 1) {
+  return Math.max(1, Math.min(1_000_000_000, Math.floor(asNumber(value, fallback))));
+}
+
+async function resolveVerifiedProfile(req, { allowGuest = true } = {}) {
+  const identity = resolveIdentityContext(req, { allowGuest });
+  if (!identity.ok) {
+    const error = new Error(identity.error || 'identity resolution failed');
+    error.status = identity.status || 401;
+    throw error;
+  }
+
+  const profile = await getProfileByKey(identity.profileKey);
+  if (!profile?.id) {
+    const error = new Error('Profile not found');
+    error.status = 404;
+    throw error;
+  }
+
+  return { identity, profile };
+}
+
+async function getOwnedBusiness(profileId, businessId = '', businessType = '') {
+  let query = supabase
+    .from('businesses')
+    .select('*')
+    .eq('owner_id', profileId);
+
+  if (businessId) query = query.eq('id', businessId);
+  if (businessType) query = query.eq('business_type', businessType);
+
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function getOwnedInventoryItem(profileId, itemKey) {
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .select('*')
+    .eq('profile_id', profileId)
+    .eq('item_key', itemKey)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getOwnedBusinessProduct(businessId, productId) {
+  const { data, error } = await supabase
+    .from('business_products')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function createMarketListingSecure(params = {}) {
+  const { data, error } = await supabase.rpc('create_market_listing', params);
+  if (error) throw error;
+  return Array.isArray(data) ? (data[0] || null) : (data || null);
+}
+
+async function getMarketListingById(listingId) {
+  const { data, error } = await supabase
+    .from('market_listings')
+    .select('*')
+    .eq('id', listingId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getProfileById(profileId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', profileId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getInventoryItemById(itemId) {
+  if (!itemId) return null;
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .select('*')
+    .eq('id', itemId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getBusinessById(businessId) {
+  if (!businessId) return null;
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('*')
+    .eq('id', businessId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getBusinessProductById(productId) {
+  if (!productId) return null;
+  const { data, error } = await supabase
+    .from('business_products')
+    .select('*')
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function updateProfileCoinsExact(profileRow, nextCoins) {
+  const patch = {
+    coins: Math.max(0, asNumber(nextCoins, 0)),
+  };
+  if (hasOwn(profileRow, 'updated_at')) {
+    patch.updated_at = new Date().toISOString();
+  }
+
+  let query = supabase
+    .from('profiles')
+    .update(patch)
+    .eq('id', profileRow.id);
+
+  if (hasOwn(profileRow, 'coins')) {
+    query = query.eq('coins', asNumber(profileRow.coins, 0));
+  }
+
+  const { data, error } = await query
+    .select('id, coins')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.id) {
+    const conflict = new Error('Profile balance changed, retry');
+    conflict.status = 409;
+    throw conflict;
+  }
+
+  return data;
+}
+
+async function forceUpdateProfileCoins(profileId, nextCoins) {
+  const patch = {
+    coins: Math.max(0, asNumber(nextCoins, 0)),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(patch)
+    .eq('id', profileId)
+    .select('id, coins')
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function updateMarketListingQuantityExact(listingRow, nextQuantity) {
+  const quantityKey = detectQuantityKey(listingRow);
+  if (!quantityKey) {
+    const error = new Error('Listing quantity field could not be resolved');
+    error.status = 500;
+    throw error;
+  }
+
+  const currentQuantity = Math.max(0, readRowQuantity(listingRow, [quantityKey]));
+  const patch = {
+    [quantityKey]: Math.max(0, asNumber(nextQuantity, 0)),
+  };
+
+  if (hasOwn(listingRow, 'updated_at')) patch.updated_at = new Date().toISOString();
+  if (hasOwn(listingRow, 'is_active')) patch.is_active = asNumber(nextQuantity, 0) > 0;
+  if (hasOwn(listingRow, 'status') && asNumber(nextQuantity, 0) <= 0) patch.status = 'sold_out';
+
+  const { data, error } = await supabase
+    .from('market_listings')
+    .update(patch)
+    .eq('id', listingRow.id)
+    .eq(quantityKey, currentQuantity)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.id) {
+    const conflict = new Error('Listing stock changed, retry');
+    conflict.status = 409;
+    throw conflict;
+  }
+
+  return data;
+}
+
+function buildPurchasedItemSnapshot({
+  listing = null,
+  inventoryItem = null,
+  businessProduct = null,
+  business = null,
+  unitPrice = 0,
+}) {
+  const source = inventoryItem || businessProduct || listing || {};
+  const businessType = readRowText(business, ['business_type', 'type'])
+    || readRowText(source, ['business_type', 'type']);
+  const name = readRowText(source, ['name', 'item_name', 'title'])
+    || readRowText(listing, ['item_name', 'name', 'title'])
+    || 'Market Item';
+  const itemKey = normalizeMarketItemKey(
+    readRowText(source, ['item_key', 'product_key', 'key', 'slug']) || name
+  );
+  const energyGain = Math.max(0, Math.floor(asNumber(
+    source?.energy_gain ??
+    source?.energyGain ??
+    listing?.energy_gain ??
+    listing?.energyGain,
+    0
+  )));
+  const usable = readBooleanish(source, ['usable'], energyGain > 0) || energyGain > 0;
+
+  return {
+    itemKey,
+    name,
+    kind: inferMarketItemKind(source, businessType),
+    icon: readRowText(source, ['icon'], readRowText(listing, ['icon'], 'IT')) || 'IT',
+    imageKey: readRowText(source, ['image_key', 'imageKey'], readRowText(listing, ['image_key', 'imageKey'])),
+    imageSrc: readRowText(
+      source,
+      ['image_src', 'image', 'image_url', 'imageUrl'],
+      readRowText(listing, ['image_src', 'image', 'image_url', 'imageUrl'])
+    ),
+    rarity: readRowText(source, ['rarity'], readRowText(listing, ['rarity'], 'common')) || 'common',
+    usable,
+    sellable: true,
+    marketable: true,
+    energyGain,
+    sellPrice: Math.max(1, Math.floor(Math.max(1, asNumber(unitPrice, 1)) * 0.7)),
+    marketPrice: Math.max(1, Math.floor(asNumber(unitPrice, 1))),
+    desc: readRowText(source, ['desc', 'description'], readRowText(listing, ['desc', 'description'], 'Bought from market.')),
+    businessType,
+    businessId: readRowText(listing, ['business_id'], readRowText(business, ['id'])),
+    businessProductId: readRowText(listing, ['business_product_id', 'product_id'], readRowText(businessProduct, ['id'])),
+    inventoryItemId: readRowText(listing, ['inventory_item_id'], readRowText(inventoryItem, ['id'])),
+  };
+}
+
+let cachedInventoryColumns = null;
+
+async function getInventoryColumns() {
+  if (Array.isArray(cachedInventoryColumns) && cachedInventoryColumns.length) {
+    return cachedInventoryColumns;
+  }
+
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .select('*')
+    .limit(1);
+
+  if (error) throw error;
+
+  const sample = Array.isArray(data) ? data[0] : null;
+  cachedInventoryColumns = sample && typeof sample === 'object'
+    ? Object.keys(sample)
+    : [
+        'profile_id',
+        'item_key',
+        'name',
+        'kind',
+        'icon',
+        'image_src',
+        'image_key',
+        'rarity',
+        'quantity',
+        'usable',
+        'sellable',
+        'marketable',
+        'energy_gain',
+        'sell_price',
+        'market_price',
+        'desc',
+        'created_at',
+        'updated_at',
+      ];
+
+  return cachedInventoryColumns;
+}
+
+async function persistPurchasedInventory({ buyerProfileId, item, quantity }) {
+  const itemKey = normalizeMarketItemKey(item?.itemKey || item?.name);
+  if (!buyerProfileId || !itemKey) {
+    return { persisted: false, row: null };
+  }
+
+  const quantityValue = Math.max(1, Math.floor(asNumber(quantity, 1)));
+  const columnNames = await getInventoryColumns().catch(() => []);
+  const existing = await getOwnedInventoryItem(buyerProfileId, itemKey).catch(() => null);
+  const nowIso = new Date().toISOString();
+
+  if (existing?.id) {
+    const quantityKey = detectQuantityKey(existing)
+      || (columnNames.includes('quantity') ? 'quantity' : '')
+      || (columnNames.includes('qty') ? 'qty' : '')
+      || (columnNames.includes('stock_qty') ? 'stock_qty' : '');
+
+    if (!quantityKey) {
+      return { persisted: false, row: existing, error: 'inventory quantity field missing' };
+    }
+
+    const patch = {
+      [quantityKey]: Math.max(0, readRowQuantity(existing, [quantityKey]) + quantityValue),
+    };
+
+    if (columnNames.includes('updated_at') || hasOwn(existing, 'updated_at')) patch.updated_at = nowIso;
+    if (columnNames.includes('market_price')) patch.market_price = Math.max(1, asNumber(item.marketPrice, 1));
+    if (columnNames.includes('sell_price')) patch.sell_price = Math.max(1, asNumber(item.sellPrice, 1));
+
+    const { data, error } = await supabase
+      .from('inventory_items')
+      .update(patch)
+      .eq('id', existing.id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      return { persisted: false, row: existing, error: error.message };
+    }
+
+    return { persisted: true, row: data || existing };
+  }
+
+  const quantityKey = columnNames.includes('quantity')
+    ? 'quantity'
+    : columnNames.includes('qty')
+      ? 'qty'
+      : columnNames.includes('stock_qty')
+        ? 'stock_qty'
+        : 'quantity';
+
+  const candidate = {
+    profile_id: buyerProfileId,
+    item_key: itemKey,
+    name: item?.name || 'Market Item',
+    item_name: item?.name || 'Market Item',
+    kind: item?.kind || 'rare',
+    category: item?.kind || 'rare',
+    icon: item?.icon || 'IT',
+    image_key: item?.imageKey || '',
+    image_src: item?.imageSrc || '',
+    image: item?.imageSrc || '',
+    image_url: item?.imageSrc || '',
+    rarity: item?.rarity || 'common',
+    usable: !!item?.usable,
+    sellable: item?.sellable !== false,
+    marketable: item?.marketable !== false,
+    energy_gain: Math.max(0, asNumber(item?.energyGain, 0)),
+    energy: Math.max(0, asNumber(item?.energyGain, 0)),
+    sell_price: Math.max(1, asNumber(item?.sellPrice, 1)),
+    market_price: Math.max(1, asNumber(item?.marketPrice, 1)),
+    price: Math.max(1, asNumber(item?.marketPrice, 1)),
+    desc: item?.desc || 'Bought from market.',
+    description: item?.desc || 'Bought from market.',
+    business_type: item?.businessType || '',
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+  candidate[quantityKey] = quantityValue;
+
+  const payload = {};
+  const allowedColumns = columnNames.length ? columnNames : Object.keys(candidate);
+  for (const key of allowedColumns) {
+    if (candidate[key] !== undefined) payload[key] = candidate[key];
+  }
+
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .insert(payload)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    return { persisted: false, row: null, error: error.message };
+  }
+
+  return { persisted: true, row: data || null };
+}
+
+async function getWithdrawById(id) {
+  const { data, error } = await supabase
+    .from('withdraw_requests')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+/* =========================
+   PUBLIC ROUTES
+========================= */
+app.get('/health', async (_req, res) => {
+  try {
+    const { error } = await supabase.from('profiles').select('id').limit(1);
+    if (error) throw error;
+    res.json({ ok: true, uptime: process.uptime() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'Health failed' });
+  }
+});
+
+/* =========================
+   WALLET VALIDATION (PUBLIC)
+========================= */
+app.post('/wallet/validate', async (req, res) => {
+  try {
+    const walletAddress = String(req.body?.wallet_address || '').trim();
+    const result = validateTonAddressOrThrow(walletAddress);
+
+    return res.json({
+      ok: true,
+      valid: true,
+      wallet_address: result.normalized,
+      bounceable: result.bounceable,
+      non_bounceable: result.nonBounceable,
+      message: 'Valid TON wallet address',
+    });
+  } catch (err) {
+    return res.status(400).json({
+      ok: false,
+      valid: false,
+      error: err.message || 'Invalid wallet address',
+    });
+  }
+});
+
+
+app.post('/public/auth/session', makePublicRateLimit('auth-session', 60_000, 40), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const result = await signInIdentityAuthUser(identity.authIdentityKey, identity.username);
+    if (!result?.session?.access_token || !result?.session?.refresh_token) {
+      throw new Error('session bridge failed');
+    }
+
+    return res.json({
+      ok: true,
+      identity_key: identity.authIdentityKey,
+      profile_key: identity.profileKey,
+      user: result.user || null,
+      session: {
+        access_token: result.session.access_token,
+        refresh_token: result.session.refresh_token,
+        expires_at: result.session.expires_at,
+        expires_in: result.session.expires_in,
+        token_type: result.session.token_type,
+      },
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'auth session failed' });
+  }
+});
+
+app.get('/public/profile', makePublicRateLimit('profile-read', 60_000, 120), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const data = await getProfileByKey(identity.profileKey);
+    return res.json({ ok: true, item: data || null, profile_key: identity.profileKey });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'profile fetch failed' });
+  }
+});
+
+app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const username = sanitizeUsername(req.body?.username || identity.username || 'Player');
+    const level = Math.max(0, asNumber(req.body?.level, 0));
+    const coins = Math.max(0, asNumber(req.body?.coins, 0));
+    const energy = Math.max(0, asNumber(req.body?.energy, 0));
+    const energyMax = Math.min(100, Math.max(1, asNumber(req.body?.energy_max, energy || 1)));
+    const age = req.body?.age == null ? null : asNumber(req.body?.age, null);
+
+    const payload = {
+      telegram_id: identity.profileKey,
+      username,
+      age,
+      level,
+      coins,
+      energy,
+      energy_max: energyMax,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert(payload, { onConflict: 'telegram_id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return res.json({ ok: true, item: data });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'profile-sync failed' });
+  }
+});
+
+app.post('/public/chat/cleanup-demo', requireAdmin, adminRateLimit, async (_req, res) => {
+  try {
+    const filters = CHAT_DEMO_PATTERNS.map((pattern) => `text.ilike.${pattern}`).join(',');
+    const { error } = await supabase
+      .from('chat_messages')
+      .delete()
+      .or(filters);
+
+    if (error) throw error;
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'chat cleanup failed' });
+  }
+});
+
+app.get('/public/chat/history', makePublicRateLimit('chat-history', 60_000, 180), async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(300, asNumber(req.query.limit, 180)));
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (error) throw error;
+
+    return res.json({
+      ok: true,
+      items: (data || []).filter((item) => !isDemoChatText(item?.text)),
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message || 'chat history failed' });
+  }
+});
+
+app.post('/public/chat/send', makePublicRateLimit('chat-send', 60_000, 80), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    assertChatSendAllowed(identity.authIdentityKey, req);
+
+    const profile = await getProfileByKey(identity.profileKey).catch(() => null);
+    const username = sanitizeUsername(
+      profile?.username ||
+      identity.username ||
+      req.body?.username ||
+      'Player'
+    );
+    const text = String(req.body?.text || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+    const inputMeta = req.body?.player_meta && typeof req.body.player_meta === 'object' ? req.body.player_meta : {};
+
+    if (!text) {
+      return res.status(400).json({ ok: false, error: 'text is required' });
+    }
+
+    if (isDemoChatText(text)) {
+      return res.status(400).json({ ok: false, error: 'demo messages are blocked' });
+    }
+
+    const player_meta = {
+      username,
+      clan: String(inputMeta.clan || '').trim().slice(0, 24),
+      level: Math.max(0, asNumber(profile?.level ?? inputMeta.level, 0)),
+      rating: Math.max(0, asNumber(inputMeta.rating, 1000)),
+      wins: Math.max(0, asNumber(inputMeta.wins, 0)),
+      losses: Math.max(0, asNumber(inputMeta.losses, 0)),
+      premium: !!inputMeta.premium,
+      online: true,
+      verified: !!identity.verified,
+    };
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert({ username, text, player_meta })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return res.json({ ok: true, item: data });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'chat send failed' });
+  }
+});
+
+app.post('/public/market/list-inventory', makePublicRateLimit('market-list-inventory', 60_000, 60), async (req, res) => {
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const itemKey = sanitizeMarketId(req.body?.item_key || req.body?.inventory_key);
+    const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
+    const priceYton = sanitizeMarketPrice(req.body?.price_yton, 1);
+
+    if (!itemKey) {
+      return res.status(400).json({ ok: false, error: 'item_key is required' });
+    }
+
+    const invRow = await getOwnedInventoryItem(profile.id, itemKey);
+    if (!invRow?.id) {
+      return res.status(404).json({ ok: false, error: 'Inventory row was not found' });
+    }
+
+    const availableQty = readRowQuantity(invRow, ['quantity', 'qty', 'stock_qty']);
+    if (availableQty < quantity) {
+      return res.status(400).json({ ok: false, error: 'Not enough inventory quantity' });
+    }
+
+    const marketBusiness = await getOwnedBusiness(profile.id, '', 'blackmarket');
+    if (!marketBusiness?.id) {
+      return res.status(400).json({ ok: false, error: 'Blackmarket business is required' });
+    }
+
+    const item = await createMarketListingSecure({
+      p_seller_profile_id: profile.id,
+      p_business_id: marketBusiness.id,
+      p_inventory_item_id: invRow.id,
+      p_quantity: quantity,
+      p_price_yton: priceYton,
+    });
+
+    return res.json({
+      ok: true,
+      item,
+      inventory_item_id: invRow.id,
+      business: {
+        id: marketBusiness.id,
+        name: marketBusiness.name || 'Black Market',
+        business_type: marketBusiness.business_type || 'blackmarket',
+      },
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'inventory listing failed' });
+  }
+});
+
+app.post('/public/market/list-business-product', makePublicRateLimit('market-list-business-product', 60_000, 60), async (req, res) => {
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const businessId = sanitizeMarketId(req.body?.business_id);
+    const productId = sanitizeMarketId(req.body?.business_product_id || req.body?.product_id);
+    const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
+    const priceYton = sanitizeMarketPrice(req.body?.price_yton, 1);
+
+    if (!businessId) {
+      return res.status(400).json({ ok: false, error: 'business_id is required' });
+    }
+    if (!productId) {
+      return res.status(400).json({ ok: false, error: 'business_product_id is required' });
+    }
+
+    const business = await getOwnedBusiness(profile.id, businessId);
+    if (!business?.id) {
+      return res.status(404).json({ ok: false, error: 'Business was not found' });
+    }
+
+    const businessProduct = await getOwnedBusinessProduct(business.id, productId);
+    if (!businessProduct?.id) {
+      return res.status(404).json({ ok: false, error: 'Business product was not found' });
+    }
+
+    const availableQty = readRowQuantity(businessProduct, ['quantity', 'qty', 'stock_qty']);
+    if (availableQty < quantity) {
+      return res.status(400).json({ ok: false, error: 'Not enough business product quantity' });
+    }
+
+    const item = await createMarketListingSecure({
+      p_seller_profile_id: profile.id,
+      p_business_id: business.id,
+      p_business_product_id: businessProduct.id,
+      p_quantity: quantity,
+      p_price_yton: priceYton,
+    });
+
+    return res.json({
+      ok: true,
+      item,
+      business_product_id: businessProduct.id,
+      business: {
+        id: business.id,
+        name: business.name || 'Business',
+        business_type: business.business_type || '',
+      },
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'business product listing failed' });
+  }
+});
+
+app.post('/public/market/buy', makePublicRateLimit('market-buy', 60_000, 80), async (req, res) => {
+  let buyerAfterDebit = null;
+  let sellerAfterCredit = null;
+
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const listingId = sanitizeMarketId(req.body?.listing_id || req.body?.id);
+    const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
+
+    if (!listingId) {
+      return res.status(400).json({ ok: false, error: 'listing_id is required' });
+    }
+
+    const listing = await getMarketListingById(listingId);
+    if (!listing?.id) {
+      return res.status(404).json({ ok: false, error: 'Listing was not found' });
+    }
+
+    const quantityKey = detectQuantityKey(listing);
+    const priceKey = detectPriceKey(listing);
+    if (!quantityKey || !priceKey) {
+      return res.status(500).json({ ok: false, error: 'Listing schema is incomplete' });
+    }
+
+    const availableQty = Math.max(0, readRowQuantity(listing, [quantityKey]));
+    if (availableQty < quantity) {
+      return res.status(400).json({ ok: false, error: 'Not enough listing stock' });
+    }
+
+    if (hasOwn(listing, 'is_active') && !readBooleanish(listing, ['is_active'], true)) {
+      return res.status(400).json({ ok: false, error: 'Listing is inactive' });
+    }
+
+    const unitPrice = Math.max(1, Math.floor(asNumber(listing?.[priceKey], 0)));
+    const totalPrice = unitPrice * quantity;
+
+    const business = await getBusinessById(readRowText(listing, ['business_id'])).catch(() => null);
+    const sellerProfileId = readRowText(
+      listing,
+      ['seller_profile_id', 'profile_id', 'owner_id'],
+      readRowText(business, ['owner_id'])
+    );
+
+    if (!sellerProfileId) {
+      return res.status(409).json({ ok: false, error: 'Listing seller could not be resolved' });
+    }
+
+    if (String(sellerProfileId) === String(profile.id)) {
+      return res.status(400).json({ ok: false, error: 'You cannot buy your own listing' });
+    }
+
+    const buyerProfile = await getProfileById(profile.id);
+    if (!buyerProfile?.id) {
+      return res.status(404).json({ ok: false, error: 'Buyer profile was not found' });
+    }
+
+    const sellerProfile = await getProfileById(sellerProfileId);
+    if (!sellerProfile?.id) {
+      return res.status(404).json({ ok: false, error: 'Seller profile was not found' });
+    }
+
+    const buyerCoins = Math.max(0, asNumber(buyerProfile.coins, 0));
+    if (buyerCoins < totalPrice) {
+      return res.status(400).json({ ok: false, error: 'Not enough yton' });
+    }
+
+    const inventoryItem = await getInventoryItemById(readRowText(listing, ['inventory_item_id'])).catch(() => null);
+    const businessProduct = await getBusinessProductById(readRowText(listing, ['business_product_id', 'product_id'])).catch(() => null);
+    const item = buildPurchasedItemSnapshot({
+      listing,
+      inventoryItem,
+      businessProduct,
+      business,
+      unitPrice,
+    });
+
+    const nextBuyerCoins = Math.max(0, buyerCoins - totalPrice);
+    const nextSellerCoins = Math.max(0, asNumber(sellerProfile.coins, 0) + totalPrice);
+    const nextListingQty = Math.max(0, availableQty - quantity);
+
+    buyerAfterDebit = await updateProfileCoinsExact(buyerProfile, nextBuyerCoins);
+
+    try {
+      sellerAfterCredit = await updateProfileCoinsExact(sellerProfile, nextSellerCoins);
+    } catch (err) {
+      await forceUpdateProfileCoins(buyerProfile.id, buyerCoins).catch(() => null);
+      throw err;
+    }
+
+    let updatedListing = null;
+    try {
+      updatedListing = await updateMarketListingQuantityExact(listing, nextListingQty);
+    } catch (err) {
+      await forceUpdateProfileCoins(buyerProfile.id, buyerCoins).catch(() => null);
+      await forceUpdateProfileCoins(sellerProfile.id, asNumber(sellerProfile.coins, 0)).catch(() => null);
+      throw err;
+    }
+
+    const inventoryPersist = await persistPurchasedInventory({
+      buyerProfileId: buyerProfile.id,
+      item,
+      quantity,
+    }).catch((error) => ({
+      persisted: false,
+      row: null,
+      error: error?.message || 'inventory persist failed',
     }));
 
-    return {
-      id: businessId,
-      type,
-      icon: def.icon,
-      imageKey: def.imageKey,
-      imageSrc: def.imageSrc,
-      name,
-      ownerId: String(player.id || "player_main"),
-      ownerName: String(player.username || "Player"),
-      dailyProduction: 50,
-      stock: 0,
-      theme: def.theme,
-      products,
-      acquiredFrom: source,
-      productionDayKey: "",
-      productionReadyAt: 0,
-      productionClaimUntil: 0,
-      productionCollectedAt: 0,
-      productionMissedAt: 0,
-      pendingProduction: [],
-    };
+    return res.json({
+      ok: true,
+      item,
+      quantity,
+      unit_price: unitPrice,
+      total_price: totalPrice,
+      buyer_coins: Math.max(0, asNumber(buyerAfterDebit?.coins, nextBuyerCoins)),
+      remaining_stock: Math.max(0, readRowQuantity(updatedListing, [detectQuantityKey(updatedListing)])),
+      listing_id: String(updatedListing?.id || listing.id),
+      inventory_persisted: !!inventoryPersist?.persisted,
+      inventory_error: inventoryPersist?.persisted ? null : (inventoryPersist?.error || null),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'market purchase failed' });
   }
+});
 
-  _consumeTon(amountTon) {
-    const amount = Math.max(0, Number(amountTon || 0));
-    const s = this.store.get();
-    const wallet = { ...(s.wallet || {}) };
-    const tonBalance = Number(wallet.tonBalance || 0);
-    if (tonBalance < amount) return false;
-    wallet.tonBalance = roundTokenAmount(Math.max(0, tonBalance - amount));
-    this.store.set({ wallet });
-    return true;
+/* =========================
+   ADMIN ROUTES
+========================= */
+app.use(requireAdmin);
+app.use(adminRateLimit);
+
+app.get('/withdraws', async (req, res) => {
+  try {
+    const status = String(req.query.status || 'pending').trim();
+    const allowed = new Set(['all', 'pending', 'processing', 'paid', 'rejected']);
+    if (!allowed.has(status)) {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+
+    let query = supabase
+      .from('withdraw_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (status !== 'all') query = query.eq('status', status);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    res.json({ items: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to load withdraws' });
   }
+});
 
-  _marketSalesHistory() {
-    return this.store.get()?.market?.salesHistory || [];
+app.get('/profiles', async (req, res) => {
+  try {
+    const queryText = String(req.query.query || '').trim();
+
+    let query = supabase
+      .from('profiles')
+      .select('id, telegram_id, username, level, coins, energy, energy_max, created_at, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (queryText) {
+      const safe = queryText.replace(/[%(),]/g, ' ').trim();
+      query = query.or(`telegram_id.ilike.%${safe}%,username.ilike.%${safe}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    res.json({ items: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to load profiles' });
   }
+});
 
-  _marketShopStats(shopId) {
-    const rows = this._marketSalesHistory().filter((row) => String(row.shopId) === String(shopId));
-    return rows.reduce(
-      (acc, row) => {
-        const qty = Number(row.qty || 0);
-        const price = Number(row.price || 0);
-        acc.sales += 1;
-        acc.units += qty;
-        acc.revenue += qty * price;
-        acc.lastSaleAt = Math.max(acc.lastSaleAt, Number(row.soldAt || 0));
-        return acc;
-      },
-      { sales: 0, units: 0, revenue: 0, lastSaleAt: 0 }
-    );
-  }
+app.post('/profiles/:id/reset-energy', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const value = Math.max(1, Math.min(500, asNumber(req.body?.energy, 50)));
 
-  _marketLeaders() {
-    const shops = this._marketShops();
-    const listings = this._marketListings();
-
-    const cheapestShop = shops
-      .map((shop) => {
-        const shopListings = listings.filter((l) => l.shopId === shop.id);
-        const lowest = shopListings.length
-          ? shopListings.reduce((m, l) => Math.min(m, Number(l.price || 0)), Number.MAX_SAFE_INTEGER)
-          : 0;
-        return { shop, lowest };
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        energy: value,
+        energy_max: value,
+        updated_at: new Date().toISOString(),
       })
-      .filter((row) => row.lowest > 0)
-      .sort((a, b) => a.lowest - b.lowest)[0] || null;
+      .eq('id', id)
+      .select()
+      .single();
 
-    const bestSellingShop = shops
-      .map((shop) => ({ shop, stats: this._marketShopStats(shop.id) }))
-      .sort(
-        (a, b) =>
-          Number(b.stats.units || 0) - Number(a.stats.units || 0) ||
-          Number(b.stats.revenue || 0) - Number(a.stats.revenue || 0)
-      )[0] || null;
+    if (error) throw error;
 
-    return { cheapestShop, bestSellingShop };
-  }
-
-  _rewardText(reward) {
-    if (!reward) return this._ui("Odul alindi", "Reward claimed");
-    if (this._lang() === "en") return reward.textEn || reward.text || reward.label || "Reward claimed";
-    return reward.textTr || reward.text || reward.label || "Odul alindi";
-  }
-
-  _typeLabel(type) {
-    switch (String(type || "").toLowerCase()) {
-      case "nightclub":
-        return this._ui("Nightclub", "Nightclub");
-      case "coffeeshop":
-        return this._ui("Coffeeshop", "CoffeeShop");
-      case "brothel":
-        return this._ui("Genelev", "Brothel");
-      case "blackmarket":
-        return this._ui("Kara Pazar", "Black Market");
-      default:
-        return this._ui("Isletme", "Business");
-    }
-  }
-
-  _itemDesc(item) {
-    if (!item) return "";
-    const raw = String(item.desc || "");
-    if (this._lang() !== "en") return raw;
-
-    const name = String(item.itemName || item.name || "").toLowerCase();
-    if (/(imported whiskey|street whiskey|night whiskey|black whiskey|whiskey)/.test(name)) return "Quick energy item.";
-    if (/(club prosecco|club champagne|premium champagne|champagne)/.test(name)) return "Nightclub drink.";
-    if (/(blue venom|venom)/.test(name)) return "VIP cocktail.";
-    if (/(white widow|og kush)/.test(name)) return "Coffeehouse product.";
-    if (/(moon rocks)/.test(name)) return "Rare market product.";
-    if (/(scarlett blaze)/.test(name)) return "VIP service.";
-    if (/(ruby vane)/.test(name)) return "Deluxe service.";
-    if (/(luna hart)/.test(name)) return "Elite service.";
-    if (/(golden pass|vip pass)/.test(name)) return "Rare event item.";
-    if (/(mystery crate|legendary crate|crate)/.test(name)) return "Open it for a random reward.";
-    return raw;
-  }
-
-  _inventoryKindFor(item = {}, fallbackType = "") {
-    const explicit = String(item.kind || "").toLowerCase().trim();
-    if (["consumable", "girls", "goods", "rare"].includes(explicit)) return explicit;
-
-    const type = String(
-      item.type ||
-      item.businessType ||
-      item.business_type ||
-      item.sourceBusinessType ||
-      fallbackType ||
-      ""
-    ).toLowerCase().trim();
-
-    if (type === "brothel") return "girls";
-    if (type === "nightclub") return "consumable";
-    if (type === "coffeeshop") return "goods";
-
-    const raw = `${item.name || ""} ${item.itemName || ""} ${item.key || ""} ${item.productKey || ""} ${item.product_key || ""} ${item.desc || ""}`.toLowerCase();
-
-    if (/(scarlett blaze|ruby vane|luna hart|vip service|deluxe service|elite service|escort|girl|companion)/.test(raw)) {
-      return "girls";
-    }
-    if (/(golden pass|vip pass|pass|event item|bonus)/.test(raw)) {
-      return "rare";
-    }
-    if (/(white widow|og kush|moon rocks|kush|widow|rocks|weed|goods?)/.test(raw)) {
-      return "goods";
-    }
-    if (/(street whiskey|black whiskey|club prosecco|premium champagne|champagne|venom|drink|cocktail|energy)/.test(raw)) {
-      return "consumable";
-    }
-
-    return "goods";
-  }
-
-  _inventoryViewItems() {
-    const s = this.store.get();
-    const rawInventory = (s.inventory?.items || []).map((item) => ({
-      ...item,
-      kind: this._inventoryKindFor(item),
-      _sourceType: "inventory",
-    }));
-
-    const businessProducts = (s.businesses?.owned || []).flatMap((biz) =>
-      (biz.products || [])
-        .filter((product) => Number(product.qty || 0) > 0)
-        .map((product) => ({
-          ...product,
-          id: `bizinv_${biz.id}_${product.id}`,
-          kind: this._inventoryKindFor(product, biz.type),
-          usable: Number(product.energyGain || 0) > 0,
-          sellable: false,
-          marketable: true,
-          _sourceType: "business_product",
-          _bizId: biz.id,
-          _productId: product.id,
-          _businessType: biz.type,
-          _businessName: biz.name,
-        }))
-    );
-
-    return [...businessProducts, ...rawInventory];
-  }
-
-  _businessArt(type) {
-    switch (String(type || "").toLowerCase()) {
-      case "nightclub":
-        return { imageKey: "nightclub", imageSrc: "./src/assets/nightclub.jpg" };
-      case "coffeeshop":
-        return { imageKey: "coffeeshop", imageSrc: "./src/assets/coffeeshop.jpg" };
-      case "brothel":
-        return { imageKey: "xxx", imageSrc: "./src/assets/xxx.jpg" };
-      case "blackmarket":
-        return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
-      default:
-        return null;
-    }
-  }
-
-  _itemArt(input = {}, fallbackType = "") {
-    if (!input) return this._businessArt(fallbackType);
-
-    const imageKey = input.imageKey || input.artKey || "";
-    const imageSrc = input.imageSrc || input.image || input.artSrc || input.src || "";
-    const genericImage = /\/(drink|weed|xxx|girl)\.(png|jpg)$/i.test(String(imageSrc || ""));
-    if ((imageKey || imageSrc) && !genericImage) return { imageKey, imageSrc };
-
-    const typeArt = this._businessArt(input.type || input.businessType || input.business_type || fallbackType);
-    const looksLikeVenue =
-      !!typeArt &&
-      !input.itemName &&
-      !input.productKey &&
-      !input.product_key &&
-      !input.itemKey &&
-      !input.kind &&
-      (
-        input.ownerName ||
-        input.businessId ||
-        input.dailyProduction != null ||
-        input.totalListings != null ||
-        input.totalSold != null ||
-        input.totalRevenue != null ||
-        input.rating != null ||
-        input.online != null ||
-        input.pendingProduction
-      );
-    if (looksLikeVenue) return typeArt;
-    if (typeArt && !input.itemName && !input.name && !input.label && !input.productKey && !input.product_key) return typeArt;
-
-    const raw = `${input.productKey || ""} ${input.product_key || ""} ${input.itemKey || ""} ${input.itemName || ""} ${input.name || ""} ${input.label || ""} ${input.kind || ""}`.toLowerCase();
-    if (/(street whiskey|night whiskey|black whiskey|whiskey_item)/.test(raw)) {
-      return { imageSrc: "./src/assets/street.png" };
-    }
-    if (/(club prosecco|club champagne|premium champagne|premium_champ|champagne|drink)/.test(raw)) {
-      return { imageSrc: "./src/assets/club.png" };
-    }
-    if (/(blue venom|venom)/.test(raw)) {
-      return { imageSrc: "./src/assets/mafia.png" };
-    }
-    if (/(white widow|widow)/.test(raw)) {
-      return { imageSrc: "./src/assets/white.png" };
-    }
-    if (/(og kush|kush)/.test(raw)) {
-      return { imageSrc: "./src/assets/og.png" };
-    }
-    if (/(moon rocks|moon_rocks|weed)/.test(raw)) {
-      return { imageSrc: "./src/assets/diamond.png" };
-    }
-    if (/(scarlett blaze|scarlett)/.test(raw)) {
-      return { imageSrc: "./src/assets/g_star1.png" };
-    }
-    if (/(ruby vane|ruby)/.test(raw)) {
-      return { imageSrc: "./src/assets/g_star2.png" };
-    }
-    if (/(luna hart|luna)/.test(raw)) {
-      return { imageSrc: "./src/assets/g_star3.png" };
-    }
-    if (/(vip companion|vip girl|companion)/.test(raw)) {
-      return { imageSrc: "./src/assets/g_star1.png" };
-    }
-    if (/(deluxe service|deluxe)/.test(raw)) {
-      return { imageSrc: "./src/assets/g_star2.png" };
-    }
-    if (/(elite service|elite escort|elite)/.test(raw)) {
-      return { imageSrc: "./src/assets/g_star3.png" };
-    }
-    if (/(vip companion|deluxe service|vip girl|companion|service|escort|girl)/.test(raw)) {
-      return { imageSrc: "./src/assets/girl.png" };
-    }
-    if (/(golden pass|vip pass|pass|bonus)/.test(raw)) {
-      return { imageSrc: "./src/assets/bonus.png" };
-    }
-    if (/(crate|sandik|loot|premium_crate|mystery_crate)/.test(raw)) {
-      return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
-    }
-    return imageKey || imageSrc ? { imageKey, imageSrc } : typeArt;
-  }
-
-  _resolveArtImage(art, fallbackType = "") {
-    const spec = this._itemArt(art, fallbackType);
-    if (!spec) return null;
-    const assetImg = spec.imageKey ? getImgSafe(this.assets, spec.imageKey) : null;
-    if (assetImg) return assetImg;
-    return spec.imageSrc ? this._runtimeImage(spec.imageSrc) : null;
-  }
-
-  _drawArtThumb(ctx, x, y, w, h, art, fallbackLabel = "", fallbackType = "", opts = null) {
-    const spec = this._itemArt(art, fallbackType) || {};
-    const img = this._resolveArtImage(art, fallbackType);
-    const plain = !!opts?.plain;
-    const r = Math.max(10, Math.min(18, Math.floor(Math.min(w, h) * 0.22)));
-    const useContain = /\.png($|\?)/i.test(String(spec.imageSrc || "")) || ["consumable", "goods", "rare"].includes(String(art?.kind || "").toLowerCase());
-    const pad = plain
-      ? 0
-      : useContain
-      ? Math.max(4, Math.floor(Math.min(w, h) * 0.12))
-      : Math.max(2, Math.floor(Math.min(w, h) * 0.06));
-
-    if (!plain) {
-      ctx.save();
-      roundRectPath(ctx, x, y, w, h, r);
-      ctx.clip();
-
-      const bg = ctx.createLinearGradient(x, y, x, y + h);
-      bg.addColorStop(0, "rgba(255,214,120,0.08)");
-      bg.addColorStop(1, "rgba(18,12,8,0.34)");
-      ctx.fillStyle = bg;
-      ctx.fillRect(x, y, w, h);
-    }
-
-    if (img) {
-      if (useContain) drawContainImage(ctx, img, x + pad, y + pad, w - pad * 2, h - pad * 2);
-      else drawCoverImage(ctx, img, x + pad, y + pad, w - pad * 2, h - pad * 2);
-    } else {
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = "#fff4d6";
-      ctx.font = `800 ${Math.max(12, Math.floor(h * 0.24))}px system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const label = String(fallbackLabel || art?.itemName || art?.name || art?.label || "TC").trim();
-      const short = label.length <= 9 ? label : label.slice(0, 8);
-      ctx.fillText(short, x + w / 2, y + h / 2);
-    }
-
-    if (!plain) {
-      ctx.restore();
-      ctx.strokeStyle = "rgba(255,214,120,0.16)";
-      ctx.lineWidth = 1;
-      strokeRoundRect(ctx, x, y, w, h, r);
-    }
-  }
-
-  _rewardRotation(index, total) {
-    const slice = (Math.PI * 2) / Math.max(1, total);
-    return -Math.PI / 2 - ((index + 0.5) * slice);
-  }
-
-  _freeSpinRewards() {
-    return [
-      {
-        id: "free_energy_1",
-        type: "energy",
-        amount: 1,
-        textTr: "+1 enerji",
-        textEn: "+1 energy",
-        label: "1 ENERGY",
-        accent: "#dba54b",
-      },
-      {
-        id: "free_energy_2",
-        type: "energy",
-        amount: 2,
-        textTr: "+2 enerji",
-        textEn: "+2 energy",
-        label: "2 ENERGY",
-        accent: "#e2b764",
-      },
-      {
-        id: "free_yton_3",
-        type: "coins",
-        amount: 3,
-        textTr: "+3 yton",
-        textEn: "+3 yton",
-        label: "+3 YTON",
-        accent: "#ffb04b",
-      },
-      {
-        id: "free_yton_5",
-        type: "coins",
-        amount: 5,
-        textTr: "+5 yton",
-        textEn: "+5 yton",
-        label: "+5 YTON",
-        accent: "#ffbf63",
-      },
-      {
-        id: "free_yton_7",
-        type: "coins",
-        amount: 7,
-        textTr: "+7 yton",
-        textEn: "+7 yton",
-        label: "+7 YTON",
-        accent: "#ffc968",
-      },
-      {
-        id: "free_yton_10",
-        type: "coins",
-        amount: 10,
-        textTr: "+10 yton",
-        textEn: "+10 yton",
-        label: "+10 YTON",
-        accent: "#ffd166",
-      },
-    ];
-  }
-
-  _premiumSpinRewards() {
-    return [
-      {
-        id: "premium_floor_combo",
-        type: "combo",
-        fullEnergy: true,
-        coins: 50,
-        textTr: "Full enerji +50 yton",
-        textEn: "Full energy +50 yton",
-        label: "FULL + 50",
-        accent: "#80d8ff",
-      },
-      {
-        id: "premium_combo_150",
-        type: "combo",
-        fullEnergy: true,
-        coins: 150,
-        textTr: "Full enerji +150 yton",
-        textEn: "Full energy +150 yton",
-        label: "FULL + 150",
-        accent: "#9ce4ff",
-      },
-      {
-        id: "premium_yton_350",
-        type: "coins",
-        amount: 350,
-        textTr: "+350 yton",
-        textEn: "+350 yton",
-        label: "+350 YTON",
-        accent: "#ffd45b",
-      },
-      {
-        id: "premium_barrett",
-        type: "weapon",
-        weaponId: "barrett_m82",
-        weaponName: "Barrett M82",
-        bonusPct: 60,
-        textTr: "Barrett M82 kazandin",
-        textEn: "You won Barrett M82",
-        label: "BARRETT M82",
-        accent: "#ffb37a",
-      },
-      {
-        id: "premium_m134",
-        type: "weapon",
-        weaponId: "m134",
-        weaponName: "M134 Minigun",
-        bonusPct: 70,
-        textTr: "M134 Minigun kazandin",
-        textEn: "You won M134 Minigun",
-        label: "M134 MINIGUN",
-        accent: "#ff9b5a",
-      },
-    ];
-  }
-
-  _crateRewards(kind) {
-    if (kind === "legendary") {
-      return [
-        { id: "crate_l_yton", type: "coins", amount: 120, text: "+120 yton", label: "+120 YTON", accent: "#ffca5c" },
-        { id: "crate_l_energy", type: "energy", amount: 26, textTr: "+26 enerji", textEn: "+26 energy", label: "+26 ENERJI", accent: "#e0b45d" },
-        { id: "crate_l_goldpass", type: "item", textTr: "Golden Pass cikti", textEn: "Golden Pass dropped", label: "GOLDEN PASS", accent: "#ffd45b", imageSrc: "./src/assets/bonus.png", item: { id: "crate_goldpass_" + Date.now(), kind: "rare", icon: "PASS", imageSrc: "./src/assets/bonus.png", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik urunu." } },
-        { id: "crate_l_service", type: "item", textTr: "Ruby Vane cikti", textEn: "Ruby Vane dropped", label: "RUBY VANE", accent: "#f0c06d", imageSrc: "./src/assets/g_star2.png", item: { id: "crate_service_" + Date.now(), kind: "girls", icon: "RV", imageSrc: "./src/assets/g_star2.png", name: "Ruby Vane", rarity: "legendary", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 26, sellPrice: 120, marketPrice: 160, desc: "Deluxe servis." } },
-        { id: "crate_l_champ", type: "item", textTr: "Club Prosecco cikti", textEn: "Club Prosecco dropped", label: "CLUB PROSECCO", accent: "#f2a657", imageSrc: "./src/assets/club.png", item: { id: "crate_champ_" + Date.now(), kind: "consumable", icon: "CP", imageSrc: "./src/assets/club.png", name: "Club Prosecco", rarity: "rare", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 11, sellPrice: 34, marketPrice: 44, desc: "Kulup ici icecek." } },
-      ];
-    }
-    return [
-      { id: "crate_m_yton", type: "coins", amount: 80, text: "+80 yton", label: "+80 YTON", accent: "#ffca5c" },
-      { id: "crate_m_energy", type: "energy", amount: 18, textTr: "+18 enerji", textEn: "+18 energy", label: "+18 ENERJI", accent: "#dfb25b" },
-      { id: "crate_m_whiskey", type: "item", textTr: "Street Whiskey cikti", textEn: "Street Whiskey dropped", label: "STREET WHISKEY", accent: "#f2a657", imageSrc: "./src/assets/street.png", item: { id: "crate_whiskey_" + Date.now(), kind: "consumable", icon: "SW", imageSrc: "./src/assets/street.png", name: "Street Whiskey", rarity: "common", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 8, sellPrice: 18, marketPrice: 27, desc: "Hizli enerji urunu." } },
-      { id: "crate_m_weed", type: "item", textTr: "White Widow cikti", textEn: "White Widow dropped", label: "WHITE WIDOW", accent: "#d9ab4f", imageSrc: "./src/assets/white.png", item: { id: "crate_weed_" + Date.now(), kind: "goods", icon: "WW", imageSrc: "./src/assets/white.png", name: "White Widow", rarity: "rare", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 12, sellPrice: 22, marketPrice: 36, desc: "Enerji icin kullanilabilir." } },
-      { id: "crate_m_vip", type: "item", textTr: "Scarlett Blaze cikti", textEn: "Scarlett Blaze dropped", label: "SCARLETT BLAZE", accent: "#efc06d", imageSrc: "./src/assets/g_star1.png", item: { id: "crate_vip_" + Date.now(), kind: "girls", icon: "SB", imageSrc: "./src/assets/g_star1.png", name: "Scarlett Blaze", rarity: "epic", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 22, sellPrice: 65, marketPrice: 95, desc: "Vip servis." } },
-    ];
-  }
-
-  _grantReward(reward, opts = {}) {
-    const s = this.store.get();
-    const cost = Math.max(0, Number(opts.cost || 0));
-    const nextPatch = { coins: Math.max(0, Number(s.coins || 0) - cost) };
-
-    if (reward.type === "coins") {
-      nextPatch.coins = Math.max(0, nextPatch.coins + Number(reward.amount || 0));
-    } else if (reward.type === "energy") {
-      const p = { ...(s.player || {}) };
-      p.energy = clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, Number(p.energyMax || 100));
-      nextPatch.player = p;
-    } else if (reward.type === "combo") {
-      const p = { ...(s.player || {}) };
-      const maxEnergy = Math.max(1, Number(p.energyMax || 100));
-      p.energy = reward.fullEnergy
-        ? maxEnergy
-        : clamp(Number(p.energy || 0) + Number(reward.amount || 0), 0, maxEnergy);
-      nextPatch.player = p;
-      nextPatch.coins = Math.max(0, nextPatch.coins + Number(reward.coins || 0));
-    } else if (reward.type === "weapon") {
-      const p = { ...(s.player || {}) };
-      const weapons = {
-        owned: { ...((s.weapons || {}).owned || {}), [reward.weaponId]: true },
-        equippedId: reward.weaponId,
-      };
-      const pct = Number(reward.bonusPct || 0);
-      const visibleMs = Math.round(500 * (1 + pct / 100));
-      const slowFactor = Number((1 + pct / 100).toFixed(2));
-      nextPatch.player = {
-        ...p,
-        weaponName: reward.weaponName || p.weaponName || "Silah Yok",
-        weaponBonus: `+%${pct}`,
-        weaponIconBonusPct: pct,
-        weaponIconVisibleMs: visibleMs,
-        weaponTickSlowFactor: slowFactor,
-        weaponTimeScale: slowFactor,
-      };
-      nextPatch.weapons = weapons;
-    } else if (reward.type === "item" && reward.item) {
-      const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-      const itemDef = { ...reward.item };
-      const existing = items.find((x) => String(x.name || "").toLowerCase() === String(itemDef.name || "").toLowerCase());
-      if (existing) existing.qty = Number(existing.qty || 0) + Number(itemDef.qty || 1);
-      else items.unshift(itemDef);
-      nextPatch.inventory = {
-        ...(s.inventory || {}),
-        items,
-      };
-    }
-
-    if (typeof opts.freeSpinUsed === "number") {
-      nextPatch.trade = {
-        ...(s.trade || {}),
-        freeSpinDay: todayKey(),
-        freeSpinUsed: Math.max(0, Number(opts.freeSpinUsed || 0)),
-      };
-    }
-
-    this.store.set(nextPatch);
-  }
-
-  _setWheelResult(mode, pool, selectedIndex, reward) {
-    const rotation = this._rewardRotation(selectedIndex, pool.length);
-    this._setTrade({
-      lootWheel: {
-        mode,
-        selectedIndex,
-        rotation,
-        reward: {
-          ...reward,
-          item: reward.item ? { ...reward.item } : null,
-        },
-        updatedAt: Date.now(),
-      },
+    await logAdminAction({
+      req,
+      action: 'reset_energy',
+      targetId: id,
+      note: `Energy reset to ${value}`,
+      meta: { energy: value },
     });
-  }
 
-  _setCrateReveal(kind, pool, selectedIndex, reward) {
-    this._setTrade({
-      crateReveal: {
-        kind,
-        pool: pool.map((entry) => ({
-          ...entry,
-          item: entry.item ? { ...entry.item } : null,
-        })),
-        selectedIndex,
-        reward: reward ? { ...reward, item: reward.item ? { ...reward.item } : null } : null,
-        updatedAt: Date.now(),
-      },
+    res.json({ item: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Energy reset failed' });
+  }
+});
+
+app.get('/admin/stats', async (req, res) => {
+  try {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const [
+      pendingRes,
+      processingRes,
+      paidTodayRes,
+      rejectedTodayRes,
+    ] = await Promise.all([
+      supabase.from('withdraw_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('withdraw_requests').select('id', { count: 'exact', head: true }).eq('status', 'processing'),
+      supabase.from('withdraw_requests').select('ton_amount').eq('status', 'paid').gte('paid_at', today.toISOString()),
+      supabase.from('withdraw_requests').select('id', { count: 'exact', head: true }).eq('status', 'rejected').gte('rejected_at', today.toISOString()),
+    ]);
+
+    if (pendingRes.error) throw pendingRes.error;
+    if (processingRes.error) throw processingRes.error;
+    if (paidTodayRes.error) throw paidTodayRes.error;
+    if (rejectedTodayRes.error) throw rejectedTodayRes.error;
+
+    const paidTonToday = (paidTodayRes.data || []).reduce(
+      (sum, row) => sum + asNumber(row.ton_amount, 0),
+      0
+    );
+
+    res.json({
+      pending_count: pendingRes.count || 0,
+      processing_count: processingRes.count || 0,
+      paid_ton_today: paidTonToday,
+      rejected_today: rejectedTodayRes.count || 0,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Stats failed' });
   }
+});
 
-  _startWheelAnimation(mode, pool, selectedIndex, reward) {
-    const trade = this._trade();
-    const total = Math.max(1, pool.length);
-    const current = this.wheelAnim?.rotation ?? Number(trade.lootWheel?.rotation || this._rewardRotation(0, total));
-    const desired = this._rewardRotation(selectedIndex, total);
-    const TAU = Math.PI * 2;
-    let delta = desired - current;
-    while (delta < 0) delta += TAU;
-    while (delta >= TAU) delta -= TAU;
-    const loops = mode === "premium" ? 5 : 4;
-    const target = current + delta + loops * TAU;
-    this.wheelAnim = {
-      mode,
-      reward: reward ? { ...reward, item: reward.item ? { ...reward.item } : null } : null,
-      start: Date.now(),
-      duration: mode === "premium" ? 2400 : 1900,
-      from: current,
-      to: target,
-      rotation: current,
-      selectedIndex,
-      poolSize: total,
-    };
-  }
+app.post('/withdraws/:id/reject', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const admin_note = sanitizeNote(req.body?.admin_note, 'Rejected by admin');
 
-  _getWheelRotation(trade, pool) {
-    if (this.wheelAnim && this.wheelAnim.poolSize === Math.max(1, pool.length)) return this.wheelAnim.rotation;
-    const wheelState = trade.lootWheel || {};
-    return Number.isFinite(Number(wheelState.rotation)) ? Number(wheelState.rotation) : this._rewardRotation(Number(wheelState.selectedIndex || 0), pool.length);
-  }
+    const { data, error } = await supabase
+      .from('withdraw_requests')
+      .update({
+        status: 'rejected',
+        admin_note,
+        rejected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select()
+      .single();
 
-  _crateDisplayCards(reveal) {
-    const reward = reveal?.reward || null;
-    const pool = Array.isArray(reveal?.pool) ? reveal.pool : [];
-    if (!reward) return pool.slice(0, 3);
-    const idx = pool.findIndex((entry) => String(entry.id || '') === String(reward.id || ''));
-    if (idx < 0 || pool.length < 2) return [reward];
-    const prev = pool[(idx - 1 + pool.length) % pool.length];
-    const next = pool[(idx + 1) % pool.length];
-    return [prev, reward, next];
-  }
-
-  _drawRewardCard(ctx, x, y, w, h, reward, highlight = false) {
-    const accent = reward?.accent || "#f3b35b";
-    const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, highlight ? "rgba(255,201,110,0.24)" : "rgba(10,14,20,0.42)");
-    grad.addColorStop(1, highlight ? "rgba(98,52,10,0.30)" : "rgba(6,10,16,0.52)");
-    ctx.fillStyle = grad;
-    fillRoundRect(ctx, x, y, w, h, 22);
-    ctx.strokeStyle = highlight ? "rgba(255,216,134,0.78)" : "rgba(255,255,255,0.10)";
-    ctx.lineWidth = highlight ? 1.6 : 1;
-    strokeRoundRect(ctx, x, y, w, h, 22);
-
-    this._drawArtThumb(ctx, x + 14, y + 14, 68, h - 28, reward?.item || reward, reward?.label || this._rewardText(reward) || "ODUL");
-
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 14px system-ui";
-    textFit(ctx, reward?.label || this._rewardText(reward) || "Odul", x + 94, y + 28, w - 164);
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    textFit(ctx, this._rewardText(reward), x + 94, y + 48, w - 164);
-
-    if (highlight) {
-      ctx.fillStyle = accent;
-      fillRoundRect(ctx, x + w - 72, y + 14, 56, 24, 12);
-      ctx.fillStyle = "#251506";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = "900 10px system-ui";
-      ctx.fillText("KAZANILDI", x + w - 44, y + 26);
-    }
-  }
-
-  _drawWheel(ctx, x, y, w, trade) {
-    const wheelState = trade.lootWheel || {};
-    const mode = wheelState.mode === "premium" ? "premium" : "free";
-    const pool = mode === "premium" ? this._premiumSpinRewards() : this._freeSpinRewards();
-    const selectedIndex = Number.isFinite(Number(wheelState.selectedIndex)) ? Number(wheelState.selectedIndex) : 0;
-    const rotation = this._getWheelRotation(trade, pool);
-
-    const cy = y + 160;
-    const radius = Math.min(122, Math.floor(Math.min(w * 0.31, 122)));
-    const rewardCardY = Math.round(cy + radius + 18);
-    const rewardCardH = 92;
-    const boxH = Math.max(392, rewardCardY + rewardCardH + 12 - y);
-    this.drawCard(ctx, x, y, w, boxH);
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 16px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(
-      mode === "premium"
-        ? this._ui("Premium Cark", "Premium Wheel")
-        : this._ui("Gunluk Reklam Carki", "Daily Ad Wheel"),
-      x + 16,
-      y + 28
-    );
-    ctx.fillStyle = this.wheelAnim ? "rgba(255,215,120,0.86)" : "rgba(255,255,255,0.70)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(
-      this.wheelAnim
-        ? this._ui("Cark donuyor...", "Wheel is spinning...")
-        : this._ui("Okun gosterdigi dilim odulu verir.", "The pointed slice is the exact reward."),
-      x + 16,
-      y + 48
-    );
-
-    const cx = x + w / 2;
-    const slice = (Math.PI * 2) / pool.length;
-
-    ctx.save();
-    ctx.globalAlpha = 0.16;
-    ctx.fillStyle = "#000";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + radius + 12, radius * 0.92, 20, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.beginPath();
-    ctx.arc(0, 0, radius + 8, 0, Math.PI * 2);
-    const rim = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius + 8);
-    rim.addColorStop(0, "rgba(0,0,0,0)");
-    rim.addColorStop(1, "rgba(255,215,120,0.30)");
-    ctx.fillStyle = rim;
-    ctx.fill();
-
-    const TAU = Math.PI * 2;
-    for (let i = 0; i < pool.length; i += 1) {
-      const start = rotation + i * slice;
-      const end = start + slice;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, start, end);
-      ctx.closePath();
-      const seg = ctx.createLinearGradient(-radius, -radius, radius, radius);
-      if (i % 2 === 0) {
-        seg.addColorStop(0, "rgba(206,152,55,0.96)");
-        seg.addColorStop(1, "rgba(126,84,22,0.96)");
-      } else {
-        seg.addColorStop(0, "rgba(165,116,36,0.96)");
-        seg.addColorStop(1, "rgba(95,62,15,0.96)");
-      }
-      ctx.fillStyle = seg;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,240,208,0.42)";
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-
-      const mid = start + slice / 2;
-      ctx.save();
-      ctx.rotate(mid);
-      const normalizedMid = ((mid % TAU) + TAU) % TAU;
-      const flip = normalizedMid > Math.PI / 2 && normalizedMid < (Math.PI * 3) / 2;
-      if (flip) ctx.rotate(Math.PI);
-      const dir = flip ? -1 : 1;
-      const reward = pool[i];
-      this._drawArtThumb(ctx, dir > 0 ? radius * 0.44 : (-radius * 0.44 - 40), -22, 40, 40, reward.item || reward, shortRewardLabel(reward));
-      ctx.fillStyle = "#fff7e6";
-      ctx.font = "900 10px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const label = shortRewardLabel(reward).replace(/\+/g, '');
-      ctx.fillText(label, radius * 0.62 * dir, 28);
-      ctx.restore();
+    if (error) throw error;
+    if (!data) {
+      return res.status(409).json({ error: 'Request is not pending or already handled' });
     }
 
-    ctx.beginPath();
-    ctx.arc(0, 0, 26, 0, Math.PI * 2);
-    const hub = ctx.createRadialGradient(0, 0, 4, 0, 0, 28);
-    hub.addColorStop(0, "rgba(65,36,9,0.98)");
-    hub.addColorStop(1, "rgba(20,11,6,0.98)");
-    ctx.fillStyle = hub;
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,235,192,0.18)";
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath();
-    ctx.moveTo(cx, y + 92);
-    ctx.lineTo(cx - 16, y + 58);
-    ctx.lineTo(cx + 16, y + 58);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#f8df9d";
-    ctx.beginPath();
-    ctx.moveTo(cx, y + 88);
-    ctx.lineTo(cx - 14, y + 58);
-    ctx.lineTo(cx + 14, y + 58);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    const reward = wheelState.reward || pool[selectedIndex] || pool[0];
-    this._drawRewardCard(ctx, x + 14, rewardCardY, w - 28, rewardCardH, reward, true);
-    return boxH;
-  }
-
-  _drawCrateReveal(ctx, x, y, w, reveal) {
-    if (!reveal?.reward) return 0;
-    const cards = this._crateDisplayCards(reveal);
-    const cardGap = 10;
-    const sideW = Math.floor((w - 28 - cardGap * 2) * 0.26);
-    const centerW = w - 28 - cardGap * 2 - sideW * 2;
-
-    this.drawCard(ctx, x, y, w, 196);
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 16px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(reveal.kind === "legendary" ? this._ui("Legendary Sandik Acildi", "Legendary Crate Opened") : this._ui("Mystery Sandik Acildi", "Mystery Crate Opened"), x + 16, y + 28);
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "12px system-ui";
-    ctx.fillText(this._ui("Ortadaki kart verilen oduldur.", "The center card is the granted reward."), x + 16, y + 48);
-
-    const left = { x: x + 14, y: y + 72, w: sideW, h: 96 };
-    const center = { x: left.x + sideW + cardGap, y: y + 62, w: centerW, h: 116 };
-    const right = { x: center.x + centerW + cardGap, y: y + 72, w: sideW, h: 96 };
-
-    if (cards[0]) {
-      ctx.save();
-      ctx.globalAlpha = 0.72;
-      this._drawRewardCard(ctx, left.x, left.y, left.w, left.h, cards[0], false);
-      ctx.restore();
-    }
-    this._drawRewardCard(ctx, center.x, center.y, center.w, center.h, reveal.reward, true);
-    if (cards[2]) {
-      ctx.save();
-      ctx.globalAlpha = 0.72;
-      this._drawRewardCard(ctx, right.x, right.y, right.w, right.h, cards[2], false);
-      ctx.restore();
-    }
-    return 196;
-  }
-
-  _showToast(text, ms = 1400) {
-    this.toastText = String(text || "");
-    this.toastUntil = Date.now() + ms;
-  }
-
-  _changeTab(tab) {
-    this.scrollY = 0;
-    this.maxScroll = 0;
-    this._setTrade({
-      activeTab: tab,
-      view: "main",
-      selectedShopId: null,
-      selectedBusinessId: null,
-    });
-  }
-
-  _goShop(shopId) {
-    this.scrollY = 0;
-    this.maxScroll = 0;
-    this._setTrade({
-      view: "shop",
-      selectedShopId: shopId,
-    });
-  }
-
-  _goBack() {
-    const t = this._trade();
-    if (t.view === "shop") {
-      this._setTrade({
-        view: "main",
-        selectedShopId: null,
-      });
-      this.scrollY = 0;
-      return;
-    }
-    this.scenes.go("home");
-  }
-
-  _isFreeSpinReady() {
-    const trade = this._trade();
-    const used = String(trade.freeSpinDay || "") === todayKey() ? Number(trade.freeSpinUsed || 0) : 0;
-    return used < FREE_SPIN_LIMIT;
-  }
-
-  _freeSpinRemaining() {
-    const trade = this._trade();
-    const used = String(trade.freeSpinDay || "") === todayKey() ? Number(trade.freeSpinUsed || 0) : 0;
-    return Math.max(0, FREE_SPIN_LIMIT - used);
-  }
-
-  _promptSearch() {
-    const trade = this._trade();
-    const v = window.prompt(this._ui("Mekan veya urun ara:", "Search venue or product:"), trade.searchQuery || "");
-    if (v === null) return;
-    this._setTrade({ searchQuery: String(v || "").trim() });
-    this._showToast(v ? this._ui(`Arama: ${v}`, `Search: ${v}`) : this._ui("Arama temizlendi", "Search cleared"));
-  }
-
-  _allBusinesses() {
-    const s = this.store.get();
-    return s.businesses?.owned || [];
-  }
-
-  _inventoryItems() {
-    const s = this.store.get();
-    return s.inventory?.items || [];
-  }
-
-  _marketShops() {
-    const s = this.store.get();
-    return s.market?.shops || [];
-  }
-
-  _marketListings() {
-    const s = this.store.get();
-    return s.market?.listings || [];
-  }
-
-  _getShopById(shopId) {
-    return this._marketShops().find((x) => x.id === shopId) || null;
-  }
-
-  _getListingsByShopId(shopId) {
-    return this._marketListings().filter((x) => x.shopId === shopId);
-  }
-
-  _findLowestMarketPriceByName(itemName) {
-    const listings = this._marketListings().filter(
-      (x) => String(x.itemName || "").toLowerCase() === String(itemName || "").toLowerCase()
-    );
-    if (!listings.length) return 0;
-    return listings.reduce((min, x) => Math.min(min, Number(x.price || 0)), Number.MAX_SAFE_INTEGER);
-  }
-  _getTelegramId() {
-    const s = this.store.get();
-    return String(
-      s?.player?.telegramId ||
-      window.Telegram?.WebApp?.initDataUnsafe?.user?.id ||
-      ""
-    ).trim();
-  }
-
-  async _getProfileId() {
-    const profileKey = String(
-      this._getTelegramId() ||
-      window.tcGetProfileKey?.() ||
-      ""
-    ).trim();
-    if (!profileKey) {
-      throw new Error("profile key bulunamadi");
-    }
-
-    const json = await fetchBackendJson(
-      `/public/profile?identity_key=${encodeURIComponent(profileKey)}`
-    );
-    const data = json?.item || null;
-    if (!data?.id) {
-      throw new Error("Profil bulunamadi");
-    }
-
-    return data.id;
-  }
-
-  _normalizeBusinessType(type) {
-    const t = String(type || "").toLowerCase().trim();
-
-    if (t === "nightclub") return "nightclub";
-    if (t === "coffeeshop") return "coffeeshop";
-    if (t === "brothel") return "brothel";
-
-    return null;
-  }
-
-  _mapBusinessRowToUi(row, playerName) {
-    const art = this._businessArt(row.business_type);
-    return {
-      id: String(row.id),
-      type: row.business_type,
-      icon: iconForType(row.business_type),
-      imageKey: art?.imageKey || "",
-      imageSrc: art?.imageSrc || "",
-      name: row.name || this._typeLabel(row.business_type),
-      ownerId: String(row.owner_id || ""),
-      ownerName: String(playerName || "Player"),
-      dailyProduction: Number(row.daily_production || 50),
-      stock: Number(row.stock_qty || 0),
-      theme: row.business_type,
-      products: [],
-    };
-  }
-
-  _ensurePlayerMarketShop() {
-    const s = this.store.get();
-    const playerName = String(s.player?.username || "Player");
-    const playerShopId = "shop_player_market";
-
-    let existing = (s.market?.shops || []).find((x) => x.id === playerShopId);
-    if (existing) return existing;
-
-    const shop = {
-      id: playerShopId,
-      businessId: "player_market",
-      type: "blackmarket",
-      icon: "BM",
-      imageKey: "blackmarket",
-      imageSrc: "./src/assets/BlackMarket.png",
-      name: `${playerName} Market`,
-      ownerId: "player_main",
-      ownerName: playerName,
-      online: true,
-      theme: "dark",
-      rating: 5,
-      totalListings: 0,
-    };
-
-    const shops = [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))];
-
-    this.store.set({
-      market: {
-        ...(s.market || {}),
-        shops,
+    await logAdminAction({
+      req,
+      action: 'withdraw_reject',
+      targetId: id,
+      note: admin_note,
+      meta: {
+        profile_id: data.profile_id,
+        wallet_address: data.wallet_address,
+        ton_amount: data.ton_amount,
       },
     });
 
-    return shop;
+    res.json({ item: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Reject failed' });
   }
+});
 
-  async _doFreeSpin() {
-    if (this.wheelAnim || this.adBusy) {
-      this._showToast(this._ui("Cark donuyor", "Wheel is spinning"));
-      return;
+app.post('/withdraws/:id/pay', async (req, res) => {
+  const id = String(req.params.id || '').trim();
+
+  try {
+    const preRow = await getWithdrawById(id);
+
+    if (preRow.status !== 'pending') {
+      return res.status(409).json({ error: 'Only pending requests can be paid' });
     }
-    if (!this._isFreeSpinReady()) {
-      this._showToast(this._ui("Bugunluk 3 reklamli spin bitti", "All 3 daily ad spins are used"));
-      return;
+
+    const walletInfo = validateTonAddressOrThrow(preRow.wallet_address);
+    const normalizedWallet = walletInfo.normalized;
+    const tonAmount = asNumber(preRow.ton_amount, NaN);
+    const ytonAmount = asNumber(preRow.yton_amount, 0);
+
+    if (!Number.isFinite(tonAmount) || tonAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid ton_amount' });
     }
 
-    this.adBusy = true;
-    this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
+    const limits = await getWithdrawLimits();
 
+    if (tonAmount < limits.min_amount) {
+      return res.status(400).json({ error: `Below min withdraw amount (${limits.min_amount} TON)` });
+    }
+
+    if (tonAmount > limits.max_amount) {
+      return res.status(400).json({ error: `Above max withdraw amount (${limits.max_amount} TON)` });
+    }
+
+    const paidToday = await getTodayPaidTotalForProfile(preRow.profile_id);
+    if (paidToday + tonAmount > limits.daily_limit) {
+      return res.status(400).json({ error: `Daily withdraw limit exceeded (${limits.daily_limit} TON)` });
+    }
+
+    const { data: lockedRow, error: lockError } = await supabase
+      .from('withdraw_requests')
+      .update({
+        status: 'processing',
+        processing_at: new Date().toISOString(),
+        admin_note: sanitizeNote(req.body?.admin_note, 'Processing by admin'),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select()
+      .single();
+
+    if (lockError) throw lockError;
+    if (!lockedRow) {
+      return res.status(409).json({ error: 'Request is already being processed or already handled' });
+    }
+
+    await logAdminAction({
+      req,
+      action: 'withdraw_processing',
+      targetId: id,
+      note: 'Withdraw locked for payout',
+      meta: {
+        profile_id: lockedRow.profile_id,
+        wallet_address: normalizedWallet,
+        ton_amount: tonAmount,
+        yton_amount: ytonAmount,
+      },
+    });
+
+    let payout;
     try {
-      const controller = await waitForRichAdsController();
-      if (!controller) {
-        this._showToast(this._ui("RichAds hazir degil", "RichAds is not ready"), 2200);
-        return;
-      }
-
-      const result = await controller.triggerInterstitialVideo();
-      if (!isCompletedAdResult(result)) {
-        this._showToast(this._ui("Reklam tamamlanmadi", "Ad was not completed"));
-        return;
-      }
-
-      const used = FREE_SPIN_LIMIT - this._freeSpinRemaining() + 1;
-      const pool = this._freeSpinRewards();
-      const selectedIndex = Math.floor(Math.random() * pool.length);
-      const reward = pool[selectedIndex];
-
-      this._grantReward(reward, { freeSpinUsed: used });
-      this._setWheelResult("free", pool, selectedIndex, reward);
-      this._startWheelAnimation("free", pool, selectedIndex, reward);
-    } catch (error) {
-      console.warn("[TonCrime] TradeScene ad error:", error);
-      this._showToast(this._ui("Reklam acilamadi", "Ad could not be opened"), 2200);
-    } finally {
-      this.adBusy = false;
-    }
-  }
-
-  _doPremiumSpin() {
-    if (this.wheelAnim) {
-      this._showToast(this._ui("Cark donuyor", "Wheel is spinning"));
-      return;
-    }
-    const s = this.store.get();
-
-    if (Number(s.coins || 0) < PREMIUM_WHEEL_COST) {
-      this._showToast(this._ui("Premium cark icin 1000 yton gerek", "1000 yton is required for the premium wheel"));
-      return;
-    }
-
-    const pool = this._premiumSpinRewards();
-    const selectedIndex = Math.floor(Math.random() * pool.length);
-    const reward = pool[selectedIndex];
-
-    this._grantReward(reward, { cost: PREMIUM_WHEEL_COST });
-    this._setWheelResult("premium", pool, selectedIndex, reward);
-    this._startWheelAnimation("premium", pool, selectedIndex, reward);
-  }
-
-  _buyCrate(kind) {
-    const s = this.store.get();
-    const cost = kind === "legendary" ? 140 : 65;
-
-    if (Number(s.coins || 0) < cost) {
-      this._showToast(this._ui("Yetersiz yton", "Not enough yton"));
-      return;
-    }
-
-    const pool = this._crateRewards(kind);
-    const selectedIndex = Math.floor(Math.random() * pool.length);
-    const reward = pool[selectedIndex];
-
-    this._grantReward(reward, { cost });
-    this._setCrateReveal(kind, pool, selectedIndex, reward);
-    this._showToast(this._rewardText(reward), 1600);
-  }
-
-  _useInventoryItem(itemId) {
-    const s = this.store.get();
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const idx = items.findIndex((x) => x.id === itemId);
-    if (idx < 0) return;
-
-    const item = items[idx];
-    if (!item.usable) {
-      this._showToast(this._ui("Bu item kullanilamaz", "This item cannot be used"));
-      return;
-    }
-    if (Number(item.qty || 0) <= 0) {
-      this._showToast(this._ui("Stok yok", "Out of stock"));
-      return;
-    }
-
-    const p = { ...(s.player || {}) };
-    const currentEnergy = Number(p.energy || 0);
-    const maxEnergy = Number(p.energyMax || 100);
-
-    if (currentEnergy >= maxEnergy) {
-      this._showToast(this._ui("Enerji full", "Energy is full"));
-      return;
-    }
-
-    const gain = Math.min(Number(item.energyGain || 0), maxEnergy - currentEnergy);
-    p.energy = currentEnergy + gain;
-
-    item.qty = Math.max(0, Number(item.qty || 0) - 1);
-    if (item.qty <= 0) items.splice(idx, 1);
-    else items[idx] = item;
-
-    this.store.set({
-      player: p,
-      inventory: {
-        ...(s.inventory || {}),
-        items,
-      },
-    });
-
-    this._showToast(this._ui(`+${gain} enerji`, `+${gain} energy`));
-  }
-
-  _sellInventoryItem(itemId) {
-    const s = this.store.get();
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const idx = items.findIndex((x) => x.id === itemId);
-    if (idx < 0) return;
-
-    const item = items[idx];
-    if (!item.sellable) {
-      this._showToast(this._ui("Bu item satilamaz", "This item cannot be sold"));
-      return;
-    }
-    if (Number(item.qty || 0) <= 0) {
-      this._showToast(this._ui("Stok yok", "Out of stock"));
-      return;
-    }
-
-    const gain = Number(item.sellPrice || 0);
-    item.qty = Math.max(0, Number(item.qty || 0) - 1);
-
-    if (item.qty <= 0) items.splice(idx, 1);
-    else items[idx] = item;
-
-    this.store.set({
-      coins: Number(s.coins || 0) + gain,
-      inventory: {
-        ...(s.inventory || {}),
-        items,
-      },
-    });
-
-    this._showToast(`+${gain} yton`);
-  }
-
-  async _listInventoryItem(itemId) {
-    const s = this.store.get();
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const idx = items.findIndex((x) => String(x.id) === String(itemId));
-    if (idx < 0) return;
-
-    const item = items[idx];
-    if (!item.marketable) {
-      this._showToast(this._ui("Bu item pazara konamaz", "This item cannot be listed"));
-      return;
-    }
-    if (Number(item.qty || 0) <= 0) {
-      this._showToast(this._ui("Stok yok", "Out of stock"));
-      return;
-    }
-
-      const qtyRaw = window.prompt(this._ui(`Kac adet satmak istiyorsun? (Max ${Number(item.qty || 0)})`, `How many do you want to list? (Max ${Number(item.qty || 0)})`), "1");
-    if (qtyRaw === null) return;
-
-    const qty = clamp(parseInt(qtyRaw, 10) || 0, 1, Number(item.qty || 0));
-    if (qty <= 0) {
-      this._showToast(this._ui("Gecersiz adet", "Invalid quantity"));
-      return;
-    }
-
-    const lowest = this._findLowestMarketPriceByName(item.name);
-    const defaultPrice = lowest > 0 ? lowest : Number(item.marketPrice || item.sellPrice || 10);
-
-    const priceRaw = window.prompt(
-      lowest > 0
-          ? this._ui(`Birim fiyat gir.\nPazardaki en dusuk fiyat: ${lowest} yton`, `Enter unit price.\nLowest market price: ${lowest} yton`)
-          : this._ui("Birim satis fiyatini gir.", "Enter unit sale price."),
-      String(defaultPrice)
-    );
-    if (priceRaw === null) return;
-
-    const price = Math.max(1, parseInt(priceRaw, 10) || 0);
-
-    try {
-      const json = await fetchBackendJson("/public/market/list-inventory", {
-        method: "POST",
-        body: JSON.stringify({
-          item_key: String(item.id),
-          quantity: qty,
-          price_yton: price,
-        }),
+      payout = await sendTon({
+        toAddress: normalizedWallet,
+        tonAmount,
       });
-      const row = json?.item || null;
-      const marketBusiness = json?.business || null;
-      const inventoryItemId = String(json?.inventory_item_id || "");
-      if (!row || !marketBusiness?.id) {
-        throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
-      }
+    } catch (payErr) {
+      await supabase
+        .from('withdraw_requests')
+        .update({
+          status: 'pending',
+          admin_note: sanitizeNote(`Payment failed: ${payErr.message}`, 'Payment failed'),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('status', 'processing');
 
-      const state2 = this.store.get();
-      const items2 = (state2.inventory?.items || []).map((x) => ({ ...x }));
-      const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
-      const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
-
-      const idx2 = items2.findIndex((x) => String(x.id) === String(itemId));
-      if (idx2 >= 0) {
-        items2[idx2].qty = Math.max(0, Number(items2[idx2].qty || 0) - qty);
-        if (items2[idx2].qty <= 0) items2.splice(idx2, 1);
-      }
-
-      let shop = shops.find((x) => String(x.businessId) === String(marketBusiness.id));
-      if (!shop) {
-        shop = {
-          id: "shop_" + marketBusiness.id,
-          businessId: String(marketBusiness.id),
-          type: String(marketBusiness.business_type || "blackmarket"),
-          icon: "BM",
-          imageKey: "blackmarket",
-          imageSrc: "./src/assets/BlackMarket.png",
-          name: marketBusiness.name || "Black Market",
-          ownerId: String(this._getTelegramId() || window.tcGetProfileKey?.() || ""),
-          ownerName: String(state2.player?.username || "Player"),
-          online: true,
-          theme: "dark",
-          rating: 5,
-          totalListings: 0,
-        };
-        shops.unshift(shop);
-      }
-
-      listings.unshift({
-        id: String(row?.id || "listing_" + Date.now()),
-        shopId: shop.id,
-        icon: item.icon || "IT",
-        imageKey: item.imageKey || "",
-        imageSrc: item.imageSrc || item.image || "",
-        itemName: item.name,
-        kind: this._inventoryKindFor(item),
-        rarity: item.rarity || "common",
-        stock: qty,
-        price,
-        energyGain: Number(item.energyGain || 0),
-        usable: !!item.usable,
-        desc: item.desc || this._ui("Envanter urunu", "Inventory item"),
-        inventoryItemId: inventoryItemId,
-        businessId: String(marketBusiness.id),
-      });
-
-      for (const sh of shops) {
-        sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
-      }
-
-      this.store.set({
-        inventory: {
-          ...(state2.inventory || {}),
-          items: items2,
-        },
-        market: {
-          ...(state2.market || {}),
-          shops,
-          listings,
+      await logAdminAction({
+        req,
+        action: 'withdraw_pay_failed',
+        targetId: id,
+        note: payErr.message || 'Payment failed',
+        meta: {
+          profile_id: lockedRow.profile_id,
+          wallet_address: normalizedWallet,
+          ton_amount: tonAmount,
         },
       });
 
-      this._showToast(this._ui(`${qty} adet pazara kondu`, `${qty} items listed`));
-    } catch (err) {
-      console.error("list_inventory_item error:", err);
-      this._showToast(err?.message || this._ui("Item pazara konamadi", "Item could not be listed"));
-    }
-  }
-
-  _buyMarketItem(shopId, itemId) {
-    const s = this.store.get();
-    const listings = (s.market?.listings || []).map((x) => ({ ...x }));
-    const items = (s.inventory?.items || []).map((x) => ({ ...x }));
-    const idx = listings.findIndex((x) => String(x.id) === String(itemId) && String(x.shopId) === String(shopId));
-    if (idx < 0) {
-      this._showToast(this._ui("Urun bulunamadi", "Item was not found"));
-      return;
+      return res.status(500).json({ error: payErr.message || 'Payment failed' });
     }
 
-    const listing = listings[idx];
-    const price = Number(listing.price || 0);
-    if (Number(s.coins || 0) < price) {
-      this._showToast(this._ui("Yetersiz yton", "Not enough yton"));
-      return;
-    }
-    if (Number(listing.stock || 0) <= 0) {
-      this._showToast(this._ui("Stok tukendi", "Out of stock"));
-      return;
-    }
+    const { data: paidRow, error: paidError } = await supabase
+      .from('withdraw_requests')
+      .update({
+        status: 'paid',
+        wallet_address: normalizedWallet,
+        tx_hash: payout.tx_hash,
+        paid_at: new Date().toISOString(),
+        admin_note: sanitizeNote(req.body?.admin_note, 'Paid by admin panel'),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('status', 'processing')
+      .select()
+      .single();
 
-    listing.stock = Math.max(0, Number(listing.stock || 0) - 1);
-    if (listing.stock <= 0) listings.splice(idx, 1);
-    else listings[idx] = listing;
-
-    const existing = items.find((x) => String(x.name || "").toLowerCase() === String(listing.itemName || "").toLowerCase());
-    if (existing) existing.qty = Number(existing.qty || 0) + 1;
-    else {
-      items.unshift({
-        id: "market_buy_" + Date.now(),
-        kind: this._inventoryKindFor(listing),
-        icon: listing.icon || "IT",
-        imageKey: listing.imageKey || "",
-        imageSrc: listing.imageSrc || "",
-        name: listing.itemName,
-        rarity: listing.rarity || "common",
-        qty: 1,
-        usable: !!listing.usable,
-        sellable: true,
-        marketable: true,
-        energyGain: Number(listing.energyGain || 0),
-        sellPrice: Math.max(1, Math.floor(price * 0.7)),
-        marketPrice: price,
-        desc: listing.desc || this._ui("Pazardan alindi.", "Bought from the market."),
-      });
+    if (paidError) {
+      throw new Error(`Paid update failed after payout: ${paidError.message}`);
     }
 
-    const shops = (s.market?.shops || []).map((x) => ({ ...x }));
-    const salesHistory = (s.market?.salesHistory || []).map((x) => ({ ...x }));
-    salesHistory.unshift({
-      id: "sale_" + Date.now(),
-      shopId,
-      itemName: listing.itemName,
-      qty: 1,
-      price,
-      soldAt: Date.now(),
+    const { error: ledgerError } = await supabase.from('wallet_ledger').insert({
+      profile_id: paidRow.profile_id,
+      entry_type: 'withdraw_paid',
+      yton_amount: ytonAmount,
+      ton_amount: tonAmount,
+      note: `Withdraw paid to ${normalizedWallet}`,
+      ref_id: paidRow.id,
+      created_at: new Date().toISOString(),
     });
-    if (salesHistory.length > 240) salesHistory.length = 240;
 
-    for (const shop of shops) {
-      shop.totalListings = listings.filter((x) => x.shopId === shop.id).length;
-      const stats = salesHistory
-        .filter((x) => x.shopId === shop.id)
-        .reduce(
-          (acc, row) => {
-            acc.units += Number(row.qty || 0);
-            acc.revenue += Number(row.qty || 0) * Number(row.price || 0);
-            acc.lastSaleAt = Math.max(acc.lastSaleAt, Number(row.soldAt || 0));
-            return acc;
-          },
-          { units: 0, revenue: 0, lastSaleAt: 0 }
-        );
-      shop.totalSold = stats.units;
-      shop.totalRevenue = stats.revenue;
-      shop.lastSaleAt = stats.lastSaleAt;
+    if (ledgerError) {
+      console.error('[wallet_ledger insert failed]', ledgerError.message);
     }
 
-    this.store.set({
-      coins: Math.max(0, Number(s.coins || 0) - price),
-      inventory: {
-        ...(s.inventory || {}),
-        items,
-      },
-      market: {
-        ...(s.market || {}),
-        shops,
-        listings,
-        salesHistory,
+    await logAdminAction({
+      req,
+      action: 'withdraw_paid',
+      targetId: id,
+      note: 'Withdraw paid successfully',
+      meta: {
+        profile_id: paidRow.profile_id,
+        wallet_address: normalizedWallet,
+        ton_amount: tonAmount,
+        tx_hash: payout.tx_hash,
+        seqno_before: payout.seqno_before,
+        seqno_after: payout.seqno_after,
       },
     });
 
-    this._showToast(this._ui(`${listing.itemName || "Urun"} satin alindi`, `${listing.itemName || "Item"} purchased`));
-  }
-
-  _ensureBusinessShop(biz) {
-    const s = this.store.get();
-    const targetId = "shop_from_" + biz.id;
-    let shop = (s.market?.shops || []).find((x) => x.id === targetId);
-    if (shop) return shop;
-
-    shop = {
-      id: targetId,
-      businessId: biz.id,
-      type: biz.type,
-      icon: biz.icon || iconForType(biz.type),
-      imageKey: biz.imageKey || this._businessArt(biz.type)?.imageKey || "",
-      imageSrc: biz.imageSrc || this._businessArt(biz.type)?.imageSrc || "",
-      name: biz.name,
-      ownerId: String(biz.ownerId || s.player?.id || "player_main"),
-      ownerName: String(biz.ownerName || s.player?.username || "Player"),
-      online: true,
-      theme: biz.theme || biz.type,
-      rating: 5,
-      totalListings: 0,
-      totalSold: 0,
-      totalRevenue: 0,
-      lastSaleAt: 0,
-    };
-
-    this.store.set({
-      market: {
-        ...(s.market || {}),
-        shops: [shop, ...((s.market?.shops || []).map((x) => ({ ...x })))],
-      },
+    res.json({
+      item: paidRow,
+      payout,
+    });
+  } catch (err) {
+    await logAdminAction({
+      req,
+      action: 'withdraw_pay_exception',
+      targetId: id,
+      note: err.message || 'Unknown pay exception',
     });
 
-    return shop;
+    res.status(500).json({ error: err.message || 'Payment failed' });
   }
-
-  _useBusinessProduct(bizId, productId) {
-    const s = this.store.get();
-    const businesses = (s.businesses?.owned || []).map((b) => ({
-      ...b,
-      products: (b.products || []).map((p) => ({ ...p })),
-    }));
-
-    const biz = businesses.find((b) => b.id === bizId);
-    if (!biz) return;
-    const product = (biz.products || []).find((p) => p.id === productId);
-    if (!product) return;
-
-    if (Number(product.qty || 0) <= 0) {
-      this._showToast(this._ui("Urun stogu yok", "Product is out of stock"));
-      return;
-    }
-
-    const p = { ...(s.player || {}) };
-    const currentEnergy = Number(p.energy || 0);
-    const maxEnergy = Number(p.energyMax || 100);
-    const gain = Math.min(Number(product.energyGain || 0), Math.max(0, maxEnergy - currentEnergy));
-
-    if (gain <= 0) {
-      this._showToast(this._ui("Enerji full", "Energy is full"));
-      return;
-    }
-
-    product.qty = Math.max(0, Number(product.qty || 0) - 1);
-    biz.stock = Math.max(0, Number(biz.stock || 0) - 1);
-    p.energy = currentEnergy + gain;
-
-    this.store.set({
-      player: p,
-      businesses: {
-        ...(s.businesses || {}),
-        owned: businesses,
-      },
-    });
-        this._showToast(this._ui(`+${gain} enerji`, `+${gain} energy`));
-  }
-  
-  _createPendingProduction(products = [], totalDaily = 50) {
-    const safeProducts = (products || []).map((p) => ({ ...p }));
-    if (!safeProducts.length) return [];
-
-    const rows = safeProducts.map((p) => ({ productId: p.id, qty: 0 }));
-    const ranked = safeProducts
-      .map((p, idx) => ({ ...p, _index: idx, _price: Math.max(1, Number(p.price || 1)) }))
-      .sort((a, b) => a._price - b._price);
-    const weights = ranked.map((p, idx) => ({
-      index: p._index,
-      weight: Math.max(1, Math.pow(ranked.length - idx, 2)),
-    }));
-    const totalWeight = weights.reduce((sum, row) => sum + row.weight, 0);
-
-    for (let i = 0; i < Math.max(0, Number(totalDaily || 0)); i += 1) {
-      let roll = Math.random() * totalWeight;
-      let picked = weights[weights.length - 1]?.index || 0;
-      for (const row of weights) {
-        roll -= row.weight;
-        if (roll <= 0) {
-          picked = row.index;
-          break;
-        }
-      }
-      rows[picked].qty += 1;
-    }
-    return rows.filter((row) => Number(row.qty || 0) > 0);
-  }
-
-  _refreshBusinessProduction() {
-    const s = this.store.get();
-    const now = Date.now();
-    const day = todayKey();
-
-    const owned = (s.businesses?.owned || []).map((biz) => ({
-      ...biz,
-      products: (biz.products || []).map((p) => ({ ...p })),
-      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
-    }));
-
-    let changed = false;
-
-    for (const biz of owned) {
-      if (!Array.isArray(biz.products) || !biz.products.length) continue;
-
-      const pendingTotal = (biz.pendingProduction || []).reduce((sum, row) => sum + Number(row.qty || 0), 0);
-
-      if (String(biz.productionDayKey || '') !== day) {
-        biz.productionDayKey = day;
-        biz.productionReadyAt = now;
-        biz.productionClaimUntil = now + PRODUCTION_CLAIM_MS;
-        biz.productionCollectedAt = 0;
-        biz.productionMissedAt = 0;
-        biz.pendingProduction = this._createPendingProduction(biz.products, Number(biz.dailyProduction || 50));
-        changed = true;
-        continue;
-      }
-
-      if (pendingTotal > 0 && Number(biz.productionClaimUntil || 0) > 0 && now > Number(biz.productionClaimUntil || 0)) {
-        biz.pendingProduction = [];
-        biz.productionMissedAt = now;
-        biz.productionClaimUntil = 0;
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      this.store.set({
-        businesses: {
-          ...(s.businesses || {}),
-          owned,
-        },
-      });
-    }
-  }
-
-  _collectBusinessProduction(bizId) {
-    this._refreshBusinessProduction();
-
-    const s = this.store.get();
-    const now = Date.now();
-
-    const owned = (s.businesses?.owned || []).map((biz) => ({
-      ...biz,
-      products: (biz.products || []).map((p) => ({ ...p })),
-      pendingProduction: (biz.pendingProduction || []).map((p) => ({ ...p })),
-    }));
-
-    const biz = owned.find((b) => String(b.id) === String(bizId));
-    if (!biz) return;
-
-    const pendingTotal = (biz.pendingProduction || []).reduce((sum, row) => sum + Number(row.qty || 0), 0);
-    if (pendingTotal <= 0) {
-      this._showToast(this._ui('Toplanacak uretim yok', 'No production to collect'));
-      return;
-    }
-
-    if (Number(biz.productionClaimUntil || 0) > 0 && now > Number(biz.productionClaimUntil || 0)) {
-      biz.pendingProduction = [];
-      biz.productionMissedAt = now;
-      biz.productionClaimUntil = 0;
-      this.store.set({ businesses: { ...(s.businesses || {}), owned } });
-      this._showToast(this._ui('1 saatlik toplama hakki kacti', 'The 1-hour collection window was missed'));
-      return;
-    }
-
-    for (const row of biz.pendingProduction || []) {
-      const product = (biz.products || []).find((p) => String(p.id) === String(row.productId));
-      if (!product) continue;
-      product.qty = Number(product.qty || 0) + Number(row.qty || 0);
-    }
-
-    biz.stock = (biz.products || []).reduce((sum, p) => sum + Number(p.qty || 0), 0);
-    biz.pendingProduction = [];
-    biz.productionCollectedAt = now;
-    biz.productionClaimUntil = 0;
-
-    this.store.set({
-      businesses: {
-        ...(s.businesses || {}),
-        owned,
-      },
-    });
-
-    this._showToast(this._ui(fmtNum(pendingTotal) + ' urun toplandi', this._num(pendingTotal) + ' products collected'));
-  }
-
-  async _sellBusinessProduct(bizId, productId) {
-    const s = this.store.get();
-    const businesses = (s.businesses?.owned || []).map((b) => ({
-      ...b,
-      products: (b.products || []).map((p) => ({ ...p })),
-    }));
-
-    const biz = businesses.find((b) => String(b.id) === String(bizId));
-    if (!biz) return;
-
-    const product = (biz.products || []).find((p) => String(p.id) === String(productId));
-    if (!product) return;
-
-    if (Number(product.qty || 0) <= 0) {
-      this._showToast(this._ui("Stok yok", "Out of stock"));
-      return;
-    }
-
-    const maxQty = Number(product.qty || 0);
-    const qtyRaw = window.prompt(this._ui(`Kac adet satmak istiyorsun? (Max ${maxQty})`, `How many do you want to list? (Max ${maxQty})`), "1");
-    if (qtyRaw === null) return;
-
-    const qty = clamp(parseInt(qtyRaw, 10) || 0, 1, maxQty);
-    if (qty <= 0) {
-      this._showToast(this._ui("Gecersiz adet", "Invalid quantity"));
-      return;
-    }
-
-    const lowest = this._findLowestMarketPriceByName(product.name);
-    const defaultPrice = lowest > 0 ? lowest : Number(product.price || 10);
-
-    const priceRaw = window.prompt(
-      lowest > 0
-        ? this._ui(`Birim satis fiyatini gir:\nPazardaki en dusuk fiyat: ${lowest} yton`, `Enter unit sale price:\nLowest market price: ${lowest} yton`)
-        : this._ui("Birim satis fiyatini gir:", "Enter unit sale price:"),
-      String(defaultPrice)
-    );
-    if (priceRaw === null) return;
-
-    const price = Math.max(1, parseInt(priceRaw, 10) || 0);
-
-    try {
-      const json = await fetchBackendJson("/public/market/list-business-product", {
-        method: "POST",
-        body: JSON.stringify({
-          business_id: String(bizId),
-          business_product_id: String(productId),
-          quantity: qty,
-          price_yton: price,
-        }),
-      });
-      const row = json?.item || null;
-      if (!row) {
-        throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
-      }
-
-      const state2 = this.store.get();
-      const businesses2 = (state2.businesses?.owned || []).map((b) => ({
-        ...b,
-        products: (b.products || []).map((p) => ({ ...p })),
-      }));
-
-      const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
-      const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
-
-      const biz2 = businesses2.find((b) => String(b.id) === String(bizId));
-      if (biz2) {
-        const product2 = (biz2.products || []).find((p) => String(p.id) === String(productId));
-        if (product2) {
-          product2.qty = Math.max(0, Number(product2.qty || 0) - qty);
-        }
-        biz2.stock = Math.max(0, Number(biz2.stock || 0) - qty);
-      }
-
-      const shopId = "shop_from_" + bizId;
-      let shop = shops.find((x) => String(x.id) === shopId);
-
-      if (!shop) {
-        shop = {
-          id: shopId,
-          businessId: bizId,
-          type: biz.type,
-          icon: biz.icon || iconForType(biz.type),
-          imageKey: biz.imageKey || this._businessArt(biz.type)?.imageKey || "",
-          imageSrc: biz.imageSrc || this._businessArt(biz.type)?.imageSrc || "",
-          name: biz.name,
-          ownerId: String(biz.ownerId || ""),
-          ownerName: String(biz.ownerName || state2.player?.username || "Player"),
-          online: true,
-          theme: biz.theme || biz.type,
-          rating: 5,
-          totalListings: 0,
-        };
-        shops.unshift(shop);
-      }
-
-      listings.unshift({
-        id: String(row?.id || "listing_" + Date.now()),
-        shopId: shop.id,
-        icon: product.icon || "IT",
-        imageKey: product.imageKey || "",
-        imageSrc: product.imageSrc || product.image || "",
-        itemName: product.name,
-        kind: this._inventoryKindFor(product, biz.type),
-        rarity: product.rarity || "common",
-        stock: qty,
-        price,
-        energyGain: Number(product.energyGain || 0),
-        usable: Number(product.energyGain || 0) > 0,
-        desc: product.desc || this._ui("Isletme urunu", "Business product"),
-        businessId: bizId,
-        businessProductId: productId,
-      });
-
-      for (const sh of shops) {
-        sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
-      }
-
-      this.store.set({
-        businesses: {
-          ...(state2.businesses || {}),
-          owned: businesses2,
-        },
-        market: {
-          ...(state2.market || {}),
-          shops,
-          listings,
-        },
-      });
-
-      this._showToast(this._ui(`${qty} adet satisa cikarildi`, `${qty} items listed`));
-    } catch (err) {
-      console.error("create_market_listing error:", err);
-      this._showToast(err?.message || this._ui("Ilan olusturulamadi", "Listing could not be created"));
-    }
-  }
-
-  update() {
-    const now = Date.now();
-    if (this.wheelAnim) {
-      const t = clamp((now - this.wheelAnim.start) / Math.max(1, this.wheelAnim.duration), 0, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
-      this.wheelAnim.rotation = this.wheelAnim.from + (this.wheelAnim.to - this.wheelAnim.from) * eased;
-      if (t >= 1) {
-        const trade = this._trade();
-        this._setTrade({
-          lootWheel: {
-            ...(trade.lootWheel || {}),
-            rotation: this._rewardRotation(this.wheelAnim.selectedIndex, this.wheelAnim.poolSize),
-          },
-        });
-        this._showToast(this._rewardText(this.wheelAnim.reward), 1600);
-        this.wheelAnim = null;
-      }
-    }
-
-    const pointer = getPointer(this.input);
-    const px = Number(pointer?.x || 0);
-    const py = Number(pointer?.y || 0);
-
-    if (justPressed(this.input)) {
-      this.dragging = true;
-      this.downY = py;
-      this.startScrollY = this.scrollY;
-      this.moved = 0;
-      this.clickCandidate = true;
-    }
-
-    if (this.dragging && isDown(this.input)) {
-      const dy = py - this.downY;
-      this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
-      this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
-    }
-
-    if (this.dragging && justReleased(this.input)) {
-      this.dragging = false;
-
-      if (!this.clickCandidate) return;
-
-      if (this.hitBack && pointInRect(px, py, this.hitBack)) {
-        this._goBack();
-        return;
-      }
-
-      for (const h of this.hitTabs) {
-        if (pointInRect(px, py, h.rect)) {
-          this._changeTab(h.tab);
-          return;
-        }
-      }
-
-      for (const h of this.hitButtons) {
-        if (!pointInRect(px, py, h.rect)) continue;
-
-        switch (h.action) {
-          case "search":
-            this._promptSearch();
-            return;
-          case "open_shop":
-            this._goShop(h.shopId);
-            return;
-          case "use_item":
-            this._useInventoryItem(h.itemId);
-            return;
-          case "sell_item":
-            this._sellInventoryItem(h.itemId);
-            return;
-          case "list_item":
-            this._listInventoryItem(h.itemId);
-            return;
-          case "buy_market_item":
-            this._buyMarketItem(h.shopId, h.itemId);
-            return;
-          case "buy_business":
-            this._buyBusiness(h.businessType);
-            return;
-          case "buy_premium":
-            this._buyPremiumMembership(h.businessType);
-            return;
-          case "use_business_product":
-            this._useBusinessProduct(h.bizId, h.productId);
-            return;
-          case "sell_business_product":
-            this._sellBusinessProduct(h.bizId, h.productId);
-            return;
-          case "collect_business":
-            this._collectBusinessProduction(h.bizId);
-            return; 
-          case "free_spin":
-            this._doFreeSpin();
-            return;
-          case "premium_spin":
-            this._doPremiumSpin();
-            return;
-          case "buy_crate":
-            this._buyCrate(h.value);
-            return;
-          case "go_tab":
-            this._changeTab(h.value);
-            return;
-          case "inventory_filter":
-            this._setTrade({ selectedInventoryCategory: h.value });
-            this.scrollY = 0;
-            return;
-          case "market_filter":
-            this._setTrade({ selectedMarketFilter: h.value });
-            this.scrollY = 0;
-            return;
-          default:
-            return;
-        }
-      }
-    }
-  }
-_drawButton(ctx, rect, text, style = "ghost") {
-  let fill = "rgba(255,255,255,0.05)";
-  let stroke = "rgba(255,255,255,0.10)";
-  let txt = "rgba(255,255,255,0.88)";
-
-  if (style === "primary") {
-    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(180,126,36,0.76)");
-    g.addColorStop(1, "rgba(108,72,18,0.84)");
-    fill = g;
-    stroke = "rgba(255,214,120,0.42)";
-    txt = "#fff8e8";
-  } else if (style === "gold") {
-    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(148,104,28,0.72)");
-    g.addColorStop(1, "rgba(92,61,14,0.84)");
-    fill = g;
-    stroke = "rgba(255,214,120,0.38)";
-    txt = "#fff5dd";
-  } else if (style === "muted") {
-    const g = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    g.addColorStop(0, "rgba(106,82,40,0.32)");
-    g.addColorStop(1, "rgba(54,40,18,0.40)");
-    fill = g;
-    stroke = "rgba(255,214,120,0.18)";
-    txt = "rgba(255,244,218,0.86)";
-  }
-
-  ctx.fillStyle = fill;
-  fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-  ctx.strokeStyle = stroke;
-  ctx.lineWidth = 1;
-  strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
-
-  let label = String(text || "");
-  ctx.fillStyle = txt;
-  ctx.font = "800 11px system-ui";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const maxTextWidth = Math.max(18, rect.w - 12);
-  while (label.length > 1 && ctx.measureText(label).width > maxTextWidth) {
-    label = `${label.slice(0, -2)}…`;
-  }
-  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
-
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-}
-
-
-  _drawSearchBar(ctx, x, y, w, text) {
-    const rect = { x, y, w, h: 46 };
-    this.hitButtons.push({ rect, action: "search" });
-
-    const g = ctx.createLinearGradient(x, y, x, y + rect.h);
-    g.addColorStop(0, "rgba(20,24,30,0.42)");
-    g.addColorStop(1, "rgba(10,13,18,0.54)");
-    ctx.fillStyle = g;
-    fillRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 18);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.lineWidth = 1;
-    strokeRoundRect(ctx, rect.x, rect.y, rect.w, rect.h, 18);
-
-    ctx.save();
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = "#ffb24a";
-    fillRoundRect(ctx, rect.x + rect.w - 86, rect.y + 7, 56, 32, 16);
-    ctx.restore();
-
-    ctx.fillStyle = "rgba(255,255,255,0.52)";
-    ctx.font = "900 15px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText("S", x + 14, y + 23);
-
-    ctx.fillStyle = text ? "#ffffff" : "rgba(255,255,255,0.40)";
-    ctx.font = "13px system-ui";
-    ctx.fillText(text || this._ui("Mekan veya urun ara", "Search venue or product"), x + 42, y + 23);
-  }
-
-  _drawHeroCard(ctx, x, y, w, h, title, desc, badge, art, glow = "#ff9e46") {
-    const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, "rgba(8,12,18,0.42)");
-    grad.addColorStop(1, "rgba(4,8,14,0.56)");
-    ctx.fillStyle = grad;
-    fillRoundRect(ctx, x, y, w, h, 24);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.lineWidth = 1;
-    strokeRoundRect(ctx, x, y, w, h, 24);
-
-    ctx.save();
-    roundRectPath(ctx, x, y, w, h, 24);
-    ctx.clip();
-
-    ctx.fillStyle = "rgba(255,210,120,0.13)";
-    fillRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
-    ctx.strokeStyle = "rgba(255,210,120,0.24)";
-    strokeRoundRect(ctx, x + 16, y + 14, 104, 24, 12);
-
-    ctx.fillStyle = "#ffe0a0";
-    ctx.font = "800 10px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(badge || "GUNUN VITRINI", x + 68, y + 26);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 16px system-ui";
-    textFit(ctx, title, x + 16, y + 58, w - 102);
-
-    ctx.fillStyle = "rgba(255,255,255,0.74)";
-    ctx.font = "12px system-ui";
-    textFit(ctx, desc, x + 16, y + 81, w - 102);
-
-    this._drawArtThumb(ctx, x + w - 84, y + 18, 56, 56, art, title, "", { plain: true });
-    ctx.restore();
-  }
-
-  _drawMiniCard(ctx, x, y, w, h, title, text, art, accent = "#ffcc66") {
-    const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, "rgba(10,14,20,0.34)");
-    grad.addColorStop(1, "rgba(6,10,16,0.48)");
-    ctx.fillStyle = grad;
-    fillRoundRect(ctx, x, y, w, h, 20);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.09)";
-    strokeRoundRect(ctx, x, y, w, h, 20);
-
-    ctx.save();
-    roundRectPath(ctx, x, y, w, h, 20);
-    ctx.clip();
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 14px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    textFit(ctx, title, x + 14, y + 24, w - 66);
-
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.font = "12px system-ui";
-    textFit(ctx, text, x + 14, y + 48, w - 66);
-
-    this._drawArtThumb(ctx, x + w - 50, y + 16, 34, 34, art, title, "", { plain: true });
-    ctx.restore();
-  }
-
-  drawCard(ctx, x, y, w, h) {
-    const grad = ctx.createLinearGradient(x, y, x, y + h);
-    grad.addColorStop(0, "rgba(10,14,20,0.36)");
-    grad.addColorStop(1, "rgba(6,10,16,0.52)");
-    ctx.fillStyle = grad;
-    fillRoundRect(ctx, x, y, w, h, 20);
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    strokeRoundRect(ctx, x, y, w, h, 20);
-  }
-
-  _drawSectionTitle(ctx, x, y, title, sub) {
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 15px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(title, x, y);
-
-    if (sub) {
-      ctx.fillStyle = "rgba(255,255,255,0.60)";
-      ctx.font = "11px system-ui";
-      ctx.fillText(sub, x, y + 16);
-    }
-  }
-
-  _drawEmptyState(ctx, x, y, w, icon, text) {
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    fillRoundRect(ctx, x, y, w, 120, 18);
-    ctx.strokeStyle = "rgba(255,255,255,0.09)";
-    strokeRoundRect(ctx, x, y, w, 120, 18);
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 28px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(icon, x + w / 2, y + 38);
-
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.font = "700 14px system-ui";
-    ctx.fillText(text, x + w / 2, y + 82);
-
-    return y + 132;
-  }
-
-  _renderExplore(ctx, x, y, w) {
-    const trade = this._trade();
-    const shops = this._marketShops();
-    const listings = this._marketListings();
-    const leaders = this._marketLeaders();
-    const cheapestShop = leaders.cheapestShop;
-    const popularShop = leaders.bestSellingShop?.shop || null;
-    const popularStats = popularShop ? this._marketShopStats(popularShop.id) : null;
-
-    const deal = [...listings].sort((a, b) => Number(a.price || 0) - Number(b.price || 0))[0];
-
-    this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
-    y += 58;
-
-    this._drawHeroCard(
-      ctx,
-      x,
-      y,
-      w,
-      128,
-      this._ui("Kara Pazar Merkezi", "Black Market Hub"),
-      deal ? this._ui(`${deal.itemName} - ${fmtNum(deal.price)} yton`, `${deal.itemName} - ${fmtNum(deal.price)} yton`) : this._ui("Ekonomi merkezi - vitrin - firsatlar", "Market hub - showcase - deals"),
-      this._ui("GUNUN VITRINI", "TODAY'S SHOWCASE"),
-      deal || { type: "blackmarket", imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
-      "#ffcc66"
-    );
-    y += 140;
-
-    const gap = 10;
-    const colW = Math.floor((w - gap) / 2);
-
-    const rect1 = { x, y, w: colW, h: 110 };
-    const rect2 = { x: x + colW + gap, y, w: colW, h: 110 };
-    this.hitButtons.push({ rect: rect1, action: "go_tab", value: "market" });
-    this.hitButtons.push({ rect: rect2, action: "go_tab", value: "market" });
-
-    this._drawMiniCard(
-      ctx,
-      rect1.x,
-      rect1.y,
-      rect1.w,
-      rect1.h,
-      this._ui("En Ucuz Mekanlar", "Lowest Prices"),
-      cheapestShop ? `${cheapestShop.shop.name} - ${fmtNum(cheapestShop.lowest)} yton` : this._ui("Henuz veri yok", "No data yet"),
-      cheapestShop?.shop || { type: "blackmarket", imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
-      "#dba74d"
-    );
-
-    this._drawMiniCard(
-      ctx,
-      rect2.x,
-      rect2.y,
-      rect2.w,
-      rect2.h,
-      this._ui("En Cok Satan Mekan", "Top Selling Venue"),
-      popularShop ? `${popularShop.name} • ${this._num(popularStats?.units || 0)} ${this._ui("satis", "sales")}` : this._ui("Henuz veri yok", "No data yet"),
-      popularShop || { type: popularShop?.type || "brothel" },
-      "#ffcc66"
-    );
-
-    y += 122;
-
-    const rect3 = { x, y, w: colW, h: 110 };
-    const rect4 = { x: x + colW + gap, y, w: colW, h: 110 };
-    this.hitButtons.push({ rect: rect3, action: "go_tab", value: "loot" });
-    this.hitButtons.push({ rect: rect4, action: "free_spin" });
-
-    this._drawMiniCard(ctx, rect3.x, rect3.y, rect3.w, rect3.h, this._ui("Sandik Firsatlari", "Crate Deals"), this._ui("Mystery Crate - Premium sandiklar", "Mystery crate - premium drops"), { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" }, "#d49a42");
-    this._drawMiniCard(
-      ctx,
-      rect4.x,
-      rect4.y,
-      rect4.w,
-      rect4.h,
-      this._ui("Gunluk Cark", "Daily Wheel"),
-      this._isFreeSpinReady() ? this._ui("Hazir - simdi cevir", "Ready - spin now") : this._ui("Bugun kullanildi", "Used today"),
-      this._isFreeSpinReady() ? { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" } : { imageSrc: "./src/assets/bonus.png" },
-      this._isFreeSpinReady() ? "#ffcc66" : "#b68d4f"
-    );
-
-    y += 126;
-
-    this._drawSectionTitle(ctx, x, y, this._ui("Hizli Gecis", "Quick Access"), this._ui("En cok kullanilan bolumler", "Most used sections"));
-    y += 26;
-
-    const buttons = [
-      { text: this._ui("Isletmelerim", "Businesses"), value: "businesses", style: "gold" },
-      { text: "Envanter", value: "inventory", style: "muted" },
-      { text: this._ui("Sandik ve Cark", "Crates and Wheels"), value: "loot", style: "gold" },
-      { text: this._ui("Satin Al", "Buy"), value: "buy", style: "muted" },
-    ];
-
-    let bx = x;
-    let by = y;
-    for (const btn of buttons) {
-      const rect = { x: bx, y: by, w: 110, h: 36 };
-      this.hitButtons.push({ rect, action: "go_tab", value: btn.value });
-      this._drawButton(ctx, rect, btn.text, btn.style);
-      bx += 118;
-      if (bx + 110 > x + w) {
-        bx = x;
-        by += 44;
-      }
-    }
-
-    y = by + 48;
-    return y;
-  }
-
-  _renderBusinesses(ctx, x, y, w) {
-    this._refreshBusinessProduction();
-    const businesses = this._allBusinesses();
-
-    this._drawHeroCard(
-      ctx,
-      x,
-      y,
-      w,
-      120,
-      this._ui("Isletmelerim", "Businesses"),
-      this._ui(`${fmtNum(businesses.length)} isletme - yonetim paneli`, `${fmtNum(businesses.length)} businesses - owner panel`),
-      this._ui("SAHIP MODU", "OWNER MODE"),
-      businesses[0] || { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
-      "#ffcc66"
-    );
-    y += 132;
-
-    if (!businesses.length) {
-      return this._drawEmptyState(ctx, x, y, w, "MK", this._ui("Henuz isletmen yok.", "You do not own a business yet."));
-    }
-
-    for (const biz of businesses) {
-      const products = biz.products || [];
-      const cardH = 122 + products.length * 64;
-
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
-      fillRoundRect(ctx, x, y, w, cardH, 20);
-      ctx.strokeStyle = "rgba(255,255,255,0.09)";
-      strokeRoundRect(ctx, x, y, w, cardH, 20);
-
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      this._drawArtThumb(ctx, x + 14, y + 14, 56, 56, biz, biz.name || this._ui("Isletme", "Business"), biz.type);
-
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 15px system-ui";
-      textFit(ctx, biz.name || this._ui("Isletme", "Business"), x + 82, y + 24, w - 190);
-
-      const pendingCount = (biz.pendingProduction || []).reduce((sum, row) => sum + Number(row.qty || 0), 0);
-      const remainMs = Math.max(0, Number(biz.productionClaimUntil || 0) - Date.now());
-      const remainMinutes = Math.ceil(remainMs / (60 * 1000));
-      const collectedToday = String(biz.productionDayKey || "") === todayKey() && Number(biz.productionCollectedAt || 0) > 0;
-      const missedToday = String(biz.productionDayKey || "") === todayKey() && Number(biz.productionMissedAt || 0) > 0;
-      const productionLine = pendingCount > 0
-        ? this._ui(`Hazir uretim ${this._num(pendingCount)} - ${Math.max(0, remainMinutes)} dk kaldi`, `Ready stock ${this._num(pendingCount)} - ${Math.max(0, remainMinutes)} min left`)
-        : collectedToday
-          ? this._ui("Bugunku batch toplandi", "Today's batch was collected")
-          : missedToday
-            ? this._ui("1 saatlik toplama hakki kacirildi", "The 1-hour collection window was missed")
-            : this._ui("Yarin yeni batch acilacak", "A new batch will open tomorrow");
-
-      ctx.fillStyle = "rgba(255,255,255,0.70)";
-      ctx.font = "12px system-ui";
-      ctx.fillText(
-        this._ui(`${this._typeLabel(biz.type)} - Gunluk ${this._num(biz.dailyProduction)} - Stok ${this._num(biz.stock)}`, `${this._typeLabel(biz.type)} - Daily ${this._num(biz.dailyProduction)} - Stock ${this._num(biz.stock)}`),
-        x + 82,
-        y + 46
-      );
-
-      ctx.fillStyle = pendingCount > 0 ? "rgba(255,209,120,0.95)" : "rgba(255,255,255,0.48)";
-      ctx.font = "11px system-ui";
-      ctx.fillText(productionLine, x + 82, y + 64);
-
-      const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
-      this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
-      this._drawButton(ctx, collectRect, this._ui("Topla", "Collect"), pendingCount > 0 ? "gold" : "muted");
-
-      let rowY = y + 82;
-for (const p of products) {
-  ctx.fillStyle = "rgba(255,255,255,0.04)";
-  fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
-
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-
-  this._drawArtThumb(ctx, x + 18, rowY + 9, 38, 38, p, p.name || this._ui("Urun", "Item"), biz.type);
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 13px system-ui";
-  textFit(ctx, p.name || this._ui("Urun", "Item"), x + 66, rowY + 18, w - 194);
-
-  ctx.fillStyle = rarityColor(p.rarity);
-  ctx.font = "800 10px system-ui";
-  ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 66, rowY + 34);
-
-  ctx.fillStyle = "rgba(255,255,255,0.70)";
-  ctx.font = "11px system-ui";
-  textFit(ctx, this._ui(`Stok ${fmtNum(p.qty)} - Taban ${fmtNum(p.price)} yton`, `Stock ${fmtNum(p.qty)} - Base ${fmtNum(p.price)} yton`), x + 66, rowY + 34, w - 194);
-
-  const useRect = { x: x + w - 130, y: rowY + 13, w: 48, h: 24 };
-  const sellRect = { x: x + w - 76, y: rowY + 13, w: 56, h: 24 };
-
-  this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
-  this.hitButtons.push({ rect: sellRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
-
-  this._drawButton(ctx, useRect, this._ui("Kullan", "Use"), "gold");
-  this._drawButton(ctx, sellRect, this._ui("Sat", "List"), "muted");
-
-  rowY += 62;
-}
-       
-    
-      
-
-      y += cardH + 12;
-    }
-
-    return y;
-  }
-
-  _renderInventory(ctx, x, y, w) {
-    const trade = this._trade();
-
-    this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
-    y += 58;
-
-    const filters = [
-      { key: "all", label: this._ui("Tumu", "All") },
-      { key: "consumable", label: this._ui("Enerji", "Energy") },
-      { key: "girls", label: this._ui("Kadin", "Girls") },
-      { key: "goods", label: this._ui("Urun", "Goods") },
-      { key: "rare", label: this._ui("Nadir", "Rare") },
-    ];
-
-    let fx = x;
-    for (const f of filters) {
-      const rect = { x: fx, y, w: 70, h: 30 };
-      this.hitButtons.push({ rect, action: "inventory_filter", value: f.key });
-      this._drawButton(ctx, rect, f.label, trade.selectedInventoryCategory === f.key ? "primary" : "muted");
-      fx += 76;
-    }
-    y += 42;
-
-    let items = this._inventoryViewItems();
-    if (trade.selectedInventoryCategory !== "all") {
-      items = items.filter((x) => this._inventoryKindFor(x, x._businessType) === trade.selectedInventoryCategory);
-    }
-    if (trade.searchQuery) {
-      const q = trade.searchQuery.toLowerCase();
-      items = items.filter((x) => String(x.name || "").toLowerCase().includes(q));
-    }
-
-    if (!items.length) {
-      return this._drawEmptyState(ctx, x, y, w, "IT", this._ui("Bu filtrede item yok.", "No items match this filter."));
-    }
-
-    for (const item of items) {
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
-      fillRoundRect(ctx, x, y, w, 108, 18);
-      ctx.strokeStyle = "rgba(255,255,255,0.09)";
-      strokeRoundRect(ctx, x, y, w, 108, 18);
-
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      this._drawArtThumb(ctx, x + 14, y + 14, 52, 52, item, item.name || "Item");
-
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 14px system-ui";
-      textFit(ctx, item.name || "Item", x + 78, y + 22, w - 92);
-
-      ctx.fillStyle = rarityColor(item.rarity);
-      ctx.font = "800 10px system-ui";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), x + 78, y + 38);
-
-      ctx.fillStyle = "rgba(255,255,255,0.70)";
-      ctx.font = "11px system-ui";
-      const basePrice = Number(item.sellPrice || item.price || 0);
-      const stockLine = item._sourceType === "business_product"
-        ? this._ui(`Adet ${fmtNum(item.qty)} - Taban ${fmtNum(basePrice)} yton`, `Qty ${fmtNum(item.qty)} - Base ${fmtNum(basePrice)} yton`)
-        : this._ui(`Adet ${fmtNum(item.qty)} - NPC ${fmtNum(basePrice)} yton`, `Qty ${fmtNum(item.qty)} - NPC ${fmtNum(basePrice)} yton`);
-      textFit(ctx, stockLine, x + 78, y + 56, w - 96);
-
-      const itemDesc = this._itemDesc(item);
-      if (itemDesc) {
-        textFit(ctx, itemDesc, x + 78, y + 74, w - 96);
-      }
-
-      const btnY = y + 78;
-      let bx = x + 14;
-
-      if (item.usable) {
-        const rect = { x: bx, y: btnY + 2, w: 54, h: 24 };
-        this.hitButtons.push(
-          item._sourceType === "business_product"
-            ? { rect, action: "use_business_product", bizId: item._bizId, productId: item._productId }
-            : { rect, action: "use_item", itemId: item.id }
-        );
-        this._drawButton(ctx, rect, this._ui("Kullan", "Use"), "gold");
-        bx += 60;
-      }
-
-      if (item.sellable) {
-        const rect = { x: bx, y: btnY + 2, w: 42, h: 24 };
-        this.hitButtons.push({ rect, action: "sell_item", itemId: item.id });
-        this._drawButton(ctx, rect, this._ui("Sat", "Sell"), "muted");
-        bx += 48;
-      }
-
-      if (item.marketable) {
-        const rect = { x: bx, y: btnY + 2, w: 58, h: 24 };
-        this.hitButtons.push(
-          item._sourceType === "business_product"
-            ? { rect, action: "sell_business_product", bizId: item._bizId, productId: item._productId }
-            : { rect, action: "list_item", itemId: item.id }
-        );
-        this._drawButton(ctx, rect, this._ui("Listele", "List"), "muted");
-      }
-
-      y += 120;
-    }
-
-    return y;
-  }
-
-  _renderLoot(ctx, x, y, w) {
-    const trade = this._trade();
-
-    this._drawHeroCard(
-      ctx,
-      x,
-      y,
-      w,
-      124,
-      this._ui("Cark ve Oduller", "Wheels and Rewards"),
-      this._isFreeSpinReady()
-        ? this._ui(`${this._freeSpinRemaining()}/3 reklamli spin hazir`, `${this._freeSpinRemaining()}/3 ad spins are ready`)
-        : this._ui("Bugunluk 3 reklamli spin tamamlandi", "All 3 daily ad spins are used"),
-      this._ui("PREMIUM ODULLER", "PREMIUM LOOT"),
-      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
-      "#ffcc66"
-    );
-
-    const freeRect = { x: x + 14, y: y + 76, w: 116, h: 34 };
-    const premiumRect = { x: x + 138, y: y + 76, w: 122, h: 34 };
-    this.hitButtons.push({ rect: freeRect, action: "free_spin" });
-    this.hitButtons.push({ rect: premiumRect, action: "premium_spin" });
-    this._drawButton(ctx, freeRect, this._isFreeSpinReady() ? this._ui("Reklam Izle", "Watch Ad") : this._ui("Hak Bitti", "No Spins"), this._isFreeSpinReady() ? "primary" : "muted");
-    this._drawButton(ctx, premiumRect, this._ui("Premium 1000", "Premium 1000"), "gold");
-
-    y += 138;
-
-    y += this._drawWheel(ctx, x, y, w, trade) + 14;
-
-    const gap = 10;
-    const colW = Math.floor((w - gap) / 2);
-    const c1 = { x, y, w: colW, h: 112 };
-    const c2 = { x: x + colW + gap, y, w: colW, h: 112 };
-    this.hitButtons.push({ rect: c1, action: "buy_crate", value: "mystery" });
-    this.hitButtons.push({ rect: c2, action: "buy_crate", value: "legendary" });
-
-    this._drawMiniCard(
-      ctx,
-      c1.x,
-      c1.y,
-      c1.w,
-      c1.h,
-      this._ui("Mystery Sandik", "Mystery Crate"),
-      this._ui("65 yton - satin al ve aninda ac", "65 yton - buy and open instantly"),
-      { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" },
-      "#d39a43"
-    );
-    this._drawMiniCard(
-      ctx,
-      c2.x,
-      c2.y,
-      c2.w,
-      c2.h,
-      this._ui("Legendary Sandik", "Legendary Crate"),
-      this._ui("140 yton - premium odul havuzu", "140 yton - premium reward pool"),
-      { imageSrc: "./src/assets/bonus.png" },
-      "#ffcc66"
-    );
-
-    y += 126;
-
-    if (trade.crateReveal) {
-      y += this._drawCrateReveal(ctx, x, y, w, trade.crateReveal) + 14;
-    }
-
-    this.drawCard(ctx, x, y, w, 94);
-    ctx.fillStyle = "#fff";
-    ctx.font = "900 14px system-ui";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(this._ui("Odul Havuzu", "Reward Pool"), x + 14, y + 24);
-
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    ctx.fillText("YTON - Enerji - Street Whiskey - White Widow - Scarlett Blaze - Golden Pass", x + 14, y + 52);
-    ctx.fillText(this._ui("Gosterilen kart ve verilen odul ayni veri kaynagini kullanir.", "Shown card and granted reward use the same data source."), x + 14, y + 72);
-
-    y += 108;
-    return y;
-  }
-
-  _renderMarket(ctx, x, y, w) {
-    const trade = this._trade();
-
-    this._drawSearchBar(ctx, x, y, w, trade.searchQuery);
-    y += 58;
-
-    const filters = [
-      { key: "all", label: this._ui("Tumu", "All") },
-      { key: "nightclub", label: "Club" },
-      { key: "coffeeshop", label: "Coffee" },
-      { key: "brothel", label: this._ui("Genelev", "Brothel") },
-    ];
-
-    let fx = x;
-    for (const f of filters) {
-      const rect = { x: fx, y, w: 70, h: 30 };
-      this.hitButtons.push({ rect, action: "market_filter", value: f.key });
-      this._drawButton(ctx, rect, f.label, trade.selectedMarketFilter === f.key ? "primary" : "muted");
-      fx += 76;
-    }
-    y += 42;
-
-    let shops = this._marketShops();
-    if (trade.selectedMarketFilter !== "all") {
-      shops = shops.filter((x) => x.type === trade.selectedMarketFilter);
-    }
-
-    if (trade.searchQuery) {
-      const q = trade.searchQuery.toLowerCase();
-      shops = shops.filter(
-        (x) =>
-          String(x.name || "").toLowerCase().includes(q) ||
-          this._getListingsByShopId(x.id).some((l) => String(l.itemName || "").toLowerCase().includes(q))
-      );
-    }
-
-    if (!shops.length) {
-      return this._drawEmptyState(ctx, x, y, w, "MK", this._ui("Bu filtrede dukkan yok.", "No shops match this filter."));
-    }
-
-    for (const shop of shops) {
-      const shopListings = this._getListingsByShopId(shop.id);
-      const lowest = shopListings.length
-        ? shopListings.reduce((m, l) => Math.min(m, Number(l.price || 0)), Number.MAX_SAFE_INTEGER)
-        : 0;
-      const stats = this._marketShopStats(shop.id);
-
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
-      fillRoundRect(ctx, x, y, w, 102, 18);
-      ctx.strokeStyle = "rgba(255,255,255,0.09)";
-      strokeRoundRect(ctx, x, y, w, 102, 18);
-
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, shop, shop.name || this._ui("Dukkan", "Shop"), shop.type);
-
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 14px system-ui";
-      textFit(ctx, shop.name || this._ui("Dukkan", "Shop"), x + 80, y + 22, w - 188);
-
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "11px system-ui";
-      textFit(ctx, this._ui(`${this._typeLabel(shop.type)} - Sahip ${shop.ownerName || "?"}`, `${this._typeLabel(shop.type)} - Owner ${shop.ownerName || "?"}`), x + 80, y + 42, w - 198);
-      textFit(ctx, this._ui(`Urun ${this._num(shop.totalListings)} - Satis ${this._num(stats.units)} - En dusuk ${lowest ? this._num(lowest) : "-"}`, `Items ${this._num(shop.totalListings)} - Sales ${this._num(stats.units)} - Lowest ${lowest ? this._num(lowest) : "-"}`), x + 80, y + 60, w - 198);
-
-      const enterRect = { x: x + w - 92, y: y + 66, w: 78, h: 24 };
-      this.hitButtons.push({ rect: enterRect, action: "open_shop", shopId: shop.id });
-      this._drawButton(ctx, enterRect, this._ui("Gir", "Enter"), "gold");
-
-      y += 114;
-    }
-
-    return y;
-  }
-
-  _renderShopView(ctx, x, y, w) {
-    const trade = this._trade();
-    const shop = this._getShopById(trade.selectedShopId);
-
-    if (!shop) {
-      return this._drawEmptyState(ctx, x, y, w, "X", this._ui("Dukkan bulunamadi.", "Shop was not found."));
-    }
-
-    this._drawHeroCard(
-      ctx,
-      x,
-      y,
-      w,
-      108,
-      shop.name || this._ui("Dukkan", "Shop"),
-      this._ui(`${this._typeLabel(shop.type)} - Sahip ${shop.ownerName || "?"} - Puan ${shop.rating || 0}`, `${this._typeLabel(shop.type)} - Owner ${shop.ownerName || "?"} - Rating ${shop.rating || 0}`),
-      shop.online ? this._ui("AKTIF", "ONLINE") : this._ui("PASIF", "OFFLINE"),
-      shop,
-      "#ffcc66"
-    );
-    y += 120;
-
-    const listings = this._getListingsByShopId(shop.id);
-
-    if (!listings.length) {
-      return this._drawEmptyState(ctx, x, y, w, "IT", this._ui("Bu dukkanda urun yok.", "This shop has no items."));
-    }
-
-    for (const item of listings) {
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
-      fillRoundRect(ctx, x, y, w, 102, 18);
-      ctx.strokeStyle = "rgba(255,255,255,0.09)";
-      strokeRoundRect(ctx, x, y, w, 102, 18);
-
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, item, item.itemName || this._ui("Urun", "Item"), shop.type);
-
-      ctx.fillStyle = "#fff";
-      ctx.font = "900 14px system-ui";
-      textFit(ctx, item.itemName || this._ui("Urun", "Item"), x + 80, y + 22, w - 180);
-
-      ctx.fillStyle = rarityColor(item.rarity);
-      ctx.font = "800 10px system-ui";
-      ctx.fillText(String(item.rarity || "common").toUpperCase(), x + 80, y + 40);
-
-      ctx.fillStyle = "rgba(255,255,255,0.72)";
-      ctx.font = "11px system-ui";
-      textFit(ctx, this._ui(`Stok ${fmtNum(item.stock)} - Fiyat ${fmtNum(item.price)} yton`, `Stock ${fmtNum(item.stock)} - Price ${fmtNum(item.price)} yton`), x + 80, y + 60, w - 180);
-
-      const buyRect = { x: x + w - 76, y: y + 67, w: 62, h: 24 };
-      this.hitButtons.push({ rect: buyRect, action: "buy_market_item", itemId: item.id, shopId: shop.id });
-      this._drawButton(ctx, buyRect, this._ui("Satin Al", "Buy"), "gold");
-
-      y += 114;
-    }
-
-    return y;
-  }
-
-  _buyPremiumMembership(businessType) {
-    const def = this._businessDefByType(businessType);
-    if (!def) return;
-
-    if (this._isPremium()) {
-      this._showToast(this._ui('Premium zaten aktif', 'Premium is already active'));
-      return;
-    }
-
-    if (Number(this._wallet().tonBalance || 0) < PREMIUM_COST_TON) {
-      this._showToast(this._ui('Premium icin 100 TON gerekli', '100 TON is required for premium'), 2200);
-      return;
-    }
-
-    const baseName = this._lang() === 'en' ? def.nameEn : def.nameTr;
-    const nameRaw = window.prompt(
-      this._ui(baseName + ' icin mekan adi gir:', 'Enter a venue name for ' + baseName + ':'),
-      baseName
-    );
-    if (nameRaw === null) return;
-    const name = String(nameRaw || baseName).trim() || baseName;
-
-    if (!this._consumeTon(PREMIUM_COST_TON)) {
-      this._showToast(this._ui('TON bakiye yetersiz', 'Not enough TON balance'));
-      return;
-    }
-
-    const s = this.store.get();
-    const player = { ...(s.player || {}) };
-    player.level = Math.max(50, Number(player.level || 1));
-    player.membership = 'premium';
-    player.canOwnBusiness = true;
-    player.canWithdraw = true;
-
-    const newBusiness = this._createBusinessRecord(businessType, name, 'premium');
-
-    this.store.set({
-      premium: true,
-      isPremium: true,
-      player,
-      businesses: {
-        ...(s.businesses || {}),
-        owned: [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))],
-      },
-    });
-
-    try {
-      window.tcActivityFeed?.push?.({
-        event: "premium",
-        actor: player.username || "Player",
-        venueName: name,
-        amountTon: PREMIUM_COST_TON,
-      });
-    } catch (_) {}
-
-    this._pushSystemChat(this._ui((player.username || 'Player') + ' premium aldi ve ' + name + ' mekanini acti.', (player.username || 'Player') + ' purchased premium and unlocked ' + name + '.'));
-    this._showToast(this._ui('Premium aktif edildi', 'Premium activated'), 2200);
-  }
-
-  _buyBusiness(businessType) {
-    const def = this._businessDefByType(businessType);
-    if (!def) return;
-
-    if (!this._canOwnBusiness()) {
-      this._showToast(this._ui('Bina almak icin premium veya level 50 gerekli', 'Premium or level 50 is required to own a business'), 2200);
-      return;
-    }
-
-    const s = this.store.get();
-    if (Number(s.coins || 0) < Number(def.price || 0)) {
-      this._showToast(this._ui('Yetersiz yton', 'Not enough yton'));
-      return;
-    }
-
-    const baseName = this._lang() === 'en' ? def.nameEn : def.nameTr;
-    const nameRaw = window.prompt(
-      this._ui(baseName + ' icin isim gir:', 'Enter a name for ' + baseName + ':'),
-      baseName
-    );
-    if (nameRaw === null) return;
-    const name = String(nameRaw || baseName).trim() || baseName;
-
-    const newBusiness = this._createBusinessRecord(businessType, name, 'shop');
-
-    this.store.set({
-      coins: Math.max(0, Number(s.coins || 0) - Number(def.price || 0)),
-      businesses: {
-        ...(s.businesses || {}),
-        owned: [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))],
-      },
-    });
-
-    this._showToast(this._ui(name + ' satin alindi', name + ' purchased'));
-  }
-
-  _renderBuy(ctx, x, y, w) {
-    const isPremium = this._isPremium();
-    const tonBalance = Number(this._wallet().tonBalance || 0);
-    const canOwn = this._canOwnBusiness();
-    const defs = Object.entries(this._businessDefs()).map(([type, def]) => ({ type, ...def }));
-
-    this._drawHeroCard(
-      ctx,
-      x,
-      y,
-      w,
-      132,
-      this._ui('Premium Merkezi', 'Premium Center'),
-      isPremium
-        ? this._ui('Premium aktif. Level 50 ve bir bina acildi.', 'Premium is active. Level 50 and one business are unlocked.')
-        : this._ui('100 TON omurluk uyelik. Bir bina sec ve direkt level 50 ol.', '100 TON lifetime membership. Pick one business and jump straight to level 50.'),
-      isPremium ? 'PREMIUM ON' : '100 TON',
-      { imageKey: 'blackmarket', imageSrc: './src/assets/BlackMarket.png' },
-      '#ffcc66'
-    );
-
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.font = '12px system-ui';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    textFit(ctx, this._ui('TON Bakiye: ', 'TON Balance: ') + fmtTokenAmount(tonBalance), x + 18, y + 104, w - 36);
-    textFit(ctx, this._ui('Gunluk uretim: 50 rastgele urun / toplama suresi: 1 saat', 'Daily output: 50 random products / collection window: 1 hour'), x + 18, y + 122, w - 36);
-    y += 146;
-
-    this.drawCard(ctx, x, y, w, 104);
-    ctx.fillStyle = '#fff';
-    ctx.font = '900 15px system-ui';
-    ctx.fillText(this._ui('Premium Avantajlari', 'Premium Benefits'), x + 16, y + 24);
-    ctx.fillStyle = 'rgba(255,255,255,0.74)';
-    ctx.font = '12px system-ui';
-    ctx.fillText(this._ui('• Omurluk uyelik', '• Lifetime membership'), x + 18, y + 48);
-    ctx.fillText(this._ui('• Secilen 1 bina hediye', '• 1 chosen business included'), x + 18, y + 66);
-    ctx.fillText(this._ui('• Direkt level 50', '• Instant level 50 start'), x + 18, y + 84);
-    y += 118;
-
-    for (const def of defs) {
-      ctx.fillStyle = 'rgba(255,255,255,0.05)';
-      fillRoundRect(ctx, x, y, w, 126, 18);
-      ctx.strokeStyle = 'rgba(255,255,255,0.09)';
-      strokeRoundRect(ctx, x, y, w, 126, 18);
-
-      const title = this._lang() === 'en' ? def.nameEn : def.nameTr;
-      this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, def, title, def.type);
-      ctx.fillStyle = '#fff';
-      ctx.font = '900 14px system-ui';
-      textFit(ctx, title, x + 80, y + 22, w - 194);
-      ctx.fillStyle = 'rgba(255,255,255,0.74)';
-      ctx.font = '11px system-ui';
-      textFit(ctx, this._ui('Normal fiyat ' + this._num(def.price) + ' yton', 'Standard price ' + this._num(def.price) + ' yton'), x + 80, y + 44, w - 194);
-      textFit(ctx, this._ui('Urunler: ', 'Products: ') + def.products.map((p) => p.name).join(' / '), x + 80, y + 62, w - 194);
-      textFit(ctx, this._ui('Gunluk 50 urun, dusuk fiyatlilar daha sik gelir.', 'Daily 50 mixed items, low-price products are more common.'), x + 80, y + 80, w - 194);
-
-      const premiumRect = { x: x + 14, y: y + 90, w: 112, h: 24 };
-      this.hitButtons.push({ rect: premiumRect, action: 'buy_premium', businessType: def.type });
-      this._drawButton(ctx, premiumRect, isPremium ? this._ui('Premium Acik', 'Premium Active') : 'Premium 100 TON', isPremium ? 'muted' : 'gold');
-
-      const normalRect = { x: x + 132, y: y + 90, w: 94, h: 24 };
-      this.hitButtons.push({ rect: normalRect, action: 'buy_business', businessType: def.type });
-      this._drawButton(
-        ctx,
-        normalRect,
-        canOwn ? this._ui('Yton ile Al', 'Buy with Yton') : this._ui('Level 50 Gerek', 'Need Level 50'),
-        canOwn ? 'gold' : 'muted'
-      );
-
-      y += 138;
-    }
-
-    return y;
-  }
-
-  render(ctx, w, h) {
-    const state = this.store.get();
-    const trade = this._trade();
-    const safe = this._safeRect(w, h);
-
-    this.hitBack = null;
-    this.hitTabs = [];
-    this.hitButtons = [];
-
-    const bgImg =
-      getImgSafe(this.assets, "trade") ||
-      getImgSafe(this.assets, "blackmarket_bg") ||
-      getImgSafe(this.assets, "blackmarket") ||
-      getImgSafe(this.assets, "background");
-
-    if (bgImg) {
-      const iw = bgImg.width || 1;
-      const ih = bgImg.height || 1;
-      const scale = Math.max(w / iw, h / ih);
-      const dw = iw * scale;
-      const dh = ih * scale;
-      const dx = (w - dw) / 2;
-      const dy = (h - dh) / 2;
-      ctx.drawImage(bgImg, dx, dy, dw, dh);
-    } else {
-      const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#08090d");
-      bg.addColorStop(0.35, "#12090b");
-      bg.addColorStop(0.7, "#0a0f16");
-      bg.addColorStop(1, "#04070a");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, w, h);
-    }
-
-    const overlay = ctx.createLinearGradient(0, 0, 0, h);
-    overlay.addColorStop(0, "rgba(0,0,0,0.48)");
-    overlay.addColorStop(0.28, "rgba(16,8,8,0.58)");
-    overlay.addColorStop(0.62, "rgba(8,10,18,0.72)");
-    overlay.addColorStop(1, "rgba(2,5,10,0.86)");
-    ctx.fillStyle = overlay;
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.save();
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = "#ff9e46";
-    fillRoundRect(ctx, safe.x - 8, safe.y + 8, safe.w * 0.42, 120, 42);
-    ctx.fillStyle = "#c78c2f";
-    fillRoundRect(ctx, safe.x + safe.w - 112, safe.y + 128, 78, 78, 28);
-    ctx.restore();
-
-    const panelX = safe.x;
-    const panelY = safe.y;
-    const panelW = safe.w;
-    const panelH = safe.h;
-
-    const shellGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-    shellGrad.addColorStop(0, "rgba(8,12,18,0.26)");
-    shellGrad.addColorStop(1, "rgba(4,8,14,0.34)");
-    ctx.fillStyle = shellGrad;
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1;
-    strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 28);
-    this.hitBack = { x: panelX + 12, y: panelY + 10, w: 40, h: 40 };
-    this._drawButton(ctx, this.hitBack, "X", "muted");
-
-    
-
-    let contentTop = panelY + 58;
-
-    if (trade.view === "main") {
-      const tabs = [
-        { key: "premium", label: this._ui("Premium", "Premium") },
-        { key: "explore", label: this._ui("Kesfet", "Explore") },
-        { key: "businesses", label: this._ui("Isletmelerim", "Businesses") },
-        { key: "inventory", label: this._ui("Envanter", "Inventory") },
-        { key: "loot", label: this._ui("Carklar", "Wheels") },
-        { key: "market", label: this._ui("Pazar", "Market") },
-      ];
-
-      let tx = panelX + 16;
-      let ty = panelY + 56;
-      const limitX = panelX + panelW - 16;
-
-      for (const tab of tabs) {
-        const tw = clamp(28 + tab.label.length * 7.2, 86, 138);
-        if (tx + tw > limitX) {
-          tx = panelX + 16;
-          ty += 42;
-        }
-
-        const rect = { x: tx, y: ty, w: tw, h: 34 };
-        this.hitTabs.push({ rect, tab: tab.key });
-
-        const active = trade.activeTab === tab.key;
-        this._drawButton(ctx, rect, tab.label, active ? "primary" : "muted");
-        tx += tw + 10;
-      }
-
-      contentTop = ty + 46;
-    }
-
-    const contentX = panelX + 8;
-    const contentY = contentTop;
-    const contentW = panelW - 16;
-    const contentH = panelY + panelH - 8 - contentTop;
-
-    const contentGrad = ctx.createLinearGradient(contentX, contentY, contentX, contentY + contentH);
-    contentGrad.addColorStop(0, "rgba(8,12,18,0.22)");
-    contentGrad.addColorStop(1, "rgba(4,8,14,0.30)");
-    ctx.fillStyle = contentGrad;
-    fillRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.06)";
-    strokeRoundRect(ctx, contentX, contentY, contentW, contentH, 24);
-
-    ctx.save();
-    roundRectPath(ctx, contentX, contentY, contentW, contentH, 24);
-    ctx.clip();
-
-    let cursorY = contentY + 14 - this.scrollY;
-    let endY = cursorY;
-
-    if (trade.view === "shop") {
-      endY = this._renderShopView(ctx, contentX + 12, cursorY, contentW - 24);
-    } else {
-      const x = contentX + 12;
-      const y = cursorY;
-      const w2 = contentW - 24;
-
-      if (trade.activeTab === "explore") endY = this._renderExplore(ctx, x, y, w2);
-      else if (trade.activeTab === "businesses") endY = this._renderBusinesses(ctx, x, y, w2);
-      else if (trade.activeTab === "inventory") endY = this._renderInventory(ctx, x, y, w2);
-      else if (trade.activeTab === "loot") endY = this._renderLoot(ctx, x, y, w2);
-      else if (trade.activeTab === "market") endY = this._renderMarket(ctx, x, y, w2);
-      else endY = this._renderBuy(ctx, x, y, w2);
-    }
-
-    ctx.restore();
-
-    const renderedHeight = Math.max(0, endY - cursorY);
-    this.maxScroll = Math.max(0, renderedHeight + 20 - contentH);
-    this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
-
-    if (this.maxScroll > 0) {
-      const barX = contentX + contentW - 6;
-      const barY = contentY + 12;
-      const barH = contentH - 24;
-      const thumbH = Math.max(42, Math.floor((contentH / (contentH + this.maxScroll)) * barH));
-      const thumbY = barY + Math.floor((this.scrollY / Math.max(1, this.maxScroll)) * (barH - thumbH));
-
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      fillRoundRect(ctx, barX, barY, 3, barH, 3);
-
-      const sg = ctx.createLinearGradient(barX, thumbY, barX, thumbY + thumbH);
-      sg.addColorStop(0, "rgba(255,196,100,0.82)");
-      sg.addColorStop(1, "rgba(255,132,58,0.78)");
-      ctx.fillStyle = sg;
-      fillRoundRect(ctx, barX, thumbY, 3, thumbH, 3);
-    }
-
-    if (this.toastText && Date.now() < this.toastUntil) {
-      const tw = Math.min(panelW - 28, 290);
-      const th = 40;
-      const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - th - 10;
-
-      ctx.fillStyle = "rgba(0,0,0,0.58)";
-      fillRoundRect(ctx, tx, ty, tw, th, 14);
-
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
-      strokeRoundRect(ctx, tx, ty, tw, th, 14);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "800 12px system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2);
-    }
-  }
-}
-
-export { TradeScene };
-export default TradeScene;
-
-
-
-
-
+});
+
+/* =========================
+   404 / ERROR
+========================= */
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+app.use((err, _req, res, _next) => {
+  console.error('[unhandled]', err);
+  res.status(500).json({ error: err.message || 'Internal server error' });
+});
+
+app.listen(PORT, () => {
+  console.log(`TonCrime secure admin backend running on :${PORT}`);
+});
+ 
