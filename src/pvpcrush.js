@@ -221,6 +221,55 @@
     },
   };
 
+  TILE_META[TILE.PUNCH].emoji = "P";
+  TILE_META[TILE.KICK].emoji = "K";
+  TILE_META[TILE.SLAP].emoji = "T";
+  TILE_META[TILE.HEAD].emoji = "B";
+  TILE_META[TILE.WEED].emoji = "O";
+  TILE_META[TILE.HEAD].label = "BEYIN";
+
+  function sanitizePvpCrushTextValue(value) {
+    let text = String(value ?? "");
+    const replacements = [
+      ["Ã¢â‚¬Â¢", " - "],
+      ["â€¢", " - "],
+      ["•", " - "],
+      ["âœ•", "x"],
+      ["Ä°", "I"],
+      ["Ä±", "i"],
+      ["Ã§", "c"],
+      ["Ã‡", "C"],
+      ["Ã¶", "o"],
+      ["Ã–", "O"],
+      ["Ã¼", "u"],
+      ["Ãœ", "U"],
+      ["ÄŸ", "g"],
+      ["Äž", "G"],
+      ["ÅŸ", "s"],
+      ["Åž", "S"],
+      ["BEYÄ°N", "BEYIN"],
+    ];
+    replacements.forEach(([from, to]) => {
+      text = text.split(from).join(to);
+    });
+    return text;
+  }
+
+  PVP_CRUSH_TEXT.tr.rule = "Surukleyerek veya dokunarak tas degistir - Raund basi 30sn - Ozel ikon patlatmak 1 hamle sayilir";
+  PVP_CRUSH_TEXT.en.rule = "Swap tiles by dragging or tapping - 30s per round - Triggering a special costs 1 move";
+  PVP_CRUSH_TEXT.tr.matchLeft = "Mactan ciktin - mac kaybi";
+  PVP_CRUSH_TEXT.en.matchLeft = "You left the match - match lost";
+  PVP_CRUSH_TEXT.tr.opponentLeftWon = "Rakip cikti - galibiyet senin";
+  PVP_CRUSH_TEXT.en.opponentLeftWon = "Opponent left - victory is yours";
+  PVP_CRUSH_TEXT.tr.rewardWon = "Kazandin - +{reward} YTON";
+  PVP_CRUSH_TEXT.en.rewardWon = "You won - +{reward} YTON";
+
+  Object.values(PVP_CRUSH_TEXT).forEach((group) => {
+    Object.keys(group || {}).forEach((key) => {
+      group[key] = sanitizePvpCrushTextValue(group[key]);
+    });
+  });
+
   function normalizePvpCrushLang(lang) {
     return lang === "en" ? "en" : "tr";
   }
@@ -231,7 +280,7 @@
 
   function pvpCrushText(key, fallback = "") {
     const code = getPvpCrushLang();
-    return PVP_CRUSH_TEXT?.[code]?.[key] ?? PVP_CRUSH_TEXT?.tr?.[key] ?? fallback ?? key;
+    return sanitizePvpCrushTextValue(PVP_CRUSH_TEXT?.[code]?.[key] ?? PVP_CRUSH_TEXT?.tr?.[key] ?? fallback ?? key);
   }
 
   function pvpCrushFormat(key, vars = {}, fallback = "") {
@@ -1571,6 +1620,7 @@
         enemyName: arena.querySelector("#tcCrushEnemyName"),
         meName: arena.querySelector("#tcCrushMeName"),
       };
+      if (this._els.close) this._els.close.textContent = "x";
 
       this._bindCanvas();
       this._safeResizeSequence();
@@ -1773,6 +1823,23 @@
     },
 
     _getStakeRewardYton() {
+      const ctxReward = Number(
+        this._matchCtx?.rewardYton ??
+        this._matchCtx?.expectedPayout ??
+        this._matchCtx?.payout ??
+        0
+      );
+      if (Number.isFinite(ctxReward) && ctxReward > 0) return ctxReward;
+
+      const pvpState = window.tcStore?.get?.()?.pvp || {};
+      const storeReward = Number(
+        pvpState?.rewardYton ??
+        pvpState?.expectedPayout ??
+        pvpState?.betPayout ??
+        0
+      );
+      if (Number.isFinite(storeReward) && storeReward > 0) return storeReward;
+
       const sqlMode = String(this._matchCtx?.sqlMode || "");
       if (sqlMode === "pvpcrush") return 100;
       if (sqlMode === "pvpcage") return 75;
@@ -1846,7 +1913,11 @@
         })
         .on("broadcast", { event: "leave_match" }, () => {
           if (this._state?.finished) return;
-          this._finishGame(true, this._text("opponentLeftWon", "Rakip cikti • kazandin"));
+          this._finishGame(true, this._text("opponentLeftWon", "Rakip cikti - galibiyet senin"), {
+            reason: "opponent_left",
+            forfeit: true,
+            quitter: "opponent",
+          });
         });
 
       await new Promise((resolve) => {
@@ -1915,7 +1986,12 @@
       const isForfeit = this._isRealtimeMatch() && this._onlineReady && !this._state?.finished;
       if (isForfeit) {
         await this._broadcastOnline("leave_match", { matchId: this._matchCtx?.matchId || null });
-        this._finishGame(false, this._text("matchLeft", "Mactan ciktin"));
+        this._finishGame(false, this._text("matchLeft", "Mactan ciktin - mac kaybi"), {
+          reason: "quit",
+          forfeit: true,
+          quitter: "self",
+          rewardEligible: false,
+        });
         await this._destroyOnlineChannel();
         return;
       }
@@ -2160,7 +2236,12 @@
       const onPageHide = () => {
         if (!this._isRealtimeMatch() || !this._onlineReady || !this._running || this._state?.finished) return;
         this._broadcastOnline("leave_match", { matchId: this._matchCtx?.matchId || null }).catch?.(() => {});
-        this._finishGame(false, this._text("matchLeft", "Mactan ciktin"));
+        this._finishGame(false, this._text("matchLeft", "Mactan ciktin - mac kaybi"), {
+          reason: "quit",
+          forfeit: true,
+          quitter: "self",
+          rewardEligible: false,
+        });
       };
 
       canvas.addEventListener("mousedown", onDown);
@@ -2765,13 +2846,15 @@
       return { fxTimeline, totalDamage, totalHeal, totalExtra, chain };
     },
 
-    _recordResult(win) {
+    _recordResult(win, meta = {}) {
       if (this._resultRecorded) return;
       this._resultRecorded = true;
       const store = window.tcStore;
       const now = Date.now();
       const REWARD_COINS = 36;
       const opponent = this._opponentName();
+      const rewardEligible = !!(win && meta?.rewardEligible !== false);
+      const prizeYton = Math.max(0, Number(meta?.prizeYton || 0));
       const resultItem = {
         id: `pvp_${now}`,
         opponent,
@@ -2779,13 +2862,17 @@
         mode: "iq_arena",
         meHp: Math.round(this._state?.meHp || 0),
         enemyHp: Math.round(this._state?.enemyHp || 0),
+        reason: String(meta?.reason || ""),
+        forfeit: !!meta?.forfeit,
+        quitter: meta?.quitter || null,
+        prizeYton,
         at: now,
       };
 
       if (store?.get && store?.set) {
         const state = store.get() || {};
         const pvp = { ...(state.pvp || {}) };
-        const nextCoins = Number(state.coins || 0) + (win && !pvp.payoutDone ? REWARD_COINS : 0);
+        const nextCoins = Number(state.coins || 0) + (rewardEligible && !pvp.payoutDone ? REWARD_COINS : 0);
         const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
         const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
         const playerName = String(state?.player?.username || "Player");
@@ -2827,7 +2914,7 @@
       }
     },
 
-    _finishGame(win, reason) {
+    _finishGame(win, reason, opts = {}) {
       if (!this._state || this._state.finished) return true;
       this._state.finished = true;
       this._running = false;
@@ -2836,7 +2923,10 @@
       clearTimeout(this._queueTimer);
       this._turnTimer = null;
       this._queueTimer = null;
-      const rewardYton = win ? this._getStakeRewardYton() : 0;
+      const finalReason = String(opts?.reason || "").trim() || (win ? "win" : "loss");
+      const forfeit = !!opts?.forfeit || finalReason === "quit" || finalReason === "opponent_left";
+      const rewardEligible = !!(win && opts?.rewardEligible !== false);
+      const rewardYton = rewardEligible ? this._getStakeRewardYton() : 0;
       this._setStatus(win ? this._text("won", "Kazandin") : this._text("lost", "Kaybettin"));
       this._state.info = reason || (win ? this._text("won", "Kazandin") : this._text("lost", "Kaybettin"));
       this._resultOverlay = {
@@ -2851,7 +2941,29 @@
           ? (rewardYton ? this._format("rewardWon", { reward: rewardYton }, `Kazandin • +${rewardYton} YTON`) : this._text("won", "Kazandin"))
           : this._text("lost", "Kaybettin")
       );
-      this._recordResult(win);
+      if (win && !rewardYton) {
+        this._toast(this._state.info);
+      }
+      this._recordResult(win, {
+        reason: finalReason,
+        forfeit,
+        quitter: opts?.quitter || null,
+        prizeYton: rewardYton,
+        rewardEligible,
+      });
+      try {
+        if (typeof this.onMatchFinished === "function") {
+          this.onMatchFinished(!!win, {
+            reason: finalReason,
+            forfeit,
+            quitter: opts?.quitter || null,
+            rewardYton,
+            rewardEligible,
+          });
+        }
+      } catch (err) {
+        console.error("[TonCrime] pvpcrush onMatchFinished error:", err);
+      }
       this._updateHud();
       this._render();
       return true;
