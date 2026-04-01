@@ -70,6 +70,66 @@ function readPlayerXpToNext(player = null) {
   return Math.max(1, xpToNext || DEFAULT_XP_TO_NEXT);
 }
 
+function readPvpCount(value, fallback = 0) {
+  return Math.max(0, Math.floor(toFiniteNumber(value, fallback)));
+}
+
+function readPvpRating(value, fallback = 1000) {
+  return Math.max(0, Math.floor(toFiniteNumber(value, fallback)));
+}
+
+function readTimestampMs(value, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+  if (!value) return Math.max(0, toFiniteNumber(fallback, 0));
+  const parsed = new Date(value).getTime();
+  if (Number.isFinite(parsed)) return Math.max(0, parsed);
+  return Math.max(0, toFiniteNumber(fallback, 0));
+}
+
+function toIsoTimestamp(value) {
+  const ts = readTimestampMs(value, 0);
+  return ts > 0 ? new Date(ts).toISOString() : null;
+}
+
+function getLeaderboardEntryId(entry, fallback = "") {
+  return String(entry?.id || entry?.telegram_id || entry?.telegramId || fallback || "").trim();
+}
+
+function normalizeLeaderboardEntry(entry, index = 0) {
+  const wins = readPvpCount(entry?.wins, entry?.pvp_wins);
+  const losses = readPvpCount(entry?.losses, entry?.pvp_losses);
+  const rating = readPvpRating(entry?.rating, entry?.pvp_rating);
+  const score = Math.max(0, Math.floor(toFiniteNumber(entry?.score, rating + wins * 8)));
+  const updatedAt = toIsoTimestamp(entry?.updatedAt || entry?.pvp_last_match_at || entry?.updated_at || entry?.created_at) || new Date(0).toISOString();
+
+  return {
+    id: getLeaderboardEntryId(entry, `rank_${index + 1}`) || `rank_${index + 1}`,
+    telegram_id: String(entry?.telegram_id || entry?.telegramId || "").trim(),
+    name: String(entry?.name || entry?.username || "Player").trim() || "Player",
+    wins,
+    losses,
+    rating,
+    score,
+    updatedAt,
+    rank: Math.max(1, Math.floor(toFiniteNumber(entry?.rank, index + 1))),
+  };
+}
+
+function buildLeaderboardKey(items = []) {
+  return items
+    .map((item) => {
+      const normalized = normalizeLeaderboardEntry(item);
+      return [
+        normalized.id,
+        normalized.rating,
+        normalized.wins,
+        normalized.losses,
+        normalized.updatedAt,
+      ].join(":");
+    })
+    .join("|");
+}
+
 function getViewportSize() {
   return {
     w: Math.max(1, Math.floor(_viewportLockWidth || window.innerWidth || 1)),
@@ -220,18 +280,32 @@ function initTelegramViewport() {
 function getSafeArea() {
   const safe = document.getElementById("safe");
   const { w: vw, h: vh } = getViewportSize();
+  const canvasRect = canvas?.getBoundingClientRect?.() || {
+    left: 0,
+    top: 0,
+    right: vw,
+    bottom: vh,
+    width: vw,
+    height: vh,
+  };
+  const canvasW = Math.max(0, Math.round(canvasRect.width || vw));
+  const canvasH = Math.max(0, Math.round(canvasRect.height || vh));
 
   if (!safe) {
-    return { x: 0, y: 0, w: vw, h: vh };
+    return { x: 0, y: 0, w: canvasW, h: canvasH };
   }
 
   const r = safe.getBoundingClientRect();
+  const leftInset = Math.max(0, Math.round((r.left || 0) - (canvasRect.left || 0)));
+  const topInset = Math.max(0, Math.round((r.top || 0) - (canvasRect.top || 0)));
+  const rightInset = Math.max(0, Math.round((canvasRect.right || canvasW) - (r.right || 0)));
+  const bottomInset = Math.max(0, Math.round((canvasRect.bottom || canvasH) - (r.bottom || 0)));
 
   return {
-    x: Math.max(0, Math.round(r.left)),
-    y: Math.max(0, Math.round(r.top)),
-    w: Math.max(0, Math.round(r.width || vw)),
-    h: Math.max(0, Math.round(r.height || vh)),
+    x: Math.min(canvasW, leftInset),
+    y: Math.min(canvasH, topInset),
+    w: Math.max(0, canvasW - leftInset - rightInset),
+    h: Math.max(0, canvasH - topInset - bottomInset),
   };
 }
 
@@ -380,6 +454,18 @@ const defaultState = {
     lastDailyKey: "",
   },
 
+  pvp: {
+    wins: 0,
+    losses: 0,
+    rating: 1000,
+    currentOpponent: null,
+    recentMatches: [],
+    leaderboard: [],
+    lastMatchAt: 0,
+    leaderboardUpdatedAt: 0,
+    leaderboardSource: "local",
+  },
+
   ui: { safe: getSafeArea() },
 };
 
@@ -392,6 +478,7 @@ const initial = loaded
       player: { ...defaultState.player, ...(loaded.player || {}) },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       missions: { ...defaultState.missions, ...(loaded.missions || {}) },
+      pvp: { ...defaultState.pvp, ...(loaded.pvp || {}) },
       ui: {
         ...(defaultState.ui || {}),
         ...(loaded.ui || {}),
@@ -407,6 +494,7 @@ function buildStarterStatePatch(source = store.get()) {
   const snapshot = source || {};
   const player = snapshot.player || {};
   const wallet = snapshot.wallet || {};
+  const pvp = snapshot.pvp || {};
   const telegramId = String(player.telegramId || getTelegramUser()?.id || "").trim();
   const username =
     String(
@@ -438,6 +526,18 @@ function buildStarterStatePatch(source = store.get()) {
       energyIntervalMs: 5 * 60 * 1000,
       lastEnergyAt: Date.now(),
       lastEnergyResetKey: dayKey(),
+    },
+    pvp: {
+      ...pvp,
+      wins: 0,
+      losses: 0,
+      rating: 1000,
+      currentOpponent: null,
+      recentMatches: [],
+      leaderboard: [],
+      lastMatchAt: 0,
+      leaderboardUpdatedAt: 0,
+      leaderboardSource: "local",
     },
   };
 }
@@ -569,6 +669,10 @@ let _profileSyncBusy = false;
 let _lastProfilePayload = "";
 let _profileSyncRetryAfter = 0;
 let _profileBootstrapPromise = null;
+let _lastLeaderboardSyncAt = 0;
+let _leaderboardSyncBusy = false;
+let _leaderboardSyncRetryAfter = 0;
+let _lastLeaderboardPayload = "";
 
 function getProfileIdentityKey() {
   return String(
@@ -582,6 +686,7 @@ function getProfileIdentityKey() {
 function buildProfilePayload() {
   const s = store.get();
   const p = s.player || {};
+  const pvp = s.pvp || {};
   const telegramId = getProfileIdentityKey();
 
   if (!telegramId || !s?.intro?.profileCompleted) return null;
@@ -594,6 +699,10 @@ function buildProfilePayload() {
     coins: Math.max(0, toFiniteNumber(s.coins, STARTING_YTON)),
     energy: Math.max(0, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(p.energy, MAX_PLAYER_ENERGY))),
     energy_max: Math.max(1, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(p.energyMax, MAX_PLAYER_ENERGY))),
+    pvp_wins: readPvpCount(pvp.wins, 0),
+    pvp_losses: readPvpCount(pvp.losses, 0),
+    pvp_rating: readPvpRating(pvp.rating, 1000),
+    pvp_last_match_at: toIsoTimestamp(pvp.lastMatchAt || pvp.last_match_at),
     updated_at: new Date().toISOString(),
   };
 }
@@ -605,6 +714,7 @@ function applyRemoteProfile(profile) {
   const intro = snapshot.intro || {};
   const player = snapshot.player || {};
   const wallet = snapshot.wallet || {};
+  const pvp = snapshot.pvp || {};
   const username = String(
     profile.username ||
     player.username ||
@@ -627,6 +737,10 @@ function applyRemoteProfile(profile) {
     level === STARTING_LEVEL && xp <= 0
       ? STARTING_XP_TO_NEXT
       : Math.max(1, toFiniteNumber(player.xpToNext, DEFAULT_XP_TO_NEXT));
+  const wins = readPvpCount(profile.pvp_wins, pvp.wins);
+  const losses = readPvpCount(profile.pvp_losses, pvp.losses);
+  const rating = readPvpRating(profile.pvp_rating, pvp.rating || 1000);
+  const lastMatchAt = readTimestampMs(profile.pvp_last_match_at, pvp.lastMatchAt);
 
   store.set({
     coins,
@@ -653,9 +767,22 @@ function applyRemoteProfile(profile) {
       energyMax,
       lastEnergyAt: Date.now(),
     },
+    pvp: {
+      ...pvp,
+      wins,
+      losses,
+      rating,
+      lastMatchAt,
+    },
   });
 
   return true;
+}
+
+function buildProfilePayloadKey(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const { updated_at, ...stable } = payload;
+  return JSON.stringify(stable);
 }
 
 async function fetchProfileFromBackend(identityKey) {
@@ -669,6 +796,55 @@ async function fetchProfileFromBackend(identityKey) {
     console.warn("Backend profile fetch failed:", err);
     return null;
   }
+}
+
+async function fetchPvpLeaderboardFromBackend(limit = 50) {
+  try {
+    const json = await fetchBackendJson(
+      `/public/pvp/leaderboard?limit=${Math.max(5, Math.min(100, Math.floor(limit || 50)))}`
+    );
+    return Array.isArray(json?.items) ? json.items : [];
+  } catch (err) {
+    console.warn("Backend pvp leaderboard fetch failed:", err);
+    return null;
+  }
+}
+
+function applyRemotePvpLeaderboard(items) {
+  if (!Array.isArray(items)) return false;
+
+  const normalized = items
+    .map((item, index) => normalizeLeaderboardEntry(item, index))
+    .filter((item) => item.id && item.name)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 50)
+    .map((item, index) => ({
+      ...item,
+      rank: index + 1,
+    }));
+
+  const nextKey = buildLeaderboardKey(normalized);
+  if (!normalized.length && !_lastLeaderboardPayload) {
+    return false;
+  }
+
+  const snapshot = store.get();
+  const pvp = snapshot.pvp || {};
+  if (nextKey === _lastLeaderboardPayload && Array.isArray(pvp.leaderboard) && pvp.leaderboard.length === normalized.length) {
+    return true;
+  }
+
+  store.set({
+    pvp: {
+      ...pvp,
+      leaderboard: normalized,
+      leaderboardUpdatedAt: Date.now(),
+      leaderboardSource: "cloud",
+    },
+  });
+
+  _lastLeaderboardPayload = nextKey;
+  return true;
 }
 
 async function restoreProfileFromCloud(identityKey = getProfileIdentityKey()) {
@@ -699,7 +875,7 @@ async function syncProfileToCloud(force = false) {
 
   const payload = buildProfilePayload();
   if (!payload) return;
-  const payloadKey = JSON.stringify(payload);
+  const payloadKey = buildProfilePayloadKey(payload);
   if (!force && payloadKey === _lastProfilePayload) return;
 
   _profileSyncBusy = true;
@@ -717,6 +893,28 @@ async function syncProfileToCloud(force = false) {
     _profileSyncRetryAfter = 0;
   } finally {
     _profileSyncBusy = false;
+  }
+}
+
+async function syncLeaderboardFromCloud(force = false) {
+  if (_leaderboardSyncBusy) return;
+  if (_leaderboardSyncRetryAfter && Date.now() < _leaderboardSyncRetryAfter) return;
+  if (!force && Date.now() - _lastLeaderboardSyncAt < 10_000) return;
+
+  _leaderboardSyncBusy = true;
+
+  try {
+    const items = await fetchPvpLeaderboardFromBackend(50);
+    if (!items) {
+      _leaderboardSyncRetryAfter = Date.now() + 20_000;
+      return;
+    }
+
+    applyRemotePvpLeaderboard(items);
+    _lastLeaderboardSyncAt = Date.now();
+    _leaderboardSyncRetryAfter = 0;
+  } finally {
+    _leaderboardSyncBusy = false;
   }
 }
 
@@ -741,6 +939,7 @@ async function bootstrapPlayerProfile() {
     }
 
     await syncProfileToCloud(true).catch(() => null);
+    await syncLeaderboardFromCloud(true).catch(() => null);
   })();
 
   return _profileBootstrapPromise;
@@ -751,7 +950,16 @@ window.tcProfileBootstrapReady = profileBootstrapReady;
 
 window.addEventListener("tc:profile-sync-now", () => {
   _lastProfileSyncAt = 0;
+  _lastLeaderboardSyncAt = 0;
   syncProfileToCloud(true).catch(() => null);
+  syncLeaderboardFromCloud(true).catch(() => null);
+});
+
+window.addEventListener("tc:pvp:leaderboard-sync-now", () => {
+  _lastProfileSyncAt = 0;
+  _lastLeaderboardSyncAt = 0;
+  syncProfileToCloud(true).catch(() => null);
+  syncLeaderboardFromCloud(true).catch(() => null);
 });
 
 (function profileSyncLoop() {
@@ -760,6 +968,11 @@ window.addEventListener("tc:profile-sync-now", () => {
     syncProfileToCloud();
   }
   setTimeout(profileSyncLoop, 1500);
+})();
+
+(function leaderboardSyncLoop() {
+  syncLeaderboardFromCloud().catch(() => null);
+  setTimeout(leaderboardSyncLoop, 5000);
 })();
 
 /* ===== AUTOSAVE ===== */
@@ -1482,23 +1695,43 @@ const engine = new Engine({ canvas, ctx, input, scenes });
 window.addEventListener("tc:pvp:win", () => {
   const s = store.get();
   const m = s.missions || {};
+  const pvp = s.pvp || {};
   store.set({
     missions: {
       ...m,
       pvpPlayed: Number(m.pvpPlayed || 0) + 1,
     },
+    pvp: {
+      ...pvp,
+      lastMatchAt: Date.now(),
+    },
   });
+
+  _lastProfileSyncAt = 0;
+  _lastLeaderboardSyncAt = 0;
+  syncProfileToCloud(true).catch(() => null);
+  syncLeaderboardFromCloud(true).catch(() => null);
 });
 
 window.addEventListener("tc:pvp:lose", () => {
   const s = store.get();
   const m = s.missions || {};
+  const pvp = s.pvp || {};
   store.set({
     missions: {
       ...m,
       pvpPlayed: Number(m.pvpPlayed || 0) + 1,
     },
+    pvp: {
+      ...pvp,
+      lastMatchAt: Date.now(),
+    },
   });
+
+  _lastProfileSyncAt = 0;
+  _lastLeaderboardSyncAt = 0;
+  syncProfileToCloud(true).catch(() => null);
+  syncLeaderboardFromCloud(true).catch(() => null);
 });
 
 /* ===== UI ===== */
