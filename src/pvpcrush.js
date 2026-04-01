@@ -339,6 +339,27 @@
     return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
   }
 
+  function isLowFxDevice() {
+    try {
+      const coarse = !!window.matchMedia?.("(pointer: coarse)")?.matches;
+      const narrow = Math.min(window.innerWidth || 9999, window.innerHeight || 9999) <= 560;
+      const highDpr = Number(window.devicePixelRatio || 1) >= 2;
+      return coarse || narrow || highDpr;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function getAdaptiveCanvasDpr() {
+    const raw = Math.max(1, Number(window.devicePixelRatio || 1));
+    return Math.min(isLowFxDevice() ? 1.5 : 2, raw);
+  }
+
+  function scaleFxCount(count, min = 1) {
+    const scaled = Math.round(Number(count || 0) * (isLowFxDevice() ? 0.62 : 1));
+    return Math.max(min, scaled);
+  }
+
   function choice(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
@@ -962,12 +983,17 @@
     const specialMeta = SPECIAL_META[special] || null;
     const img = ICON_IMAGES[meta.assetKey];
     const r = Math.max(8, Math.floor(size * 0.18));
+    const lowFx = isLowFxDevice();
 
     // Renkli tile zemin
-    const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
-    tileGrad.addColorStop(0, meta.color + "22");
-    tileGrad.addColorStop(1, meta.color + "0a");
-    fillRoundRect(ctx, x, y, size, size, r, tileGrad);
+    if (lowFx) {
+      fillRoundRect(ctx, x, y, size, size, r, meta.color + "16");
+    } else {
+      const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
+      tileGrad.addColorStop(0, meta.color + "22");
+      tileGrad.addColorStop(1, meta.color + "0a");
+      fillRoundRect(ctx, x, y, size, size, r, tileGrad);
+    }
 
     // Seçili tile için parlayan border
     if (selected) {
@@ -1006,11 +1032,16 @@
     const specialMeta = SPECIAL_META[special] || null;
     const img = ICON_IMAGES[meta.assetKey];
     const r = Math.max(8, Math.floor(size * 0.18));
+    const lowFx = isLowFxDevice();
 
-    const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
-    tileGrad.addColorStop(0, meta.color + "22");
-    tileGrad.addColorStop(1, meta.color + "0a");
-    fillRoundRect(ctx, x, y, size, size, r, tileGrad);
+    if (lowFx) {
+      fillRoundRect(ctx, x, y, size, size, r, meta.color + "16");
+    } else {
+      const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
+      tileGrad.addColorStop(0, meta.color + "22");
+      tileGrad.addColorStop(1, meta.color + "0a");
+      fillRoundRect(ctx, x, y, size, size, r, tileGrad);
+    }
 
     if (selected) {
       const pulse = 0.7 + 0.3 * Math.sin((animT || 0) * 0.006);
@@ -1081,6 +1112,7 @@
   function drawBombTileOverlay(ctx, x, y, size, animT) {
     const t = Number(animT || Date.now());
     const pulse = 0.72 + 0.28 * Math.sin(t * 0.01);
+    const lowFx = isLowFxDevice();
     const cx = x + size * 0.74;
     const cy = y + size * 0.72;
     const radius = Math.max(10, size * 0.19);
@@ -1153,7 +1185,7 @@
     ctx.arc(sparkX, sparkY, radius * 0.72, 0, Math.PI * 2);
     ctx.fill();
 
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < (lowFx ? 4 : 7); i++) {
       const ang = -Math.PI * 0.25 + i * (Math.PI / 6);
       const len = radius * (0.3 + (i % 2 ? 0.16 : 0.06)) * pulse;
       ctx.strokeStyle = i % 2 ? "#ffecad" : "#ff7a2e";
@@ -1246,15 +1278,18 @@
     const h = size * 0.42;
     const px = x + size * 0.2;
     const py = y + size * 0.44;
+    const lowFx = isLowFxDevice();
 
     ctx.save();
-    const glow = ctx.createRadialGradient(px + w * 0.28, py + h * 0.34, 2, px + w * 0.4, py + h * 0.42, size * 0.46);
-    glow.addColorStop(0, `rgba(255,168,72,${0.18 * pulse})`);
-    glow.addColorStop(1, "rgba(255,168,72,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(px + w * 0.36, py + h * 0.36, size * 0.3, 0, Math.PI * 2);
-    ctx.fill();
+    if (!lowFx) {
+      const glow = ctx.createRadialGradient(px + w * 0.28, py + h * 0.34, 2, px + w * 0.4, py + h * 0.42, size * 0.46);
+      glow.addColorStop(0, `rgba(255,168,72,${0.18 * pulse})`);
+      glow.addColorStop(1, "rgba(255,168,72,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(px + w * 0.36, py + h * 0.36, size * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     drawPistolShape(ctx, px, py, w, h, { muzzle: 0.18 * pulse });
     ctx.restore();
   }
@@ -1348,16 +1383,19 @@
 
   function drawRocketTileOverlay(ctx, x, y, size, animT) {
     const pulse = 0.74 + 0.26 * Math.sin(Number(animT || Date.now()) * 0.009);
+    const lowFx = isLowFxDevice();
     ctx.save();
     const cx = x + size * 0.72;
     const cy = y + size * 0.52;
-    const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, size * 0.42);
-    glow.addColorStop(0, `rgba(255,132,48,${0.16 * pulse})`);
-    glow.addColorStop(1, "rgba(255,132,48,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(cx, cy, size * 0.3, 0, Math.PI * 2);
-    ctx.fill();
+    if (!lowFx) {
+      const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, size * 0.42);
+      glow.addColorStop(0, `rgba(255,132,48,${0.16 * pulse})`);
+      glow.addColorStop(1, "rgba(255,132,48,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     drawRocketSprite(ctx, cx, cy, size * 0.62, { flame: 0.14 * pulse });
     ctx.restore();
   }
@@ -1667,6 +1705,7 @@
     _shakeUntil: 0,
     _shakeStartedAt: 0,
     _shakePower: 0,
+    _lastFxSoundAt: 0,
     _matchCtx: null,
     _onlineChannel: null,
     _onlineReady: false,
@@ -1718,10 +1757,16 @@
     },
 
     _playExplosionSound(power = 1) {
+      const fxNow = performance.now();
+      const lowFx = isLowFxDevice();
+      const minGap = lowFx ? 90 : 55;
+      if (fxNow - Number(this._lastFxSoundAt || 0) < minGap) return;
+      this._lastFxSoundAt = fxNow;
+
       const ac = this._ensureAudio();
       if (!ac) return;
       const now = ac.currentTime;
-      const dur = 0.12 + Math.min(0.22, power * 0.025);
+      const dur = (lowFx ? 0.09 : 0.12) + Math.min(lowFx ? 0.16 : 0.22, power * (lowFx ? 0.018 : 0.025));
 
       try {
         const buffer = ac.createBuffer(1, Math.max(1, Math.floor(ac.sampleRate * dur)), ac.sampleRate);
@@ -2652,7 +2697,7 @@
       if (!this._els?.canvas || !this._els?.ctx) return false;
       const canvas = this._els.canvas;
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const dpr = getAdaptiveCanvasDpr();
       const width = Math.max(10, Math.floor(rect.width * dpr));
       const height = Math.max(10, Math.floor(rect.height * dpr));
       if (!rect.width || !rect.height) return false;
@@ -2725,7 +2770,7 @@
         const color = burst.color || meta?.color || "#ffd166";
         const cx = rect.x + rect.w / 2;
         const cy = rect.y + rect.h / 2;
-        const count = burst.kind === "extra" ? 18 + burst.len * 2 : 10 + burst.len * 2;
+        const count = scaleFxCount(burst.kind === "extra" ? 18 + burst.len * 2 : 10 + burst.len * 2, burst.kind === "extra" ? 10 : 6);
 
         this._flashAlpha = Math.max(this._flashAlpha, 0.3 + Math.min(0.34, burst.len * 0.045));
         this._flashColor = color;
@@ -2773,7 +2818,7 @@
             color: "#fff0bf",
           });
 
-          for (let i = 0; i < 18; i++) {
+          for (let i = 0; i < scaleFxCount(18, 10); i++) {
             const angle = (Math.PI * 2 * i) / 18 + Math.random() * 0.22;
             const speed = 1.8 + Math.random() * 2.8;
             this._effects.push({
@@ -2789,7 +2834,7 @@
             });
           }
 
-          for (let i = 0; i < 16; i++) {
+          for (let i = 0; i < scaleFxCount(16, 8); i++) {
             const angle = (Math.PI * 2 * i) / 16 + Math.random() * 0.3;
             const speed = 0.7 + Math.random() * 1.6;
             this._effects.push({
@@ -2805,7 +2850,7 @@
             });
           }
 
-          for (let i = 0; i < 10; i++) {
+          for (let i = 0; i < scaleFxCount(10, 5); i++) {
             this._effects.push({
               type: "bomb_chunk",
               x: cx,
@@ -2928,7 +2973,7 @@
           });
         }
 
-        for (let i = 0; i < 6 + burst.len; i++) {
+        for (let i = 0; i < scaleFxCount(6 + burst.len, 4); i++) {
           this._effects.push({
             type: "spark",
             x: cx + (-rect.w * 0.18 + Math.random() * rect.w * 0.36),
@@ -2943,7 +2988,7 @@
         }
 
         if (burst.kind === "extra") {
-          for (let i = 0; i < 2 + getExtraMoveCount(burst.len); i++) {
+          for (let i = 0; i < scaleFxCount(2 + getExtraMoveCount(burst.len), 1); i++) {
             this._effects.push({
               type: "ring",
               x: cx,
@@ -3553,6 +3598,7 @@
     },
 
     _renderEffects(ctx) {
+      const lowFx = isLowFxDevice();
       for (const fx of this._effects) {
         const t = clamp(fx.life / fx.duration, 0, 1);
         const alpha = 1 - t;
@@ -3634,7 +3680,7 @@
           ctx.lineTo(bulletX, fx.y);
           ctx.stroke();
 
-          for (let i = 0; i < 4; i++) {
+          for (let i = 0; i < (lowFx ? 2 : 4); i++) {
             const sparkTravel = clamp(travel - i * 0.1, 0, 1);
             if (sparkTravel <= 0) continue;
             const sparkX = lerp(fx.x1, fx.x2, sparkTravel);
@@ -3778,7 +3824,7 @@
       ctx.lineWidth = 8;
       ctx.strokeStyle = "rgba(0,0,0,0.55)";
       ctx.strokeText(text, w * 0.5, y);
-      ctx.shadowBlur = 28;
+      ctx.shadowBlur = isLowFxDevice() ? 14 : 28;
       ctx.shadowColor = "#ff7a4a";
       ctx.fillStyle = "#ffd784";
       ctx.fillText(text, w * 0.5, y);
@@ -3816,6 +3862,8 @@
     _renderRemoteSwap(ctx) {
       const anim = this._remoteSwapAnim || this._localSwapAnim;
       if (!anim?.from || !anim?.to || !anim?.board) return;
+      const lowFx = isLowFxDevice();
+      const renderNow = performance.now();
       const fromRect = this._tileRects.find((t) => t.r === anim.from.r && t.c === anim.from.c);
       const toRect = this._tileRects.find((t) => t.r === anim.to.r && t.c === anim.to.c);
       if (!fromRect || !toRect) return;
@@ -3833,12 +3881,12 @@
         const y = mix(src.y, dst.y);
         const radius = Math.max(10, Math.floor(src.w * 0.18));
         const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
-        for (let ghost = 2; ghost >= 1; ghost--) {
+        for (let ghost = (lowFx ? 1 : 2); ghost >= 1; ghost--) {
           const lag = ghost * 0.12;
           const gx = mix(src.x, dst.x) - (dst.x - src.x) * lag;
           const gy = mix(src.y, dst.y) - (dst.y - src.y) * lag;
           ctx.globalAlpha = 0.12 / ghost;
-          renderCrushTile(ctx, tile, gx + pad, gy + pad, src.w - 4, false, Date.now());
+          renderCrushTile(ctx, tile, gx + pad, gy + pad, src.w - 4, false, renderNow);
         }
         ctx.globalAlpha = 1;
         fillRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, "rgba(255,255,255,0.10)");
@@ -3855,7 +3903,7 @@
         ctx.lineWidth = 2;
         strokeRoundRect(ctx, x + pad, y + pad, src.w - 4, src.h - 4, radius, ctx.strokeStyle, 2);
         ctx.globalAlpha = 1;
-        renderCrushTile(ctx, tile, x + pad, y + pad, src.w - 4, false, Date.now());
+        renderCrushTile(ctx, tile, x + pad, y + pad, src.w - 4, false, renderNow);
       };
 
       ctx.save();
@@ -3870,6 +3918,8 @@
 
       const ctx = this._els.ctx;
       const canvas = this._els.canvas;
+      const lowFx = isLowFxDevice();
+      const renderNow = performance.now();
       const rect = canvas.getBoundingClientRect();
       const w = Math.round(rect.width || 300);
       const h = Math.round(rect.height || 300);
@@ -3951,16 +4001,18 @@
             const meta = TILE_META[tile.type] || TILE_META[TILE.PUNCH];
 
             // Güçlü glow
-            const glowR = selected ? cell * 0.52 : cell * 0.38;
-            const glow = ctx.createRadialGradient(x + cell / 2, y + cell / 2, 2, x + cell / 2, y + cell / 2, glowR);
-            glow.addColorStop(0, meta.color + (selected ? "88" : "44"));
-            glow.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.fillStyle = glow;
-            ctx.beginPath();
-            ctx.arc(x + cell / 2, y + cell / 2, glowR, 0, Math.PI * 2);
-            ctx.fill();
+            if (!lowFx || selected || getTileSpecial(tile)) {
+              const glowR = selected ? cell * 0.52 : cell * 0.38;
+              const glow = ctx.createRadialGradient(x + cell / 2, y + cell / 2, 2, x + cell / 2, y + cell / 2, glowR);
+              glow.addColorStop(0, meta.color + (selected ? "88" : "44"));
+              glow.addColorStop(1, "rgba(0,0,0,0)");
+              ctx.fillStyle = glow;
+              ctx.beginPath();
+              ctx.arc(x + cell / 2, y + cell / 2, glowR, 0, Math.PI * 2);
+              ctx.fill();
+            }
 
-            renderCrushTile(ctx, tile, x + 2, y + 2, cell - 4, selected, Date.now());
+            renderCrushTile(ctx, tile, x + 2, y + 2, cell - 4, selected, renderNow);
           } else {
             strokeRoundRect(ctx, x + 2, y + 2, cell - 4, cell - 4, radius, "rgba(255,255,255,0.06)", 1);
           }
