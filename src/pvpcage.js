@@ -310,6 +310,130 @@ const DAMAGE = {
     return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
   }
 
+  function polygonPath(ctx, points) {
+    if (!Array.isArray(points) || !points.length) return;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+  }
+
+  function fillPolygon(ctx, points, fill) {
+    polygonPath(ctx, points);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+
+  function strokePolygon(ctx, points, stroke, lw) {
+    polygonPath(ctx, points);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+  }
+
+  function pointInPolygon(px, py, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i].x;
+      const yi = points[i].y;
+      const xj = points[j].x;
+      const yj = points[j].y;
+      const hit = ((yi > py) !== (yj > py)) && (px < ((xj - xi) * (py - yi)) / ((yj - yi) || 0.00001) + xi);
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
+
+  function polygonBounds(points) {
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  }
+
+  function regularPolygonPoints(cx, cy, radius, sides = 8, rotation = Math.PI / 8) {
+    const points = [];
+    for (let i = 0; i < sides; i++) {
+      const ang = -Math.PI / 2 + rotation + (Math.PI * 2 * i) / sides;
+      points.push({
+        x: cx + Math.cos(ang) * radius,
+        y: cy + Math.sin(ang) * radius,
+      });
+    }
+    return points;
+  }
+
+  function getCageArenaLayout(width, height) {
+    const w = Math.max(220, Number(width || 0));
+    const h = Math.max(180, Number(height || 0));
+    const cx = w * 0.5;
+    const cy = h * 0.54;
+    const outerR = Math.min(w * 0.39, h * 0.47);
+    const wallInnerR = outerR * 0.86;
+    const floorR = outerR * 0.73;
+    const iconR = floorR * 0.84;
+    const outerPoints = regularPolygonPoints(cx, cy, outerR, 8, Math.PI / 8);
+    const wallInnerPoints = regularPolygonPoints(cx, cy, wallInnerR, 8, Math.PI / 8);
+    const floorPoints = regularPolygonPoints(cx, cy, floorR, 8, Math.PI / 8);
+    const iconPoints = regularPolygonPoints(cx, cy, iconR, 8, Math.PI / 8);
+    const iconBounds = polygonBounds(iconPoints);
+    const ringSize = floorR * 1.06;
+    const ringRect = {
+      x: cx - ringSize * 0.5,
+      y: cy - ringSize * 0.5,
+      size: ringSize,
+    };
+    return {
+      width: w,
+      height: h,
+      cx,
+      cy,
+      outerR,
+      wallInnerR,
+      floorR,
+      iconR,
+      outerPoints,
+      wallInnerPoints,
+      floorPoints,
+      iconPoints,
+      iconBounds,
+      ringRect,
+    };
+  }
+
+  function fitIconRectToArena(x, y, w, h, layout) {
+    const safeHalfW = w * 0.5;
+    const safeHalfH = h * 0.5;
+    const bounds = layout.iconBounds;
+    let cx = clamp(x + safeHalfW, bounds.minX + safeHalfW, bounds.maxX - safeHalfW);
+    let cy = clamp(y + safeHalfH, bounds.minY + safeHalfH, bounds.maxY - safeHalfH);
+
+    if (!pointInPolygon(cx, cy, layout.iconPoints)) {
+      const dx = cx - layout.cx;
+      const dy = cy - layout.cy;
+      let low = 0;
+      let high = 1;
+      for (let i = 0; i < 14; i++) {
+        const t = (low + high) * 0.5;
+        const tx = layout.cx + dx * t;
+        const ty = layout.cy + dy * t;
+        if (pointInPolygon(tx, ty, layout.iconPoints)) low = t;
+        else high = t;
+      }
+      cx = layout.cx + dx * low * 0.96;
+      cy = layout.cy + dy * low * 0.96;
+    }
+
+    return {
+      x: clamp(Math.round(cx - safeHalfW), 0, Math.max(0, layout.width - w)),
+      y: clamp(Math.round(cy - safeHalfH), 0, Math.max(0, layout.height - h)),
+    };
+  }
+
   function ensureStyle() {
     const id = "tc-pvp-cage-style";
     if (document.getElementById(id)) return;
@@ -723,6 +847,7 @@ const DAMAGE = {
 
     _normalizeSerializedIconGeometry(raw) {
       const metrics = this._getCanvasMetrics();
+      const arena = getCageArenaLayout(metrics.width, metrics.height);
       const sourceW = Math.max(1, Number(raw?.canvasW || 0) || metrics.width);
       const sourceH = Math.max(1, Number(raw?.canvasH || 0) || metrics.height);
       const rawXRatio = Number(raw?.xRatio);
@@ -733,15 +858,24 @@ const DAMAGE = {
       const yRatio = Number.isFinite(rawYRatio) ? rawYRatio : (Number(raw?.y || 0) / sourceH);
       const wRatio = Number.isFinite(rawWRatio) ? rawWRatio : (Number(raw?.w || 64) / sourceW);
       const hRatio = Number.isFinite(rawHRatio) ? rawHRatio : (Number(raw?.h || 64) / sourceH);
-      const w = clamp(Math.round(metrics.width * Math.max(0.08, wRatio || 0)), 52, Math.max(52, metrics.width - 8));
-      const h = clamp(Math.round(metrics.height * Math.max(0.08, hRatio || 0)), 52, Math.max(52, metrics.height - 8));
-      return {
-        x: clamp(Math.round(metrics.width * Math.max(0, xRatio || 0)), 0, Math.max(0, metrics.width - w)),
-        y: clamp(Math.round(metrics.height * Math.max(0, yRatio || 0)), 0, Math.max(0, metrics.height - h)),
+      const maxIconW = Math.max(52, Math.round((arena.iconBounds.maxX - arena.iconBounds.minX) * 0.5));
+      const maxIconH = Math.max(52, Math.round((arena.iconBounds.maxY - arena.iconBounds.minY) * 0.5));
+      const w = clamp(Math.round(metrics.width * Math.max(0.08, wRatio || 0)), 52, maxIconW);
+      const h = clamp(Math.round(metrics.height * Math.max(0.08, hRatio || 0)), 52, maxIconH);
+      const fitted = fitIconRectToArena(
+        Math.round(metrics.width * Math.max(0, xRatio || 0)),
+        Math.round(metrics.height * Math.max(0, yRatio || 0)),
         w,
         h,
-        xRatio: Math.max(0, xRatio || 0),
-        yRatio: Math.max(0, yRatio || 0),
+        arena
+      );
+      return {
+        x: fitted.x,
+        y: fitted.y,
+        w,
+        h,
+        xRatio: metrics.width > 0 ? fitted.x / metrics.width : 0,
+        yRatio: metrics.height > 0 ? fitted.y / metrics.height : 0,
         wRatio: Math.max(0.08, wRatio || 0),
         hRatio: Math.max(0.08, hRatio || 0),
         canvasW: metrics.width,
@@ -1478,12 +1612,27 @@ const DAMAGE = {
       const rect = canvas.getBoundingClientRect();
       const w = Math.max(220, Math.round(rect.width || 0));
       const h = Math.max(180, Math.round(rect.height || 0));
+      const arena = getCageArenaLayout(w, h);
 
       const icon = Math.random() < 0.22 ? ICONS.find((x) => x.id === "skull") : choice(GOOD_ICONS);
-      const size = clamp(Math.round(Math.min(w, h) * rand(0.16, 0.22)), 52, 92);
-
-      const x = rand(12, Math.max(12, w - size - 12));
-      const y = rand(12, Math.max(12, h - size - 12));
+      const zoneSpan = Math.min(
+        arena.iconBounds.maxX - arena.iconBounds.minX,
+        arena.iconBounds.maxY - arena.iconBounds.minY
+      );
+      const size = clamp(Math.round(zoneSpan * rand(0.26, 0.34)), 52, 88);
+      let centerX = arena.cx;
+      let centerY = arena.cy;
+      for (let i = 0; i < 48; i++) {
+        const testX = rand(arena.iconBounds.minX + size * 0.5, arena.iconBounds.maxX - size * 0.5);
+        const testY = rand(arena.iconBounds.minY + size * 0.5, arena.iconBounds.maxY - size * 0.5);
+        if (pointInPolygon(testX, testY, arena.iconPoints)) {
+          centerX = testX;
+          centerY = testY;
+          break;
+        }
+      }
+      const x = clamp(Math.round(centerX - size * 0.5), 0, Math.max(0, w - size));
+      const y = clamp(Math.round(centerY - size * 0.5), 0, Math.max(0, h - size));
 
       const bornAtEpoch = Date.now();
       const expiresAtEpoch = bornAtEpoch + ICON_LIFE_MS;
@@ -1992,6 +2141,7 @@ _handleTap(x, y) {
       const rect = canvas.getBoundingClientRect();
       const w = Math.max(10, Math.round(rect.width || 300));
       const h = Math.max(10, Math.round(rect.height || 300));
+      const arena = getCageArenaLayout(w, h);
 
       ctx.clearRect(0, 0, w, h);
 
@@ -2000,15 +2150,67 @@ _handleTap(x, y) {
       cageGrad.addColorStop(1, "rgba(7,10,18,0.98)");
       fillRoundRect(ctx, 0, 0, w, h, 18, cageGrad);
 
-      for (let i = 1; i <= 7; i++) {
-        const yy = Math.floor((h / 8) * i);
-        ctx.strokeStyle = "rgba(255,255,255,0.04)";
-        ctx.lineWidth = 1;
+      const ambient = ctx.createRadialGradient(arena.cx, arena.cy, 8, arena.cx, arena.cy, arena.outerR * 1.45);
+      ambient.addColorStop(0, "rgba(255,255,255,0.06)");
+      ambient.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = ambient;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = "rgba(0,0,0,0.34)";
+      ctx.beginPath();
+      ctx.ellipse(arena.cx, arena.cy + arena.outerR * 0.98, arena.outerR * 0.92, arena.outerR * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      const wallGrad = ctx.createLinearGradient(arena.cx - arena.outerR, arena.cy - arena.outerR, arena.cx + arena.outerR, arena.cy + arena.outerR);
+      wallGrad.addColorStop(0, "#34383f");
+      wallGrad.addColorStop(0.22, "#111317");
+      wallGrad.addColorStop(0.55, "#07080b");
+      wallGrad.addColorStop(1, "#2a2d33");
+      fillPolygon(ctx, arena.outerPoints, wallGrad);
+      strokePolygon(ctx, arena.outerPoints, "rgba(255,255,255,0.12)", 2);
+
+      const wallInsetGrad = ctx.createLinearGradient(arena.cx, arena.cy - arena.wallInnerR, arena.cx, arena.cy + arena.wallInnerR);
+      wallInsetGrad.addColorStop(0, "rgba(255,255,255,0.18)");
+      wallInsetGrad.addColorStop(1, "rgba(0,0,0,0.18)");
+      strokePolygon(ctx, arena.wallInnerPoints, wallInsetGrad, 2.2);
+
+      const floorGrad = ctx.createRadialGradient(arena.cx, arena.cy - arena.floorR * 0.18, 8, arena.cx, arena.cy, arena.floorR * 1.08);
+      floorGrad.addColorStop(0, "#f4f4f0");
+      floorGrad.addColorStop(0.48, "#dad9d4");
+      floorGrad.addColorStop(1, "#bdb9b2");
+      fillPolygon(ctx, arena.floorPoints, floorGrad);
+      strokePolygon(ctx, arena.floorPoints, "rgba(80,80,80,0.26)", 1.4);
+
+      const ring = arena.ringRect;
+      ctx.lineWidth = Math.max(2, ring.size * 0.018);
+      ctx.strokeStyle = "#255bcb";
+      ctx.strokeRect(ring.x, ring.y, ring.size, ring.size);
+      ctx.strokeStyle = "#bf3131";
+      ctx.beginPath();
+      ctx.moveTo(ring.x + ring.size * 0.5, ring.y);
+      ctx.lineTo(ring.x + ring.size, ring.y);
+      ctx.lineTo(ring.x + ring.size, ring.y + ring.size);
+      ctx.lineTo(ring.x + ring.size * 0.5, ring.y + ring.size);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(30,30,32,0.7)";
+      ctx.lineWidth = Math.max(2, ring.size * 0.012);
+      const coreSize = ring.size * 0.46;
+      ctx.strokeRect(arena.cx - coreSize * 0.5, arena.cy - coreSize * 0.5, coreSize, coreSize);
+
+      arena.outerPoints.forEach((point, idx) => {
+        const light = ctx.createRadialGradient(point.x, point.y, 1, point.x, point.y, arena.outerR * 0.095);
+        const tint = idx % 2 ? "rgba(255,244,210,0.86)" : "rgba(255,255,255,0.9)";
+        light.addColorStop(0, tint);
+        light.addColorStop(0.45, "rgba(255,232,176,0.48)");
+        light.addColorStop(1, "rgba(255,232,176,0)");
+        ctx.fillStyle = light;
         ctx.beginPath();
-        ctx.moveTo(0, yy);
-        ctx.lineTo(w, yy);
-        ctx.stroke();
-      }
+        ctx.arc(point.x, point.y, arena.outerR * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
       this._drawParticles(ctx);
       this._drawCurrentIcon(ctx);
