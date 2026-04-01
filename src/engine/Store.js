@@ -84,10 +84,17 @@ class Store {
     const defaults = {
       lang: "tr",
 
-      coins: 5000,
+      coins: 100,
+      yton: 100,
       cash: 25000,
       premium: false,
       isPremium: false,
+
+      intro: {
+        splashSeen: false,
+        ageVerified: false,
+        profileCompleted: false,
+      },
 
       ui: {
         safe: {
@@ -102,17 +109,17 @@ class Store {
 
       player: {
         id: "player_main",
-        username: "Player",
+        username: "",
         telegramId: "",
         email: "",
-        age: 18,
+        age: null,
 
-        level: 1,
+        level: 0,
         xp: 0,
-        xpToNext: 100,
+        xpToNext: 0,
 
-        energy: 50,
-        energyMax: 50,
+        energy: 100,
+        energyMax: 100,
 
         hp: 100,
         hpMax: 100,
@@ -150,6 +157,7 @@ class Store {
         connectedAddress: "",
         walletAddressInput: "",
         tonBalance: 0,
+        yton: 100,
         depositAddress: "",
         convertYtonInput: "",
         convertTonInput: "",
@@ -431,6 +439,7 @@ class Store {
 
     const merged = this._deepMerge(this._clone(defaults), state || {});
 
+    if (!merged.intro) merged.intro = {};
     if (!merged.player) merged.player = {};
     if (!merged.trade) merged.trade = {};
     if (!merged.wallet) merged.wallet = {};
@@ -458,11 +467,51 @@ class Store {
     }
     if (typeof merged.wallet.conversionMode !== "string") merged.wallet.conversionMode = "";
 
-    const playerName = String(merged.player.username || "Player");
-    const econUnlocked = !!(merged.premium || merged.isPremium) || Number(merged.player.level || 1) >= 50;
-    merged.player.membership = econUnlocked && (merged.premium || merged.isPremium) ? "premium" : (merged.player.membership || "standard");
-    merged.player.canOwnBusiness = econUnlocked;
-    merged.player.canWithdraw = econUnlocked;
+    const intro = merged.intro;
+    intro.splashSeen = !!intro.splashSeen;
+    intro.ageVerified = !!intro.ageVerified;
+    intro.profileCompleted = !!intro.profileCompleted;
+
+    const rawCoins = Number(
+      merged.coins ??
+      merged.yton ??
+      merged.wallet.yton ??
+      defaults.coins
+    );
+    const normalizedCoins = Number.isFinite(rawCoins) ? Math.max(0, rawCoins) : defaults.coins;
+    merged.coins = normalizedCoins;
+    merged.yton = normalizedCoins;
+    merged.wallet.yton = normalizedCoins;
+
+    const player = merged.player;
+    const rawLevel = Number(player.level);
+    player.level = Number.isFinite(rawLevel) ? Math.max(0, Math.floor(rawLevel)) : 0;
+    const rawXp = Number(player.xp || 0);
+    player.xp = Number.isFinite(rawXp) ? Math.max(0, rawXp) : 0;
+
+    const starterXpTrack =
+      player.level === 0 &&
+      Number(player.xp || 0) <= 0 &&
+      Number(player.xpToNext || 0) <= 0;
+
+    if (starterXpTrack) {
+      player.xpToNext = 0;
+    } else {
+      player.xpToNext = Math.max(1, Number(player.xpToNext || 100));
+    }
+
+    const rawEnergyMax = Number(player.energyMax || defaults.player.energyMax);
+    player.energyMax = Math.min(100, Math.max(1, Number.isFinite(rawEnergyMax) ? rawEnergyMax : defaults.player.energyMax));
+    const rawEnergy = Number(player.energy || 0);
+    player.energy = Number.isFinite(rawEnergy)
+      ? Math.max(0, Math.min(player.energyMax, rawEnergy))
+      : 0;
+
+    const playerName = String(player.username || "Player");
+    const econUnlocked = !!(merged.premium || merged.isPremium) || Number(player.level ?? 0) >= 50;
+    player.membership = econUnlocked && (merged.premium || merged.isPremium) ? "premium" : (player.membership || "standard");
+    player.canOwnBusiness = econUnlocked;
+    player.canWithdraw = econUnlocked;
 
     for (const biz of merged.businesses.owned) {
       if (!biz.ownerName) biz.ownerName = playerName;
