@@ -974,6 +974,7 @@
     _hiddenTileIds: null,
     _resultOverlay: null,
     _fxReplayToken: 0,
+    _lastRemoteStateSeq: 0,
 
     _lang() {
       return getPvpCrushLang();
@@ -1091,6 +1092,7 @@
         this._locked = true;
         if (this._running && !this._checkFinish()) {
           if (isOnline) {
+            this._bumpNetworkSeq();
             this._broadcastOnline("state_sync", {
               state: this._toNetworkState(),
               toastKey: "opponentTimedOut",
@@ -1198,10 +1200,25 @@
       return !!(this._matchCtx && this._matchCtx.matchId && !this._matchCtx.isBotMatch);
     },
 
+    _bumpNetworkSeq() {
+      if (!this._state) return 0;
+      this._state.networkSeq = Math.max(1, Number(this._state.networkSeq || 0) + 1);
+      return this._state.networkSeq;
+    },
+
+    _acceptRemoteNetworkState(netState) {
+      const seq = Number(netState?.seq || 0);
+      if (!seq) return true;
+      if (seq <= Number(this._lastRemoteStateSeq || 0)) return false;
+      this._lastRemoteStateSeq = seq;
+      return true;
+    },
+
     _toNetworkState() {
       if (!this._state) return null;
       const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
       return {
+        seq: Number(this._state.networkSeq || 1),
         board: cloneBoard(this._state.board),
         player1Hp: amIPlayer1 ? this._state.meHp : this._state.enemyHp,
         player2Hp: amIPlayer1 ? this._state.enemyHp : this._state.meHp,
@@ -1251,11 +1268,16 @@
 
     _applyNetworkState(netState, meta = {}) {
       if (!this._state || !netState) return;
+      if (meta.fromRemote && !this._acceptRemoteNetworkState(netState)) return;
       if (meta.fromRemote && meta.move?.from && meta.move?.to && !this._remoteSwapAnim) {
         if (this._startRemoteSwapAnimation(netState, meta)) return;
       }
       const amIPlayer1 = !!this._matchCtx?.amIPlayer1;
       const nextBoard = cloneBoard(netState.board || this._state.board);
+      this._state.networkSeq = Math.max(
+        Number(this._state.networkSeq || 1),
+        Number(netState.seq || this._state.networkSeq || 1)
+      );
 
       this._state.board = nextBoard;
       this._state.meHp = amIPlayer1 ? Number(netState.player1Hp) : Number(netState.player2Hp);
@@ -1547,7 +1569,9 @@
         matchmaking: false,
         finished: false,
         turnDeadlineAt: Date.now() + TURN_TIME_MS,
+        networkSeq: 1,
       };
+      this._lastRemoteStateSeq = 0;
 
       if (this._els?.meName) {
         this._els.meName.textContent = this._playerName();
@@ -2043,6 +2067,7 @@
       if (!this._running) return;
       if (this._checkFinish()) {
         if (this._isRealtimeMatch()) {
+          this._bumpNetworkSeq();
           await this._broadcastOnline("finish_sync", {
           state: this._toNetworkState(),
           move: { from: a, to: b },
@@ -2053,6 +2078,7 @@
       }
 
       if (this._isRealtimeMatch()) {
+        this._bumpNetworkSeq();
         await this._broadcastOnline("state_sync", {
           state: this._toNetworkState(),
           move: { from: a, to: b },
