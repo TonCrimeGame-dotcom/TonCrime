@@ -9,7 +9,7 @@ const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
-const AUTH_PATCH_VERSION = "2026-03-26-anon-only-1";
+const AUTH_PATCH_VERSION = "2026-04-01-backend-auth-fallback-1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -101,6 +101,54 @@ function getIdentityCandidates() {
   }
   if (!out.length) out.push(`guest_${makeRandomId()}`);
   return out;
+}
+
+function getBackendCandidates() {
+  const raw = [
+    window.TONCRIME_BACKEND_URL,
+    window.__TONCRIME_BACKEND_URL__,
+    safeLocalGet("toncrime_backend_url"),
+    safeLocalGet("backendUrl"),
+    "https://toncrime.onrender.com",
+  ];
+
+  const out = [];
+  for (const item of raw) {
+    const value = String(item || "").trim().replace(/\/$/, "");
+    if (!value || out.includes(value)) continue;
+    out.push(value);
+  }
+  return out;
+}
+
+async function fetchBackendJson(path, options = {}) {
+  let lastErr = null;
+
+  for (const base of getBackendCandidates()) {
+    const url = `${base}${path}`;
+
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {}),
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        lastErr = new Error(json?.error || `HTTP ${res.status}`);
+        continue;
+      }
+
+      return json;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  throw lastErr || new Error("backend unavailable");
 }
 
 function getAuthCooldownUntil() {
@@ -221,6 +269,47 @@ async function tryAnonymousAuth(identityKey) {
   return null;
 }
 
+async function tryBackendCredentialAuth(identityKey) {
+  if (!identityKey) return null;
+
+  try {
+    const username =
+      String(
+        getTelegramUser()?.username ||
+        window.tcStore?.get?.()?.player?.username ||
+        "Player"
+      ).trim() || "Player";
+
+    const ensured = await fetchBackendJson("/public/ensure-auth-user", {
+      method: "POST",
+      body: JSON.stringify({
+        identity_key: identityKey,
+        username,
+      }),
+    });
+
+    const email = String(ensured?.email || "").trim();
+    const password = String(ensured?.password || "").trim();
+    if (!email || !password) return null;
+
+    const res = await supabase.auth.signInWithPassword({ email, password });
+    if (res?.error) {
+      warnOnce("[AUTH] backend credential sign-in failed:", res.error);
+      return null;
+    }
+
+    if (res?.data?.user) {
+      clearAuthCooldown("backend_auth_success");
+      rememberSuccessfulIdentity(identityKey);
+      return res.data.user;
+    }
+  } catch (err) {
+    warnOnce("[AUTH] backend credential auth unavailable:", err);
+  }
+
+  return null;
+}
+
 export async function ensureAuthSession() {
   if (authPromise) return authPromise;
 
@@ -248,6 +337,11 @@ export async function ensureAuthSession() {
     for (const identityKey of candidates) {
       const anonUser = await tryAnonymousAuth(identityKey);
       if (anonUser?.id) return anonUser;
+    }
+
+    for (const identityKey of candidates) {
+      const backendUser = await tryBackendCredentialAuth(identityKey);
+      if (backendUser?.id) return backendUser;
     }
 
     return null;
