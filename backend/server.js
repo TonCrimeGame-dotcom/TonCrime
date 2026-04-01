@@ -610,6 +610,88 @@ function assertChatSendAllowed(identityKey, req) {
     throw error;
   }
 }
+
+function readRowQuantity(row, keys = []) {
+  for (const key of keys) {
+    const value = Number(row?.[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function sanitizeMarketId(value) {
+  return String(value || '').trim().slice(0, 120);
+}
+
+function sanitizeMarketQuantity(value, fallback = 1) {
+  return Math.max(1, Math.min(9999, Math.floor(asNumber(value, fallback))));
+}
+
+function sanitizeMarketPrice(value, fallback = 1) {
+  return Math.max(1, Math.min(1_000_000_000, Math.floor(asNumber(value, fallback))));
+}
+
+async function resolveVerifiedProfile(req, { allowGuest = true } = {}) {
+  const identity = resolveIdentityContext(req, { allowGuest });
+  if (!identity.ok) {
+    const error = new Error(identity.error || 'identity resolution failed');
+    error.status = identity.status || 401;
+    throw error;
+  }
+
+  const profile = await getProfileByKey(identity.profileKey);
+  if (!profile?.id) {
+    const error = new Error('Profile not found');
+    error.status = 404;
+    throw error;
+  }
+
+  return { identity, profile };
+}
+
+async function getOwnedBusiness(profileId, businessId = '', businessType = '') {
+  let query = supabase
+    .from('businesses')
+    .select('*')
+    .eq('owner_id', profileId);
+
+  if (businessId) query = query.eq('id', businessId);
+  if (businessType) query = query.eq('business_type', businessType);
+
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function getOwnedInventoryItem(profileId, itemKey) {
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .select('*')
+    .eq('profile_id', profileId)
+    .eq('item_key', itemKey)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function getOwnedBusinessProduct(businessId, productId) {
+  const { data, error } = await supabase
+    .from('business_products')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function createMarketListingSecure(params = {}) {
+  const { data, error } = await supabase.rpc('create_market_listing', params);
+  if (error) throw error;
+  return Array.isArray(data) ? (data[0] || null) : (data || null);
+}
 async function getWithdrawById(id) {
   const { data, error } = await supabase
     .from('withdraw_requests')
@@ -832,6 +914,108 @@ app.post('/public/chat/send', makePublicRateLimit('chat-send', 60_000, 80), asyn
     return res.json({ ok: true, item: data });
   } catch (err) {
     return res.status(err.status || 500).json({ ok: false, error: err.message || 'chat send failed' });
+  }
+});
+
+app.post('/public/market/list-inventory', makePublicRateLimit('market-list-inventory', 60_000, 60), async (req, res) => {
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const itemKey = sanitizeMarketId(req.body?.item_key || req.body?.inventory_key);
+    const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
+    const priceYton = sanitizeMarketPrice(req.body?.price_yton, 1);
+
+    if (!itemKey) {
+      return res.status(400).json({ ok: false, error: 'item_key is required' });
+    }
+
+    const invRow = await getOwnedInventoryItem(profile.id, itemKey);
+    if (!invRow?.id) {
+      return res.status(404).json({ ok: false, error: 'Inventory row was not found' });
+    }
+
+    const availableQty = readRowQuantity(invRow, ['quantity', 'qty', 'stock_qty']);
+    if (availableQty < quantity) {
+      return res.status(400).json({ ok: false, error: 'Not enough inventory quantity' });
+    }
+
+    const marketBusiness = await getOwnedBusiness(profile.id, '', 'blackmarket');
+    if (!marketBusiness?.id) {
+      return res.status(400).json({ ok: false, error: 'Blackmarket business is required' });
+    }
+
+    const item = await createMarketListingSecure({
+      p_seller_profile_id: profile.id,
+      p_business_id: marketBusiness.id,
+      p_inventory_item_id: invRow.id,
+      p_quantity: quantity,
+      p_price_yton: priceYton,
+    });
+
+    return res.json({
+      ok: true,
+      item,
+      inventory_item_id: invRow.id,
+      business: {
+        id: marketBusiness.id,
+        name: marketBusiness.name || 'Black Market',
+        business_type: marketBusiness.business_type || 'blackmarket',
+      },
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'inventory listing failed' });
+  }
+});
+
+app.post('/public/market/list-business-product', makePublicRateLimit('market-list-business-product', 60_000, 60), async (req, res) => {
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const businessId = sanitizeMarketId(req.body?.business_id);
+    const productId = sanitizeMarketId(req.body?.business_product_id || req.body?.product_id);
+    const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
+    const priceYton = sanitizeMarketPrice(req.body?.price_yton, 1);
+
+    if (!businessId) {
+      return res.status(400).json({ ok: false, error: 'business_id is required' });
+    }
+    if (!productId) {
+      return res.status(400).json({ ok: false, error: 'business_product_id is required' });
+    }
+
+    const business = await getOwnedBusiness(profile.id, businessId);
+    if (!business?.id) {
+      return res.status(404).json({ ok: false, error: 'Business was not found' });
+    }
+
+    const businessProduct = await getOwnedBusinessProduct(business.id, productId);
+    if (!businessProduct?.id) {
+      return res.status(404).json({ ok: false, error: 'Business product was not found' });
+    }
+
+    const availableQty = readRowQuantity(businessProduct, ['quantity', 'qty', 'stock_qty']);
+    if (availableQty < quantity) {
+      return res.status(400).json({ ok: false, error: 'Not enough business product quantity' });
+    }
+
+    const item = await createMarketListingSecure({
+      p_seller_profile_id: profile.id,
+      p_business_id: business.id,
+      p_business_product_id: businessProduct.id,
+      p_quantity: quantity,
+      p_price_yton: priceYton,
+    });
+
+    return res.json({
+      ok: true,
+      item,
+      business_product_id: businessProduct.id,
+      business: {
+        id: business.id,
+        name: business.name || 'Business',
+        business_type: business.business_type || '',
+      },
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'business product listing failed' });
   }
 });
 
