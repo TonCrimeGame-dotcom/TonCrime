@@ -34,10 +34,111 @@ const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
 
+const STARTING_YTON = 100;
+const STARTING_LEVEL = 0;
+const STARTING_XP = 0;
+const STARTING_XP_TO_NEXT = 0;
+const DEFAULT_XP_TO_NEXT = 100;
+const MAX_PLAYER_ENERGY = 100;
+
+let _viewportLockHeight = 0;
+let _viewportLockWidth = 0;
+let _viewportOrientation = "";
+let _telegramViewportBound = false;
+
+function toFiniteNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function readPlayerLevel(value, fallback = STARTING_LEVEL) {
+  return Math.max(0, Math.floor(toFiniteNumber(value, fallback)));
+}
+
+function readPlayerXpToNext(player = null) {
+  const level = readPlayerLevel(player?.level, STARTING_LEVEL);
+  const xp = Math.max(0, toFiniteNumber(player?.xp, STARTING_XP));
+  const xpToNext = toFiniteNumber(player?.xpToNext, STARTING_XP_TO_NEXT);
+  if (level === STARTING_LEVEL && xp <= 0 && xpToNext <= 0) {
+    return STARTING_XP_TO_NEXT;
+  }
+  return Math.max(1, xpToNext || DEFAULT_XP_TO_NEXT);
+}
+
+function getViewportSize() {
+  return {
+    w: Math.max(1, Math.floor(_viewportLockWidth || window.innerWidth || 1)),
+    h: Math.max(1, Math.floor(_viewportLockHeight || window.innerHeight || 1)),
+  };
+}
+
+function syncTelegramViewportLock() {
+  const tg = window.Telegram?.WebApp;
+  const orientation =
+    (window.innerWidth || 0) > (window.innerHeight || 0) ? "landscape" : "portrait";
+
+  if (orientation !== _viewportOrientation) {
+    _viewportOrientation = orientation;
+    _viewportLockHeight = 0;
+    _viewportLockWidth = 0;
+  }
+
+  const nextHeight = Math.max(
+    0,
+    toFiniteNumber(tg?.viewportStableHeight, 0),
+    toFiniteNumber(tg?.viewportHeight, 0),
+    toFiniteNumber(window.visualViewport?.height, 0),
+    toFiniteNumber(window.innerHeight, 0)
+  );
+  const nextWidth = Math.max(
+    0,
+    toFiniteNumber(window.visualViewport?.width, 0),
+    toFiniteNumber(window.innerWidth, 0)
+  );
+
+  _viewportLockHeight = Math.max(_viewportLockHeight || 0, nextHeight || 0);
+  _viewportLockWidth = Math.max(_viewportLockWidth || 0, nextWidth || 0);
+
+  const { w, h } = getViewportSize();
+  document.documentElement.style.setProperty("--tc-app-width", `${w}px`);
+  document.documentElement.style.setProperty("--tc-app-height", `${h}px`);
+}
+
+function initTelegramViewport() {
+  try {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      syncTelegramViewportLock();
+      return;
+    }
+
+    tg.ready();
+    tg.expand();
+
+    if (typeof tg.disableVerticalSwipes === "function") {
+      tg.disableVerticalSwipes();
+    }
+
+    if (typeof tg.requestFullscreen === "function") {
+      Promise.resolve(tg.requestFullscreen()).catch(() => null);
+    }
+
+    syncTelegramViewportLock();
+
+    if (!_telegramViewportBound && typeof tg.onEvent === "function") {
+      _telegramViewportBound = true;
+      tg.onEvent("viewportChanged", syncTelegramViewportLock);
+      tg.onEvent("fullscreenChanged", syncTelegramViewportLock);
+      tg.onEvent("fullscreenFailed", syncTelegramViewportLock);
+    }
+  } catch (_) {
+    syncTelegramViewportLock();
+  }
+}
+
 function getSafeArea() {
   const safe = document.getElementById("safe");
-  const vw = window.innerWidth || 0;
-  const vh = window.innerHeight || 0;
+  const { w: vw, h: vh } = getViewportSize();
 
   if (!safe) {
     return { x: 0, y: 0, w: vw, h: vh };
@@ -55,8 +156,7 @@ function getSafeArea() {
 
 function fitCanvas() {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const cssW = Math.floor(window.innerWidth);
-  const cssH = Math.floor(window.innerHeight);
+  const { w: cssW, h: cssH } = getViewportSize();
 
   canvas.width = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
@@ -114,14 +214,7 @@ function normalizeGlobalUi(store) {
   });
 }
 
-try {
-  const tg = window.Telegram?.WebApp;
-  if (tg) {
-    tg.ready();
-    tg.expand();
-  }
-} catch (_) {}
-
+initTelegramViewport();
 fitCanvas();
 
 /* ===== STORE ===== */
@@ -148,7 +241,8 @@ function saveStore(state) {
 
 const defaultState = {
   lang: "tr",
-  coins: 4769,
+  coins: STARTING_YTON,
+  yton: STARTING_YTON,
   premium: false,
 
   intro: {
@@ -161,13 +255,13 @@ const defaultState = {
     username: "",
     telegramId: "",
     age: null,
-    level: 1,
-    xp: 25,
-    xpToNext: 100,
+    level: STARTING_LEVEL,
+    xp: STARTING_XP,
+    xpToNext: STARTING_XP_TO_NEXT,
     weaponName: "Silah Yok",
     weaponBonus: "+0%",
-    energy: 100,
-    energyMax: 100,
+    energy: MAX_PLAYER_ENERGY,
+    energyMax: MAX_PLAYER_ENERGY,
     energyIntervalMs: 5 * 60 * 1000,
     lastEnergyAt: Date.now(),
   },
@@ -227,9 +321,65 @@ const initial = loaded
 const store = new Store(initial);
 window.tcStore = store;
 
+function buildStarterStatePatch(source = store.get()) {
+  const snapshot = source || {};
+  const player = snapshot.player || {};
+  const wallet = snapshot.wallet || {};
+  const telegramId = String(player.telegramId || getTelegramUser()?.id || "").trim();
+  const username =
+    String(
+      player.username ||
+      getTelegramUser()?.username ||
+      [getTelegramUser()?.first_name, getTelegramUser()?.last_name].filter(Boolean).join(" ") ||
+      ""
+    ).trim();
+
+  return {
+    coins: STARTING_YTON,
+    yton: STARTING_YTON,
+    wallet: {
+      ...wallet,
+      yton: STARTING_YTON,
+    },
+    player: {
+      ...player,
+      telegramId,
+      username,
+      age: null,
+      level: STARTING_LEVEL,
+      xp: STARTING_XP,
+      xpToNext: STARTING_XP_TO_NEXT,
+      weaponName: "Silah Yok",
+      weaponBonus: "+0%",
+      energy: MAX_PLAYER_ENERGY,
+      energyMax: MAX_PLAYER_ENERGY,
+      energyIntervalMs: 5 * 60 * 1000,
+      lastEnergyAt: Date.now(),
+    },
+  };
+}
+
+function ensureStarterProfileState() {
+  const snapshot = store.get();
+  if (snapshot?.intro?.profileCompleted) return;
+  store.set(buildStarterStatePatch(snapshot));
+}
+
+ensureStarterProfileState();
 normalizeGlobalUi(store);
 
 window.addEventListener("resize", () => {
+  syncTelegramViewportLock();
+  fitCanvas();
+  normalizeGlobalUi(store);
+});
+window.addEventListener("orientationchange", () => {
+  syncTelegramViewportLock();
+  fitCanvas();
+  normalizeGlobalUi(store);
+});
+window.visualViewport?.addEventListener?.("resize", () => {
+  syncTelegramViewportLock();
   fitCanvas();
   normalizeGlobalUi(store);
 });
@@ -299,6 +449,192 @@ let _profileSyncBusy = false;
 let _lastProfilePayload = "";
 let _profileSyncEnabled = true;
 let _profileSyncRetryAfter = 0;
+let _profileBootstrapPromise = null;
+
+function getProfileIdentityKey() {
+  return String(
+    store.get()?.player?.telegramId ||
+    getTelegramUser()?.id ||
+    window.tcGetProfileKey?.(store) ||
+    ""
+  ).trim();
+}
+
+function getBackendCandidates() {
+  const raw = [
+    window.TONCRIME_BACKEND_URL,
+    window.__TONCRIME_BACKEND_URL__,
+    localStorage.getItem("toncrime_backend_url"),
+    localStorage.getItem("backendUrl"),
+    "https://toncrime.onrender.com",
+  ];
+
+  const out = [];
+  for (const item of raw) {
+    const value = String(item || "").trim().replace(/\/$/, "");
+    if (!value || out.includes(value)) continue;
+    out.push(value);
+  }
+  return out;
+}
+
+async function fetchBackendJson(path, options = {}) {
+  let lastErr = null;
+
+  for (const base of getBackendCandidates()) {
+    const url = `${base}${path}`;
+
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {}),
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        lastErr = new Error(json?.error || `HTTP ${res.status}`);
+        continue;
+      }
+
+      return json;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  throw lastErr || new Error("backend unavailable");
+}
+
+function buildProfilePayload() {
+  const s = store.get();
+  const p = s.player || {};
+  const telegramId = getProfileIdentityKey();
+
+  if (!telegramId || !s?.intro?.profileCompleted) return null;
+
+  return {
+    telegram_id: telegramId,
+    username: String(p.username || "Player").trim() || "Player",
+    age: p.age ?? null,
+    level: readPlayerLevel(p.level, STARTING_LEVEL),
+    coins: Math.max(0, toFiniteNumber(s.coins, STARTING_YTON)),
+    energy: Math.max(0, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(p.energy, MAX_PLAYER_ENERGY))),
+    energy_max: Math.max(1, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(p.energyMax, MAX_PLAYER_ENERGY))),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function applyRemoteProfile(profile) {
+  if (!profile || typeof profile !== "object") return false;
+
+  const snapshot = store.get();
+  const intro = snapshot.intro || {};
+  const player = snapshot.player || {};
+  const wallet = snapshot.wallet || {};
+  const username = String(
+    profile.username ||
+    player.username ||
+    getTelegramUser()?.username ||
+    [getTelegramUser()?.first_name, getTelegramUser()?.last_name].filter(Boolean).join(" ") ||
+    "Player"
+  ).trim() || "Player";
+  const level = readPlayerLevel(profile.level, player.level);
+  const energyMax = Math.max(
+    1,
+    Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(profile.energy_max, player.energyMax || MAX_PLAYER_ENERGY))
+  );
+  const energy = Math.max(
+    0,
+    Math.min(energyMax, toFiniteNumber(profile.energy, energyMax))
+  );
+  const coins = Math.max(0, toFiniteNumber(profile.coins, snapshot.coins || STARTING_YTON));
+  const xp = level === STARTING_LEVEL ? STARTING_XP : Math.max(0, toFiniteNumber(player.xp, STARTING_XP));
+  const xpToNext =
+    level === STARTING_LEVEL && xp <= 0
+      ? STARTING_XP_TO_NEXT
+      : Math.max(1, toFiniteNumber(player.xpToNext, DEFAULT_XP_TO_NEXT));
+
+  store.set({
+    coins,
+    yton: coins,
+    wallet: {
+      ...wallet,
+      yton: coins,
+    },
+    intro: {
+      ...intro,
+      splashSeen: true,
+      ageVerified: profile.age != null ? true : !!intro.ageVerified,
+      profileCompleted: profile.age != null ? !!username : !!intro.profileCompleted,
+    },
+    player: {
+      ...player,
+      telegramId: String(profile.telegram_id || player.telegramId || getProfileIdentityKey()).trim(),
+      username,
+      age: profile.age ?? player.age ?? null,
+      level,
+      xp,
+      xpToNext,
+      energy,
+      energyMax,
+      lastEnergyAt: Date.now(),
+    },
+  });
+
+  return true;
+}
+
+async function fetchProfileFromSupabase(identityKey) {
+  if (!_profileSyncEnabled || !identityKey) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("telegram_id", identityKey)
+      .maybeSingle();
+
+    if (error) {
+      if (isSupabaseProfileSyncBlocked(error)) {
+        _profileSyncEnabled = false;
+      }
+      throw error;
+    }
+
+    return data || null;
+  } catch (err) {
+    console.warn("Supabase profile fetch failed:", err);
+    return null;
+  }
+}
+
+async function fetchProfileFromBackend(identityKey) {
+  if (!identityKey) return null;
+  try {
+    const json = await fetchBackendJson(
+      `/public/profile?identity_key=${encodeURIComponent(identityKey)}`
+    );
+    return json?.item || null;
+  } catch (err) {
+    console.warn("Backend profile fetch failed:", err);
+    return null;
+  }
+}
+
+async function restoreProfileFromCloud(identityKey = getProfileIdentityKey()) {
+  if (!identityKey) return false;
+
+  const backendProfile = await fetchProfileFromBackend(identityKey);
+  if (applyRemoteProfile(backendProfile)) return true;
+
+  const supabaseProfile = await fetchProfileFromSupabase(identityKey);
+  if (applyRemoteProfile(supabaseProfile)) return true;
+
+  return false;
+}
 
 function isSupabaseProfileSyncBlocked(error) {
   const code = String(error?.code || "").trim();
@@ -312,34 +648,8 @@ function isSupabaseProfileSyncBlocked(error) {
   );
 }
 
-async function syncProfileToSupabase() {
-  if (!_profileSyncEnabled || _profileSyncBusy) return;
-  if (_profileSyncRetryAfter && Date.now() < _profileSyncRetryAfter) return;
-
-  const s = store.get();
-  const p = s.player || {};
-  const telegramId = String(
-    p.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""
-  );
-
-  if (!telegramId) return;
-  if (!s?.intro?.profileCompleted) return;
-
-  const payload = {
-    telegram_id: telegramId,
-    username: String(p.username || "Player"),
-    age: p.age ?? null,
-    level: Number(p.level || 1),
-    coins: Number(s.coins || 0),
-    energy: Number(p.energy || 10),
-    energy_max: Number(p.energyMax || 10),
-    updated_at: new Date().toISOString(),
-  };
-
-  const payloadKey = JSON.stringify(payload);
-  if (payloadKey === _lastProfilePayload) return;
-
-  _profileSyncBusy = true;
+async function syncProfileToSupabase(payload) {
+  if (!_profileSyncEnabled) return false;
 
   try {
     const { error } = await supabase
@@ -349,30 +659,101 @@ async function syncProfileToSupabase() {
     if (error) {
       if (isSupabaseProfileSyncBlocked(error)) {
         _profileSyncEnabled = false;
-        _lastProfileSyncAt = Date.now();
         console.warn("Supabase profile sync disabled:", error);
-        return;
+      } else {
+        console.error("Supabase profile sync error:", error);
       }
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Supabase profile sync fatal:", err);
+    return false;
+  }
+}
+
+async function syncProfileToBackend(payload) {
+  try {
+    const json = await fetchBackendJson("/public/profile-sync", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return !!json?.item;
+  } catch (err) {
+    console.error("Backend profile sync failed:", err);
+    return false;
+  }
+}
+
+async function syncProfileToCloud(force = false) {
+  if (_profileSyncBusy) return;
+  if (_profileSyncRetryAfter && Date.now() < _profileSyncRetryAfter) return;
+
+  const payload = buildProfilePayload();
+  if (!payload) return;
+  const payloadKey = JSON.stringify(payload);
+  if (!force && payloadKey === _lastProfilePayload) return;
+
+  _profileSyncBusy = true;
+
+  try {
+    let synced = await syncProfileToSupabase(payload);
+    if (!synced) {
+      synced = await syncProfileToBackend(payload);
+    }
+
+    if (!synced) {
       _profileSyncRetryAfter = Date.now() + 30000;
-      console.error("Supabase profile sync error:", error);
       return;
     }
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
     _profileSyncRetryAfter = 0;
-  } catch (err) {
-    _profileSyncRetryAfter = Date.now() + 30000;
-    console.error("Supabase profile sync fatal:", err);
   } finally {
     _profileSyncBusy = false;
   }
 }
 
+async function bootstrapPlayerProfile() {
+  if (_profileBootstrapPromise) return _profileBootstrapPromise;
+
+  _profileBootstrapPromise = (async () => {
+    ensureStarterProfileState();
+
+    if (typeof window.tcEnsureAuthSession === "function") {
+      await window.tcEnsureAuthSession().catch(() => null);
+    }
+
+    const identityKey = getProfileIdentityKey();
+    if (identityKey && typeof window.tcBindProfileToCurrentAuth === "function") {
+      await window.tcBindProfileToCurrentAuth(identityKey).catch(() => null);
+    }
+
+    const restored = await restoreProfileFromCloud(identityKey);
+    if (!restored) {
+      ensureStarterProfileState();
+    }
+
+    await syncProfileToCloud(true).catch(() => null);
+  })();
+
+  return _profileBootstrapPromise;
+}
+
+const profileBootstrapReady = bootstrapPlayerProfile();
+window.tcProfileBootstrapReady = profileBootstrapReady;
+
+window.addEventListener("tc:profile-sync-now", () => {
+  _lastProfileSyncAt = 0;
+  syncProfileToCloud(true).catch(() => null);
+});
+
 (function profileSyncLoop() {
   const now = Date.now();
   if (now - _lastProfileSyncAt > 1500) {
-    syncProfileToSupabase();
+    syncProfileToCloud();
   }
   setTimeout(profileSyncLoop, 1500);
 })();
@@ -396,7 +777,7 @@ function tickEnergy() {
 
   const now = Date.now();
   const interval = Math.max(10000, Number(p.energyIntervalMs || 300000));
-  const maxE = Math.max(1, Number(p.energyMax || 10));
+  const maxE = Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(p.energyMax || MAX_PLAYER_ENERGY)));
   const e = Math.max(0, Math.min(maxE, Number(p.energy || 0)));
 
   if (e >= maxE) return;
@@ -544,7 +925,7 @@ class LegacyMissionsScene {
   _grantEnergy(n) {
     const s = this.store.get();
     const p = s.player || {};
-    const maxE = Math.max(1, Number(p.energyMax || 10));
+    const maxE = Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(p.energyMax || MAX_PLAYER_ENERGY)));
     const next = Math.min(maxE, Number(p.energy || 0) + Number(n || 0));
     this.store.set({ player: { ...p, energy: next } });
   }
@@ -553,13 +934,14 @@ class LegacyMissionsScene {
     const s = this.store.get();
     const p = s.player || {};
     let xp = Number(p.xp || 0) + Number(n || 0);
-    let level = Number(p.level || 1);
-    let xpToNext = Number(p.xpToNext || 100);
+    let level = readPlayerLevel(p.level, STARTING_LEVEL);
+    let xpToNext = readPlayerXpToNext(p);
+    if (xpToNext <= 0) xpToNext = DEFAULT_XP_TO_NEXT;
 
-    while (xp >= xpToNext) {
+    while (xpToNext > 0 && xp >= xpToNext) {
       xp -= xpToNext;
       level += 1;
-      xpToNext = 100;
+      xpToNext = DEFAULT_XP_TO_NEXT;
     }
 
     this.store.set({
@@ -657,7 +1039,7 @@ class LegacyMissionsScene {
       return;
     }
 
-    if (type === "level" && Number(p.level || 1) >= 55 && m.levelClaimedAt !== 55) {
+    if (type === "level" && readPlayerLevel(p.level, STARTING_LEVEL) >= 55 && m.levelClaimedAt !== 55) {
       m.levelClaimedAt = 55;
       this.store.set({ missions: m });
       this._grantCoins(50);
@@ -840,14 +1222,14 @@ class LegacyMissionsScene {
         },
       },
       {
-        title: `Level Görevi (Seviye ${Number(p.level || 1)}/55)`,
+        title: `Level Görevi (Seviye ${readPlayerLevel(p.level, STARTING_LEVEL)}/55)`,
         desc: "55 level ve üstü ödül açılır.",
         reward: m.levelClaimedAt === 55 ? "Alındı" : "Ödül: +50 coin +25 XP",
         leftBtn: { text: "Seviye Bilgisi", action: "", disabled: true },
         rightBtn: {
           text: m.levelClaimedAt === 55 ? "Alındı" : "Ödülü Al",
           action: "claim:level",
-          disabled: m.levelClaimedAt === 55 || Number(p.level || 1) < 55,
+          disabled: m.levelClaimedAt === 55 || readPlayerLevel(p.level, STARTING_LEVEL) < 55,
         },
       },
       {
@@ -994,7 +1376,7 @@ window.tc.dev = {
   energy(n = 10) {
     const s = store.get();
     const p = s.player || {};
-    const maxE = Math.max(1, Number(p.energyMax || 10));
+    const maxE = Math.max(1, Math.min(MAX_PLAYER_ENERGY, Number(p.energyMax || MAX_PLAYER_ENERGY)));
     const next = Math.min(maxE, Number(p.energy || 0) + Number(n || 0));
     store.set({ player: { ...p, energy: next } });
     console.log("energy:", store.get().player.energy);
@@ -1043,7 +1425,7 @@ window.tc.dev = {
 if (typeof BootScene !== "function") {
   throw new Error('BootScene export bulunamadı. BootScene.js içinde export default veya export class BootScene olmalı.');
 }
-scenes.register("boot", new BootScene({ assets, i18n, scenes }));
+scenes.register("boot", new BootScene({ assets, i18n, scenes, readyPromise: profileBootstrapReady }));
 scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("profile", new ProfileScene({ store, input, scenes, assets }));
