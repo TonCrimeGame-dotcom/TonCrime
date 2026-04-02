@@ -407,6 +407,7 @@ const defaultState = {
     splashSeen: false,
     ageVerified: false,
     profileCompleted: false,
+    tutorialSeen: false,
   },
 
   player: {
@@ -457,6 +458,15 @@ const defaultState = {
     lastDailyKey: "",
   },
 
+  dailyLogin: {
+    lastClaimKey: "",
+    streak: 0,
+    pending: false,
+    pendingKey: "",
+    pendingReward: 0,
+    pendingStreak: 0,
+  },
+
   pvp: {
     wins: 0,
     losses: 0,
@@ -481,6 +491,7 @@ const initial = loaded
       player: { ...defaultState.player, ...(loaded.player || {}) },
       stars: { ...defaultState.stars, ...(loaded.stars || {}) },
       missions: { ...defaultState.missions, ...(loaded.missions || {}) },
+      dailyLogin: { ...defaultState.dailyLogin, ...(loaded.dailyLogin || {}) },
       pvp: { ...defaultState.pvp, ...(loaded.pvp || {}) },
       ui: {
         ...(defaultState.ui || {}),
@@ -570,21 +581,22 @@ window.visualViewport?.addEventListener?.("resize", () => {
   normalizeGlobalUi(store);
 });
 
-function dayKey() {
+function dayKey(value = Date.now()) {
   try {
+    const targetDate = value instanceof Date ? value : new Date(value);
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: APP_TIMEZONE,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    }).formatToParts(new Date());
+    }).formatToParts(targetDate);
 
     const year = parts.find((part) => part.type === "year")?.value || "0000";
     const month = parts.find((part) => part.type === "month")?.value || "00";
     const day = parts.find((part) => part.type === "day")?.value || "00";
     return `${year}-${month}-${day}`;
   } catch {
-    const d = new Date();
+    const d = value instanceof Date ? value : new Date(value);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
       d.getDate()
     ).padStart(2, "0")}`;
@@ -2044,6 +2056,361 @@ window.addEventListener("tc:pvp:lose", () => {
   syncLeaderboardFromCloud(true).catch(() => null);
 });
 
+function startProgressionOverlay(storeRef, i18nRef) {
+  const ROOT_ID = "tc-progression-overlay";
+  let currentSceneKey = "";
+  let mode = "";
+  let tutorialStep = 0;
+  let refs = null;
+
+  function ui(tr, en) {
+    const lang = i18nRef?.getLang?.() || storeRef.get()?.lang || "tr";
+    return lang === "en" ? en : tr;
+  }
+
+  function formatCoins(value) {
+    const locale = ui("tr-TR", "en-US");
+    return Number(value || 0).toLocaleString(locale);
+  }
+
+  function ensureDailyLoginPending() {
+    const snapshot = storeRef.get() || {};
+    if (!snapshot?.intro?.profileCompleted) return false;
+
+    const daily = snapshot.dailyLogin || {};
+    const today = dayKey();
+    if (String(daily.lastClaimKey || "") === today || String(daily.pendingKey || "") === today || daily.pending) {
+      return false;
+    }
+
+    const yesterday = dayKey(Date.now() - 24 * 60 * 60 * 1000);
+    const streak = String(daily.lastClaimKey || "") === yesterday
+      ? Math.max(1, Number(daily.streak || 0) + 1)
+      : 1;
+    const reward = Math.min(90, 12 + (streak - 1) * 6);
+
+    storeRef.set({
+      dailyLogin: {
+        ...daily,
+        pending: true,
+        pendingKey: today,
+        pendingReward: reward,
+        pendingStreak: streak,
+      },
+    });
+    return true;
+  }
+
+  function getTutorialSteps() {
+    return [
+      {
+        title: ui("Hud ve Profil", "HUD and Profile"),
+        body: ui(
+          "Ust panelden enerji, seviye, YTON ve aktif silahini takip et. Sol ustteki buton artik Satin Al ekranini acar.",
+          "Track energy, level, YTON and your active weapon from the HUD. The top-left button now opens the Buy screen."
+        ),
+      },
+      {
+        title: ui("Gorev Merkezi", "Mission Center"),
+        body: ui(
+          "Gorevlerde reklam, Telegram, PvP ve arkadas daveti akislari vardir. Reklamlar enerji doldurur, davet linki ise gorev ilerlemesini acar.",
+          "Missions cover ads, Telegram, PvP and friend invites. Ads refill energy, while your invite link drives referral progress."
+        ),
+      },
+      {
+        title: ui("Black Market", "Black Market"),
+        body: ui(
+          "Kesfet, Envanter, Pazar, Carklar ve Satin Al sekmeleri ayni ekrandadir. Premium uyelik artik Satin Al ekraninda satilir.",
+          "Explore, Inventory, Market, Wheels and Buy all live in the same screen. Premium membership is now sold inside the Buy tab."
+        ),
+      },
+      {
+        title: ui("PvP Modlari", "PvP Modes"),
+        body: ui(
+          "Slot Arena, Cage Fight ve diger PvP modlarinda mac sonucu otomatik kaydedilir. Rakip cikarsa hukum galibiyet artik aninda verilir.",
+          "Slot Arena, Cage Fight and the other PvP modes now save results automatically. If the opponent leaves, you get the forfeit win immediately."
+        ),
+      },
+      {
+        title: ui("Isletmeler ve Pazar", "Businesses and Market"),
+        body: ui(
+          "Premium uyelikle bir isletme acip gunluk uretim toplayabilir, urunleri envantere cekip pazarda satabilirsin.",
+          "With premium membership you can unlock a business, collect daily production, move items into inventory and list them on the market."
+        ),
+      },
+    ];
+  }
+
+  function ensureDom() {
+    if (refs?.root) return refs;
+
+    if (!document.getElementById(`${ROOT_ID}-style`)) {
+      const style = document.createElement("style");
+      style.id = `${ROOT_ID}-style`;
+      style.textContent = `
+        #${ROOT_ID} {
+          position: fixed;
+          inset: 0;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 7000;
+          background: rgba(5, 8, 14, 0.72);
+          backdrop-filter: blur(14px);
+        }
+        #${ROOT_ID}.open { display: flex; }
+        #${ROOT_ID} .tc-progress-card {
+          width: min(100%, 420px);
+          border-radius: 24px;
+          padding: 22px 20px 18px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: linear-gradient(180deg, rgba(18,24,34,0.94), rgba(8,12,18,0.96));
+          box-shadow: 0 24px 70px rgba(0,0,0,0.38);
+          color: #fff;
+        }
+        #${ROOT_ID} .tc-progress-kicker {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          border-radius: 999px;
+          font: 800 11px system-ui;
+          letter-spacing: 0.5px;
+          color: #ffe4a8;
+          background: rgba(255,201,110,0.12);
+          border: 1px solid rgba(255,201,110,0.24);
+        }
+        #${ROOT_ID} .tc-progress-title {
+          margin-top: 14px;
+          font: 900 22px system-ui;
+          line-height: 1.15;
+        }
+        #${ROOT_ID} .tc-progress-body {
+          margin-top: 10px;
+          color: rgba(255,255,255,0.78);
+          font: 500 14px/1.5 system-ui;
+        }
+        #${ROOT_ID} .tc-progress-highlight {
+          margin-top: 16px;
+          padding: 14px 16px;
+          border-radius: 18px;
+          background: linear-gradient(180deg, rgba(255,214,120,0.14), rgba(96,56,18,0.18));
+          border: 1px solid rgba(255,214,120,0.22);
+        }
+        #${ROOT_ID} .tc-progress-highlight strong {
+          display: block;
+          font: 900 24px system-ui;
+          color: #ffe8b6;
+        }
+        #${ROOT_ID} .tc-progress-highlight span {
+          display: block;
+          margin-top: 4px;
+          color: rgba(255,255,255,0.72);
+          font: 600 12px system-ui;
+        }
+        #${ROOT_ID} .tc-progress-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 18px;
+        }
+        #${ROOT_ID} button {
+          flex: 1 1 0;
+          height: 42px;
+          border: none;
+          border-radius: 14px;
+          cursor: pointer;
+          font: 800 13px system-ui;
+        }
+        #${ROOT_ID} .tc-progress-secondary {
+          color: rgba(255,255,255,0.86);
+          background: rgba(255,255,255,0.08);
+        }
+        #${ROOT_ID} .tc-progress-primary {
+          color: #2a1204;
+          background: linear-gradient(180deg, rgba(255,234,171,0.98), rgba(255,193,74,0.96));
+          box-shadow: 0 10px 24px rgba(255,176,74,0.22);
+        }
+        #${ROOT_ID} .tc-progress-footer {
+          margin-top: 12px;
+          color: rgba(255,255,255,0.52);
+          font: 600 11px system-ui;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const root = document.createElement("div");
+    root.id = ROOT_ID;
+    root.innerHTML = `
+      <div class="tc-progress-card" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="tc-progress-kicker" id="${ROOT_ID}-kicker"></div>
+        <div class="tc-progress-title" id="${ROOT_ID}-title"></div>
+        <div class="tc-progress-body" id="${ROOT_ID}-body"></div>
+        <div class="tc-progress-highlight" id="${ROOT_ID}-highlight"></div>
+        <div class="tc-progress-actions">
+          <button class="tc-progress-secondary" id="${ROOT_ID}-secondary" type="button"></button>
+          <button class="tc-progress-primary" id="${ROOT_ID}-primary" type="button"></button>
+        </div>
+        <div class="tc-progress-footer" id="${ROOT_ID}-footer"></div>
+      </div>
+    `;
+    document.body.appendChild(root);
+
+    refs = {
+      root,
+      kicker: root.querySelector(`#${ROOT_ID}-kicker`),
+      title: root.querySelector(`#${ROOT_ID}-title`),
+      body: root.querySelector(`#${ROOT_ID}-body`),
+      highlight: root.querySelector(`#${ROOT_ID}-highlight`),
+      secondary: root.querySelector(`#${ROOT_ID}-secondary`),
+      primary: root.querySelector(`#${ROOT_ID}-primary`),
+      footer: root.querySelector(`#${ROOT_ID}-footer`),
+    };
+
+    refs.secondary.addEventListener("click", () => {
+      if (mode === "tutorial") {
+        const snapshot = storeRef.get() || {};
+        storeRef.set({
+          intro: {
+            ...(snapshot.intro || {}),
+            tutorialSeen: true,
+          },
+        });
+      }
+      hide();
+      evaluate();
+    });
+
+    refs.primary.addEventListener("click", () => {
+      if (mode === "daily") {
+        const snapshot = storeRef.get() || {};
+        const daily = snapshot.dailyLogin || {};
+        const reward = Math.max(0, Number(daily.pendingReward || 0));
+        const nextCoins = Math.max(0, Number(snapshot.coins ?? snapshot.yton ?? 0) + reward);
+        storeRef.set({
+          coins: nextCoins,
+          yton: nextCoins,
+          wallet: {
+            ...(snapshot.wallet || {}),
+            yton: nextCoins,
+          },
+          dailyLogin: {
+            ...daily,
+            lastClaimKey: String(daily.pendingKey || dayKey()),
+            streak: Math.max(1, Number(daily.pendingStreak || daily.streak || 1)),
+            pending: false,
+            pendingKey: "",
+            pendingReward: 0,
+            pendingStreak: 0,
+          },
+        });
+        hide();
+        evaluate();
+        return;
+      }
+
+      const steps = getTutorialSteps();
+      if (tutorialStep >= steps.length - 1) {
+        const snapshot = storeRef.get() || {};
+        storeRef.set({
+          intro: {
+            ...(snapshot.intro || {}),
+            tutorialSeen: true,
+          },
+        });
+        hide();
+        evaluate();
+        return;
+      }
+
+      tutorialStep += 1;
+      render();
+    });
+
+    return refs;
+  }
+
+  function hide() {
+    if (!refs?.root) return;
+    refs.root.classList.remove("open");
+    mode = "";
+  }
+
+  function render() {
+    ensureDom();
+    const snapshot = storeRef.get() || {};
+
+    if (mode === "daily") {
+      const daily = snapshot.dailyLogin || {};
+      refs.kicker.textContent = ui("GUNLUK GIRIS", "DAILY LOGIN");
+      refs.title.textContent = ui("Gunluk odulun hazir", "Your daily reward is ready");
+      refs.body.textContent = ui(
+        "Bugun oyuna girdigin icin YTON odulunu al. Ardisik gunlerde giris yaptikca seri bonusu buyur.",
+        "Claim your YTON reward for logging in today. Keep coming back daily to grow your streak bonus."
+      );
+      refs.highlight.innerHTML = `<strong>+${formatCoins(daily.pendingReward || 0)} YTON</strong><span>${ui(`Seri gun ${Math.max(1, Number(daily.pendingStreak || 1))}`, `Streak day ${Math.max(1, Number(daily.pendingStreak || 1))}`)}</span>`;
+      refs.secondary.style.display = "none";
+      refs.primary.textContent = ui("Odulu Al", "Claim Reward");
+      refs.footer.textContent = ui("Odul bir kez gunluk verilir.", "This reward is granted once per day.");
+      return;
+    }
+
+    const steps = getTutorialSteps();
+    const step = steps[Math.max(0, Math.min(tutorialStep, steps.length - 1))];
+    refs.kicker.textContent = ui("OYUN REHBERI", "GAME GUIDE");
+    refs.title.textContent = step.title;
+    refs.body.textContent = step.body;
+    refs.highlight.innerHTML = `<strong>${tutorialStep + 1} / ${steps.length}</strong><span>${ui("Temel sistemleri 1 dakikada ogren.", "Learn the core systems in under a minute.")}</span>`;
+    refs.secondary.style.display = "";
+    refs.secondary.textContent = ui("Gec", "Skip");
+    refs.primary.textContent = tutorialStep >= steps.length - 1 ? ui("Basla", "Start") : ui("Sonraki", "Next");
+    refs.footer.textContent = ui("Bu rehber ilk acilista otomatik gosterilir.", "This guide is shown automatically on the first launch.");
+  }
+
+  function show(nextMode) {
+    ensureDom();
+    if (mode !== nextMode) {
+      mode = nextMode;
+      if (nextMode === "tutorial") tutorialStep = 0;
+    }
+    render();
+    refs.root.classList.add("open");
+  }
+
+  function evaluate() {
+    if (ensureDailyLoginPending()) return;
+
+    const snapshot = storeRef.get() || {};
+    if (currentSceneKey !== "home") {
+      hide();
+      return;
+    }
+
+    if (snapshot.dailyLogin?.pending) {
+      show("daily");
+      return;
+    }
+
+    if (snapshot.intro?.profileCompleted && !snapshot.intro?.tutorialSeen) {
+      show("tutorial");
+      return;
+    }
+
+    hide();
+  }
+
+  window.addEventListener("tc:scene-changed", (event) => {
+    currentSceneKey = String(event?.detail?.key || "");
+    evaluate();
+  });
+
+  storeRef.subscribe(() => {
+    if (mode) render();
+    evaluate();
+  });
+}
+
 /* ===== UI ===== */
 startHud(store, i18n);
 startChat(store);
@@ -2052,6 +2419,7 @@ startMenu(store);
 startStarsOverlay?.(store);
 startWeaponsDealer?.({ store, scenes, assets, input });
 startPvpLobby();
+startProgressionOverlay(store, i18n);
 
 normalizeGlobalUi(store);
 
