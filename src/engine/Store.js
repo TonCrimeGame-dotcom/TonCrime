@@ -217,19 +217,19 @@ class Store {
             desc: "Pazarda satilabilir urun.",
           },
           {
-            id: "inv_gold_pass",
-            kind: "rare",
-            icon: "GP",
-            imageSrc: "./src/assets/bonus.png",
-            name: "Golden Pass",
+            id: "inv_ruby_vane",
+            kind: "girls",
+            icon: "RV",
+            imageSrc: "./src/assets/g_star2.png",
+            name: "Ruby Vane",
             rarity: "legendary",
             qty: 1,
-            usable: false,
+            usable: true,
             sellable: true,
-            marketable: false,
-            sellPrice: 250,
-            marketPrice: 0,
-            desc: "Nadir etkinlik urunu.",
+            marketable: true,
+            sellPrice: 120,
+            marketPrice: 160,
+            desc: "Deluxe servis.",
           },
         ],
       },
@@ -650,7 +650,7 @@ class Store {
     if (/(deluxe service|deluxe)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/g_star2.png" };
     if (/(elite service|elite escort|elite)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/g_star3.png" };
     if (/(service|escort|girl)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/girl.png" };
-    if (/(golden pass|vip pass|pass)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/bonus.png" };
+    if (/(event item|bonus)/.test(raw)) return { imageKey: "", imageSrc: "./src/assets/bonus.png" };
     if (/(crate|sandik)/.test(raw)) return { imageKey: "blackmarket", imageSrc: "./src/assets/BlackMarket.png" };
     return this._businessImageData(type);
   }
