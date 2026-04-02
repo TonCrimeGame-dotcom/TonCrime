@@ -122,11 +122,17 @@ export function startHud(store, i18n) {
 
     const aliasMap = {
       "silah_yok": ["weapon_none", "weapon-empty", "weapon_none_icon"],
+      "baslangic_bicagi": ["glock", "mp5"],
+      "orta_seviye_silah": ["m4a1", "ak47"],
+      "en_guclu_silah": ["barrett", "m134"],
       "hk_mp5_9_19mm": ["mp5", "hk_mp5"],
       "glock_17_9_19mm": ["glock_17", "glock17", "glock"],
+      "glock_17_9x19mm": ["glock_17", "glock17", "glock"],
       "sig_sauer_p320_9_19mm": ["sig_p320", "p320", "sauer"],
+      "sig_sauer_p320_9x19mm": ["sig_p320", "p320", "sauer"],
       "sig_p320": ["sauer"],
       "beretta_92fs_9_19mm": ["beretta_92fs", "beretta92fs", "beretta", "baretta"],
+      "beretta_92fs_9x19mm": ["beretta_92fs", "beretta92fs", "beretta", "baretta"],
       "beretta_92fs": ["baretta"],
       "colt_1911_45_acp": ["colt_1911", "colt1911", "1911"],
       "mossberg_500_12ga": ["mossberg_500", "mossberg500"],
@@ -196,48 +202,48 @@ export function startHud(store, i18n) {
 
   function ensureInlineImage(spanId, targetEl, candidates, alt, size = 15) {
     if (!targetEl?.parentElement) return null;
-    let img = document.getElementById(spanId);
-    if (!img) {
+    let holder = document.getElementById(spanId);
+    let img = holder?.querySelector?.("img") || null;
+    if (!holder) {
+      holder = document.createElement("span");
+      holder.id = spanId;
+      holder.className = `hudMiniIcon hudMiniVisual ${/coins/i.test(spanId) ? "hudMiniVisualYton" : "hudMiniVisualWeapon"}`;
       img = document.createElement("img");
-      img.id = spanId;
       img.alt = alt || "";
       img.decoding = "async";
       img.style.width = `${size}px`;
       img.style.height = `${size}px`;
       img.style.objectFit = "contain";
-      img.style.display = "inline-block";
-      img.style.verticalAlign = "middle";
-      img.style.marginRight = "6px";
-      img.style.filter = "drop-shadow(0 1px 2px rgba(0,0,0,0.45))";
-      targetEl.parentElement.insertBefore(img, targetEl);
+      holder.appendChild(img);
+      targetEl.parentElement.insertBefore(holder, targetEl);
     }
 
     const sources = uniq(candidates);
     const key = sources.join("|");
-    if (img.dataset.key === key) return img;
-    img.dataset.key = key;
-    img.dataset.idx = "0";
+    if (holder.dataset.key === key) return holder;
+    holder.dataset.key = key;
+    holder.dataset.idx = "0";
 
     img.onerror = () => {
-      const idx = Number(img.dataset.idx || 0) + 1;
+      const idx = Number(holder.dataset.idx || 0) + 1;
       if (idx >= sources.length) {
-        img.style.display = "none";
+        holder.classList.add("is-empty");
         return;
       }
-      img.dataset.idx = String(idx);
+      holder.dataset.idx = String(idx);
       img.src = sources[idx];
     };
     img.onload = () => {
-      img.style.display = "inline-block";
+      holder.classList.remove("is-empty");
     };
 
     if (sources[0]) {
-      img.style.display = "inline-block";
+      holder.classList.remove("is-empty");
       img.src = sources[0];
     } else {
-      img.style.display = "none";
+      holder.classList.add("is-empty");
     }
-    return img;
+    return holder;
   }
 
   let walletBtn = document.getElementById("hudWalletBtn");
@@ -292,7 +298,7 @@ export function startHud(store, i18n) {
     premiumBtn = document.createElement("button");
     premiumBtn.id = "hudPremiumBtn";
     premiumBtn.type = "button";
-    premiumBtn.textContent = "PREMIUM";
+    premiumBtn.textContent = "SATIN AL";
     root.appendChild(premiumBtn);
   } else if (premiumBtn.parentElement !== root) {
     root.appendChild(premiumBtn);
@@ -355,13 +361,13 @@ export function startHud(store, i18n) {
     }
   }
 
-  function openTradePremium() {
+  function openTradeStore() {
     try {
       const s = store.get() || {};
       store.set({
         trade: {
           ...(s.trade || {}),
-          activeTab: "premium",
+          activeTab: "buy",
           view: "main",
           selectedShopId: null,
           selectedBusinessId: null,
@@ -404,9 +410,9 @@ export function startHud(store, i18n) {
     }
 
     if (premiumBtn) {
-      premiumBtn.title = lang === "tr" ? "Premium avantajlari" : "Premium benefits";
+      premiumBtn.title = lang === "tr" ? "Satin alma ekrani" : "Open store";
       premiumBtn.setAttribute("aria-label", premiumBtn.title);
-      premiumBtn.textContent = "PREMIUM";
+      premiumBtn.textContent = lang === "tr" ? "SATIN AL" : "BUY";
       premiumBtn.style.font = `${window.innerWidth <= 420 ? 900 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
       premiumBtn.style.letterSpacing = "0.7px";
     }
@@ -469,7 +475,7 @@ export function startHud(store, i18n) {
 
     if (!premiumBtn.__premiumBound) {
       premiumBtn.__premiumBound = true;
-      premiumBtn.addEventListener("click", openTradePremium);
+      premiumBtn.addEventListener("click", openTradeStore);
       premiumBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
   }
@@ -614,10 +620,10 @@ export function startHud(store, i18n) {
 
     if (premiumBtn) {
       const pulse = (Math.sin(Date.now() / 210) + 1) / 2;
-      premiumBtn.style.display = isPremium ? "none" : "inline-flex";
-      premiumBtn.style.opacity = isPremium ? "0" : String(0.82 + pulse * 0.18);
+      premiumBtn.style.display = "inline-flex";
+      premiumBtn.style.opacity = String(isPremium ? 0.9 : 0.82 + pulse * 0.18);
       premiumBtn.style.transform = isPremium ? "translateY(0)" : `translateY(${Math.sin(Date.now() / 420) * -1.4}px) scale(${1 + pulse * 0.035})`;
-      premiumBtn.style.filter = isPremium ? "none" : `drop-shadow(0 0 ${8 + pulse * 9}px rgba(255,208,110,${0.28 + pulse * 0.32}))`;
+      premiumBtn.style.filter = isPremium ? "drop-shadow(0 0 8px rgba(255,208,110,0.18))" : `drop-shadow(0 0 ${8 + pulse * 9}px rgba(255,208,110,${0.28 + pulse * 0.32}))`;
     }
 
     if (elLogo) elLogo.style.display = "none";
