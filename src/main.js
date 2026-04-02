@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { fetchBackendJson, getBackendCandidates } from "./supabase.js";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -1926,9 +1926,20 @@ window.tc.dev = {
     store.set({ clan: null });
     console.log("Clan sıfırlandı.");
   },
-  reset() {
-    localStorage.removeItem(STORE_KEY);
+  softReset() {
+    clearLocalProfileMemory();
     location.reload();
+  },
+  reset() {
+    return forgetCurrentProfile({ reload: true })
+      .then((result) => {
+        console.log("Profil tamamen sifirlandi:", result);
+        return result;
+      })
+      .catch((err) => {
+        console.error("Profil sifirlama basarisiz:", err);
+        throw err;
+      });
   },
 };
 
