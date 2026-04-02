@@ -42,9 +42,9 @@ const DEFAULT_XP_TO_NEXT = 100;
 const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
 const DESKTOP_SHELL_MIN_VIEWPORT = 720;
-const DESKTOP_SHELL_MAX_WIDTH = 460;
-const DESKTOP_SHELL_MAX_HEIGHT = 920;
-const DESKTOP_SHELL_ASPECT = 9 / 16;
+const DESKTOP_SHELL_MAX_WIDTH = 414;
+const DESKTOP_SHELL_MAX_HEIGHT = 896;
+const DESKTOP_SHELL_ASPECT = 390 / 844;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
 const SINGLE_SESSION_OVERLAY_ID = "tc-single-session-lock";
@@ -262,14 +262,19 @@ function initTelegramViewport() {
       return;
     }
 
+    const desktopShell = isDesktopTelegramShell(window.innerWidth || 0, window.innerHeight || 0);
+
     tg.ready();
-    tg.expand();
+
+    if (!desktopShell && typeof tg.expand === "function") {
+      tg.expand();
+    }
 
     if (typeof tg.disableVerticalSwipes === "function") {
       tg.disableVerticalSwipes();
     }
 
-    if (isDesktopTelegramShell(window.innerWidth || 0, window.innerHeight || 0)) {
+    if (desktopShell) {
       if (typeof tg.exitFullscreen === "function") {
         Promise.resolve(tg.exitFullscreen()).catch(() => null);
       }
