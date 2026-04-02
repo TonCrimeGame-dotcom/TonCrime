@@ -509,12 +509,12 @@ function buildStarterStatePatch(source = store.get()) {
   const player = snapshot.player || {};
   const wallet = snapshot.wallet || {};
   const pvp = snapshot.pvp || {};
-  const telegramId = String(player.telegramId || getTelegramUser()?.id || "").trim();
+  const telegramId = String(getTelegramUser()?.id || player.telegramId || "").trim();
   const username =
     String(
-      player.username ||
       getTelegramUser()?.username ||
       [getTelegramUser()?.first_name, getTelegramUser()?.last_name].filter(Boolean).join(" ") ||
+      player.username ||
       ""
     ).trim();
 
@@ -552,6 +552,31 @@ function buildStarterStatePatch(source = store.get()) {
       lastMatchAt: 0,
       leaderboardUpdatedAt: 0,
       leaderboardSource: "local",
+    },
+  };
+}
+
+function buildAuthoritativeTelegramResetPatch(source = store.get()) {
+  const snapshot = source || {};
+  const intro = snapshot.intro || {};
+  const dailyLogin = snapshot.dailyLogin || {};
+
+  return {
+    ...buildStarterStatePatch(snapshot),
+    intro: {
+      ...intro,
+      splashSeen: true,
+      ageVerified: false,
+      profileCompleted: false,
+    },
+    dailyLogin: {
+      ...dailyLogin,
+      pending: false,
+      pendingKey: "",
+      pendingReward: 0,
+      pendingStreak: 0,
+      lastClaimKey: "",
+      streak: 0,
     },
   };
 }
@@ -847,8 +872,8 @@ let _lastLeaderboardPayload = "";
 
 function getProfileIdentityKey() {
   return String(
-    store.get()?.player?.telegramId ||
     getTelegramUser()?.id ||
+    store.get()?.player?.telegramId ||
     window.tcGetProfileKey?.(store) ||
     ""
   ).trim();
@@ -1077,15 +1102,23 @@ function buildProfilePayloadKey(payload) {
 }
 
 async function fetchProfileFromBackend(identityKey) {
-  if (!identityKey) return null;
+  if (!identityKey) return { ok: false, item: null, reason: "missing_identity" };
   try {
     const json = await fetchBackendJson(
       `/public/profile?identity_key=${encodeURIComponent(identityKey)}`
     );
-    return json?.item || null;
+    return {
+      ok: true,
+      item: json?.item || null,
+      reason: json?.item ? "found" : "missing",
+    };
   } catch (err) {
     console.warn("Backend profile fetch failed:", err);
-    return null;
+    return {
+      ok: false,
+      item: null,
+      reason: String(err?.message || "fetch_failed"),
+    };
   }
 }
 
@@ -1139,12 +1172,33 @@ function applyRemotePvpLeaderboard(items) {
 }
 
 async function restoreProfileFromCloud(identityKey = getProfileIdentityKey()) {
-  if (!identityKey) return false;
+  if (!identityKey) return { restored: false, missing: true, error: false };
 
-  const backendProfile = await fetchProfileFromBackend(identityKey);
-  if (applyRemoteProfile(backendProfile)) return true;
+  const remote = await fetchProfileFromBackend(identityKey);
+  if (!remote.ok) {
+    return {
+      restored: false,
+      missing: false,
+      error: true,
+      reason: remote.reason || "fetch_failed",
+    };
+  }
 
-  return false;
+  if (applyRemoteProfile(remote.item)) {
+    return {
+      restored: true,
+      missing: false,
+      error: false,
+      reason: "found",
+    };
+  }
+
+  return {
+    restored: false,
+    missing: true,
+    error: false,
+    reason: "missing",
+  };
 }
 
 async function syncProfileToBackend(payload) {
@@ -1234,7 +1288,12 @@ async function bootstrapPlayerProfile() {
     }
 
     const restored = await restoreProfileFromCloud(identityKey);
-    if (!restored) {
+    if (!restored?.restored) {
+      if (getTelegramUser()?.id) {
+        store.set(buildAuthoritativeTelegramResetPatch(store.get()));
+        _profileSyncRetryAfter = Date.now() + 60_000;
+        return false;
+      }
       ensureStarterProfileState();
     }
 
