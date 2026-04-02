@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = "https://ubcyamjoektbbxbrjtyy.supabase.co";
 const SUPABASE_KEY = "sb_publishable_t--0L9Neb58SKtiED8K7gA_2w1gtC37";
+const STORE_KEY = "toncrime_store_v1";
 const PROFILE_KEY_STORAGE = "toncrime_profile_key_v1";
 const GUEST_IDENTITY_KEY = "toncrime_guest_identity_v4";
 const AUTH_COOLDOWN_UNTIL_KEY = "toncrime_auth_cooldown_until_v2";
@@ -10,6 +11,7 @@ const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
 const AUTH_PATCH_VERSION = "2026-04-01-secure-backend-session-1";
+const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -29,6 +31,9 @@ function safeLocalSet(key, value) {
 }
 function safeLocalRemove(key) {
   try { localStorage.removeItem(key); } catch {}
+}
+function safeLocalKeys() {
+  try { return Object.keys(localStorage || {}); } catch { return []; }
 }
 function nowMs() { return Date.now(); }
 
@@ -179,6 +184,71 @@ function clearAuthCooldown(reason = "") {
 export function tcClearAuthCooldown(reason = "manual") {
   clearAuthCooldown(reason);
   return true;
+}
+
+function clearPersistedSupabaseAuthKeys() {
+  for (const key of safeLocalKeys()) {
+    const text = String(key || "").trim();
+    if (!text) continue;
+    if (
+      text.startsWith("sb-") ||
+      text.includes("-auth-token") ||
+      text.startsWith("supabase.auth.")
+    ) {
+      safeLocalRemove(text);
+    }
+  }
+}
+
+export function clearLocalProfileMemory({ keepBackendUrl = true } = {}) {
+  const keys = [
+    STORE_KEY,
+    PROFILE_KEY_STORAGE,
+    GUEST_IDENTITY_KEY,
+    AUTH_COOLDOWN_UNTIL_KEY,
+    AUTH_COOLDOWN_REASON_KEY,
+    AUTH_LAST_TRY_KEY,
+    AUTH_LAST_IDENTITY_KEY,
+    AUTH_PATCH_VERSION_KEY,
+    SINGLE_SESSION_DEVICE_KEY,
+  ];
+  for (const key of keys) safeLocalRemove(key);
+  if (!keepBackendUrl) {
+    safeLocalRemove("toncrime_backend_url");
+    safeLocalRemove("backendUrl");
+  }
+  clearPersistedSupabaseAuthKeys();
+  return true;
+}
+
+export async function forgetCurrentProfile({ reload = false, keepBackendUrl = true } = {}) {
+  const profileKey = String(getProfileKey(window.tcStore) || "").trim();
+  const identityKey = String(getIdentityKey() || profileKey).trim();
+  const username = String(
+    getTelegramUser()?.username ||
+    window.tcStore?.get?.()?.player?.username ||
+    "Player"
+  ).trim() || "Player";
+
+  const result = await fetchBackendJson("/public/profile-reset", {
+    method: "POST",
+    body: JSON.stringify({
+      identity_key: identityKey,
+      profile_key: profileKey,
+      telegram_id: String(getTelegramUser()?.id || profileKey).trim(),
+      username,
+    }),
+  });
+
+  try {
+    await supabase.auth.signOut();
+  } catch {}
+
+  clearLocalProfileMemory({ keepBackendUrl });
+  if (reload) {
+    window.location.reload();
+  }
+  return result;
 }
 
 function isRateLimitError(err) {
@@ -413,6 +483,8 @@ window.tcClearAuthCooldown = tcClearAuthCooldown;
 window.tcGetTelegramInitData = getTelegramInitData;
 window.tcGetBackendCandidates = getBackendCandidates;
 window.tcFetchBackendJson = fetchBackendJson;
+window.tcClearLocalProfileMemory = clearLocalProfileMemory;
+window.tcForgetCurrentProfile = forgetCurrentProfile;
 
 try {
   supabase.auth.onAuthStateChange((event, session) => {
