@@ -60,14 +60,15 @@ export function startHud(store, i18n) {
 
   function getTelegramChromeTopOffset() {
     const tg = window.Telegram?.WebApp;
-    const mobile = window.innerWidth <= 720;
+    const viewportW = Math.max(0, Number(window.innerWidth || 0));
+    const mobile = viewportW <= 1100;
     const isIOS =
       /iphone|ipad|ipod/i.test(navigator.userAgent || "") ||
       String(tg?.platform || "").toLowerCase().includes("ios");
 
     if (!tg || !mobile) return 0;
-    if (isIOS) return window.innerWidth <= 420 ? 46 : 50;
-    return window.innerWidth <= 420 ? 34 : 38;
+    if (isIOS) return viewportW <= 420 ? 58 : (viewportW <= 900 ? 52 : 44);
+    return viewportW <= 420 ? 44 : (viewportW <= 900 ? 38 : 30);
   }
 
   function getInitials(name) {
@@ -732,20 +733,25 @@ export function startHud(store, i18n) {
   }
 
   function applyButtonsStyle() {
-    const narrow = window.innerWidth <= 420;
-    const mobile = window.innerWidth <= 720;
-    const size = narrow ? 34 : (mobile ? 38 : 42);
-    const gap = narrow ? 6 : 8;
-    const trayOffset = narrow ? 4 : 6;
+    const viewportW = Math.max(0, Number(window.innerWidth || 0));
+    const narrow = viewportW <= 420;
+    const compact = viewportW <= 380;
+    const mobile = viewportW <= 720;
+    const tablet = viewportW > 720 && viewportW <= 1100;
+    const size = compact ? 32 : (narrow ? 34 : (mobile ? 38 : (tablet ? 40 : 42)));
+    const gap = compact ? 5 : (narrow ? 6 : 8);
+    const trayOffset = mobile ? (compact ? 8 : 10) : (tablet ? 10 : 6);
+    const premiumWidth = compact ? 72 : (narrow ? 78 : (mobile ? 86 : 96));
 
     if (buttonTray) {
       buttonTray.style.position = "absolute";
-      buttonTray.style.right = `${narrow ? 8 : 10}px`;
+      buttonTray.style.right = `${compact ? 6 : (narrow ? 8 : 10)}px`;
       buttonTray.style.top = `calc(100% + ${trayOffset}px)`;
       buttonTray.style.display = "inline-flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
-      buttonTray.style.justifyContent = "center";
+      buttonTray.style.justifyContent = "flex-end";
+      buttonTray.style.flexWrap = "nowrap";
       buttonTray.style.gap = `${gap}px`;
       buttonTray.style.padding = "0";
       buttonTray.style.borderRadius = "0";
@@ -756,6 +762,7 @@ export function startHud(store, i18n) {
       buttonTray.style.webkitBackdropFilter = "none";
       buttonTray.style.zIndex = "2";
       buttonTray.style.minHeight = `${size}px`;
+      buttonTray.style.maxWidth = `${size * 4 + gap * 3}px`;
     }
 
     applyButtonChrome(walletBtn, { size });
@@ -764,14 +771,14 @@ export function startHud(store, i18n) {
     applyButtonChrome(langBtn, { size });
     applyButtonChrome(premiumBtn, {
       size,
-      width: narrow ? 78 : (mobile ? 86 : 96),
-      paddingX: narrow ? 10 : 12,
+      width: premiumWidth,
+      paddingX: compact ? 8 : (narrow ? 10 : 12),
     });
     walletBtn.style.font = "inherit";
     walletBtn.style.lineHeight = "1";
     if (premiumBtn) {
       premiumBtn.style.position = "absolute";
-      premiumBtn.style.left = `${narrow ? 4 : 8}px`;
+      premiumBtn.style.left = `${compact ? 2 : (narrow ? 4 : 8)}px`;
       premiumBtn.style.top = `calc(100% + ${trayOffset}px)`;
       premiumBtn.style.zIndex = "2";
       premiumBtn.style.background = "linear-gradient(180deg, rgba(255,235,160,0.92) 0%, rgba(255,191,74,0.94) 36%, rgba(142,64,16,0.96) 100%)";
@@ -884,9 +891,14 @@ export function startHud(store, i18n) {
     const safeTop = Number(ui.safe?.y || 0);
     const trayHeight = buttonTray ? buttonTray.offsetHeight + 8 : 0;
     const premiumHeight = premiumBtn && premiumBtn.style.display !== "none" ? premiumBtn.offsetHeight + 8 : 0;
+    const viewportW = Math.max(0, Number(window.innerWidth || 0));
+    const mobile = viewportW <= 720;
+    const narrow = viewportW <= 420;
+    const baseReservedTop = narrow ? 164 : (mobile ? 150 : 124);
+    const extraBottomClearance = mobile ? 14 : 8;
     const reservedTop = Math.max(
-      72 + telegramChromeTopOffset,
-      root.offsetHeight + Math.max(trayHeight, premiumHeight) + safeTop + telegramChromeTopOffset + 6
+      baseReservedTop + telegramChromeTopOffset,
+      root.offsetHeight + Math.max(trayHeight, premiumHeight) + safeTop + telegramChromeTopOffset + extraBottomClearance
     );
 
     if (Math.abs(lastReservedTop - reservedTop) > 1) {
