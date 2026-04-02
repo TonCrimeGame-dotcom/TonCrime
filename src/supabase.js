@@ -53,15 +53,23 @@ function makeRandomId() {
   }
 }
 
+function syncTelegramIdentityStorage() {
+  const tgId = String(getTelegramUser()?.id || "").trim();
+  if (!tgId) return "";
+  safeLocalSet(PROFILE_KEY_STORAGE, tgId);
+  safeLocalRemove(GUEST_IDENTITY_KEY);
+  return tgId;
+}
+
 export function getProfileKey(store = null) {
+  const tgId = syncTelegramIdentityStorage();
+  if (tgId) return tgId;
+
   const fromStore = String(store?.get?.()?.player?.telegramId || window.tcStore?.get?.()?.player?.telegramId || "").trim();
   if (fromStore) {
     if (!getTelegramUser()?.id) safeLocalSet(PROFILE_KEY_STORAGE, fromStore);
     return fromStore;
   }
-
-  const tgId = String(getTelegramUser()?.id || "").trim();
-  if (tgId) return tgId;
 
   let profileKey = safeLocalGet(PROFILE_KEY_STORAGE).trim();
   if (!profileKey) {
@@ -84,8 +92,8 @@ export function ensureGuestIdentitySync(store = null) {
 }
 
 export function getIdentityKey() {
-  const tgUser = getTelegramUser();
-  if (tgUser?.id) return `tg_${String(tgUser.id)}`;
+  const tgId = syncTelegramIdentityStorage();
+  if (tgId) return `tg_${tgId}`;
 
   const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
   if (authKey) return authKey;
@@ -200,6 +208,28 @@ function clearPersistedSupabaseAuthKeys() {
   }
 }
 
+async function trySupabaseHardReset() {
+  try {
+    const sessionRes = await supabase.auth.getSession().catch(() => null);
+    const sessionUser = sessionRes?.data?.session?.user || null;
+    if (!sessionUser?.id) {
+      const ensured = await ensureAuthSession().catch(() => null);
+      if (!ensured?.id) return null;
+    }
+
+    const rpc = await supabase.rpc("reset_my_profile_hard");
+    if (rpc?.error) {
+      console.warn("[PROFILE_RESET_RPC] failed:", rpc.error);
+      return null;
+    }
+
+    return rpc?.data || { ok: true };
+  } catch (err) {
+    console.warn("[PROFILE_RESET_RPC] unavailable:", err);
+    return null;
+  }
+}
+
 export function clearLocalProfileMemory({ keepBackendUrl = true } = {}) {
   const keys = [
     STORE_KEY,
@@ -230,7 +260,11 @@ export async function forgetCurrentProfile({ reload = false, keepBackendUrl = tr
     "Player"
   ).trim() || "Player";
 
-  const result = await fetchBackendJson("/public/profile-reset", {
+  if (profileKey) {
+    await bindProfileToCurrentAuth(profileKey).catch(() => null);
+  }
+
+  const result = await trySupabaseHardReset() || await fetchBackendJson("/public/profile-reset", {
     method: "POST",
     body: JSON.stringify({
       identity_key: identityKey,
