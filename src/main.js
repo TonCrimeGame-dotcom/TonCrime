@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-4";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-5";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-profile-refresh-1";
+const BUILD_STAMP = "2026-04-02-admin-sync-guard-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -608,6 +608,7 @@ const initial = buildInitialState(loaded);
 
 const store = new Store(initial);
 window.tcStore = store;
+let _lastObservedProfileStateKey = "";
 store.subscribe((next) => {
   const telegramId = normalizeOnboardingTelegramId(
     next?.player?.telegramId || getTelegramUser()?.id || ""
@@ -616,7 +617,15 @@ store.subscribe((next) => {
   if (next?.intro?.profileCompleted && String(next?.player?.username || "").trim()) {
     markTelegramOnboardingDone(telegramId);
   }
+
+  if (_suppressProfileDirtyTracking) return;
+  const nextKey = buildLocalProfileStateKey(next);
+  if (nextKey !== _lastObservedProfileStateKey) {
+    _lastObservedProfileStateKey = nextKey;
+    _lastLocalProfileMutationAt = Date.now();
+  }
 });
+_lastObservedProfileStateKey = buildLocalProfileStateKey(store.get());
 
 function buildStarterStatePatch(source = store.get()) {
   const snapshot = source || {};
@@ -993,10 +1002,38 @@ let _profileCloudReadyState = "pending";
 let _profileCloudRestoreBusy = false;
 let _profileRefreshBusy = false;
 let _lastProfileRefreshAt = 0;
+let _suppressProfileDirtyTracking = false;
+let _lastRemoteProfileUpdatedAt = 0;
+let _lastLocalProfileMutationAt = 0;
 let _lastLeaderboardSyncAt = 0;
 let _leaderboardSyncBusy = false;
 let _leaderboardSyncRetryAfter = 0;
 let _lastLeaderboardPayload = "";
+
+function readIsoMs(value) {
+  const parsed = new Date(value || 0).getTime();
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function buildLocalProfileStateKey(snapshot = store.get()) {
+  const state = snapshot || {};
+  const player = state.player || {};
+  const pvp = state.pvp || {};
+
+  return JSON.stringify({
+    telegramId: String(player.telegramId || "").trim(),
+    username: String(player.username || "").trim(),
+    age: player.age ?? null,
+    level: readPlayerLevel(player.level, STARTING_LEVEL),
+    coins: Math.max(0, toFiniteNumber(state.coins, STARTING_YTON)),
+    energy: Math.max(0, toFiniteNumber(player.energy, MAX_PLAYER_ENERGY)),
+    energyMax: Math.max(1, toFiniteNumber(player.energyMax, MAX_PLAYER_ENERGY)),
+    pvpWins: readPvpCount(pvp.wins, 0),
+    pvpLosses: readPvpCount(pvp.losses, 0),
+    pvpRating: readPvpRating(pvp.rating, 1000),
+    pvpLastMatchAt: readTimestampMs(pvp.lastMatchAt || pvp.last_match_at, 0),
+  });
+}
 
 function getProfileIdentityKey() {
   const telegramId = String(getTelegramUser()?.id || "").trim();
@@ -1189,54 +1226,68 @@ function applyRemoteProfile(profile) {
   const losses = readPvpCount(profile.pvp_losses, pvp.losses);
   const rating = readPvpRating(profile.pvp_rating, pvp.rating || 1000);
   const lastMatchAt = readTimestampMs(profile.pvp_last_match_at, pvp.lastMatchAt);
+  const remoteUpdatedAt = readIsoMs(profile.updated_at || profile.created_at || Date.now());
 
-  store.set({
-    coins,
-    yton: coins,
-    wallet: {
-      ...wallet,
+  _suppressProfileDirtyTracking = true;
+  try {
+    store.set({
+      coins,
       yton: coins,
-    },
-    intro: {
-      ...intro,
-      splashSeen: true,
-      ageVerified:
-        profile.age != null
-          ? true
-          : !!(
-              intro.ageVerified ||
-              profile.username ||
-              player.username ||
-              getTelegramUser()?.username
-            ),
-      profileCompleted: !!(
-        profile.telegram_id ||
-        profile.username ||
-        player.username ||
-        getTelegramUser()?.username ||
-        intro.profileCompleted
-      ),
-    },
-    player: {
-      ...player,
-      telegramId: String(profile.telegram_id || player.telegramId || getProfileIdentityKey()).trim(),
-      username,
-      age: profile.age ?? player.age ?? null,
-      level,
-      xp,
-      xpToNext,
-      energy,
-      energyMax,
-      lastEnergyAt: Date.now(),
-    },
-    pvp: {
-      ...pvp,
-      wins,
-      losses,
-      rating,
-      lastMatchAt,
-    },
-  });
+      wallet: {
+        ...wallet,
+        yton: coins,
+      },
+      intro: {
+        ...intro,
+        splashSeen: true,
+        ageVerified:
+          profile.age != null
+            ? true
+            : !!(
+                intro.ageVerified ||
+                profile.username ||
+                player.username ||
+                getTelegramUser()?.username
+              ),
+        profileCompleted: !!(
+          profile.telegram_id ||
+          profile.username ||
+          player.username ||
+          getTelegramUser()?.username ||
+          intro.profileCompleted
+        ),
+      },
+      player: {
+        ...player,
+        telegramId: String(profile.telegram_id || player.telegramId || getProfileIdentityKey()).trim(),
+        username,
+        age: profile.age ?? player.age ?? null,
+        level,
+        xp,
+        xpToNext,
+        energy,
+        energyMax,
+        lastEnergyAt: Date.now(),
+      },
+      pvp: {
+        ...pvp,
+        wins,
+        losses,
+        rating,
+        lastMatchAt,
+      },
+    });
+  } finally {
+    _suppressProfileDirtyTracking = false;
+  }
+
+  _lastRemoteProfileUpdatedAt = Math.max(_lastRemoteProfileUpdatedAt, remoteUpdatedAt || Date.now());
+  _lastObservedProfileStateKey = buildLocalProfileStateKey(store.get());
+  const payload = buildProfilePayload();
+  if (payload) {
+    _lastProfilePayload = buildProfilePayloadKey(payload);
+  }
+  _lastProfileSyncAt = Date.now();
 
   markTelegramOnboardingDone(profile.telegram_id || getProfileIdentityKey());
 
@@ -1480,6 +1531,17 @@ async function syncProfileToCloud(force = false) {
   const payload = buildProfilePayload();
   if (!payload) return;
   const payloadKey = buildProfilePayloadKey(payload);
+  const hasRemoteProfile = _profileCloudReadyState === "found";
+  const localProfileDirty =
+    !hasRemoteProfile ||
+    !_lastRemoteProfileUpdatedAt ||
+    _lastLocalProfileMutationAt > _lastRemoteProfileUpdatedAt;
+
+  if (hasRemoteProfile && !localProfileDirty) {
+    _lastProfilePayload = payloadKey;
+    _lastProfileSyncAt = Date.now();
+    return;
+  }
   if (!force && payloadKey === _lastProfilePayload) return;
 
   _profileSyncBusy = true;
@@ -1494,6 +1556,8 @@ async function syncProfileToCloud(force = false) {
 
     _lastProfilePayload = payloadKey;
     _lastProfileSyncAt = Date.now();
+    _lastRemoteProfileUpdatedAt = Date.now();
+    _lastLocalProfileMutationAt = _lastRemoteProfileUpdatedAt;
     _profileSyncRetryAfter = 0;
   } finally {
     _profileSyncBusy = false;
