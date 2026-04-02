@@ -94,6 +94,7 @@ class Store {
         splashSeen: false,
         ageVerified: false,
         profileCompleted: false,
+        tutorialSeen: false,
       },
 
       ui: {
@@ -132,7 +133,7 @@ class Store {
       },
 
       trade: {
-        activeTab: "premium",
+        activeTab: "buy",
         selectedBusinessId: null,
         selectedInventoryCategory: "all",
         selectedMarketFilter: "all",
@@ -414,6 +415,15 @@ class Store {
         claimed: {},
       },
 
+      dailyLogin: {
+        lastClaimKey: "",
+        streak: 0,
+        pending: false,
+        pendingKey: "",
+        pendingReward: 0,
+        pendingStreak: 0,
+      },
+
       pvp: {
         wins: 0,
         losses: 0,
@@ -444,6 +454,7 @@ class Store {
     if (!merged.player) merged.player = {};
     if (!merged.trade) merged.trade = {};
     if (!merged.wallet) merged.wallet = {};
+    if (!merged.dailyLogin) merged.dailyLogin = {};
     if (!merged.inventory) merged.inventory = { items: [] };
     if (!Array.isArray(merged.inventory.items)) merged.inventory.items = [];
     if (!merged.businesses) merged.businesses = { owned: [] };
@@ -472,6 +483,15 @@ class Store {
     intro.splashSeen = !!intro.splashSeen;
     intro.ageVerified = !!intro.ageVerified;
     intro.profileCompleted = !!intro.profileCompleted;
+    intro.tutorialSeen = !!intro.tutorialSeen;
+
+    const dailyLogin = merged.dailyLogin;
+    dailyLogin.lastClaimKey = String(dailyLogin.lastClaimKey || "");
+    dailyLogin.streak = Math.max(0, Number(dailyLogin.streak || 0));
+    dailyLogin.pending = !!dailyLogin.pending;
+    dailyLogin.pendingKey = String(dailyLogin.pendingKey || "");
+    dailyLogin.pendingReward = Math.max(0, Number(dailyLogin.pendingReward || 0));
+    dailyLogin.pendingStreak = Math.max(0, Number(dailyLogin.pendingStreak || 0));
 
     const rawCoins = Number(
       merged.coins ??
