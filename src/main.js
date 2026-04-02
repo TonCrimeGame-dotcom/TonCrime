@@ -884,6 +884,9 @@ let _profileSyncBusy = false;
 let _lastProfilePayload = "";
 let _profileSyncRetryAfter = 0;
 let _profileBootstrapPromise = null;
+let _profileBootstrapDone = false;
+let _profileCloudReadyState = "pending";
+let _profileCloudRestoreBusy = false;
 let _lastLeaderboardSyncAt = 0;
 let _leaderboardSyncBusy = false;
 let _leaderboardSyncRetryAfter = 0;
@@ -1222,6 +1225,48 @@ async function restoreProfileFromCloud(identityKey = getProfileIdentityKey()) {
   };
 }
 
+async function ensureCloudProfileReady(identityKey = getProfileIdentityKey()) {
+  if (!identityKey) {
+    _profileCloudReadyState = "missing";
+    return true;
+  }
+
+  if (_profileCloudReadyState === "found" || _profileCloudReadyState === "missing") {
+    return true;
+  }
+
+  if (_profileCloudRestoreBusy) {
+    return false;
+  }
+
+  _profileCloudRestoreBusy = true;
+
+  try {
+    const restored = await restoreProfileFromCloud(identityKey);
+    if (restored?.restored) {
+      _profileCloudReadyState = "found";
+      _lastProfilePayload = "";
+      return true;
+    }
+
+    if (restored?.missing) {
+      if (getTelegramUser()?.id) {
+        store.set(buildAuthoritativeTelegramResetPatch(store.get()));
+      } else {
+        ensureStarterProfileState();
+      }
+      _profileCloudReadyState = "missing";
+      _lastProfilePayload = "";
+      return true;
+    }
+
+    _profileCloudReadyState = "error";
+    return false;
+  } finally {
+    _profileCloudRestoreBusy = false;
+  }
+}
+
 async function syncProfileToBackend(payload) {
   try {
     const json = await fetchBackendJson("/public/profile-sync", {
@@ -1237,8 +1282,17 @@ async function syncProfileToBackend(payload) {
 
 async function syncProfileToCloud(force = false) {
   if (_singleSessionState.locked) return;
+  if (!_profileBootstrapDone) return;
   if (_profileSyncBusy) return;
   if (_profileSyncRetryAfter && Date.now() < _profileSyncRetryAfter) return;
+
+  if (_profileCloudReadyState === "pending" || _profileCloudReadyState === "error") {
+    const ready = await ensureCloudProfileReady(getProfileIdentityKey());
+    if (!ready) {
+      _profileSyncRetryAfter = Date.now() + 10000;
+      return;
+    }
+  }
 
   const payload = buildProfilePayload();
   if (!payload) return;
@@ -1261,6 +1315,16 @@ async function syncProfileToCloud(force = false) {
   } finally {
     _profileSyncBusy = false;
   }
+}
+
+function requestProfileCloudSync(force = false) {
+  if (!_profileBootstrapDone) {
+    _profileBootstrapPromise?.then(() => {
+      syncProfileToCloud(force).catch(() => null);
+    }).catch(() => null);
+    return;
+  }
+  syncProfileToCloud(force).catch(() => null);
 }
 
 async function syncLeaderboardFromCloud(force = false) {
@@ -1290,6 +1354,8 @@ async function bootstrapPlayerProfile() {
   if (_profileBootstrapPromise) return _profileBootstrapPromise;
 
   _profileBootstrapPromise = (async () => {
+    _profileBootstrapDone = false;
+    _profileCloudReadyState = "pending";
     ensureStarterProfileState();
 
     if (typeof window.tcEnsureAuthSession === "function") {
@@ -1308,19 +1374,22 @@ async function bootstrapPlayerProfile() {
       }
     }
 
-    const restored = await restoreProfileFromCloud(identityKey);
-    if (!restored?.restored) {
-      if (restored?.missing && getTelegramUser()?.id) {
-        store.set(buildAuthoritativeTelegramResetPatch(store.get()));
-      } else if (restored?.error) {
-        console.warn("Profile restore skipped due to backend fetch error:", restored.reason || "fetch_error");
-      } else {
-        ensureStarterProfileState();
-      }
+    const cloudReady = await ensureCloudProfileReady(identityKey);
+    if (!cloudReady) {
+      console.warn("Profile restore skipped due to backend fetch error:", _profileCloudReadyState || "fetch_error");
     }
 
-    await syncProfileToCloud(true).catch(() => null);
+    _profileBootstrapDone = true;
+
+    if (cloudReady) {
+      await syncProfileToCloud(true).catch(() => null);
+    }
     await syncLeaderboardFromCloud(true).catch(() => null);
+    return cloudReady;
+  })().catch((error) => {
+    _profileBootstrapDone = true;
+    _profileCloudReadyState = _profileCloudReadyState === "pending" ? "error" : _profileCloudReadyState;
+    throw error;
   })();
 
   return _profileBootstrapPromise;
@@ -1332,14 +1401,14 @@ window.tcProfileBootstrapReady = profileBootstrapReady;
 window.addEventListener("tc:profile-sync-now", () => {
   _lastProfileSyncAt = 0;
   _lastLeaderboardSyncAt = 0;
-  syncProfileToCloud(true).catch(() => null);
+  requestProfileCloudSync(true);
   syncLeaderboardFromCloud(true).catch(() => null);
 });
 
 window.addEventListener("tc:pvp:leaderboard-sync-now", () => {
   _lastProfileSyncAt = 0;
   _lastLeaderboardSyncAt = 0;
-  syncProfileToCloud(true).catch(() => null);
+  requestProfileCloudSync(true);
   syncLeaderboardFromCloud(true).catch(() => null);
 });
 
@@ -1366,7 +1435,7 @@ window.addEventListener("beforeunload", () => {
 (function profileSyncLoop() {
   const now = Date.now();
   if (now - _lastProfileSyncAt > 1500) {
-    syncProfileToCloud();
+    requestProfileCloudSync(false);
   }
   setTimeout(profileSyncLoop, 1500);
 })();
@@ -2123,7 +2192,7 @@ window.addEventListener("tc:pvp:win", () => {
 
   _lastProfileSyncAt = 0;
   _lastLeaderboardSyncAt = 0;
-  syncProfileToCloud(true).catch(() => null);
+  requestProfileCloudSync(true);
   syncLeaderboardFromCloud(true).catch(() => null);
 });
 
@@ -2144,7 +2213,7 @@ window.addEventListener("tc:pvp:lose", () => {
 
   _lastProfileSyncAt = 0;
   _lastLeaderboardSyncAt = 0;
-  syncProfileToCloud(true).catch(() => null);
+  requestProfileCloudSync(true);
   syncLeaderboardFromCloud(true).catch(() => null);
 });
 
