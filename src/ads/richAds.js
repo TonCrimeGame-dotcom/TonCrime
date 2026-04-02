@@ -37,16 +37,49 @@ export function isCompletedAdResult(result) {
   return true;
 }
 
+async function createRichAdsControllerOnDemand() {
+  if (typeof window.tcCreateRichAdsController === "function") {
+    try {
+      const controller = await window.tcCreateRichAdsController();
+      if (hasRichAdsController(controller)) return controller;
+    } catch (_) {}
+  }
+
+  const ControllerCtor = window.TelegramAdsController;
+  const config = window.tcRichAdsConfig;
+  if (typeof ControllerCtor !== "function" || !config) return null;
+
+  try {
+    const controller = new ControllerCtor();
+    const initResult = controller.initialize?.(config);
+    if (initResult && typeof initResult.then === "function") {
+      await initResult;
+    }
+    window.tcRichAdsController = controller;
+    return hasRichAdsController(controller) ? controller : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export async function waitForRichAdsController(timeoutMs = 1800) {
-  const direct = window.tcRichAdsController || window.TelegramAdsController;
+  const direct = window.tcRichAdsController;
   if (hasRichAdsController(direct)) return direct;
 
   const pending = window.tcRichAdsReady;
-  if (!pending || typeof pending.then !== "function") return null;
+  if (pending && typeof pending.then === "function") {
+    try {
+      const controller = await Promise.race([
+        pending,
+        new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+      ]);
+      if (hasRichAdsController(controller)) return controller;
+    } catch (_) {}
+  }
 
   try {
     const controller = await Promise.race([
-      pending,
+      createRichAdsControllerOnDemand(),
       new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     return hasRichAdsController(controller) ? controller : null;
@@ -55,7 +88,7 @@ export async function waitForRichAdsController(timeoutMs = 1800) {
   }
 }
 
-export async function playRichRewardedAd(timeoutMs = 1800) {
+export async function playRichRewardedAd(timeoutMs = 4000) {
   const controller = await waitForRichAdsController(timeoutMs);
   if (!controller) {
     return { ok: false, reason: "controller_missing", controller: null, result: null };
