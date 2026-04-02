@@ -12,6 +12,7 @@ const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
 const AUTH_PATCH_VERSION = "2026-04-02-telegram-strict-1";
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
+const TELEGRAM_ONBOARDING_DONE_PREFIX = "toncrime_onboarding_done_v1_";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -291,6 +292,11 @@ export function clearLocalProfileMemory({ keepBackendUrl = true } = {}) {
     SINGLE_SESSION_DEVICE_KEY,
   ];
   for (const key of keys) safeLocalRemove(key);
+  for (const key of safeLocalKeys()) {
+    if (String(key || "").startsWith(TELEGRAM_ONBOARDING_DONE_PREFIX)) {
+      safeLocalRemove(key);
+    }
+  }
   if (!keepBackendUrl) {
     safeLocalRemove("toncrime_backend_url");
     safeLocalRemove("backendUrl");
