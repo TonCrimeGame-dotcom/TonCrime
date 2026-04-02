@@ -15,14 +15,14 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260402-4";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260402-5";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
-import { startHud } from "./ui/Hud.js?v=20260402-5";
+import { startHud } from "./ui/Hud.js?v=20260402-6";
 import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-layout-session-1";
+const BUILD_STAMP = "2026-04-02-layout-session-3";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -48,6 +48,19 @@ const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
 const DESKTOP_SHELL_MIN_VIEWPORT = 560;
 const TELEGRAM_PROFILE_KEY_RE = /^\d{4,20}$/;
+const SYNC_PROFILE_FIELD_KEYS = [
+  "username",
+  "age",
+  "level",
+  "coins",
+  "energy",
+  "energy_max",
+  "pvp_wins",
+  "pvp_losses",
+  "pvp_rating",
+  "pvp_last_match_at",
+];
+const SYNC_PROFILE_FIELD_KEY_SET = new Set(SYNC_PROFILE_FIELD_KEYS);
 const SINGLE_DEVICE_SESSION_ENABLED = false;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
@@ -610,6 +623,8 @@ const initial = buildInitialState(loaded);
 const store = new Store(initial);
 window.tcStore = store;
 let _lastObservedProfileStateKey = "";
+let _lastObservedProfileFieldSnapshot = null;
+const _dirtyProfileFields = new Set();
 store.subscribe((next) => {
   const telegramId = normalizeOnboardingTelegramId(
     next?.player?.telegramId || getTelegramUser()?.id || ""
@@ -622,11 +637,22 @@ store.subscribe((next) => {
   if (_suppressProfileDirtyTracking) return;
   const nextKey = buildLocalProfileStateKey(next);
   if (nextKey !== _lastObservedProfileStateKey) {
+    const nextFields = buildSyncProfileFieldSnapshot(next);
+    if (_lastObservedProfileFieldSnapshot) {
+      for (const [field, value] of Object.entries(nextFields)) {
+        const prev = _lastObservedProfileFieldSnapshot[field];
+        if (value !== prev) {
+          _dirtyProfileFields.add(field);
+        }
+      }
+    }
+    _lastObservedProfileFieldSnapshot = nextFields;
     _lastObservedProfileStateKey = nextKey;
     _lastLocalProfileMutationAt = Date.now();
   }
 });
 _lastObservedProfileStateKey = buildLocalProfileStateKey(store.get());
+_lastObservedProfileFieldSnapshot = buildSyncProfileFieldSnapshot(store.get());
 
 function buildStarterStatePatch(source = store.get()) {
   const snapshot = source || {};
@@ -1036,6 +1062,25 @@ function buildLocalProfileStateKey(snapshot = store.get()) {
   });
 }
 
+function buildSyncProfileFieldSnapshot(snapshot = store.get()) {
+  const state = snapshot || {};
+  const player = state.player || {};
+  const pvp = state.pvp || {};
+
+  return {
+    username: String(player.username || "Player").trim() || "Player",
+    age: player.age ?? null,
+    level: readPlayerLevel(player.level, STARTING_LEVEL),
+    coins: Math.max(0, toFiniteNumber(state.coins, STARTING_YTON)),
+    energy: Math.max(0, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(player.energy, MAX_PLAYER_ENERGY))),
+    energy_max: Math.max(1, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(player.energyMax, MAX_PLAYER_ENERGY))),
+    pvp_wins: readPvpCount(pvp.wins, 0),
+    pvp_losses: readPvpCount(pvp.losses, 0),
+    pvp_rating: readPvpRating(pvp.rating, 1000),
+    pvp_last_match_at: toIsoTimestamp(pvp.lastMatchAt || pvp.last_match_at),
+  };
+}
+
 function getProfileIdentityKey() {
   const telegramId = String(getTelegramUser()?.id || "").trim();
   if (telegramId) return telegramId;
@@ -1173,28 +1218,22 @@ async function claimSingleSession(force = false) {
   }
 }
 
-function buildProfilePayload() {
+function buildProfilePayload(forceFull = false) {
   const s = store.get();
   const p = s.player || {};
-  const pvp = s.pvp || {};
   const telegramId = getProfileIdentityKey();
   const hasVerifiedTelegramUser = !!getTelegramUser()?.id;
 
   if (!telegramId) return null;
   if (!hasVerifiedTelegramUser && !s?.intro?.profileCompleted) return null;
 
-  return {
+  const fieldSnapshot = buildSyncProfileFieldSnapshot(s);
+  const fieldsToSend = forceFull ? SYNC_PROFILE_FIELD_KEYS : [..._dirtyProfileFields];
+  if (!fieldsToSend.length && !forceFull) return null;
+
+  const payload = {
     telegram_id: telegramId,
-    username: String(p.username || "Player").trim() || "Player",
-    age: p.age ?? null,
-    level: readPlayerLevel(p.level, STARTING_LEVEL),
-    coins: Math.max(0, toFiniteNumber(s.coins, STARTING_YTON)),
-    energy: Math.max(0, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(p.energy, MAX_PLAYER_ENERGY))),
-    energy_max: Math.max(1, Math.min(MAX_PLAYER_ENERGY, toFiniteNumber(p.energyMax, MAX_PLAYER_ENERGY))),
-    pvp_wins: readPvpCount(pvp.wins, 0),
-    pvp_losses: readPvpCount(pvp.losses, 0),
-    pvp_rating: readPvpRating(pvp.rating, 1000),
-    pvp_last_match_at: toIsoTimestamp(pvp.lastMatchAt || pvp.last_match_at),
+    updated_at: new Date().toISOString(),
     ...(SINGLE_DEVICE_SESSION_ENABLED
       ? {
           device_id: _singleSessionState.deviceId,
@@ -1202,8 +1241,13 @@ function buildProfilePayload() {
           device_label: _singleSessionState.deviceLabel,
         }
       : {}),
-    updated_at: new Date().toISOString(),
   };
+
+  for (const field of fieldsToSend) {
+    payload[field] = fieldSnapshot[field];
+  }
+
+  return payload;
 }
 
 function applyRemoteProfile(profile) {
@@ -1296,8 +1340,10 @@ function applyRemoteProfile(profile) {
   }
 
   _lastRemoteProfileUpdatedAt = Math.max(_lastRemoteProfileUpdatedAt, remoteUpdatedAt || Date.now());
+  _dirtyProfileFields.clear();
+  _lastObservedProfileFieldSnapshot = buildSyncProfileFieldSnapshot(store.get());
   _lastObservedProfileStateKey = buildLocalProfileStateKey(store.get());
-  const payload = buildProfilePayload();
+  const payload = buildProfilePayload(true);
   if (payload) {
     _lastProfilePayload = buildProfilePayloadKey(payload);
   }
@@ -1455,10 +1501,10 @@ async function refreshProfileFromCloud(force = false, identityKey = getProfileId
     if (applyRemoteProfile(remote.item)) {
       _profileCloudReadyState = "found";
       _profileSyncRetryAfter = 0;
-      const payload = buildProfilePayload();
-      if (payload) {
-        _lastProfilePayload = buildProfilePayloadKey(payload);
-      }
+  const payload = buildProfilePayload(true);
+  if (payload) {
+    _lastProfilePayload = buildProfilePayloadKey(payload);
+  }
       _lastProfileSyncAt = Date.now();
       return true;
     }
@@ -1542,12 +1588,13 @@ async function syncProfileToCloud(force = false) {
     }
   }
 
-  const payload = buildProfilePayload();
+  const hasRemoteProfile = _profileCloudReadyState === "found";
+  const payload = buildProfilePayload(force || !hasRemoteProfile);
   if (!payload) return;
   const payloadKey = buildProfilePayloadKey(payload);
-  const hasRemoteProfile = _profileCloudReadyState === "found";
   const localProfileDirty =
     !hasRemoteProfile ||
+    _dirtyProfileFields.size > 0 ||
     !_lastRemoteProfileUpdatedAt ||
     _lastLocalProfileMutationAt > _lastRemoteProfileUpdatedAt;
 
@@ -1561,6 +1608,7 @@ async function syncProfileToCloud(force = false) {
   _profileSyncBusy = true;
 
   try {
+    const syncedFields = Object.keys(payload).filter((field) => SYNC_PROFILE_FIELD_KEY_SET.has(field));
     const synced = await syncProfileToBackend(payload);
 
     if (!synced) {
@@ -1572,6 +1620,8 @@ async function syncProfileToCloud(force = false) {
     _lastProfileSyncAt = Date.now();
     _lastRemoteProfileUpdatedAt = Date.now();
     _lastLocalProfileMutationAt = _lastRemoteProfileUpdatedAt;
+    syncedFields.forEach((field) => _dirtyProfileFields.delete(field));
+    _lastObservedProfileFieldSnapshot = buildSyncProfileFieldSnapshot(store.get());
     _profileSyncRetryAfter = 0;
   } finally {
     _profileSyncBusy = false;
