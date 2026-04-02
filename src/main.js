@@ -41,9 +41,9 @@ const STARTING_XP_TO_NEXT = 0;
 const DEFAULT_XP_TO_NEXT = 100;
 const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
-const DESKTOP_SHELL_MIN_VIEWPORT = 900;
-const DESKTOP_SHELL_MAX_WIDTH = 560;
-const DESKTOP_SHELL_MAX_HEIGHT = 980;
+const DESKTOP_SHELL_MIN_VIEWPORT = 720;
+const DESKTOP_SHELL_MAX_WIDTH = 460;
+const DESKTOP_SHELL_MAX_HEIGHT = 920;
 const DESKTOP_SHELL_ASPECT = 9 / 16;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
@@ -145,11 +145,20 @@ function isDesktopTelegramShell(viewportW = window.innerWidth || 0, viewportH = 
   if (!tg) return false;
 
   const ua = String(window.navigator?.userAgent || "");
-  const coarsePointer = !!window.matchMedia?.("(pointer: coarse)")?.matches;
+  const platform = String(tg?.platform || window.navigator?.platform || "").toLowerCase();
+  const finePointer = !!window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches;
+  const hoverCapable = !!window.matchMedia?.("(hover: hover)")?.matches;
   const mobileUa = /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(ua);
-  const longSide = Math.max(Number(viewportW || 0), Number(viewportH || 0));
+  if (mobileUa) return false;
 
-  return !coarsePointer && !mobileUa && longSide >= DESKTOP_SHELL_MIN_VIEWPORT;
+  const width = Math.max(0, Number(viewportW || 0));
+  const height = Math.max(0, Number(viewportH || 0));
+  const longSide = Math.max(width, height);
+  const shortSide = Math.min(width, height);
+  const desktopPlatform = /(tdesktop|macos|windows|linux|win32|macintel|x11|weba|webk|web)/i.test(platform);
+  const desktopLike = desktopPlatform || finePointer || (hoverCapable && shortSide >= 420);
+
+  return desktopLike && longSide >= DESKTOP_SHELL_MIN_VIEWPORT && shortSide >= 420;
 }
 
 function getDesktopTelegramShellFrame(viewportW, viewportH) {
@@ -186,10 +195,11 @@ function applyViewportFrame(frame, desktopShell = false) {
   rootStyle.setProperty("--tc-app-height", `${Math.max(1, Math.floor(frame.height || 1))}px`);
   rootStyle.setProperty("--tc-app-left", `${Math.max(0, Math.floor(frame.left || 0))}px`);
   rootStyle.setProperty("--tc-app-top", `${Math.max(0, Math.floor(frame.top || 0))}px`);
-  rootStyle.setProperty("--tc-app-radius", desktopShell ? "26px" : "0px");
+  rootStyle.setProperty("--tc-app-radius", desktopShell ? "28px" : "0px");
+  rootStyle.setProperty("--tc-shell-opacity", desktopShell ? "1" : "0");
   rootStyle.setProperty(
     "--tc-app-shadow",
-    desktopShell ? "0 24px 70px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,255,255,0.08)" : "none"
+    desktopShell ? "0 28px 90px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08)" : "none"
   );
 
   if (desktopShell) {
