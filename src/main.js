@@ -22,7 +22,7 @@ import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
-import { startHud } from "./ui/Hud.js?v=20260403-2";
+import { startHud } from "./ui/Hud.js?v=20260403-4";
 import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-03-richads-layout-3";
+const BUILD_STAMP = "2026-04-03-hud-bottom-dock-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
