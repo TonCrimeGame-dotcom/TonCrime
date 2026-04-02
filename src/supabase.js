@@ -10,7 +10,7 @@ const AUTH_COOLDOWN_REASON_KEY = "toncrime_auth_cooldown_reason_v2";
 const AUTH_LAST_TRY_KEY = "toncrime_auth_last_try_v1";
 const AUTH_LAST_IDENTITY_KEY = "toncrime_auth_last_identity_v1";
 const AUTH_PATCH_VERSION_KEY = "toncrime_auth_patch_version_v1";
-const AUTH_PATCH_VERSION = "2026-04-01-secure-backend-session-1";
+const AUTH_PATCH_VERSION = "2026-04-02-telegram-strict-1";
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -43,6 +43,34 @@ function getTelegramUser() {
 export function getTelegramInitData() {
   try { return String(window.Telegram?.WebApp?.initData || "").trim(); } catch { return ""; }
 }
+function isTelegramMiniAppContext() {
+  try { return !!window.Telegram?.WebApp; } catch { return false; }
+}
+function isTelegramProfileKey(value) {
+  return /^\d{4,20}$/.test(String(value || "").trim());
+}
+function getExpectedTelegramIdentityKey() {
+  const tgId = String(getTelegramUser()?.id || "").trim();
+  return tgId ? `tg_${tgId}` : "";
+}
+function readAuthIdentityKey(user = null) {
+  return String(
+    user?.user_metadata?.identity_key ||
+    user?.app_metadata?.identity_key ||
+    user?.identities?.[0]?.identity_data?.identity_key ||
+    ""
+  ).trim();
+}
+async function waitForTelegramIdentity(timeoutMs = 2500) {
+  if (!isTelegramMiniAppContext()) return getTelegramUser();
+  const started = nowMs();
+  while (nowMs() - started < Math.max(250, Number(timeoutMs || 0))) {
+    const user = getTelegramUser();
+    if (user?.id) return user;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return getTelegramUser();
+}
 function makeRandomId() {
   try {
     const arr = new Uint8Array(16);
@@ -62,16 +90,27 @@ function syncTelegramIdentityStorage() {
 }
 
 export function getProfileKey(store = null) {
+  const telegramContext = isTelegramMiniAppContext();
   const tgId = syncTelegramIdentityStorage();
   if (tgId) return tgId;
 
   const fromStore = String(store?.get?.()?.player?.telegramId || window.tcStore?.get?.()?.player?.telegramId || "").trim();
   if (fromStore) {
-    if (!getTelegramUser()?.id) safeLocalSet(PROFILE_KEY_STORAGE, fromStore);
-    return fromStore;
+    if (!telegramContext || isTelegramProfileKey(fromStore)) {
+      if (!getTelegramUser()?.id) safeLocalSet(PROFILE_KEY_STORAGE, fromStore);
+      return fromStore;
+    }
   }
 
   let profileKey = safeLocalGet(PROFILE_KEY_STORAGE).trim();
+  if (telegramContext) {
+    if (profileKey && !isTelegramProfileKey(profileKey)) {
+      safeLocalRemove(PROFILE_KEY_STORAGE);
+      safeLocalRemove(GUEST_IDENTITY_KEY);
+      profileKey = "";
+    }
+    return profileKey;
+  }
   if (!profileKey) {
     const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
     profileKey = authKey || `guest_${makeRandomId()}`;
@@ -83,6 +122,7 @@ export function getProfileKey(store = null) {
 export function ensureGuestIdentitySync(store = null) {
   const tgUser = getTelegramUser();
   if (tgUser?.id) return `tg_${String(tgUser.id)}`;
+  if (isTelegramMiniAppContext()) return "";
 
   const profileKey = getProfileKey(store);
   const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
@@ -94,6 +134,10 @@ export function ensureGuestIdentitySync(store = null) {
 export function getIdentityKey() {
   const tgId = syncTelegramIdentityStorage();
   if (tgId) return `tg_${tgId}`;
+  if (isTelegramMiniAppContext()) {
+    const profileKey = getProfileKey();
+    return isTelegramProfileKey(profileKey) ? `tg_${profileKey}` : "";
+  }
 
   const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
   if (authKey) return authKey;
@@ -106,6 +150,10 @@ export function getIdentityKey() {
 function getIdentityCandidates() {
   const tgUser = getTelegramUser();
   if (tgUser?.id) return [`tg_${String(tgUser.id)}`];
+  if (isTelegramMiniAppContext()) {
+    const profileKey = getProfileKey();
+    return isTelegramProfileKey(profileKey) ? [`tg_${profileKey}`] : [];
+  }
 
   const out = [];
   const authKey = safeLocalGet(GUEST_IDENTITY_KEY).trim();
@@ -329,12 +377,13 @@ function canAttemptNow(identityKey) {
 }
 
 function rememberSuccessfulIdentity(identityKey) {
-  if (!identityKey || getTelegramUser()?.id) return;
+  if (!identityKey || getTelegramUser()?.id || isTelegramMiniAppContext()) return;
   safeLocalSet(GUEST_IDENTITY_KEY, identityKey);
   if (!safeLocalGet(PROFILE_KEY_STORAGE).trim()) safeLocalSet(PROFILE_KEY_STORAGE, identityKey);
 }
 
 async function tryAnonymousAuth(identityKey) {
+  if (isTelegramMiniAppContext()) return null;
   if (typeof supabase?.auth?.signInAnonymously !== "function") return null;
   try {
     const res = await supabase.auth.signInAnonymously({
@@ -387,6 +436,9 @@ async function tryBackendSessionAuth(identityKey) {
   if (!identityKey) return null;
 
   try {
+    if (isTelegramMiniAppContext() && !getTelegramUser()?.id) {
+      await waitForTelegramIdentity(3000).catch(() => null);
+    }
     const username =
       String(
         getTelegramUser()?.username ||
@@ -433,6 +485,50 @@ export async function ensureAuthSession() {
   if (authPromise) return authPromise;
 
   authPromise = (async () => {
+    const telegramContext = isTelegramMiniAppContext();
+    if (telegramContext) {
+      await waitForTelegramIdentity(3000).catch(() => null);
+    }
+
+    const expectedTelegramIdentity = getExpectedTelegramIdentityKey();
+
+    try {
+      const sessionRes = await supabase.auth.getSession().catch(() => null);
+      const sessionUser = sessionRes?.data?.session?.user || null;
+      if (sessionUser) {
+        const currentIdentity = readAuthIdentityKey(sessionUser);
+        if (!expectedTelegramIdentity || !currentIdentity || currentIdentity === expectedTelegramIdentity) {
+          clearAuthCooldown("session_exists");
+          return sessionUser;
+        }
+        await supabase.auth.signOut().catch(() => null);
+      }
+
+      const userRes = await supabase.auth.getUser().catch(() => null);
+      const authUser = userRes?.data?.user || null;
+      if (authUser) {
+        const currentIdentity = readAuthIdentityKey(authUser);
+        if (!expectedTelegramIdentity || !currentIdentity || currentIdentity === expectedTelegramIdentity) {
+          clearAuthCooldown("user_exists");
+          return authUser;
+        }
+        await supabase.auth.signOut().catch(() => null);
+      }
+    } catch {}
+
+    const candidates = getIdentityCandidates();
+    const primaryIdentity = candidates[0] || getIdentityKey();
+    if (!primaryIdentity) return null;
+    if (!canAttemptNow(primaryIdentity)) return null;
+
+    if (telegramContext) {
+      for (const identityKey of candidates.length ? candidates : [primaryIdentity]) {
+        const backendUser = await tryBackendSessionAuth(identityKey);
+        if (backendUser?.id) return backendUser;
+      }
+      return null;
+    }
+
     try {
       const sessionRes = await supabase.auth.getSession().catch(() => null);
       const sessionUser = sessionRes?.data?.session?.user || null;
@@ -440,18 +536,7 @@ export async function ensureAuthSession() {
         clearAuthCooldown("session_exists");
         return sessionUser;
       }
-
-      const userRes = await supabase.auth.getUser().catch(() => null);
-      const authUser = userRes?.data?.user || null;
-      if (authUser) {
-        clearAuthCooldown("user_exists");
-        return authUser;
-      }
     } catch {}
-
-    const candidates = getIdentityCandidates();
-    const primaryIdentity = candidates[0] || getIdentityKey();
-    if (!canAttemptNow(primaryIdentity)) return null;
 
     for (const identityKey of candidates) {
       const anonUser = await tryAnonymousAuth(identityKey);
