@@ -249,6 +249,7 @@ export function startHud(store, i18n) {
   let walletBtn = document.getElementById("hudWalletBtn");
   let langBtn = document.getElementById("hudLangBtn");
   let telegramBtn = document.getElementById("hudTelegramBtn");
+  let debugBtn = document.getElementById("hudDebugBtn");
   let premiumBtn = document.getElementById("hudPremiumBtn");
   let buttonTray = document.getElementById("hudActionTray");
 
@@ -283,6 +284,14 @@ export function startHud(store, i18n) {
     buttonTray.appendChild(langBtn);
   }
 
+  if (!debugBtn) {
+    debugBtn = document.createElement("button");
+    debugBtn.id = "hudDebugBtn";
+    debugBtn.type = "button";
+    debugBtn.textContent = "ID";
+    buttonTray.appendChild(debugBtn);
+  }
+
   if (!walletBtn) {
     walletBtn = document.createElement("button");
     walletBtn.id = "hudWalletBtn";
@@ -304,9 +313,190 @@ export function startHud(store, i18n) {
     root.appendChild(premiumBtn);
   }
 
-  [telegramBtn, walletBtn, langBtn].forEach((btn) => {
+  [telegramBtn, walletBtn, debugBtn, langBtn].forEach((btn) => {
     if (btn) buttonTray.appendChild(btn);
   });
+
+  let debugPanel = null;
+  let debugPanelBody = null;
+  let debugPanelBackdrop = null;
+  let debugPanelOpen = false;
+  let debugRefreshToken = 0;
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function yesNo(value) {
+    return value ? "Evet" : "Hayir";
+  }
+
+  function buildDebugRow(label, value) {
+    return `
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:start;margin:0 0 10px;">
+        <div style="font:700 12px system-ui;color:rgba(255,235,190,0.84);">${escapeHtml(label)}</div>
+        <div style="font:600 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;color:#fff;word-break:break-word;">${escapeHtml(value || "-")}</div>
+      </div>
+    `;
+  }
+
+  function ensureDebugPanel() {
+    if (debugPanel && debugPanelBody && debugPanelBackdrop) {
+      return { panel: debugPanel, body: debugPanelBody, backdrop: debugPanelBackdrop };
+    }
+
+    debugPanelBackdrop = document.createElement("div");
+    debugPanelBackdrop.id = "tcIdentityDebugBackdrop";
+    debugPanelBackdrop.style.position = "fixed";
+    debugPanelBackdrop.style.inset = "0";
+    debugPanelBackdrop.style.background = "rgba(5,8,14,0.64)";
+    debugPanelBackdrop.style.backdropFilter = "blur(10px)";
+    debugPanelBackdrop.style.webkitBackdropFilter = "blur(10px)";
+    debugPanelBackdrop.style.zIndex = "7800";
+    debugPanelBackdrop.style.display = "none";
+
+    debugPanel = document.createElement("div");
+    debugPanel.id = "tcIdentityDebugPanel";
+    debugPanel.style.position = "fixed";
+    debugPanel.style.left = "50%";
+    debugPanel.style.top = "50%";
+    debugPanel.style.transform = "translate(-50%, -50%)";
+    debugPanel.style.width = "min(92vw, 460px)";
+    debugPanel.style.maxHeight = "min(80vh, 720px)";
+    debugPanel.style.overflow = "hidden";
+    debugPanel.style.borderRadius = "24px";
+    debugPanel.style.border = "1px solid rgba(255,255,255,0.12)";
+    debugPanel.style.background = "linear-gradient(180deg, rgba(19,24,35,0.97), rgba(7,10,16,0.98))";
+    debugPanel.style.boxShadow = "0 30px 90px rgba(0,0,0,0.48)";
+    debugPanel.style.color = "#fff";
+    debugPanel.style.zIndex = "7801";
+    debugPanel.style.display = "none";
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.justifyContent = "space-between";
+    header.style.gap = "12px";
+    header.style.padding = "18px 18px 14px";
+    header.style.borderBottom = "1px solid rgba(255,255,255,0.08)";
+
+    const title = document.createElement("div");
+    title.innerHTML = `
+      <div style="font:900 17px system-ui;color:#fff;">Kimlik Kontrol</div>
+      <div style="margin-top:4px;font:600 12px system-ui;color:rgba(255,255,255,0.62);">Mini App hangi kimlikle aciliyor burada gorebilirsin.</div>
+    `;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Kapat";
+    closeBtn.style.width = "auto";
+    closeBtn.style.minWidth = "88px";
+    closeBtn.style.padding = "10px 14px";
+    closeBtn.style.borderRadius = "12px";
+    closeBtn.style.border = "1px solid rgba(255,255,255,0.12)";
+    closeBtn.style.background = "rgba(255,255,255,0.08)";
+    closeBtn.style.color = "#fff";
+    closeBtn.style.font = "800 12px system-ui";
+    closeBtn.style.cursor = "pointer";
+
+    debugPanelBody = document.createElement("div");
+    debugPanelBody.style.padding = "18px";
+    debugPanelBody.style.overflowY = "auto";
+    debugPanelBody.style.maxHeight = "calc(min(80vh, 720px) - 74px)";
+    debugPanelBody.innerHTML = `<div style="font:700 13px system-ui;color:rgba(255,255,255,0.66);">Yukleniyor...</div>`;
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    debugPanel.appendChild(header);
+    debugPanel.appendChild(debugPanelBody);
+
+    document.body.appendChild(debugPanelBackdrop);
+    document.body.appendChild(debugPanel);
+
+    const close = () => {
+      debugPanelOpen = false;
+      debugPanel.style.display = "none";
+      debugPanelBackdrop.style.display = "none";
+    };
+
+    debugPanelBackdrop.addEventListener("click", close);
+    closeBtn.addEventListener("click", close);
+
+    return { panel: debugPanel, body: debugPanelBody, backdrop: debugPanelBackdrop };
+  }
+
+  async function refreshIdentityDebugPanel() {
+    const { body } = ensureDebugPanel();
+    const token = ++debugRefreshToken;
+    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+    const initData = String(window.Telegram?.WebApp?.initData || "").trim();
+    const profileKey = String(window.tcGetProfileKey?.(store) || "").trim();
+    const identityKey = String(window.tcGetIdentityKey?.() || "").trim();
+    const backends = Array.isArray(window.tcGetBackendCandidates?.()) ? window.tcGetBackendCandidates?.() : [];
+    const backend = backends[0] || "";
+    const state = store.get?.() || {};
+    const player = state.player || {};
+
+    body.innerHTML = `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <button type="button" id="tcIdentityDebugRefreshBtn" style="width:auto;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.08);color:#fff;font:800 12px system-ui;cursor:pointer;">Yenile</button>
+        <button type="button" id="tcIdentityDebugSoftResetBtn" style="width:auto;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(200,120,50,0.18);color:#ffd8a2;font:800 12px system-ui;cursor:pointer;">Lokal Temizle</button>
+      </div>
+      ${buildDebugRow("Telegram ID", tgUser?.id ? String(tgUser.id) : "-")}
+      ${buildDebugRow("Telegram User", tgUser?.username || [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") || "-")}
+      ${buildDebugRow("Store Telegram", String(player.telegramId || "").trim() || "-")}
+      ${buildDebugRow("Profile Key", profileKey || "-")}
+      ${buildDebugRow("Identity Key", identityKey || "-")}
+      ${buildDebugRow("Backend", backend || "-")}
+      ${buildDebugRow("Init Data", initData ? `var (${initData.length} chars)` : "yok")}
+      ${buildDebugRow("Profile Done", yesNo(!!state?.intro?.profileCompleted))}
+      ${buildDebugRow("Username", String(player.username || "").trim() || "-")}
+      ${buildDebugRow("Level", String(player.level ?? "-"))}
+      ${buildDebugRow("YTON", String(state.coins ?? state.yton ?? "-"))}
+      <div id="tcIdentityDebugAuthRow" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);font:700 12px system-ui;color:rgba(255,255,255,0.7);">Auth kontrol ediliyor...</div>
+    `;
+
+    const refreshBtn = document.getElementById("tcIdentityDebugRefreshBtn");
+    const softResetBtn = document.getElementById("tcIdentityDebugSoftResetBtn");
+    refreshBtn?.addEventListener("click", () => refreshIdentityDebugPanel());
+    softResetBtn?.addEventListener("click", () => {
+      const okay = window.confirm("Bu cihazdaki lokal kimlik temizlensin mi?");
+      if (!okay) return;
+      Promise.resolve(window.tc?.dev?.softReset?.()).catch(() => null);
+    });
+
+    const authRow = document.getElementById("tcIdentityDebugAuthRow");
+    try {
+      const sessionRes = await window.tcSupabase?.auth?.getSession?.();
+      const sessionUser = sessionRes?.data?.session?.user || null;
+      const authUser = sessionUser || (await window.tcSupabase?.auth?.getUser?.())?.data?.user || null;
+      if (token !== debugRefreshToken) return;
+      if (authRow) {
+        authRow.innerHTML = [
+          buildDebugRow("Auth User", authUser?.id || "-"),
+          buildDebugRow("Auth Mail", authUser?.email || "-"),
+        ].join("");
+      }
+    } catch (err) {
+      if (token !== debugRefreshToken) return;
+      if (authRow) {
+        authRow.innerHTML = buildDebugRow("Auth Hata", String(err?.message || err || "bilinmiyor"));
+      }
+    }
+  }
+
+  function openIdentityDebugPanel() {
+    const { panel, backdrop } = ensureDebugPanel();
+    debugPanelOpen = true;
+    backdrop.style.display = "block";
+    panel.style.display = "block";
+    refreshIdentityDebugPanel().catch(() => null);
+  }
 
   function bindAvatarImgEventsOnce() {
     if (!elAvatarImg || elAvatarImg.__hudBound) return;
@@ -409,6 +599,14 @@ export function startHud(store, i18n) {
       langBtn.style.letterSpacing = "0.3px";
     }
 
+    if (debugBtn) {
+      debugBtn.title = lang === "tr" ? "Kimlik paneli" : "Identity panel";
+      debugBtn.setAttribute("aria-label", debugBtn.title);
+      debugBtn.textContent = "ID";
+      debugBtn.style.font = `${window.innerWidth <= 420 ? 800 : 900} ${window.innerWidth <= 420 ? 10 : 11}px system-ui`;
+      debugBtn.style.letterSpacing = "0.4px";
+    }
+
     if (premiumBtn) {
       premiumBtn.title = lang === "tr" ? "Satin alma ekrani" : "Open store";
       premiumBtn.setAttribute("aria-label", premiumBtn.title);
@@ -473,6 +671,12 @@ export function startHud(store, i18n) {
       langBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
 
+    if (!debugBtn.__debugBound) {
+      debugBtn.__debugBound = true;
+      debugBtn.addEventListener("click", openIdentityDebugPanel);
+      debugBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
+
     if (!premiumBtn.__premiumBound) {
       premiumBtn.__premiumBound = true;
       premiumBtn.addEventListener("click", openTradeStore);
@@ -509,6 +713,7 @@ export function startHud(store, i18n) {
 
     applyButtonChrome(walletBtn, { size });
     applyButtonChrome(telegramBtn, { size });
+    applyButtonChrome(debugBtn, { size });
     applyButtonChrome(langBtn, { size });
     applyButtonChrome(premiumBtn, {
       size,
