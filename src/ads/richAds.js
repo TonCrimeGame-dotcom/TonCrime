@@ -195,6 +195,17 @@ async function waitForRichAdsSdk(timeoutMs = 4000) {
   return typeof window.TelegramAdsController === "function" ? window.TelegramAdsController : null;
 }
 
+async function reloadRichAdsSdk(timeoutMs = 5000) {
+  if (typeof window.tcReloadRichAdsSdk === "function") {
+    try {
+      return await window.tcReloadRichAdsSdk(timeoutMs);
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
 async function createRichAdsControllerOnDemand(options = {}) {
   const forceFresh = !!options.forceFresh;
 
@@ -300,6 +311,15 @@ export async function playRichRewardedAd(timeoutMs = 5200) {
     const retriedController = await waitForRichAdsController(timeoutMs, { forceFresh: true });
     if (retriedController) {
       played = await runRichAdsAdOnce(retriedController);
+    }
+
+    if (!played.ok && played.reason === "error" && isNullObjectFailure(played.error)) {
+      await reloadRichAdsSdk(Math.max(timeoutMs, 4800));
+      resetRichAdsControllerCache();
+      const reloadedController = await waitForRichAdsController(Math.max(timeoutMs, 4800), { forceFresh: true });
+      if (reloadedController) {
+        played = await runRichAdsAdOnce(reloadedController);
+      }
     }
   }
 
