@@ -365,6 +365,13 @@ function isSingleSessionColumnError(err) {
   return msg.includes('active_session_') || (msg.includes('column') && msg.includes('profiles'));
 }
 
+function isMissingProfileColumnError(err, columnName = '') {
+  const msg = String(err?.message || '').toLowerCase();
+  const column = String(columnName || '').trim().toLowerCase();
+  if (!msg.includes('profiles') || !msg.includes('column')) return false;
+  return column ? msg.includes(column) : true;
+}
+
 function safeEqualHex(left, right) {
   const a = Buffer.from(String(left || '').trim().toLowerCase(), 'hex');
   const b = Buffer.from(String(right || '').trim().toLowerCase(), 'hex');
@@ -613,6 +620,16 @@ function summarizeManagedAuthUsers(users = []) {
   }
 
   return summary;
+}
+
+function disableResponseCache(res) {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store',
+    'Vary': 'X-Telegram-Init-Data',
+  });
 }
 
 async function listManagedTonCrimeAuthUsers() {
@@ -1803,6 +1820,11 @@ app.post('/wallet/validate', async (req, res) => {
 });
 
 
+app.use('/public', (req, res, next) => {
+  disableResponseCache(res);
+  next();
+});
+
 app.post('/public/auth/session', makePublicRateLimit('auth-session', 60_000, 40), async (req, res) => {
   try {
     const identity = resolveIdentityContext(req, { allowGuest: true });
@@ -2065,20 +2087,39 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .upsert(payload, { onConflict: 'telegram_id' })
-      .select('*')
-      .single();
+    let profileData = null;
+    {
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert(payload, { onConflict: 'telegram_id' })
+        .select('*')
+        .single();
 
-    if (error) throw error;
+      if (error) {
+        if (!isMissingProfileColumnError(error, 'age')) throw error;
 
-    let finalData = data;
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.age;
+
+        const fallback = await supabase
+          .from('profiles')
+          .upsert(fallbackPayload, { onConflict: 'telegram_id' })
+          .select('*')
+          .single();
+
+        if (fallback.error) throw fallback.error;
+        profileData = fallback.data || null;
+      } else {
+        profileData = data || null;
+      }
+    }
+
+    let finalData = profileData;
     const pvpData = await tryPersistProfilePvpStats(identity.profileKey, pvpPatch);
     if (pvpData) {
       finalData = pvpData;
     } else if (Object.values(pvpPatch).some((value) => value != null)) {
-      finalData = await getProfileByKey(identity.profileKey).catch(() => data) || data;
+      finalData = await getProfileByKey(identity.profileKey).catch(() => profileData) || profileData;
     }
 
     return res.json({ ok: true, item: finalData });
