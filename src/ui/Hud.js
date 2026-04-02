@@ -463,6 +463,7 @@ export function startHud(store, i18n) {
         <button type="button" id="tcIdentityDebugSoftResetBtn" style="width:auto;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(200,120,50,0.18);color:#ffd8a2;font:800 12px system-ui;cursor:pointer;">Lokal Temizle</button>
       </div>
       <div style="margin:0 0 12px;font:800 11px system-ui;color:rgba(255,235,190,0.72);letter-spacing:0.5px;">CIHAZ / STORE</div>
+      ${buildDebugRow("Build", String(window.tcBuildStamp || "-"))}
       ${buildDebugRow("Telegram ID", tgUser?.id ? String(tgUser.id) : "-")}
       ${buildDebugRow("Telegram User", tgUser?.username || [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") || "-")}
       ${buildDebugRow("Store Telegram", String(player.telegramId || "").trim() || "-")}
