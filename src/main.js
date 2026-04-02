@@ -41,7 +41,7 @@ const STARTING_XP_TO_NEXT = 0;
 const DEFAULT_XP_TO_NEXT = 100;
 const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
-const DESKTOP_SHELL_MIN_VIEWPORT = 720;
+const DESKTOP_SHELL_MIN_VIEWPORT = 560;
 const DESKTOP_SHELL_MAX_WIDTH = 414;
 const DESKTOP_SHELL_MAX_HEIGHT = 896;
 const DESKTOP_SHELL_ASPECT = 390 / 844;
@@ -156,7 +156,11 @@ function isDesktopTelegramShell(viewportW = window.innerWidth || 0, viewportH = 
   const longSide = Math.max(width, height);
   const shortSide = Math.min(width, height);
   const desktopPlatform = /(tdesktop|macos|windows|linux|win32|macintel|x11|weba|webk|web)/i.test(platform);
-  const desktopLike = desktopPlatform || finePointer || (hoverCapable && shortSide >= 420);
+  if (desktopPlatform) {
+    return longSide >= DESKTOP_SHELL_MIN_VIEWPORT;
+  }
+
+  const desktopLike = finePointer || (hoverCapable && shortSide >= 420);
 
   return desktopLike && longSide >= DESKTOP_SHELL_MIN_VIEWPORT && shortSide >= 420;
 }
