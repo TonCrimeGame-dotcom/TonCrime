@@ -1,3 +1,5 @@
+import { playRichRewardedAd } from "../ads/richAds.js";
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -106,6 +108,53 @@ function formatNumber(value, locale) {
   return Number.isFinite(numeric) ? numeric.toLocaleString(locale) : "0";
 }
 
+function normalizeReferralToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+}
+
+function buildReferralLandingUrl(referralCode) {
+  try {
+    const current = new URL(window.location?.href || "https://toncrime.app");
+    current.searchParams.set("ref", referralCode);
+    return current.toString();
+  } catch (_) {
+    return `https://toncrime.app/?ref=${encodeURIComponent(referralCode)}`;
+  }
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch (_) {}
+
+  try {
+    const input = document.createElement("textarea");
+    input.value = value;
+    input.setAttribute("readonly", "readonly");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    input.style.pointerEvents = "none";
+    document.body.appendChild(input);
+    input.select();
+    const copied = document.execCommand("copy");
+    input.remove();
+    return !!copied;
+  } catch (_) {
+    return false;
+  }
+}
+
 function getTelegramUrl() {
   return "https://t.me/TonCrimeEu";
 }
@@ -125,40 +174,6 @@ function openTelegramLink(url = getTelegramUrl()) {
   } catch (_) {}
 
   return false;
-}
-
-function isCompletedAdResult(result) {
-  if (result == null) return true;
-  if (typeof result === "boolean") return result;
-
-  if (typeof result === "object") {
-    if (typeof result.rewarded === "boolean") return result.rewarded;
-    if (typeof result.completed === "boolean") return result.completed;
-    if (typeof result.success === "boolean") return result.success;
-
-    const status = String(result.status || result.state || result.result || "").toLowerCase();
-    if (status && /(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
-  }
-
-  return true;
-}
-
-async function waitForRichAdsController(timeoutMs = 1800) {
-  const direct = window.tcRichAdsController || window.TelegramAdsController;
-  if (direct && typeof direct.triggerInterstitialVideo === "function") return direct;
-
-  const pending = window.tcRichAdsReady;
-  if (!pending || typeof pending.then !== "function") return null;
-
-  try {
-    const controller = await Promise.race([
-      pending,
-      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-    ]);
-    return controller && typeof controller.triggerInterstitialVideo === "function" ? controller : null;
-  } catch (_) {
-    return null;
-  }
 }
 
 const REFERRAL_TIERS = [
@@ -340,6 +355,21 @@ export class MissionsScene {
     this._claim("dailyAd", { silent: true });
   }
 
+  _buildReferralShareMeta() {
+    const player = this._playerState();
+    const username = String(player.username || "").trim() || "player";
+    const referralCode = normalizeReferralToken(player.telegramId || player.id || username || "toncrime");
+    const inviteUrl = buildReferralLandingUrl(referralCode || "toncrime");
+    return {
+      referralCode: referralCode || "toncrime",
+      inviteUrl,
+      shareText: this._ui(
+        `${username} seni TonCrime'a davet ediyor. Gel ve birlikte kara pazari fethedelim.`,
+        `${username} invited you to TonCrime. Join up and take over the black market together.`
+      ),
+    };
+  }
+
   _claim(type, opts = {}) {
     const silent = !!opts.silent;
     const missions = this._missionsState();
@@ -445,18 +475,24 @@ export class MissionsScene {
     this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
 
     try {
-      const controller = await waitForRichAdsController();
-      if (!controller) {
+      const played = await playRichRewardedAd();
+      if (!played.ok) {
+        if (played.reason === "controller_missing" || played.reason === "method_missing") {
+          this._showToast(
+            this._ui("RichAds hazir degil. Script baglantisini kontrol et.", "RichAds is not ready. Check the script setup."),
+            2600
+          );
+          return;
+        }
+        if (played.reason === "not_completed") {
+          this._showToast(this._ui("Reklam tamamlanmadi.", "Ad was not completed."));
+          return;
+        }
+        console.warn("[TonCrime] RichAds video error:", played.error);
         this._showToast(
-          this._ui("RichAds hazir degil. Script baglantisini kontrol et.", "RichAds is not ready. Check the script setup."),
-          2600
+          this._ui("Reklam kapatildi veya acilamadi.", "Ad was closed or could not be opened."),
+          2200
         );
-        return;
-      }
-
-      const result = await controller.triggerInterstitialVideo();
-      if (!isCompletedAdResult(result)) {
-        this._showToast(this._ui("Reklam tamamlanmadi.", "Ad was not completed."));
         return;
       }
 
@@ -472,7 +508,7 @@ export class MissionsScene {
         );
       }
     } catch (error) {
-      console.warn("[TonCrime] RichAds video error:", error);
+      console.warn("[TonCrime] MissionsScene rewarded ad fatal:", error);
       this._showToast(
         this._ui("Reklam kapatildi veya acilamadi.", "Ad was closed or could not be opened."),
         2200
@@ -482,10 +518,34 @@ export class MissionsScene {
     }
   }
 
-  _simulateReferral() {
+  _shareReferral() {
+    const meta = this._buildReferralShareMeta();
+    const shareUrl =
+      `https://t.me/share/url?url=${encodeURIComponent(meta.inviteUrl)}` +
+      `&text=${encodeURIComponent(meta.shareText)}`;
+    const opened = openTelegramLink(shareUrl);
+    if (!opened) {
+      this._showToast(this._ui("Paylasim penceresi acilamadi.", "Share sheet could not be opened."), 2200);
+      return;
+    }
+
     const missions = this._missionsState();
-    this._setMissions({ referrals: Number(missions.referrals || 0) + 1 });
-    this._showToast(this._ui("Davet ilerlemesi +1.", "Referral progress +1."));
+    const nextCount = Number(missions.referrals || 0) + 1;
+    this._setMissions({ referrals: nextCount });
+    this._showToast(
+      this._ui(`Davet linki paylasildi (${nextCount}).`, `Invite link shared (${nextCount}).`),
+      2200
+    );
+  }
+
+  async _copyReferralLink() {
+    const meta = this._buildReferralShareMeta();
+    const copied = await copyTextToClipboard(meta.inviteUrl);
+    if (copied) {
+      this._showToast(this._ui("Davet linki kopyalandi.", "Invite link copied."), 2200);
+      return;
+    }
+    this._showToast(this._ui("Link kopyalanamadi.", "Invite link could not be copied."), 2200);
   }
 
   _simulatePvp() {
@@ -518,8 +578,13 @@ export class MissionsScene {
       return;
     }
 
-    if (action === "simulateReferral") {
-      this._simulateReferral();
+    if (action === "shareReferral") {
+      this._shareReferral();
+      return;
+    }
+
+    if (action === "copyReferral") {
+      this._copyReferralLink();
       return;
     }
 
@@ -865,13 +930,18 @@ export class MissionsScene {
           "Rewards: starter weapon, mid weapon, top weapon and premium."
         ),
         status: this._ui(
-          `${referralLeft} odul seviyesi bekliyor.`,
-          `${referralLeft} reward tier(s) still pending.`
+          `${referralLeft} odul seviyesi ve paylasim linkin hazir.`,
+          `${referralLeft} reward tier(s) are ready and your invite link is live.`
         ),
         buttons: [
           {
-            label: this._ui("Davet +1", "Invite +1"),
-            action: "simulateReferral",
+            label: this._ui("Davet Et", "Invite"),
+            action: "shareReferral",
+          },
+          {
+            label: this._ui("Linki Kopyala", "Copy Link"),
+            action: "copyReferral",
+            soft: true,
           },
         ],
       },
