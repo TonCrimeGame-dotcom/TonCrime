@@ -3359,6 +3359,9 @@ _drawButton(ctx, rect, text, style = "ghost") {
   _renderBusinesses(ctx, x, y, w) {
     this._refreshBusinessProduction();
     const businesses = this._allBusinesses();
+    const compact = w <= 420;
+    const productRowH = compact ? 62 : 54;
+    const productRowStep = compact ? 70 : 62;
 
     this._drawHeroCard(
       ctx,
@@ -3380,7 +3383,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
     for (const biz of businesses) {
       const products = biz.products || [];
-      const cardH = 122 + products.length * 64;
+      const cardH = 122 + products.length * productRowStep;
+      const infoMaxWidth = Math.max(108, w - (compact ? 188 : 198));
 
       ctx.fillStyle = "rgba(255,255,255,0.05)";
       fillRoundRect(ctx, x, y, w, cardH, 20);
@@ -3393,7 +3397,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
       ctx.fillStyle = "#fff";
       ctx.font = "900 15px system-ui";
-      textFit(ctx, biz.name || this._ui("Isletme", "Business"), x + 82, y + 24, w - 190);
+      textFit(ctx, biz.name || this._ui("Isletme", "Business"), x + 82, y + 24, infoMaxWidth);
 
       const pendingCount = (biz.pendingProduction || []).reduce((sum, row) => sum + Number(row.qty || 0), 0);
       const remainMs = Math.max(0, Number(biz.productionClaimUntil || 0) - Date.now());
@@ -3410,55 +3414,82 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
       ctx.fillStyle = "rgba(255,255,255,0.70)";
       ctx.font = "12px system-ui";
-      ctx.fillText(
+      textFit(
+        ctx,
         this._ui(`${this._typeLabel(biz.type)} - Gunluk ${this._num(biz.dailyProduction)} - Stok ${this._num(biz.stock)}`, `${this._typeLabel(biz.type)} - Daily ${this._num(biz.dailyProduction)} - Stock ${this._num(biz.stock)}`),
         x + 82,
         y + 46
+        ,
+        infoMaxWidth
       );
 
       ctx.fillStyle = pendingCount > 0 ? "rgba(255,209,120,0.95)" : "rgba(255,255,255,0.48)";
       ctx.font = "11px system-ui";
-      ctx.fillText(productionLine, x + 82, y + 64);
+      textFit(ctx, productionLine, x + 82, y + 64, infoMaxWidth);
 
-      const collectRect = { x: x + w - 102, y: y + 14, w: 86, h: 30 };
+      const collectRect = { x: x + w - (compact ? 96 : 102), y: y + 14, w: compact ? 80 : 86, h: 30 };
       this.hitButtons.push({ rect: collectRect, action: "collect_business", bizId: biz.id });
       this._drawButton(ctx, collectRect, this._ui("Topla", "Collect"), pendingCount > 0 ? "gold" : "muted");
 
       let rowY = y + 82;
-for (const p of products) {
-  ctx.fillStyle = "rgba(255,255,255,0.04)";
-  fillRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  strokeRoundRect(ctx, x + 12, rowY, w - 24, 54, 14);
+      for (const p of products) {
+        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        fillRoundRect(ctx, x + 12, rowY, w - 24, productRowH, 14);
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        strokeRoundRect(ctx, x + 12, rowY, w - 24, productRowH, 14);
 
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
 
-  this._drawArtThumb(ctx, x + 18, rowY + 9, 38, 38, p, p.name || this._ui("Urun", "Item"), biz.type);
+        this._drawArtThumb(ctx, x + 18, rowY + 9, 38, 38, p, p.name || this._ui("Urun", "Item"), biz.type);
 
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 13px system-ui";
-  textFit(ctx, p.name || this._ui("Urun", "Item"), x + 66, rowY + 18, w - 194);
+        const listRect = {
+          x: x + w - (compact ? 70 : 76),
+          y: rowY + Math.floor((productRowH - 24) / 2),
+          w: compact ? 50 : 56,
+          h: 24,
+        };
+        const useRect = {
+          x: listRect.x - (compact ? 50 : 54),
+          y: listRect.y,
+          w: compact ? 44 : 48,
+          h: 24,
+        };
+        const textStartX = x + 66;
+        const textMaxWidth = Math.max(86, useRect.x - textStartX - 10);
 
-  ctx.fillStyle = rarityColor(p.rarity);
-  ctx.font = "800 10px system-ui";
-  ctx.fillText(String(p.rarity || "common").toUpperCase(), x + 66, rowY + 34);
+        ctx.fillStyle = "#fff";
+        ctx.font = "900 13px system-ui";
+        textFit(ctx, p.name || this._ui("Urun", "Item"), textStartX, rowY + 18, textMaxWidth);
 
-  ctx.fillStyle = "rgba(255,255,255,0.70)";
-  ctx.font = "11px system-ui";
-  textFit(ctx, this._ui(`Stok ${fmtNum(p.qty)} - Taban ${fmtNum(p.price)} yton`, `Stock ${fmtNum(p.qty)} - Base ${fmtNum(p.price)} yton`), x + 66, rowY + 34, w - 194);
+        let rarityLabel = String(p.rarity || "common").toUpperCase();
+        ctx.fillStyle = rarityColor(p.rarity);
+        ctx.font = "800 9px system-ui";
+        while (rarityLabel.length > 1 && ctx.measureText(rarityLabel).width > 60) {
+          rarityLabel = rarityLabel.slice(0, -1);
+        }
+        ctx.textAlign = "right";
+        ctx.fillText(rarityLabel, useRect.x - 8, rowY + 18);
+        ctx.textAlign = "left";
 
-  const useRect = { x: x + w - 130, y: rowY + 13, w: 48, h: 24 };
-  const listRect = { x: x + w - 76, y: rowY + 13, w: 56, h: 24 };
+        ctx.fillStyle = "rgba(255,255,255,0.70)";
+        ctx.font = "11px system-ui";
+        textFit(
+          ctx,
+          this._ui(`Stok ${fmtNum(p.qty)} - Taban ${fmtNum(p.price)} yton`, `Stock ${fmtNum(p.qty)} - Base ${fmtNum(p.price)} yton`),
+          textStartX,
+          rowY + 39,
+          textMaxWidth
+        );
 
-  this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
-  this.hitButtons.push({ rect: listRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
+        this.hitButtons.push({ rect: useRect, action: "use_business_product", bizId: biz.id, productId: p.id });
+        this.hitButtons.push({ rect: listRect, action: "sell_business_product", bizId: biz.id, productId: p.id });
 
-  this._drawButton(ctx, useRect, this._ui("Kullan", "Use"), "gold");
-  this._drawButton(ctx, listRect, this._ui("Listele", "List"), "muted");
+        this._drawButton(ctx, useRect, this._ui("Kullan", "Use"), "gold");
+        this._drawButton(ctx, listRect, this._ui("Listele", "List"), "muted");
 
-  rowY += 62;
-}
+        rowY += productRowStep;
+      }
        
     
       
@@ -3882,6 +3913,7 @@ for (const p of products) {
     const tonBalance = Number(this._wallet().tonBalance || 0);
     const canOwn = this._canOwnBusiness();
     const defs = Object.entries(this._businessDefs()).map(([type, def]) => ({ type, ...def }));
+    const compact = w <= 420;
 
     this._drawHeroCard(
       ctx,
@@ -3918,27 +3950,29 @@ for (const p of products) {
     y += 118;
 
     for (const def of defs) {
+      const cardH = compact ? 138 : 126;
+      const detailMaxWidth = Math.max(108, w - (compact ? 176 : 194));
       ctx.fillStyle = 'rgba(255,255,255,0.05)';
-      fillRoundRect(ctx, x, y, w, 126, 18);
+      fillRoundRect(ctx, x, y, w, cardH, 18);
       ctx.strokeStyle = 'rgba(255,255,255,0.09)';
-      strokeRoundRect(ctx, x, y, w, 126, 18);
+      strokeRoundRect(ctx, x, y, w, cardH, 18);
 
       const title = this._lang() === 'en' ? def.nameEn : def.nameTr;
       this._drawArtThumb(ctx, x + 14, y + 14, 54, 54, def, title, def.type);
       ctx.fillStyle = '#fff';
       ctx.font = '900 14px system-ui';
-      textFit(ctx, title, x + 80, y + 22, w - 194);
+      textFit(ctx, title, x + 80, y + 22, detailMaxWidth);
       ctx.fillStyle = 'rgba(255,255,255,0.74)';
       ctx.font = '11px system-ui';
-      textFit(ctx, this._ui('Normal fiyat ' + this._num(def.price) + ' yton', 'Standard price ' + this._num(def.price) + ' yton'), x + 80, y + 44, w - 194);
-      textFit(ctx, this._ui('Urunler: ', 'Products: ') + def.products.map((p) => p.name).join(' / '), x + 80, y + 62, w - 194);
-      textFit(ctx, this._ui('Gunluk 50 urun, dusuk fiyatlilar daha sik gelir.', 'Daily 50 mixed items, low-price products are more common.'), x + 80, y + 80, w - 194);
+      textFit(ctx, this._ui('Normal fiyat ' + this._num(def.price) + ' yton', 'Standard price ' + this._num(def.price) + ' yton'), x + 80, y + 44, detailMaxWidth);
+      textFit(ctx, this._ui('Urunler: ', 'Products: ') + def.products.map((p) => p.name).join(' / '), x + 80, y + 62, detailMaxWidth);
+      textFit(ctx, this._ui('Gunluk 50 urun, dusuk fiyatlilar daha sik gelir.', 'Daily 50 mixed items, low-price products are more common.'), x + 80, y + 80, detailMaxWidth);
 
-      const premiumRect = { x: x + 14, y: y + 90, w: 112, h: 24 };
+      const premiumRect = { x: x + 14, y: y + (compact ? 102 : 90), w: compact ? 104 : 112, h: 24 };
       this.hitButtons.push({ rect: premiumRect, action: 'buy_premium', businessType: def.type });
       this._drawButton(ctx, premiumRect, isPremium ? this._ui('Uyelik Acik', 'Membership Active') : this._ui('Uyeligi Al', 'Buy Membership'), isPremium ? 'muted' : 'gold');
 
-      const normalRect = { x: x + 132, y: y + 90, w: 94, h: 24 };
+      const normalRect = { x: premiumRect.x + premiumRect.w + 8, y: premiumRect.y, w: compact ? 86 : 94, h: 24 };
       this.hitButtons.push({ rect: normalRect, action: 'buy_business', businessType: def.type });
       this._drawButton(
         ctx,
@@ -3947,7 +3981,7 @@ for (const p of products) {
         canOwn ? 'gold' : 'muted'
       );
 
-      y += 138;
+      y += cardH + 12;
     }
 
     return y;
@@ -4022,7 +4056,8 @@ for (const p of products) {
 
     
 
-    let contentTop = panelY + 58;
+    const compactPanel = panelW <= 390;
+    let contentTop = panelY + (compactPanel ? 64 : 58);
 
     if (trade.view === "main") {
       const tabs = [
@@ -4034,26 +4069,29 @@ for (const p of products) {
         { key: "market", label: this._ui("Pazar", "Market") },
       ];
 
+      const tabHeight = compactPanel ? 32 : 34;
+      const tabGapX = compactPanel ? 8 : 10;
+      const tabGapY = compactPanel ? 38 : 42;
       let tx = panelX + 16;
-      let ty = panelY + 56;
+      let ty = panelY + (compactPanel ? 60 : 56);
       const limitX = panelX + panelW - 16;
 
       for (const tab of tabs) {
-        const tw = clamp(28 + tab.label.length * 7.2, 86, 138);
+        const tw = clamp((compactPanel ? 24 : 28) + tab.label.length * (compactPanel ? 6.4 : 7.2), compactPanel ? 72 : 86, compactPanel ? 122 : 138);
         if (tx + tw > limitX) {
           tx = panelX + 16;
-          ty += 42;
+          ty += tabGapY;
         }
 
-        const rect = { x: tx, y: ty, w: tw, h: 34 };
+        const rect = { x: tx, y: ty, w: tw, h: tabHeight };
         this.hitTabs.push({ rect, tab: tab.key });
 
         const active = trade.activeTab === tab.key;
         this._drawButton(ctx, rect, tab.label, active ? "primary" : "muted");
-        tx += tw + 10;
+        tx += tw + tabGapX;
       }
 
-      contentTop = ty + 46;
+      contentTop = ty + tabHeight + 14;
     }
 
     const contentX = panelX + 8;
