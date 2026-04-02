@@ -447,6 +447,7 @@ export function startHud(store, i18n) {
         <button type="button" id="tcIdentityDebugRefreshBtn" style="width:auto;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.08);color:#fff;font:800 12px system-ui;cursor:pointer;">Yenile</button>
         <button type="button" id="tcIdentityDebugSoftResetBtn" style="width:auto;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(200,120,50,0.18);color:#ffd8a2;font:800 12px system-ui;cursor:pointer;">Lokal Temizle</button>
       </div>
+      <div style="margin:0 0 12px;font:800 11px system-ui;color:rgba(255,235,190,0.72);letter-spacing:0.5px;">CIHAZ / STORE</div>
       ${buildDebugRow("Telegram ID", tgUser?.id ? String(tgUser.id) : "-")}
       ${buildDebugRow("Telegram User", tgUser?.username || [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") || "-")}
       ${buildDebugRow("Store Telegram", String(player.telegramId || "").trim() || "-")}
@@ -459,6 +460,7 @@ export function startHud(store, i18n) {
       ${buildDebugRow("Level", String(player.level ?? "-"))}
       ${buildDebugRow("YTON", String(state.coins ?? state.yton ?? "-"))}
       <div id="tcIdentityDebugAuthRow" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);font:700 12px system-ui;color:rgba(255,255,255,0.7);">Auth kontrol ediliyor...</div>
+      <div id="tcIdentityDebugBackendRow" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);font:700 12px system-ui;color:rgba(255,255,255,0.7);">Backend profil kontrol ediliyor...</div>
     `;
 
     const refreshBtn = document.getElementById("tcIdentityDebugRefreshBtn");
@@ -471,6 +473,7 @@ export function startHud(store, i18n) {
     });
 
     const authRow = document.getElementById("tcIdentityDebugAuthRow");
+    const backendRow = document.getElementById("tcIdentityDebugBackendRow");
     try {
       const sessionRes = await window.tcSupabase?.auth?.getSession?.();
       const sessionUser = sessionRes?.data?.session?.user || null;
@@ -486,6 +489,34 @@ export function startHud(store, i18n) {
       if (token !== debugRefreshToken) return;
       if (authRow) {
         authRow.innerHTML = buildDebugRow("Auth Hata", String(err?.message || err || "bilinmiyor"));
+      }
+    }
+
+    try {
+      const remote = await window.tcFetchBackendJson?.(`/public/profile?identity_key=${encodeURIComponent(identityKey || profileKey || "")}`);
+      if (token !== debugRefreshToken) return;
+      const item = remote?.item || null;
+      if (backendRow) {
+        backendRow.innerHTML = item
+          ? [
+              `<div style="margin:0 0 12px;font:800 11px system-ui;color:rgba(255,235,190,0.72);letter-spacing:0.5px;">BACKEND / CANLI PROFIL</div>`,
+              buildDebugRow("Remote User", String(item.username || "").trim() || "-"),
+              buildDebugRow("Remote Level", String(item.level ?? "-")),
+              buildDebugRow("Remote YTON", String(item.coins ?? "-")),
+              buildDebugRow("Remote Energy", `${String(item.energy ?? "-")} / ${String(item.energy_max ?? "-")}`),
+            ].join("")
+          : [
+              `<div style="margin:0 0 12px;font:800 11px system-ui;color:rgba(255,235,190,0.72);letter-spacing:0.5px;">BACKEND / CANLI PROFIL</div>`,
+              buildDebugRow("Durum", "Kayit bulunamadi"),
+            ].join("");
+      }
+    } catch (err) {
+      if (token !== debugRefreshToken) return;
+      if (backendRow) {
+        backendRow.innerHTML = [
+          `<div style="margin:0 0 12px;font:800 11px system-ui;color:rgba(255,235,190,0.72);letter-spacing:0.5px;">BACKEND / CANLI PROFIL</div>`,
+          buildDebugRow("Remote Hata", String(err?.message || err || "bilinmiyor")),
+        ].join("");
       }
     }
   }
