@@ -74,6 +74,8 @@
       spinRequestSent: "Spin istegi gonderildi",
       matchEnded: "Mac sonlandi",
       opponentQuit: "Rakip mactan cikti",
+      forfeitWin: "Rakip cikti - hukmen galip",
+      forfeitLoss: "Mactan ciktin - hukmen maglup",
       wonStatus: "PvP • Kazandin",
       lostStatus: "PvP • Kaybettin",
       wonToast: "Kazandin!",
@@ -140,6 +142,8 @@
       spinRequestSent: "Spin request sent",
       matchEnded: "Match ended",
       opponentQuit: "Opponent left the match",
+      forfeitWin: "Opponent left - win by forfeit",
+      forfeitLoss: "You left the match - loss by forfeit",
       wonStatus: "PvP • You won",
       lostStatus: "PvP • You lost",
       wonToast: "You won!",
@@ -1173,6 +1177,7 @@
         resultReason: "",
         resultReasonKey: "",
         resultReasonVars: null,
+        winnerSide: null,
       };
       this._setInfo("ready", {}, this._text("ready", "Hazir"));
     },
@@ -1205,7 +1210,11 @@
     },
 
     _mySideKey() {
-      return this._matchCtx?.amIPlayer1 ? "p1" : "p2";
+      return this._matchCtx?.amIPlayer1 === false ? "p2" : "p1";
+    },
+
+    _enemySideKey() {
+      return this._mySideKey() === "p1" ? "p2" : "p1";
     },
 
     _localTurnSide() {
@@ -1274,7 +1283,9 @@
         resultReason: String(s.resultReason || ""),
         resultReasonKey: String(s.resultReasonKey || ""),
         resultReasonVars: deepCloneSafe(s.resultReasonVars || null),
-        winnerSide: s.finished ? (s.enemyHp <= 0 || (s.meHp >= s.enemyHp && s.meSpins <= 0 && s.enemySpins <= 0) ? "p1" : "p2") : null,
+        winnerSide: s.finished
+          ? (s.winnerSide || (s.enemyHp <= 0 || (s.meHp >= s.enemyHp && s.meSpins <= 0 && s.enemySpins <= 0) ? "p1" : "p2"))
+          : null,
       };
     },
 
@@ -1368,6 +1379,7 @@
       s.resultReason = String(snapshot.resultReason || "");
       s.resultReasonKey = String(snapshot.resultReasonKey || "");
       s.resultReasonVars = snapshot.resultReasonVars || null;
+      s.winnerSide = snapshot.winnerSide || null;
 
       if (!this._isAuthoritativePeer() && snapshot.reason === "tumble_hit") {
         const actorLocal = snapshot.turnOwner === mySide ? "me" : "enemy";
@@ -1423,6 +1435,13 @@
       this._broadcastState("sync_reply");
     },
 
+    _handleForfeitBroadcast(payload) {
+      if (!this._state || this._state.finished) return;
+      const quitter = String(payload?.quitter || "");
+      if (!quitter || quitter === this._mySideKey()) return;
+      this.forfeit("enemy", this._text("forfeitWin", "Rakip cikti - hukmen galip"));
+    },
+
     _setupSync() {
       this._clearSync();
       if (!this._isOnlineMatch()) return;
@@ -1434,6 +1453,7 @@
         .on("broadcast", { event: "state" }, ({ payload }) => this._handleSyncBroadcast(payload))
         .on("broadcast", { event: "spin_request" }, ({ payload }) => this._handleSpinRequestBroadcast(payload))
         .on("broadcast", { event: "sync_request" }, ({ payload }) => this._handleSyncRequestBroadcast(payload))
+        .on("broadcast", { event: "forfeit" }, ({ payload }) => this._handleForfeitBroadcast(payload))
         .subscribe((status) => {
           if (status !== "SUBSCRIBED") return;
           this._syncReady = true;
@@ -1450,9 +1470,20 @@
         });
     },
 
+    forfeit(side = "me", reason = "") {
+      if (!this._state || this._state.finished) return false;
+      const quitter = side === "enemy" ? "enemy" : "me";
+      if (quitter === "me" && this._isOnlineMatch()) {
+        this._broadcast("forfeit", { quitter: this._mySideKey() });
+      }
+      return this._finish(quitter === "enemy", reason, {
+        notify: true,
+        reasonKey: quitter === "enemy" ? "forfeitWin" : "forfeitLoss",
+      });
+    },
+
     resolveOpponentQuit() {
-      if (!this._state || this._state.finished) return;
-      this._finish(true, this._text("opponentQuit", "Rakip mactan cikti"), { notify: true, reasonKey: "opponentQuit" });
+      return this.forfeit("enemy", this._text("forfeitWin", "Rakip cikti - hukmen galip"));
     },
 
     reset() {
@@ -1505,13 +1536,7 @@
     _bindEvents() {
       if (!this._els) return;
 
-      const onClose = () => {
-        const shouldReportLoss = !!(this._state && !this._state.finished);
-        if (shouldReportLoss && typeof this.onMatchFinished === "function" && !this._resultReported) {
-          this._resultReported = true;
-          try { this.onMatchFinished(false, { reason: "quit" }); } catch (_) {}
-        }
-        this.stop();
+      const cleanupArenaUi = () => {
         try {
           const arena = document.getElementById("arena");
           const wrap = document.getElementById("pvpWrap");
@@ -1529,6 +1554,24 @@
         } catch (_) {}
       };
 
+      const onClose = () => {
+        if (this._state && !this._state.finished) {
+          this.forfeit("me", this._text("forfeitLoss", "Mactan ciktin - hukmen maglup"));
+          window.setTimeout(() => {
+            this.stop();
+            cleanupArenaUi();
+          }, 80);
+          return;
+        }
+        this.stop();
+        cleanupArenaUi();
+      };
+
+      const onPageHide = () => {
+        if (!this._isOnlineMatch() || !this._state || this._state.finished) return;
+        this.forfeit("me", this._text("forfeitLoss", "Mactan ciktin - hukmen maglup"));
+      };
+
       const onSpin = async () => {
         if (!this._running || !this._state || this._state.turn !== "me" || this._state.spinning || this._state.finished) return;
         clearTimeout(this._turnTimer);
@@ -1543,10 +1586,14 @@
 
       this._els.closeBtn?.addEventListener("click", onClose);
       this._els.spinBtn?.addEventListener("click", onSpin);
+      window.addEventListener("pagehide", onPageHide);
+      window.addEventListener("beforeunload", onPageHide);
 
       this._unbind = () => {
         this._els?.closeBtn?.removeEventListener("click", onClose);
         this._els?.spinBtn?.removeEventListener("click", onSpin);
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("beforeunload", onPageHide);
       };
 
       if (typeof ResizeObserver !== "undefined") {
@@ -1690,7 +1737,7 @@
       }
       const status = String(data?.status || "").toLowerCase();
       if ((status === "cancelled" || status === "canceled") && !this._state?.finished) {
-        this._finish(true, this._text("opponentQuit", "Rakip mactan cikti"), { notify: false, reasonKey: "opponentQuit" });
+        this.resolveOpponentQuit();
       }
     },
 
@@ -2099,6 +2146,7 @@
       s.resultReasonKey = String(opts.reasonKey || "");
       s.resultReasonVars = opts.reasonVars || null;
       s.resultReason = finalReason;
+      s.winnerSide = win ? this._mySideKey() : this._enemySideKey();
       this._running = false;
       this._locked = true;
       clearTimeout(this._turnTimer);
@@ -2139,17 +2187,24 @@
         const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
         const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
         const playerName = String(state?.player?.username || "Player");
+        const playerId = String(state?.player?.telegramId || state?.player?.id || "player_main");
 
         pvp.wins = Number(pvp.wins || 0) + (win ? 1 : 0);
         pvp.losses = Number(pvp.losses || 0) + (win ? 0 : 1);
         pvp.rating = clamp(Number(pvp.rating || 1000) + (win ? 20 : -12), 0, 99999);
         pvp.currentOpponent = opponent;
         pvp.recentMatches = [resultItem, ...recentMatches];
+        pvp.lastMatchAt = now;
 
         const score = Number(pvp.rating || 1000) + Number(pvp.wins || 0) * 8;
-        const nextBoard = leaderboard.filter((x) => x && x.name !== playerName);
+        const nextBoard = leaderboard.filter((x) => {
+          if (!x) return false;
+          const rowId = String(x.id || x.telegram_id || x.telegramId || "").trim();
+          if (rowId) return rowId !== playerId;
+          return x.name !== playerName;
+        });
         nextBoard.push({
-          id: String(state?.player?.id || "player_main"),
+          id: playerId,
           name: playerName,
           wins: Number(pvp.wins || 0),
           losses: Number(pvp.losses || 0),
