@@ -75,6 +75,7 @@
       --tc-app-radius: 0px;
       --tc-app-shadow: none;
       --tc-shell-opacity: 0;
+      --tc-canvas-opacity: 0;
     }
 
     html, body {
@@ -129,6 +130,8 @@
       border-radius: var(--tc-app-radius);
       box-shadow: var(--tc-app-shadow);
       background: #08090d;
+      opacity: var(--tc-canvas-opacity);
+      transition: opacity 160ms ease;
     }
 
     #safe {
@@ -416,7 +419,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260402-2",
+          "./src/main.js?v=20260402-3",
           "./main.js"
         ]);
 
