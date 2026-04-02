@@ -656,9 +656,9 @@ export function startHud(store, i18n) {
     }
 
     if (premiumBtn) {
-      premiumBtn.title = lang === "tr" ? "Satin alma ekrani" : "Open store";
+      premiumBtn.title = lang === "tr" ? "Premium ekranini ac" : "Open premium";
       premiumBtn.setAttribute("aria-label", premiumBtn.title);
-      premiumBtn.textContent = lang === "tr" ? "SATIN AL" : "BUY";
+      premiumBtn.textContent = "PREMIUM";
       premiumBtn.style.font = `${window.innerWidth <= 420 ? 900 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
       premiumBtn.style.letterSpacing = "0.7px";
     }
@@ -740,7 +740,7 @@ export function startHud(store, i18n) {
     const tablet = viewportW > 720 && viewportW <= 1100;
     const size = compact ? 32 : (narrow ? 34 : (mobile ? 38 : (tablet ? 40 : 42)));
     const gap = compact ? 5 : (narrow ? 6 : 8);
-    const trayOffset = mobile ? (compact ? 8 : 10) : (tablet ? 10 : 6);
+    const trayOffset = mobile ? (compact ? 4 : 6) : (tablet ? 6 : 4);
     const premiumWidth = compact ? 72 : (narrow ? 78 : (mobile ? 86 : 96));
 
     if (buttonTray) {
@@ -763,6 +763,7 @@ export function startHud(store, i18n) {
       buttonTray.style.zIndex = "2";
       buttonTray.style.minHeight = `${size}px`;
       buttonTray.style.maxWidth = `${size * 4 + gap * 3}px`;
+      buttonTray.style.pointerEvents = "auto";
     }
 
     applyButtonChrome(walletBtn, { size });
@@ -889,16 +890,26 @@ export function startHud(store, i18n) {
     if (elCenter) elCenter.style.display = "none";
 
     const safeTop = Number(ui.safe?.y || 0);
-    const trayHeight = buttonTray ? buttonTray.offsetHeight + 8 : 0;
-    const premiumHeight = premiumBtn && premiumBtn.style.display !== "none" ? premiumBtn.offsetHeight + 8 : 0;
     const viewportW = Math.max(0, Number(window.innerWidth || 0));
     const mobile = viewportW <= 720;
     const narrow = viewportW <= 420;
-    const baseReservedTop = narrow ? 164 : (mobile ? 150 : 124);
-    const extraBottomClearance = mobile ? 14 : 8;
+    const baseReservedTop = narrow ? 178 : (mobile ? 164 : 136);
+    const extraBottomClearance = mobile ? 18 : 12;
+    const rootRect = root.getBoundingClientRect?.() || { top: 0, bottom: 0 };
+    const trayRect = buttonTray?.getBoundingClientRect?.() || { bottom: rootRect.bottom };
+    const premiumRect =
+      premiumBtn && premiumBtn.style.display !== "none"
+        ? premiumBtn.getBoundingClientRect?.() || { bottom: rootRect.bottom }
+        : { bottom: rootRect.bottom };
+    const actualBottom = Math.max(
+      Number(rootRect.bottom || 0),
+      Number(trayRect.bottom || 0),
+      Number(premiumRect.bottom || 0)
+    );
+    const measuredReservedTop = Math.ceil(actualBottom - safeTop + extraBottomClearance);
     const reservedTop = Math.max(
       baseReservedTop + telegramChromeTopOffset,
-      root.offsetHeight + Math.max(trayHeight, premiumHeight) + safeTop + telegramChromeTopOffset + extraBottomClearance
+      measuredReservedTop
     );
 
     if (Math.abs(lastReservedTop - reservedTop) > 1) {
