@@ -399,8 +399,8 @@ const DAMAGE = {
     const w = Math.max(220, Number(width || 0));
     const h = Math.max(180, Number(height || 0));
     const cx = w * 0.5;
-    const cy = h * 0.565;
-    const outerR = Math.min(w * 0.49, h * 0.43);
+    const cy = h * 0.545;
+    const outerR = Math.min(w * 0.495, h * 0.455);
     const wallInnerR = outerR * 0.885;
     const floorR = outerR * 0.79;
     const iconR = floorR * 0.88;
@@ -637,7 +637,7 @@ const DAMAGE = {
       #arena .tc-cage-stage {
         position: relative;
         flex: 1 1 auto;
-        min-height: clamp(360px, 52vh, 640px);
+        min-height: clamp(390px, 58vh, 700px);
         border-radius: 20px;
         overflow: hidden;
         background:
