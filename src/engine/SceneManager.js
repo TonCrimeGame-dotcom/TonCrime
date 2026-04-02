@@ -40,6 +40,9 @@ export class SceneManager {
 
     this._currentKey = key;
     if (next?.onEnter) next.onEnter(data);
+    try {
+      window.dispatchEvent(new CustomEvent("tc:scene-changed", { detail: { key, data } }));
+    } catch (_) {}
   }
 
   current() {
