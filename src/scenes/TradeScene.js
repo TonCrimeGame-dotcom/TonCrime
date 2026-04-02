@@ -759,6 +759,95 @@ class TradeScene {
     return spec.imageSrc ? this._runtimeImage(spec.imageSrc) : null;
   }
 
+  _rewardArt(reward) {
+    if (!reward) return null;
+    const type = String(reward.type || "").toLowerCase();
+    if (type === "item" && reward.item) {
+      return {
+        ...reward.item,
+        imageKey: reward.item.imageKey || reward.imageKey || "",
+        imageSrc: reward.item.imageSrc || reward.imageSrc || "",
+        label: reward.item.name || reward.label || reward.item.label || "",
+      };
+    }
+    if (type === "weapon") {
+      return {
+        kind: "weapon",
+        imageKey: reward.imageKey || "",
+        imageSrc: reward.imageSrc || "",
+        name: reward.weaponName || reward.label || "Weapon",
+        label: reward.weaponName || reward.label || "Weapon",
+      };
+    }
+    if (type === "coins") {
+      return {
+        kind: "currency",
+        imageSrc: "./src/assets/yton.png",
+        label: "YTON",
+      };
+    }
+    if (type === "empty" || type === "combo") return null;
+    if (reward.imageKey || reward.imageSrc) return reward;
+    return null;
+  }
+
+  _drawRewardThumb(ctx, x, y, size, reward, highlight = false) {
+    const art = this._rewardArt(reward);
+    const img = art ? this._resolveArtImage(art, art?.kind || reward?.type || "") : null;
+    const accent = String(reward?.accent || "#f1b965");
+    const radius = Math.min(16, Math.max(10, Math.floor(size * 0.24)));
+    const innerPad = Math.max(4, Math.floor(size * 0.10));
+
+    ctx.save();
+    const shell = ctx.createLinearGradient(x, y, x, y + size);
+    shell.addColorStop(0, highlight ? "rgba(255,229,163,0.26)" : "rgba(255,215,141,0.12)");
+    shell.addColorStop(1, highlight ? "rgba(84,45,11,0.46)" : "rgba(26,16,8,0.42)");
+    ctx.fillStyle = shell;
+    fillRoundRect(ctx, x, y, size, size, radius);
+    ctx.strokeStyle = highlight ? "rgba(255,231,172,0.62)" : "rgba(255,229,184,0.24)";
+    ctx.lineWidth = highlight ? 1.5 : 1;
+    strokeRoundRect(ctx, x, y, size, size, radius);
+
+    ctx.beginPath();
+    roundRectPath(ctx, x + innerPad, y + innerPad, size - innerPad * 2, size - innerPad * 2, Math.max(8, radius - 3));
+    ctx.clip();
+
+    const glow = ctx.createRadialGradient(
+      x + size / 2,
+      y + size / 2,
+      size * 0.10,
+      x + size / 2,
+      y + size / 2,
+      size * 0.60
+    );
+    glow.addColorStop(0, highlight ? `${accent}55` : `${accent}33`);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(x, y, size, size);
+
+    let drewArt = false;
+    if (img) {
+      const spec = this._itemArt(art, art?.kind || reward?.type || "") || {};
+      const shouldContain =
+        /\.png($|\?)/i.test(String(spec.imageSrc || "")) ||
+        ["weapon", "goods", "consumable", "rare", "currency"].includes(String(art?.kind || "").toLowerCase());
+      drewArt = shouldContain
+        ? drawContainImage(ctx, img, x + innerPad, y + innerPad, size - innerPad * 2, size - innerPad * 2)
+        : drawCoverImage(ctx, img, x + innerPad, y + innerPad, size - innerPad * 2, size - innerPad * 2);
+    }
+    if (!drewArt) {
+      this._drawWheelGlyph(ctx, this._wheelRewardVisual(reward).glyph || "yton", x + size / 2, y + size / 2, Math.floor(size * 0.78), "#fff6de");
+    }
+
+    const gloss = ctx.createLinearGradient(0, y, 0, y + size * 0.56);
+    gloss.addColorStop(0, "rgba(255,255,255,0.22)");
+    gloss.addColorStop(0.55, "rgba(255,255,255,0.04)");
+    gloss.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gloss;
+    ctx.fillRect(x, y, size, size);
+    ctx.restore();
+  }
+
   _drawArtThumb(ctx, x, y, w, h, art, fallbackLabel = "", fallbackType = "", opts = null) {
     const spec = this._itemArt(art, fallbackType) || {};
     const img = this._resolveArtImage(art, fallbackType);
@@ -1155,7 +1244,8 @@ class TradeScene {
   _wheelRewardVisual(reward) {
     const type = String(reward?.type || "").toLowerCase();
     const amount = Math.max(0, Number(reward?.amount || reward?.coins || 0));
-    const weaponShort = /m134/i.test(String(reward?.weaponName || reward?.label || "")) ? "M134" : "BARRET";
+    const rewardArt = this._rewardArt(reward);
+    const weaponShort = /m134/i.test(String(reward?.weaponName || reward?.label || "")) ? "M134" : "M82";
 
     if (type === "coins") {
       return {
@@ -1163,7 +1253,7 @@ class TradeScene {
         subtitle: "YTON",
         category: "YTON",
         accent: reward?.accent || "#f4c45d",
-        imageSrc: "",
+        art: rewardArt,
         glyph: "yton",
       };
     }
@@ -1174,18 +1264,18 @@ class TradeScene {
         subtitle: "ENERJI",
         category: "ENERJI",
         accent: reward?.accent || "#e0b96c",
-        imageSrc: "",
+        art: rewardArt,
         glyph: "energy",
       };
     }
 
     if (type === "weapon") {
       return {
-        title: "SILAH",
-        subtitle: weaponShort,
+        title: weaponShort,
+        subtitle: "SILAH",
         category: "SILAH",
         accent: reward?.accent || "#f0a96c",
-        imageSrc: "",
+        art: rewardArt,
         glyph: "weapon",
       };
     }
@@ -1194,30 +1284,30 @@ class TradeScene {
       const kind = String(reward?.item?.kind || "").toLowerCase();
       if (kind === "girls") {
         return {
-          title: "KADIN",
-          subtitle: "",
+          title: String(reward?.item?.icon || "SB").slice(0, 3),
+          subtitle: "KADIN",
           category: "KADIN",
           accent: reward?.accent || "#efbb78",
-          imageSrc: "",
+          art: rewardArt,
           glyph: "girls",
         };
       }
       if (kind === "goods") {
         return {
-          title: "OT",
-          subtitle: "",
+          title: String(reward?.item?.icon || "WW").slice(0, 3),
+          subtitle: "OT",
           category: "OT",
           accent: reward?.accent || "#afc86e",
-          imageSrc: "",
+          art: rewardArt,
           glyph: "weed",
         };
       }
       return {
-        title: "ICKI",
-        subtitle: "",
+        title: String(reward?.item?.icon || "CP").slice(0, 3),
+        subtitle: "ICKI",
         category: "ICKI",
         accent: reward?.accent || "#efb76b",
-        imageSrc: "",
+        art: rewardArt,
         glyph: "drink",
       };
     }
@@ -1228,7 +1318,7 @@ class TradeScene {
         subtitle: "SANS",
         category: "BOS",
         accent: reward?.accent || "#7b5630",
-        imageSrc: "",
+        art: rewardArt,
         glyph: "empty",
       };
     }
@@ -1239,7 +1329,7 @@ class TradeScene {
         subtitle: `${amount || 0}`,
         category: "FULL",
         accent: reward?.accent || "#96d7ff",
-        imageSrc: "",
+        art: rewardArt,
         glyph: "energy",
       };
     }
@@ -1249,7 +1339,7 @@ class TradeScene {
       subtitle: "ODUL",
       category: "ODUL",
       accent: reward?.accent || "#f1b965",
-      imageSrc: "",
+      art: rewardArt,
       glyph: "yton",
     };
   }
@@ -1391,6 +1481,8 @@ class TradeScene {
   _drawWheelBadge(ctx, reward, x, y, size, highlight = false) {
     const meta = this._wheelRewardVisual(reward);
     const glow = String(meta.accent || "#f1b965");
+    const rewardArt = meta.art || this._rewardArt(reward);
+    const rewardImg = rewardArt ? this._resolveArtImage(rewardArt, rewardArt?.kind || reward?.type || "") : null;
 
     ctx.save();
     ctx.translate(x, y);
@@ -1447,7 +1539,20 @@ class TradeScene {
       ctx.arc(0, 0, size * (0.18 + Math.abs(i) * 0.08), -Math.PI * 0.72, Math.PI * 0.26);
       ctx.stroke();
     }
-    this._drawWheelGlyph(ctx, meta.glyph || meta.category, 0, 0, size, "#fff6de");
+    let drewRewardImage = false;
+    if (rewardImg) {
+      const drawSize = size * 0.90;
+      const spec = this._itemArt(rewardArt, rewardArt?.kind || reward?.type || "") || {};
+      const useContain =
+        /\.png($|\?)/i.test(String(spec.imageSrc || "")) ||
+        ["weapon", "goods", "consumable", "rare", "currency"].includes(String(rewardArt?.kind || "").toLowerCase());
+      drewRewardImage = useContain
+        ? drawContainImage(ctx, rewardImg, -drawSize / 2, -drawSize / 2, drawSize, drawSize)
+        : drawCoverImage(ctx, rewardImg, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+    }
+    if (!drewRewardImage) {
+      this._drawWheelGlyph(ctx, meta.glyph || meta.category, 0, 0, size, "#fff6de");
+    }
     const glass = ctx.createLinearGradient(0, -size * 0.58, 0, size * 0.20);
     glass.addColorStop(0, "rgba(255,255,255,0.30)");
     glass.addColorStop(0.45, "rgba(255,255,255,0.08)");
@@ -1504,16 +1609,20 @@ class TradeScene {
     ctx.restore();
 
     const typeMeta = this._wheelRewardVisual(reward);
+    const rewardArt = this._rewardArt(reward);
+    const hasRewardArt = !!(rewardArt && this._resolveArtImage(rewardArt, rewardArt?.kind || reward?.type || ""));
     const compact = w < 150 || h < 108;
     if (compact) {
-      const badgeSize = Math.max(28, Math.min(38, Math.floor(Math.min(w, h) * 0.34)));
-      this._drawWheelBadge(ctx, reward, x + w / 2, y + 34, badgeSize, highlight);
+      const thumbSize = hasRewardArt
+        ? Math.max(34, Math.min(46, Math.floor(Math.min(w, h) * 0.40)))
+        : Math.max(28, Math.min(38, Math.floor(Math.min(w, h) * 0.34)));
+      this._drawRewardThumb(ctx, x + Math.round((w - thumbSize) / 2), y + 18, thumbSize, reward, highlight);
 
       ctx.fillStyle = "#ffe2a3";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "800 9px system-ui";
-      textFit(ctx, typeMeta.category, x + w / 2, y + 60, w - 18);
+      textFit(ctx, typeMeta.category, x + w / 2, y + 64, w - 18);
 
       ctx.fillStyle = "#ffffff";
       ctx.font = "900 12px system-ui";
@@ -1536,9 +1645,9 @@ class TradeScene {
       return;
     }
 
-    const badgeRailW = Math.min(118, Math.max(86, Math.floor(w * 0.28)));
-    const badgeSize = Math.max(34, Math.min(38, Math.floor(Math.min(w, h) * 0.28)));
-    this._drawWheelBadge(ctx, reward, x + 18 + badgeSize / 2, y + h / 2, badgeSize, highlight);
+    const thumbSize = hasRewardArt ? Math.max(48, Math.min(58, Math.floor(h * 0.58))) : Math.max(34, Math.min(40, Math.floor(h * 0.28)));
+    const badgeRailW = Math.min(132, Math.max(94, thumbSize + 44));
+    this._drawRewardThumb(ctx, x + 16, y + Math.round((h - thumbSize) / 2), thumbSize, reward, highlight);
 
     ctx.fillStyle = "#ffe2a3";
     ctx.textAlign = "left";
