@@ -11,11 +11,11 @@ import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
 import { HomeScene } from "./scenes/HomeScene.js";
-import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260331-2";
+import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260403-1";
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260402-7";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260403-1";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-blackmarket-loot-1";
+const BUILD_STAMP = "2026-04-03-richads-blackmarket-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
