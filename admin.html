@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>TonCrime Admin</title>
   <style>
-    body{margin:0;background:#0b1017;color:#fff;font-family:system-ui,Arial}
-    .wrap{max-width:1240px;margin:20px auto;padding:0 16px}
+    body{margin:0;background:#0b1017;color:#fff;font-family:system-ui,Arial,sans-serif}
+    .wrap{max-width:1320px;margin:20px auto;padding:0 16px}
     .toolbar,.card{background:#121a26;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px}
     .toolbar{display:grid;grid-template-columns:1.2fr 1fr 180px 120px;gap:12px;align-items:end;margin-bottom:16px}
     .tabs{display:flex;gap:8px;margin-bottom:16px}
@@ -26,13 +26,21 @@
     .paid{background:#18331d;color:#9affb0}
     .rejected{background:#40181d;color:#ff9aa7}
     .statusbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .miniInput{min-width:84px;padding:8px 10px;font-size:13px}
+    .inlineInputs{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .muted{font-size:12px;color:rgba(255,255,255,.62)}
+    @media (max-width: 960px){
+      .toolbar{grid-template-columns:1fr}
+      .wrap{padding:0 10px}
+      th,td{font-size:13px}
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="statusbar">
       <h2>TonCrime Admin Panel</h2>
-      <div id="statusText">Hazır</div>
+      <div id="statusText">Hazir</div>
     </div>
 
     <div class="toolbar">
@@ -46,28 +54,28 @@
       </div>
       <div>
         <label>Filtre / Arama</label>
-        <input id="queryInput" placeholder="status veya kullanıcı ara" />
+        <input id="queryInput" placeholder="status veya kullanici ara" />
       </div>
       <div>
-        <button id="reloadBtn">Yükle</button>
+        <button id="reloadBtn">Yukle</button>
       </div>
     </div>
 
     <div class="tabs">
-      <button id="tabWithdraws">Çekimler</button>
-      <button id="tabProfiles">Enerji Reset</button>
+      <button id="tabWithdraws">Cekimler</button>
+      <button id="tabProfiles">Profiller</button>
     </div>
 
     <div id="withdrawsView" class="card">
       <table>
         <thead>
           <tr>
-            <th>Kullanıcı</th>
-            <th>Cüzdan</th>
+            <th>Kullanici</th>
+            <th>Cuzdan</th>
             <th>Tutar</th>
             <th>Durum</th>
             <th>Tarih</th>
-            <th>İşlem</th>
+            <th>Islem</th>
           </tr>
         </thead>
         <tbody id="withdrawRows"></tbody>
@@ -78,11 +86,12 @@
       <table>
         <thead>
           <tr>
-            <th>Kullanıcı</th>
+            <th>Kullanici</th>
             <th>Telegram</th>
-            <th>Enerji</th>
-            <th>Coin</th>
-            <th>İşlem</th>
+            <th>Level</th>
+            <th>YTON</th>
+            <th>Enerji / Max</th>
+            <th>Islem</th>
           </tr>
         </thead>
         <tbody id="profileRows"></tbody>
@@ -106,7 +115,31 @@ const tabProfiles = document.getElementById('tabProfiles');
 let activeTab = 'withdraws';
 let lastPendingCount = 0;
 
-function setStatus(text){ statusText.textContent = text; }
+function setStatus(text) {
+  statusText.textContent = text;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '-';
+  return date.toLocaleString('tr-TR');
+}
+
+function parseNumberInput(id, fallback = 0) {
+  const el = document.getElementById(id);
+  const num = Number(el?.value ?? fallback);
+  return Number.isFinite(num) ? num : fallback;
+}
 
 async function api(path, options = {}) {
   const res = await fetch(backendUrl.value.trim() + path, {
@@ -118,12 +151,12 @@ async function api(path, options = {}) {
     }
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error || 'İstek başarısız');
+  if (!res.ok) throw new Error(json.error || 'Istek basarisiz');
   return json;
 }
 
-function pill(status){
-  return `<span class="pill ${status}">${status}</span>`;
+function pill(status) {
+  return `<span class="pill ${escapeHtml(status)}">${escapeHtml(status)}</span>`;
 }
 
 function playBeep() {
@@ -142,97 +175,113 @@ function playBeep() {
 }
 
 async function loadWithdraws() {
-  withdrawRows.innerHTML = '<tr><td colspan="6">Yükleniyor...</td></tr>';
+  withdrawRows.innerHTML = '<tr><td colspan="6">Yukleniyor...</td></tr>';
   try {
     const rawQ = queryInput.value.trim();
-    const status = ['pending','paid','rejected','all'].includes(rawQ) ? rawQ : 'all';
+    const status = ['pending', 'paid', 'rejected', 'all'].includes(rawQ) ? rawQ : 'all';
     const data = await api(`/withdraws?status=${encodeURIComponent(status)}`);
     let items = data.items || [];
-    if (rawQ && !['pending','paid','rejected','all'].includes(rawQ)) {
+    if (rawQ && !['pending', 'paid', 'rejected', 'all'].includes(rawQ)) {
       const q = rawQ.toLowerCase();
-      items = items.filter(x =>
+      items = items.filter((x) =>
         String(x.username || '').toLowerCase().includes(q) ||
         String(x.telegram_id || '').toLowerCase().includes(q) ||
         String(x.wallet_address || '').toLowerCase().includes(q)
       );
     }
-    const pendingCount = items.filter(x => x.status === 'pending').length;
+    const pendingCount = items.filter((x) => x.status === 'pending').length;
     if (pendingCount > lastPendingCount) playBeep();
     lastPendingCount = pendingCount;
 
     if (!items.length) {
-      withdrawRows.innerHTML = '<tr><td colspan="6">Kayıt yok</td></tr>';
+      withdrawRows.innerHTML = '<tr><td colspan="6">Kayit yok</td></tr>';
       return;
     }
 
-    withdrawRows.innerHTML = items.map(item => `
+    withdrawRows.innerHTML = items.map((item) => `
       <tr>
         <td>
-          <div><strong>${item.username || '-'}</strong></div>
-          <div>${item.telegram_id || ''}</div>
+          <div><strong>${escapeHtml(item.username || '-')}</strong></div>
+          <div>${escapeHtml(item.telegram_id || '')}</div>
         </td>
         <td>
-          <div>${item.wallet_address}</div>
-          <div>${item.tx_hash || ''}</div>
+          <div>${escapeHtml(item.wallet_address || '')}</div>
+          <div>${escapeHtml(item.tx_hash || '')}</div>
         </td>
         <td>
-          <div>${item.yton_amount} YTON</div>
-          <div>${item.ton_amount} TON</div>
+          <div>${escapeHtml(item.yton_amount)} YTON</div>
+          <div>${escapeHtml(item.ton_amount)} TON</div>
         </td>
-        <td>${pill(item.status)}</td>
-        <td>${new Date(item.created_at).toLocaleString('tr-TR')}</td>
+        <td>${pill(item.status || '')}</td>
+        <td>${escapeHtml(formatDate(item.created_at))}</td>
         <td>
           ${item.status === 'pending' ? `
             <div class="actions">
-              <button class="gold" onclick="payRow('${item.id}')">Onayla ve Öde</button>
+              <button class="gold" onclick="payRow('${item.id}')">Onayla ve Ode</button>
               <button class="red" onclick="rejectRow('${item.id}')">Reddet</button>
             </div>
-          ` : 'Tamamlandı'}
+          ` : 'Tamamlandi'}
         </td>
       </tr>
     `).join('');
   } catch (err) {
-    withdrawRows.innerHTML = `<tr><td colspan="6">${err.message}</td></tr>`;
+    withdrawRows.innerHTML = `<tr><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
 async function loadProfiles() {
-  profileRows.innerHTML = '<tr><td colspan="5">Yükleniyor...</td></tr>';
+  profileRows.innerHTML = '<tr><td colspan="6">Yukleniyor...</td></tr>';
   try {
     const data = await api(`/profiles?query=${encodeURIComponent(queryInput.value.trim())}`);
     const items = data.items || [];
     if (!items.length) {
-      profileRows.innerHTML = '<tr><td colspan="5">Kayıt yok</td></tr>';
+      profileRows.innerHTML = '<tr><td colspan="6">Kayit yok</td></tr>';
       return;
     }
-    profileRows.innerHTML = items.map(item => `
+
+    profileRows.innerHTML = items.map((item) => `
       <tr>
-        <td><strong>${item.username || '-'}</strong></td>
-        <td>${item.telegram_id || ''}</td>
-        <td>${item.energy}/${item.energy_max}</td>
-        <td>${item.coins}</td>
+        <td>
+          <div><strong>${escapeHtml(item.username || '-')}</strong></div>
+          <div class="muted">${escapeHtml(formatDate(item.updated_at || item.created_at))}</div>
+        </td>
+        <td>${escapeHtml(item.telegram_id || '')}</td>
+        <td>
+          <input class="miniInput" id="pf-level-${item.id}" type="number" min="0" max="9999" value="${Number(item.level || 0)}" />
+        </td>
+        <td>
+          <input class="miniInput" id="pf-coins-${item.id}" type="number" min="0" max="999999999" value="${Number(item.coins || 0)}" />
+        </td>
+        <td>
+          <div class="inlineInputs">
+            <input class="miniInput" id="pf-energy-${item.id}" type="number" min="0" max="500" value="${Number(item.energy || 0)}" />
+            <span>/</span>
+            <input class="miniInput" id="pf-energy-max-${item.id}" type="number" min="1" max="500" value="${Number(item.energy_max || 100)}" />
+          </div>
+        </td>
         <td>
           <div class="actions">
-            <button class="green" onclick="resetEnergy('${item.id}')">Enerjiyi 50 Yap</button>
+            <button class="green" onclick="saveProfile('${item.id}')">Kaydet</button>
+            <button class="gold" onclick="resetEnergy('${item.id}')">50 / 50</button>
           </div>
         </td>
       </tr>
     `).join('');
   } catch (err) {
-    profileRows.innerHTML = `<tr><td colspan="5">${err.message}</td></tr>`;
+    profileRows.innerHTML = `<tr><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
 async function payRow(id) {
-  if (!confirm('Bu talebi onaylayıp ödemek istiyor musun?')) return;
+  if (!confirm('Bu talebi onaylayip odemek istiyor musun?')) return;
   try {
-    setStatus('Ödeme gönderiliyor...');
+    setStatus('Odeme gonderiliyor...');
     await api(`/withdraws/${id}/pay`, { method: 'POST', body: JSON.stringify({}) });
-    setStatus('Ödeme tamamlandı');
+    setStatus('Odeme tamamlandi');
     loadWithdraws();
   } catch (err) {
     alert(err.message);
-    setStatus('Ödeme hatası');
+    setStatus('Odeme hatasi');
   }
 }
 
@@ -244,7 +293,7 @@ async function rejectRow(id) {
       method: 'POST',
       body: JSON.stringify({ admin_note })
     });
-    setStatus('İstek reddedildi');
+    setStatus('Istek reddedildi');
     loadWithdraws();
   } catch (err) {
     alert(err.message);
@@ -252,16 +301,47 @@ async function rejectRow(id) {
 }
 
 async function resetEnergy(id) {
-  if (!confirm('Bu kullanıcının enerjisini 50 / 50 yapmak istiyor musun?')) return;
+  if (!confirm('Bu kullanicinin enerjisini 50 / 50 yapmak istiyor musun?')) return;
   try {
     await api(`/profiles/${id}/reset-energy`, {
       method: 'POST',
       body: JSON.stringify({ energy: 50 })
     });
-    setStatus('Enerji 50 / 50 yapıldı');
+    setStatus('Enerji 50 / 50 yapildi');
     loadProfiles();
   } catch (err) {
     alert(err.message);
+  }
+}
+
+async function saveProfile(id) {
+  const level = Math.max(0, Math.floor(parseNumberInput(`pf-level-${id}`, 0)));
+  const coins = Math.max(0, Math.floor(parseNumberInput(`pf-coins-${id}`, 0)));
+  const energyMax = Math.max(1, Math.floor(parseNumberInput(`pf-energy-max-${id}`, 100)));
+  const energy = Math.max(0, Math.min(energyMax, Math.floor(parseNumberInput(`pf-energy-${id}`, energyMax))));
+
+  const energyInput = document.getElementById(`pf-energy-${id}`);
+  const energyMaxInput = document.getElementById(`pf-energy-max-${id}`);
+  if (energyInput) energyInput.value = String(energy);
+  if (energyMaxInput) energyMaxInput.value = String(energyMax);
+
+  try {
+    setStatus('Profil kaydediliyor...');
+    await api(`/profiles/${id}/update`, {
+      method: 'POST',
+      body: JSON.stringify({
+        level,
+        coins,
+        yton: coins,
+        energy,
+        energy_max: energyMax
+      })
+    });
+    setStatus('Profil guncellendi');
+    loadProfiles();
+  } catch (err) {
+    alert(err.message);
+    setStatus('Profil guncelleme hatasi');
   }
 }
 
@@ -278,7 +358,7 @@ tabProfiles.addEventListener('click', () => showTab('profiles'));
 reloadBtn.addEventListener('click', () => activeTab === 'withdraws' ? loadWithdraws() : loadProfiles());
 
 setInterval(() => {
-  activeTab === 'withdraws' ? loadWithdraws() : loadProfiles();
+  if (activeTab === 'withdraws') loadWithdraws();
 }, 10000);
 
 showTab('withdraws');
