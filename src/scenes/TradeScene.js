@@ -1094,7 +1094,7 @@ class TradeScene {
       return [
         { id: "crate_l_yton", type: "coins", amount: 120, text: "+120 yton", label: "+120 YTON", accent: "#ffca5c" },
         { id: "crate_l_energy", type: "energy", amount: 26, textTr: "+26 enerji", textEn: "+26 energy", label: "+26 ENERJI", accent: "#e0b45d" },
-        { id: "crate_l_goldpass", type: "item", textTr: "Golden Pass cikti", textEn: "Golden Pass dropped", label: "GOLDEN PASS", accent: "#ffd45b", imageSrc: "./src/assets/bonus.png", item: { id: "crate_goldpass_" + Date.now(), kind: "rare", icon: "PASS", imageSrc: "./src/assets/bonus.png", name: "Golden Pass", rarity: "legendary", qty: 1, usable: false, sellable: true, marketable: false, sellPrice: 250, marketPrice: 0, desc: "Nadir etkinlik urunu." } },
+        { id: "crate_l_barrett", type: "weapon", weaponId: "barrett_m82", weaponName: "Barrett M82", bonusPct: 60, textTr: "Barrett M82 cikti", textEn: "Barrett M82 dropped", label: "BARRETT M82", accent: "#ffb37a", imageSrc: "./src/assets/barrett.png" },
         { id: "crate_l_service", type: "item", textTr: "Ruby Vane cikti", textEn: "Ruby Vane dropped", label: "RUBY VANE", accent: "#f0c06d", imageSrc: "./src/assets/g_star2.png", item: { id: "crate_service_" + Date.now(), kind: "girls", icon: "RV", imageSrc: "./src/assets/g_star2.png", name: "Ruby Vane", rarity: "legendary", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 26, sellPrice: 120, marketPrice: 160, desc: "Deluxe servis." } },
         { id: "crate_l_champ", type: "item", textTr: "Club Prosecco cikti", textEn: "Club Prosecco dropped", label: "CLUB PROSECCO", accent: "#f2a657", imageSrc: "./src/assets/club.png", item: { id: "crate_champ_" + Date.now(), kind: "consumable", icon: "CP", imageSrc: "./src/assets/club.png", name: "Club Prosecco", rarity: "rare", qty: 1, usable: true, sellable: true, marketable: true, energyGain: 11, sellPrice: 34, marketPrice: 44, desc: "Kulup ici icecek." } },
       ];
@@ -1593,6 +1593,18 @@ class TradeScene {
 
   _drawRewardCard(ctx, x, y, w, h, reward, highlight = false) {
     const accent = reward?.accent || "#f3b35b";
+    const typeMeta = this._wheelRewardVisual(reward);
+    const rewardArt = this._rewardArt(reward);
+    const hasRewardArt = !!(rewardArt && this._resolveArtImage(rewardArt, rewardArt?.kind || reward?.type || ""));
+    const rewardTitle = String(
+      reward?.weaponName ||
+      reward?.item?.name ||
+      reward?.label ||
+      typeMeta.title ||
+      this._rewardText(reward) ||
+      "Odul"
+    ).trim();
+    const rewardDetail = String(this._rewardText(reward) || "").trim();
     const grad = ctx.createLinearGradient(x, y, x, y + h);
     grad.addColorStop(0, highlight ? "rgba(255,201,110,0.22)" : "rgba(16,11,7,0.56)");
     grad.addColorStop(1, highlight ? "rgba(98,52,10,0.34)" : "rgba(8,7,6,0.72)");
@@ -1601,16 +1613,6 @@ class TradeScene {
     ctx.strokeStyle = highlight ? "rgba(255,216,134,0.78)" : "rgba(255,255,255,0.10)";
     ctx.lineWidth = highlight ? 1.6 : 1;
     strokeRoundRect(ctx, x, y, w, h, 22);
-
-    ctx.save();
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = accent;
-    fillRoundRect(ctx, x + 14, y + 14, 112, 22, 11);
-    ctx.restore();
-
-    const typeMeta = this._wheelRewardVisual(reward);
-    const rewardArt = this._rewardArt(reward);
-    const hasRewardArt = !!(rewardArt && this._resolveArtImage(rewardArt, rewardArt?.kind || reward?.type || ""));
     const compact = w < 150 || h < 108;
     if (compact) {
       const thumbSize = hasRewardArt
@@ -1626,11 +1628,11 @@ class TradeScene {
 
       ctx.fillStyle = "#ffffff";
       ctx.font = "900 12px system-ui";
-      textFit(ctx, shortRewardLabel(reward), x + w / 2, y + h - 26, w - 16);
+      textFit(ctx, shortRewardLabel({ ...reward, label: rewardTitle }), x + w / 2, y + h - 26, w - 16);
 
       ctx.fillStyle = "rgba(255,255,255,0.68)";
       ctx.font = "11px system-ui";
-      textFit(ctx, this._rewardText(reward), x + w / 2, y + h - 12, w - 18);
+      textFit(ctx, rewardDetail, x + w / 2, y + h - 12, w - 18);
 
       if (highlight) {
         const chipW = Math.min(Math.max(56, Math.floor(w * 0.42)), w - 18);
@@ -1645,33 +1647,35 @@ class TradeScene {
       return;
     }
 
-    const thumbSize = hasRewardArt ? Math.max(48, Math.min(58, Math.floor(h * 0.58))) : Math.max(34, Math.min(40, Math.floor(h * 0.28)));
-    const badgeRailW = Math.min(132, Math.max(94, thumbSize + 44));
-    this._drawRewardThumb(ctx, x + 16, y + Math.round((h - thumbSize) / 2), thumbSize, reward, highlight);
+    const chipW = highlight ? Math.min(84, Math.max(64, Math.floor(w * 0.22))) : 0;
+    const chipReserve = highlight ? chipW + 20 : 0;
+    const thumbSize = hasRewardArt ? Math.max(42, Math.min(52, Math.floor(h * 0.46))) : Math.max(30, Math.min(38, Math.floor(h * 0.26)));
+    const thumbX = x + 16;
+    const thumbY = y + Math.round((h - thumbSize) / 2);
+    this._drawRewardThumb(ctx, thumbX, thumbY, thumbSize, reward, highlight);
 
     ctx.fillStyle = "#ffe2a3";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.font = "800 10px system-ui";
-    const textX = x + badgeRailW;
-    const textW = Math.max(60, w - badgeRailW - 20);
-    ctx.fillText(typeMeta.category, textX, y + 25);
+    const textX = thumbX + thumbSize + 16;
+    const textW = Math.max(56, w - (textX - x) - chipReserve);
+    textFit(ctx, typeMeta.category, textX, y + 24, textW);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "900 14px system-ui";
-    textFit(ctx, reward?.label || this._rewardText(reward) || "Odul", textX, y + 50, textW - (highlight ? 66 : 0));
+    ctx.font = "900 15px system-ui";
+    textFit(ctx, rewardTitle, textX, y + 52, textW);
     ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = "12px system-ui";
-    textFit(ctx, this._rewardText(reward), textX, y + 70, textW - (highlight ? 66 : 0));
+    ctx.font = "11px system-ui";
+    textFit(ctx, rewardDetail, textX, y + 74, textW);
 
     if (highlight) {
-      const chipW = Math.min(72, Math.max(56, Math.floor(w * 0.18)));
-      fillRoundRect(ctx, x + w - chipW - 14, y + 14, chipW, 24, 12, accent);
+      fillRoundRect(ctx, x + w - chipW - 14, y + 12, chipW, 24, 12, accent);
       ctx.fillStyle = "#251506";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 10px system-ui";
-      ctx.fillText("KAZANILDI", x + w - chipW * 0.5 - 14, y + 26);
+      ctx.fillText("KAZANILDI", x + w - chipW * 0.5 - 14, y + 24);
     }
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
@@ -1687,7 +1691,7 @@ class TradeScene {
     const cy = y + 180;
     const radius = Math.min(mode === "premium" ? 138 : 130, Math.floor(Math.min(w * (mode === "premium" ? 0.34 : 0.32), mode === "premium" ? 138 : 130)));
     const rewardCardY = Math.round(cy + radius + 24);
-    const rewardCardH = 92;
+    const rewardCardH = 104;
     const boxH = Math.max(430, rewardCardY + rewardCardH + 14 - y);
     this.drawCard(ctx, x, y, w, boxH);
 
@@ -1797,24 +1801,24 @@ class TradeScene {
 
       const mid = start + slice / 2;
       const reward = pool[i];
-      const badgeSize = mode === "premium" ? 52 : 46;
-      const badgeRadius = radius * (mode === "premium" ? 0.56 : 0.54);
+      const badgeSize = mode === "premium" ? 42 : 36;
+      const badgeRadius = radius * (mode === "premium" ? 0.54 : 0.52);
       const badgeX = Math.cos(mid) * badgeRadius;
       const badgeY = Math.sin(mid) * badgeRadius;
       const meta = this._drawWheelBadge(ctx, reward, badgeX, badgeY, badgeSize, highlightSlice);
       const title = String(meta.title || "").trim();
       const subtitle = String(meta.subtitle || "").trim();
-      const labelRadius = radius * (mode === "premium" ? 0.83 : 0.80);
+      const labelRadius = radius * (mode === "premium" ? 0.78 : 0.75);
       const labelX = Math.cos(mid) * labelRadius;
       const labelY = Math.sin(mid) * labelRadius;
-      const labelMaxWidth = Math.max(30, (slice * radius) * 0.88);
+      const labelMaxWidth = Math.max(24, (slice * radius) * 0.68);
       let safeTitle = title;
       let safeSubtitle = subtitle;
 
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = `900 ${mode === "premium" ? 11 : 10}px system-ui`;
+      ctx.font = `900 ${mode === "premium" ? 9 : 8}px system-ui`;
       while (safeTitle.length > 1 && ctx.measureText(safeTitle).width > labelMaxWidth) {
         safeTitle = `${safeTitle.slice(0, -2)}…`;
       }
@@ -1823,7 +1827,7 @@ class TradeScene {
       ctx.fillText(safeTitle, labelX, labelY - (subtitle ? 6 : 0));
 
       if (subtitle) {
-        ctx.font = `800 ${mode === "premium" ? 8 : 7}px system-ui`;
+        ctx.font = `800 ${mode === "premium" ? 7 : 6}px system-ui`;
         while (safeSubtitle.length > 1 && ctx.measureText(safeSubtitle).width > labelMaxWidth) {
           safeSubtitle = `${safeSubtitle.slice(0, -2)}…`;
         }
@@ -1921,6 +1925,13 @@ class TradeScene {
     const cardGap = 10;
     const sideW = clamp(Math.floor((w - 28 - cardGap * 2) * 0.22), 78, 108);
     const centerW = w - 28 - cardGap * 2 - sideW * 2;
+    const animAge = Math.max(0, Date.now() - Number(reveal.updatedAt || 0));
+    const animT = clamp(animAge / 520, 0, 1);
+    const eased = 1 - Math.pow(1 - animT, 3);
+    const sideOffset = Math.round((1 - eased) * 28);
+    const centerScale = 0.84 + eased * 0.16;
+    const centerLift = Math.round((1 - eased) * 18);
+    const sideAlpha = 0.22 + eased * 0.50;
 
     this.drawCard(ctx, x, y, w, 204);
     ctx.fillStyle = "#fff";
@@ -1938,15 +1949,24 @@ class TradeScene {
 
     if (cards[0]) {
       ctx.save();
-      ctx.globalAlpha = 0.72;
-      this._drawRewardCard(ctx, left.x, left.y, left.w, left.h, cards[0], false);
+      ctx.globalAlpha = sideAlpha;
+      this._drawRewardCard(ctx, left.x - sideOffset, left.y, left.w, left.h, cards[0], false);
       ctx.restore();
     }
-    this._drawRewardCard(ctx, center.x, center.y, center.w, center.h, reveal.reward, true);
+    ctx.save();
+    ctx.translate(center.x + center.w / 2, center.y + center.h / 2 - centerLift);
+    ctx.scale(centerScale, centerScale);
+    this._drawRewardCard(ctx, -center.w / 2, -center.h / 2, center.w, center.h, reveal.reward, true);
+    if (animT < 1) {
+      ctx.globalAlpha = (1 - eased) * 0.18;
+      ctx.fillStyle = reveal.reward?.accent || "#ffcf7b";
+      fillRoundRect(ctx, -center.w / 2 + 10, -center.h / 2 + 10, center.w - 20, center.h - 20, 18);
+    }
+    ctx.restore();
     if (cards[2]) {
       ctx.save();
-      ctx.globalAlpha = 0.72;
-      this._drawRewardCard(ctx, right.x, right.y, right.w, right.h, cards[2], false);
+      ctx.globalAlpha = sideAlpha;
+      this._drawRewardCard(ctx, right.x + sideOffset, right.y, right.w, right.h, cards[2], false);
       ctx.restore();
     }
     return 204;
@@ -3681,7 +3701,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    ctx.fillText("YTON - Enerji - Street Whiskey - White Widow - Scarlett Blaze - Golden Pass", x + 14, y + 52);
+    ctx.fillText("YTON - Enerji - Street Whiskey - White Widow - Scarlett Blaze - Barrett M82", x + 14, y + 52);
     ctx.fillText(this._ui("Gosterilen kart ve verilen odul ayni veri kaynagini kullanir.", "Shown card and granted reward use the same data source."), x + 14, y + 72);
 
     y += 108;
