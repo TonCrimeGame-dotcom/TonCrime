@@ -1574,6 +1574,110 @@ async function deleteRowsByIdList(table, ids = [], idColumn = 'id') {
   return uniqueIds.length;
 }
 
+async function collectProfileCascadeDeleteSummary(profileIds = []) {
+  const uniqueProfileIds = [...new Set((profileIds || []).map((value) => String(value || '').trim()).filter(Boolean))];
+  if (!uniqueProfileIds.length) {
+    return {
+      profiles: [],
+      inventory_items: [],
+      businesses: [],
+      business_products: [],
+      market_listings: [],
+      withdraw_requests: [],
+      wallet_ledger: [],
+    };
+  }
+
+  const profileIdSet = new Set(uniqueProfileIds);
+  const [
+    inventoryRows,
+    businessRows,
+    businessProductRows,
+    marketListingRows,
+    withdrawRows,
+    walletLedgerRows,
+  ] = await Promise.all([
+    readAllTableRows('inventory_items').catch(() => []),
+    readAllTableRows('businesses').catch(() => []),
+    readAllTableRows('business_products').catch(() => []),
+    readAllTableRows('market_listings').catch(() => []),
+    readAllTableRows('withdraw_requests').catch(() => []),
+    readAllTableRows('wallet_ledger').catch(() => []),
+  ]);
+
+  const inventoryIds = inventoryRows
+    .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
+    .map((row) => String(row?.id || '').trim())
+    .filter(Boolean);
+  const inventoryIdSet = new Set(inventoryIds);
+
+  const businessIds = businessRows
+    .filter((row) => profileIdSet.has(String(row?.owner_id || '').trim()))
+    .map((row) => String(row?.id || '').trim())
+    .filter(Boolean);
+  const businessIdSet = new Set(businessIds);
+
+  const businessProductIds = businessProductRows
+    .filter((row) => businessIdSet.has(String(row?.business_id || '').trim()))
+    .map((row) => String(row?.id || '').trim())
+    .filter(Boolean);
+  const businessProductIdSet = new Set(businessProductIds);
+
+  const marketListingIds = marketListingRows
+    .filter((row) =>
+      profileIdSet.has(String(row?.seller_profile_id || '').trim()) ||
+      profileIdSet.has(String(row?.profile_id || '').trim()) ||
+      profileIdSet.has(String(row?.owner_id || '').trim()) ||
+      businessIdSet.has(String(row?.business_id || '').trim()) ||
+      inventoryIdSet.has(String(row?.inventory_item_id || '').trim()) ||
+      businessProductIdSet.has(String(row?.business_product_id || row?.product_id || '').trim())
+    )
+    .map((row) => String(row?.id || '').trim())
+    .filter(Boolean);
+
+  const withdrawIds = withdrawRows
+    .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
+    .map((row) => String(row?.id || '').trim())
+    .filter(Boolean);
+
+  const walletLedgerIds = walletLedgerRows
+    .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
+    .map((row) => String(row?.id || '').trim())
+    .filter(Boolean);
+
+  return {
+    profiles: uniqueProfileIds,
+    inventory_items: inventoryIds,
+    businesses: businessIds,
+    business_products: businessProductIds,
+    market_listings: marketListingIds,
+    withdraw_requests: withdrawIds,
+    wallet_ledger: walletLedgerIds,
+  };
+}
+
+async function purgeProfilesByIds(profileIds = []) {
+  const summary = await collectProfileCascadeDeleteSummary(profileIds);
+
+  await deleteRowsByIdList('market_listings', summary.market_listings);
+  await deleteRowsByIdList('business_products', summary.business_products);
+  await deleteRowsByIdList('inventory_items', summary.inventory_items);
+  await deleteRowsByIdList('businesses', summary.businesses);
+  await deleteRowsByIdList('wallet_ledger', summary.wallet_ledger);
+  await deleteRowsByIdList('withdraw_requests', summary.withdraw_requests);
+  await deleteRowsByIdList('profiles', summary.profiles);
+
+  return {
+    profiles: summary.profiles.length,
+    inventory_items: summary.inventory_items.length,
+    businesses: summary.businesses.length,
+    business_products: summary.business_products.length,
+    market_listings: summary.market_listings.length,
+    withdraw_requests: summary.withdraw_requests.length,
+    wallet_ledger: summary.wallet_ledger.length,
+  };
+}
+
 /* =========================
    PUBLIC ROUTES
 ========================= */
@@ -1654,6 +1758,41 @@ app.get('/public/profile', makePublicRateLimit('profile-read', 60_000, 120), asy
     return res.json({ ok: true, item: data || null, profile_key: identity.profileKey });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message || 'profile fetch failed' });
+  }
+});
+
+app.post('/public/profile-reset', makePublicRateLimit('profile-reset', 60_000, 20), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: true });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+
+    const profile = await getProfileByKey(identity.profileKey).catch(() => null);
+    if (!profile?.id) {
+      return res.json({
+        ok: true,
+        profile_key: identity.profileKey,
+        deleted: {
+          profiles: 0,
+          inventory_items: 0,
+          businesses: 0,
+          business_products: 0,
+          market_listings: 0,
+          withdraw_requests: 0,
+          wallet_ledger: 0,
+        },
+      });
+    }
+
+    const deleted = await purgeProfilesByIds([profile.id]);
+    return res.json({
+      ok: true,
+      profile_key: identity.profileKey,
+      deleted,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'profile reset failed' });
   }
 });
 
@@ -2253,7 +2392,6 @@ app.post('/profiles/purge-all', async (req, res) => {
 
     const profileRows = await readAllTableRows('profiles', 'id, telegram_id, username');
     const profileIds = profileRows.map((row) => String(row?.id || '').trim()).filter(Boolean);
-    const profileIdSet = new Set(profileIds);
 
     if (!profileIds.length) {
       return res.json({
@@ -2269,80 +2407,7 @@ app.post('/profiles/purge-all', async (req, res) => {
         },
       });
     }
-
-    const [
-      inventoryRows,
-      businessRows,
-      businessProductRows,
-      marketListingRows,
-      withdrawRows,
-      walletLedgerRows,
-    ] = await Promise.all([
-      readAllTableRows('inventory_items'),
-      readAllTableRows('businesses'),
-      readAllTableRows('business_products'),
-      readAllTableRows('market_listings'),
-      readAllTableRows('withdraw_requests'),
-      readAllTableRows('wallet_ledger'),
-    ]);
-
-    const inventoryIds = inventoryRows
-      .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
-      .map((row) => String(row?.id || '').trim())
-      .filter(Boolean);
-    const inventoryIdSet = new Set(inventoryIds);
-
-    const businessIds = businessRows
-      .filter((row) => profileIdSet.has(String(row?.owner_id || '').trim()))
-      .map((row) => String(row?.id || '').trim())
-      .filter(Boolean);
-    const businessIdSet = new Set(businessIds);
-
-    const businessProductIds = businessProductRows
-      .filter((row) => businessIdSet.has(String(row?.business_id || '').trim()))
-      .map((row) => String(row?.id || '').trim())
-      .filter(Boolean);
-    const businessProductIdSet = new Set(businessProductIds);
-
-    const marketListingIds = marketListingRows
-      .filter((row) =>
-        profileIdSet.has(String(row?.seller_profile_id || '').trim()) ||
-        profileIdSet.has(String(row?.profile_id || '').trim()) ||
-        profileIdSet.has(String(row?.owner_id || '').trim()) ||
-        businessIdSet.has(String(row?.business_id || '').trim()) ||
-        inventoryIdSet.has(String(row?.inventory_item_id || '').trim()) ||
-        businessProductIdSet.has(String(row?.business_product_id || row?.product_id || '').trim())
-      )
-      .map((row) => String(row?.id || '').trim())
-      .filter(Boolean);
-
-    const withdrawIds = withdrawRows
-      .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
-      .map((row) => String(row?.id || '').trim())
-      .filter(Boolean);
-
-    const walletLedgerIds = walletLedgerRows
-      .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
-      .map((row) => String(row?.id || '').trim())
-      .filter(Boolean);
-
-    await deleteRowsByIdList('market_listings', marketListingIds);
-    await deleteRowsByIdList('business_products', businessProductIds);
-    await deleteRowsByIdList('inventory_items', inventoryIds);
-    await deleteRowsByIdList('businesses', businessIds);
-    await deleteRowsByIdList('wallet_ledger', walletLedgerIds);
-    await deleteRowsByIdList('withdraw_requests', withdrawIds);
-    await deleteRowsByIdList('profiles', profileIds);
-
-    const deleted = {
-      profiles: profileIds.length,
-      inventory_items: inventoryIds.length,
-      businesses: businessIds.length,
-      business_products: businessProductIds.length,
-      market_listings: marketListingIds.length,
-      withdraw_requests: withdrawIds.length,
-      wallet_ledger: walletLedgerIds.length,
-    };
+    const deleted = await purgeProfilesByIds(profileIds);
 
     await logAdminAction({
       req,
