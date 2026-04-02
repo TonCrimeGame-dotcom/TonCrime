@@ -4,12 +4,12 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-1";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-2";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
-import * as BootSceneModule from "./scenes/BootScene.js";
-import { IntroScene } from "./scenes/IntroScene.js";
+import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-2";
+import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
 import { HomeScene } from "./scenes/HomeScene.js";
 import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260331-2";
 import { ProfileScene } from "./scenes/ProfileScene.js";
@@ -22,8 +22,8 @@ import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
-import { startHud } from "./ui/Hud.js";
-import { startChat } from "./ui/Chat.js";
+import { startHud } from "./ui/Hud.js?v=20260402-2";
+import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
 import { startPvpLobby } from "./ui/PvpLobby.js";
@@ -33,6 +33,9 @@ const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
+try {
+  document.documentElement.style.setProperty("--tc-canvas-opacity", "1");
+} catch (_) {}
 
 const STARTING_YTON = 100;
 const STARTING_LEVEL = 0;
@@ -1541,6 +1544,28 @@ addImage("xxx_bg", "./src/assets/xxx-bg.png");
 addImage("blackmarket", "./src/assets/BlackMarket.png");
 addImage("blackmarket_bg", "./src/assets/BlackMarket.png");
 addImage("trade", "./src/assets/BlackMarket.png");
+[
+  ["startup_street", "./src/assets/street.png"],
+  ["startup_club", "./src/assets/club.png"],
+  ["startup_mafia", "./src/assets/mafia.png"],
+  ["startup_white", "./src/assets/white.png"],
+  ["startup_og", "./src/assets/og.png"],
+  ["startup_diamond", "./src/assets/diamond.png"],
+  ["startup_girl", "./src/assets/girl.png"],
+  ["startup_gstar1", "./src/assets/g_star1.png"],
+  ["startup_gstar2", "./src/assets/g_star2.png"],
+  ["startup_gstar3", "./src/assets/g_star3.png"],
+  ["startup_bonus", "./src/assets/bonus.png"],
+  ["startup_drink", "./src/assets/drink.png"],
+  ["startup_weed", "./src/assets/weed.png"],
+  ["startup_yton", "./src/assets/yton.png"],
+  ["startup_glock", "./src/assets/glock.png"],
+  ["startup_mp5", "./src/assets/mp5.png"],
+  ["startup_barrett", "./src/assets/barrett.png"],
+  ["startup_m134", "./src/assets/m134.png"],
+  ["startup_m4a1", "./src/assets/m4a1.png"],
+  ["startup_ak47", "./src/assets/ak47.png"],
+].forEach(([key, src]) => addImage(key, src));
 
 /* ===== HELPERS ===== */
 function pointInRect(px, py, r) {
