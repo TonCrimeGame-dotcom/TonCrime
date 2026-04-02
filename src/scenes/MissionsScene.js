@@ -1,4 +1,4 @@
-import { playRichRewardedAd } from "../ads/richAds.js";
+import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -477,21 +477,22 @@ export class MissionsScene {
     try {
       const played = await playRichRewardedAd();
       if (!played.ok) {
+        const detail = describeRichAdFailure(played, "unknown");
         if (played.reason === "controller_missing" || played.reason === "method_missing") {
           this._showToast(
-            this._ui("RichAds hazir degil. Script baglantisini kontrol et.", "RichAds is not ready. Check the script setup."),
+            this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`),
             2600
           );
           return;
         }
         if (played.reason === "not_completed") {
-          this._showToast(this._ui("Reklam tamamlanmadi.", "Ad was not completed."));
+          this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
           return;
         }
-        console.warn("[TonCrime] RichAds video error:", played.error);
+        console.warn("[TonCrime] RichAds video error:", detail, played.error || played.result || played);
         this._showToast(
-          this._ui("Reklam kapatildi veya acilamadi.", "Ad was closed or could not be opened."),
-          2200
+          this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`),
+          2800
         );
         return;
       }
@@ -510,8 +511,8 @@ export class MissionsScene {
     } catch (error) {
       console.warn("[TonCrime] MissionsScene rewarded ad fatal:", error);
       this._showToast(
-        this._ui("Reklam kapatildi veya acilamadi.", "Ad was closed or could not be opened."),
-        2200
+        this._ui(`Reklam acilamadi: ${String(error?.message || error || "unknown")}`, `Ad failed: ${String(error?.message || error || "unknown")}`),
+        2800
       );
     } finally {
       this.adBusy = false;
