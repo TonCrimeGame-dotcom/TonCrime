@@ -2069,17 +2069,36 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
       });
     }
 
-    const username = sanitizeUsername(req.body?.username || identity.username || 'Player');
-    const level = Math.max(0, asNumber(req.body?.level, 0));
-    const coins = Math.max(0, asNumber(req.body?.coins, 0));
-    const energy = Math.max(0, asNumber(req.body?.energy, 0));
-    const energyMax = Math.min(100, Math.max(1, asNumber(req.body?.energy_max, energy || 1)));
-    const age = req.body?.age == null ? null : asNumber(req.body?.age, null);
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const current = await getProfileByKey(identity.profileKey).catch(() => null);
+    const hasAgeColumn = !!current ? hasOwn(current, 'age') : true;
+
+    const username = hasOwn(body, 'username')
+      ? sanitizeUsername(body.username || identity.username || current?.username || 'Player')
+      : sanitizeUsername(current?.username || identity.username || 'Player');
+    const level = hasOwn(body, 'level')
+      ? Math.max(0, asNumber(body.level, current?.level ?? 0))
+      : Math.max(0, asNumber(current?.level, 0));
+    const coins = hasOwn(body, 'coins')
+      ? Math.max(0, asNumber(body.coins, current?.coins ?? 100))
+      : Math.max(0, asNumber(current?.coins, 100));
+    const requestedEnergy = hasOwn(body, 'energy')
+      ? Math.max(0, asNumber(body.energy, current?.energy ?? 100))
+      : Math.max(0, asNumber(current?.energy, 100));
+    const fallbackEnergyMax = current?.energy_max ?? requestedEnergy ?? 100;
+    const requestedEnergyMax = hasOwn(body, 'energy_max')
+      ? Math.min(100, Math.max(1, asNumber(body.energy_max, fallbackEnergyMax)))
+      : Math.min(100, Math.max(1, asNumber(current?.energy_max, requestedEnergy || 100)));
+    const energy = Math.min(requestedEnergyMax, requestedEnergy);
+    const energyMax = requestedEnergyMax;
+    const age = hasOwn(body, 'age')
+      ? (body.age == null ? null : asNumber(body.age, current?.age ?? null))
+      : (hasAgeColumn ? (current?.age ?? null) : null);
     const pvpPatch = {
-      pvp_wins: req.body?.pvp_wins,
-      pvp_losses: req.body?.pvp_losses,
-      pvp_rating: req.body?.pvp_rating,
-      pvp_last_match_at: req.body?.pvp_last_match_at,
+      pvp_wins: body?.pvp_wins,
+      pvp_losses: body?.pvp_losses,
+      pvp_rating: body?.pvp_rating,
+      pvp_last_match_at: body?.pvp_last_match_at,
     };
 
     const payload = {
