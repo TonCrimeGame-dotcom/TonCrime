@@ -21,6 +21,7 @@
     table{width:100%;border-collapse:collapse}
     th,td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px;text-align:left;vertical-align:top}
     .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .actions button{width:auto}
     .pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.1)}
     .pending{background:#402f13;color:#ffd98c}
     .paid{background:#18331d;color:#9affb0}
@@ -93,7 +94,10 @@
     <div id="profilesView" class="card hidden">
       <div class="tableMeta">
         <div id="profileMeta"><strong>Profiller</strong></div>
-        <div class="tableHint">Kullanici adi, telegram id veya profil id ile aninda ara</div>
+        <div class="actions">
+          <div class="tableHint">Kullanici adi, telegram id veya profil id ile aninda ara</div>
+          <button id="purgeProfilesBtn" class="red">Tum Profilleri Sil</button>
+        </div>
       </div>
       <table>
         <thead>
@@ -185,6 +189,12 @@ function scoreProfileMatch(item, query) {
   if (profileId.includes(q)) score += 110;
   if (username.includes(q)) score += 100;
   return score;
+}
+
+function updateMeta(target, title, count, query = '') {
+  const countText = `${count} kayit`;
+  const suffix = query ? ` - arama: ${query}` : '';
+  target.innerHTML = `<strong>${escapeHtml(title)}</strong> <span class="muted">${escapeHtml(countText + suffix)}</span>`;
 }
 
 function triggerReload() {
@@ -411,6 +421,52 @@ async function saveProfile(id) {
   }
 }
 
+async function purgeAllProfiles() {
+  const confirmPhrase = 'TUM PROFILLERI SIL';
+  const confirmation = prompt(
+    `Bu islem geri alinamaz. Devam etmek icin "${confirmPhrase}" yaz.`,
+    ''
+  );
+  if (confirmation === null) {
+    setStatus('Toplu profil silme iptal edildi');
+    return;
+  }
+  if (confirmation.trim().toUpperCase() !== confirmPhrase) {
+    alert('Onay metni yanlis. Islem iptal edildi.');
+    setStatus('Toplu profil silme iptal edildi');
+    return;
+  }
+
+  try {
+    setStatus('Tum profiller ve bagli veriler siliniyor...');
+    const result = await api('/profiles/purge-all', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: confirmPhrase })
+    });
+    const deleted = result.deleted || {};
+    queryInput.value = '';
+    setStatus('Tum profiller silindi');
+    alert(
+      `Silme tamamlandi.\n` +
+      `Profiller: ${Number(deleted.profiles || 0)}\n` +
+      `Envanter: ${Number(deleted.inventory_items || 0)}\n` +
+      `Isletmeler: ${Number(deleted.businesses || 0)}\n` +
+      `Urunler: ${Number(deleted.business_products || 0)}\n` +
+      `Ilanlar: ${Number(deleted.market_listings || 0)}\n` +
+      `Cekimler: ${Number(deleted.withdraw_requests || 0)}\n` +
+      `Ledger: ${Number(deleted.wallet_ledger || 0)}`
+    );
+    if (activeTab === 'withdraws') {
+      loadWithdraws();
+    } else {
+      loadProfiles();
+    }
+  } catch (err) {
+    alert(err.message);
+    setStatus('Toplu profil silme hatasi');
+  }
+}
+
 function showTab(name) {
   activeTab = name;
   setQueryPlaceholder();
@@ -423,6 +479,7 @@ function showTab(name) {
 tabWithdraws.addEventListener('click', () => showTab('withdraws'));
 tabProfiles.addEventListener('click', () => showTab('profiles'));
 reloadBtn.addEventListener('click', () => triggerReload());
+document.getElementById('purgeProfilesBtn').addEventListener('click', purgeAllProfiles);
 queryInput.addEventListener('input', () => scheduleReload(activeTab === 'profiles' ? 180 : 260));
 queryInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
