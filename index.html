@@ -19,18 +19,87 @@
       };
       window.tcRichAdsConfig = richAdsConfig;
 
+      const supportedMethods = [
+        "triggerInterstitialVideo",
+        "triggerRewardedVideo",
+        "showRewardedVideo",
+        "showRewarded",
+        "showVideo",
+      ];
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function hasRichAdsMethod(controller) {
+        return supportedMethods.some((methodName) => typeof controller?.[methodName] === "function");
+      }
+
+      function getTelegramSnapshot() {
+        const tg = window.Telegram?.WebApp || null;
+        const user = tg?.initDataUnsafe?.user || null;
+        return {
+          tg,
+          user,
+          userId: user?.id != null ? String(user.id) : "",
+          initData: String(tg?.initData || ""),
+        };
+      }
+
+      window.tcWaitForTelegramMiniAppReady = async function tcWaitForTelegramMiniAppReady(timeoutMs = 4500) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+          const snapshot = getTelegramSnapshot();
+          try {
+            snapshot.tg?.ready?.();
+          } catch (_) {}
+
+          if (snapshot.user && snapshot.initData) {
+            return snapshot;
+          }
+
+          await sleep(120);
+        }
+
+        return getTelegramSnapshot();
+      };
+
+      window.tcWaitForRichAdsSdk = async function tcWaitForRichAdsSdk(timeoutMs = 4500) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+          if (typeof window.TelegramAdsController === "function") {
+            return window.TelegramAdsController;
+          }
+          await sleep(120);
+        }
+        return typeof window.TelegramAdsController === "function" ? window.TelegramAdsController : null;
+      };
+
       let resolveReady = function () {};
       window.tcRichAdsReady = new Promise((resolve) => {
         resolveReady = resolve;
       });
 
-      window.tcCreateRichAdsController = async function tcCreateRichAdsController() {
-        if (window.tcRichAdsController) return window.tcRichAdsController;
+      window.tcCreateRichAdsController = async function tcCreateRichAdsController(options = {}) {
+        const forceFresh =
+          typeof options === "boolean"
+            ? options
+            : !!(options && typeof options === "object" && options.forceFresh);
+
+        if (!forceFresh && hasRichAdsMethod(window.tcRichAdsController)) {
+          return window.tcRichAdsController;
+        }
 
         try {
-          const ControllerCtor = window.TelegramAdsController;
+          const snapshot = await window.tcWaitForTelegramMiniAppReady(4500);
+          const ControllerCtor = await window.tcWaitForRichAdsSdk(4500);
           if (typeof ControllerCtor !== "function") {
             return null;
+          }
+
+          if (forceFresh) {
+            window.tcRichAdsController = null;
+            window.tcRichAdsControllerMeta = null;
           }
 
           const controller = new ControllerCtor();
@@ -39,7 +108,16 @@
             await initResult;
           }
 
+          if (!hasRichAdsMethod(controller)) {
+            return null;
+          }
+
           window.tcRichAdsController = controller;
+          window.tcRichAdsControllerMeta = {
+            createdAt: Date.now(),
+            userId: snapshot.userId,
+            initDataLength: snapshot.initData.length,
+          };
           return controller;
         } catch (error) {
           console.error("[TonCrime] RichAds init failed:", error);
@@ -47,12 +125,18 @@
         }
       };
 
-      window.tcCreateRichAdsController()
-        .then((controller) => resolveReady(controller || null))
-        .catch((error) => {
-          console.error("[TonCrime] RichAds bootstrap failed:", error);
-          resolveReady(null);
-        });
+      window.addEventListener(
+        "load",
+        () => {
+          window.tcCreateRichAdsController()
+            .then((controller) => resolveReady(controller || null))
+            .catch((error) => {
+              console.error("[TonCrime] RichAds bootstrap failed:", error);
+              resolveReady(null);
+            });
+        },
+        { once: true }
+      );
     })();
   </script>
 
@@ -419,7 +503,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260402-10",
+          "./src/main.js?v=20260402-12",
           "./main.js"
         ]);
 
