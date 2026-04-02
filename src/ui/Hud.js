@@ -791,9 +791,12 @@ export function startHud(store, i18n) {
 
   root.style.zIndex = "5000";
   root.style.opacity = "1";
-  root.style.pointerEvents = "auto";
+  root.style.pointerEvents = "none";
   root.style.left = "max(var(--sal), 0px)";
   root.style.right = "max(var(--sar), 0px)";
+  if (row) row.style.pointerEvents = "auto";
+  if (buttonTray) buttonTray.style.pointerEvents = "auto";
+  if (premiumBtn) premiumBtn.style.pointerEvents = "auto";
 
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
@@ -884,6 +887,7 @@ export function startHud(store, i18n) {
       premiumBtn.style.opacity = String(isPremium ? 0.9 : 0.82 + pulse * 0.18);
       premiumBtn.style.transform = isPremium ? "translateY(0)" : `translateY(${Math.sin(Date.now() / 420) * -1.4}px) scale(${1 + pulse * 0.035})`;
       premiumBtn.style.filter = isPremium ? "drop-shadow(0 0 8px rgba(255,208,110,0.18))" : `drop-shadow(0 0 ${8 + pulse * 9}px rgba(255,208,110,${0.28 + pulse * 0.32}))`;
+      premiumBtn.style.pointerEvents = "auto";
     }
 
     if (elLogo) elLogo.style.display = "none";
