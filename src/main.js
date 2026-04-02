@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-5";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-6";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-admin-sync-guard-1";
+const BUILD_STAMP = "2026-04-02-cache-bust-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
