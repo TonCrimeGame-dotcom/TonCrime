@@ -41,6 +41,11 @@ export function startHud(store, i18n) {
     shellVisible = true;
     root.style.opacity = "1";
     root.style.pointerEvents = "auto";
+    const dock = document.getElementById("hudBottomDock");
+    if (dock) {
+      dock.style.opacity = "1";
+      dock.style.pointerEvents = "auto";
+    }
   }
 
   if (!shellVisible) {
@@ -268,11 +273,22 @@ export function startHud(store, i18n) {
   let debugBtn = document.getElementById("hudDebugBtn");
   let premiumBtn = document.getElementById("hudPremiumBtn");
   let buttonTray = document.getElementById("hudActionTray");
+  let bottomDock = document.getElementById("hudBottomDock");
+
+  if (!bottomDock) {
+    bottomDock = document.createElement("div");
+    bottomDock.id = "hudBottomDock";
+    document.body.appendChild(bottomDock);
+  } else if (bottomDock.parentElement !== document.body) {
+    document.body.appendChild(bottomDock);
+  }
 
   if (!buttonTray) {
     buttonTray = document.createElement("div");
     buttonTray.id = "hudActionTray";
-    root.appendChild(buttonTray);
+    bottomDock.appendChild(buttonTray);
+  } else if (buttonTray.parentElement !== bottomDock) {
+    bottomDock.appendChild(buttonTray);
   }
 
   if (!telegramBtn) {
@@ -324,11 +340,13 @@ export function startHud(store, i18n) {
     premiumBtn.id = "hudPremiumBtn";
     premiumBtn.type = "button";
     premiumBtn.textContent = "SATIN AL";
-    root.appendChild(premiumBtn);
-  } else if (premiumBtn.parentElement !== root) {
-    root.appendChild(premiumBtn);
+    bottomDock.appendChild(premiumBtn);
+  } else if (premiumBtn.parentElement !== bottomDock) {
+    bottomDock.appendChild(premiumBtn);
   }
 
+  bottomDock.appendChild(premiumBtn);
+  bottomDock.appendChild(buttonTray);
   [telegramBtn, walletBtn, debugBtn, langBtn].forEach((btn) => {
     if (btn) buttonTray.appendChild(btn);
   });
@@ -734,23 +752,59 @@ export function startHud(store, i18n) {
 
   function applyButtonsStyle() {
     const viewportW = Math.max(0, Number(window.innerWidth || 0));
+    const viewportH = Math.max(0, Number(window.innerHeight || 0));
     const narrow = viewportW <= 420;
     const compact = viewportW <= 380;
     const mobile = viewportW <= 720;
     const tablet = viewportW > 720 && viewportW <= 1100;
     const size = compact ? 32 : (narrow ? 34 : (mobile ? 38 : (tablet ? 40 : 42)));
     const gap = compact ? 5 : (narrow ? 6 : 8);
-    const trayOffset = mobile ? (compact ? 4 : 6) : (tablet ? 6 : 4);
     const premiumWidth = compact ? 72 : (narrow ? 78 : (mobile ? 86 : 96));
+    const dockBottom = compact ? 6 : (narrow ? 7 : 8);
+    const dockSide = compact ? 6 : (narrow ? 8 : 10);
+    const dockShift = compact ? 10 : (narrow ? 12 : 14);
+    const estimatedDockWidth = premiumWidth + size * 4 + gap * 5 + 18;
+    const chatDrawer = document.getElementById("chatDrawer");
+    const chatRect = chatDrawer?.getBoundingClientRect?.() || null;
+    const chatClosed =
+      !!chatRect &&
+      !chatDrawer?.classList?.contains("open") &&
+      Number(chatRect.width || 0) > 72 &&
+      Number(chatRect.height || 0) > 32 &&
+      Number(chatRect.bottom || 0) <= viewportH + 24;
+    const useChatAnchor =
+      chatClosed &&
+      Number(chatRect.right || 0) + dockShift + estimatedDockWidth <= viewportW - dockSide;
+
+    if (bottomDock) {
+      bottomDock.style.position = "fixed";
+      bottomDock.style.display = "inline-flex";
+      bottomDock.style.alignItems = "center";
+      bottomDock.style.justifyContent = "flex-start";
+      bottomDock.style.gap = `${gap}px`;
+      bottomDock.style.bottom = `calc(max(var(--sab), 0px) + ${dockBottom}px)`;
+      bottomDock.style.left = useChatAnchor
+        ? `${Math.round(Number(chatRect?.right || 0) + dockShift)}px`
+        : "auto";
+      bottomDock.style.right = useChatAnchor
+        ? "auto"
+        : `calc(max(var(--sar), 0px) + ${dockSide}px)`;
+      bottomDock.style.maxWidth =
+        "calc(100vw - max(var(--sal), 0px) - max(var(--sar), 0px) - 16px)";
+      bottomDock.style.zIndex = "5900";
+      bottomDock.style.pointerEvents = shellVisible ? "auto" : "none";
+      bottomDock.style.opacity = shellVisible ? "1" : "0";
+      bottomDock.style.transition = "opacity 180ms ease";
+    }
 
     if (buttonTray) {
-      buttonTray.style.position = "absolute";
-      buttonTray.style.right = `${compact ? 6 : (narrow ? 8 : 10)}px`;
-      buttonTray.style.top = `calc(100% + ${trayOffset}px)`;
+      buttonTray.style.position = "static";
+      buttonTray.style.right = "auto";
+      buttonTray.style.top = "auto";
       buttonTray.style.display = "inline-flex";
       buttonTray.style.flexDirection = "row";
       buttonTray.style.alignItems = "center";
-      buttonTray.style.justifyContent = "flex-end";
+      buttonTray.style.justifyContent = "flex-start";
       buttonTray.style.flexWrap = "nowrap";
       buttonTray.style.gap = `${gap}px`;
       buttonTray.style.padding = "0";
@@ -778,10 +832,10 @@ export function startHud(store, i18n) {
     walletBtn.style.font = "inherit";
     walletBtn.style.lineHeight = "1";
     if (premiumBtn) {
-      premiumBtn.style.position = "absolute";
-      premiumBtn.style.left = `${compact ? 2 : (narrow ? 4 : 8)}px`;
-      premiumBtn.style.top = `calc(100% + ${trayOffset}px)`;
-      premiumBtn.style.zIndex = "2";
+      premiumBtn.style.position = "static";
+      premiumBtn.style.left = "auto";
+      premiumBtn.style.top = "auto";
+      premiumBtn.style.zIndex = "1";
       premiumBtn.style.background = "linear-gradient(180deg, rgba(255,235,160,0.92) 0%, rgba(255,191,74,0.94) 36%, rgba(142,64,16,0.96) 100%)";
       premiumBtn.style.color = "#2a1204";
       premiumBtn.style.textShadow = "0 1px 0 rgba(255,255,255,0.28)";
@@ -795,6 +849,7 @@ export function startHud(store, i18n) {
   root.style.left = "max(var(--sal), 0px)";
   root.style.right = "max(var(--sar), 0px)";
   if (row) row.style.pointerEvents = "auto";
+  if (bottomDock) bottomDock.style.pointerEvents = shellVisible ? "auto" : "none";
   if (buttonTray) buttonTray.style.pointerEvents = "auto";
   if (premiumBtn) premiumBtn.style.pointerEvents = "auto";
 
@@ -900,15 +955,10 @@ export function startHud(store, i18n) {
     const baseReservedTop = narrow ? 178 : (mobile ? 164 : 136);
     const extraBottomClearance = mobile ? 18 : 12;
     const rootRect = root.getBoundingClientRect?.() || { top: 0, bottom: 0 };
-    const trayRect = buttonTray?.getBoundingClientRect?.() || { bottom: rootRect.bottom };
-    const premiumRect =
-      premiumBtn && premiumBtn.style.display !== "none"
-        ? premiumBtn.getBoundingClientRect?.() || { bottom: rootRect.bottom }
-        : { bottom: rootRect.bottom };
+    const rowRect = row?.getBoundingClientRect?.() || rootRect;
     const actualBottom = Math.max(
       Number(rootRect.bottom || 0),
-      Number(trayRect.bottom || 0),
-      Number(premiumRect.bottom || 0)
+      Number(rowRect.bottom || 0)
     );
     const measuredReservedTop = Math.ceil(actualBottom - safeTop + extraBottomClearance);
     const reservedTop = Math.max(
