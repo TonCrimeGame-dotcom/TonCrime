@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-1";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -45,6 +45,7 @@ const DESKTOP_SHELL_MIN_VIEWPORT = 560;
 const DESKTOP_SHELL_MAX_WIDTH = 414;
 const DESKTOP_SHELL_MAX_HEIGHT = 896;
 const DESKTOP_SHELL_ASPECT = 390 / 844;
+const TELEGRAM_PROFILE_KEY_RE = /^\d{4,20}$/;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
 const SINGLE_SESSION_OVERLAY_ID = "tc-single-session-lock";
@@ -528,7 +529,7 @@ function buildStarterStatePatch(source = store.get()) {
   const player = snapshot.player || {};
   const wallet = snapshot.wallet || {};
   const pvp = snapshot.pvp || {};
-  const telegramId = String(getTelegramUser()?.id || player.telegramId || "").trim();
+  const telegramId = String(getTelegramUser()?.id || getTrustedStoredTelegramId(player.telegramId) || "").trim();
   const username =
     String(
       getTelegramUser()?.username ||
@@ -700,6 +701,15 @@ function getTelegramUser() {
   }
 }
 
+function isTrustedTelegramProfileKey(value) {
+  return TELEGRAM_PROFILE_KEY_RE.test(String(value || "").trim());
+}
+
+function getTrustedStoredTelegramId(value) {
+  const candidate = String(value || "").trim();
+  return isTrustedTelegramProfileKey(candidate) ? candidate : "";
+}
+
 function bootstrapTelegramUser() {
   try {
     const tgUser = getTelegramUser();
@@ -707,13 +717,13 @@ function bootstrapTelegramUser() {
 
     const s = store.get();
     const p = s.player || {};
-    store.set({
-      player: {
-        ...p,
-        telegramId: String(tgUser.id || p.telegramId || ""),
-        username:
-          p.username ||
-          tgUser.username ||
+      store.set({
+        player: {
+          ...p,
+          telegramId: String(tgUser.id || getTrustedStoredTelegramId(p.telegramId) || ""),
+          username:
+            p.username ||
+            tgUser.username ||
           [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") ||
           "Player",
       },
@@ -893,12 +903,14 @@ let _leaderboardSyncRetryAfter = 0;
 let _lastLeaderboardPayload = "";
 
 function getProfileIdentityKey() {
-  return String(
-    getTelegramUser()?.id ||
-    store.get()?.player?.telegramId ||
-    window.tcGetProfileKey?.(store) ||
-    ""
-  ).trim();
+  const telegramId = String(getTelegramUser()?.id || "").trim();
+  if (telegramId) return telegramId;
+
+  const storeTelegramId = getTrustedStoredTelegramId(store.get()?.player?.telegramId);
+  if (storeTelegramId) return storeTelegramId;
+
+  const localProfileKey = String(window.tcGetProfileKey?.(store) || "").trim();
+  return getTrustedStoredTelegramId(localProfileKey);
 }
 
 function buildSingleSessionPayload() {
