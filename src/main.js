@@ -8,7 +8,7 @@ import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBac
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
-import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-2";
+import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
 import { HomeScene } from "./scenes/HomeScene.js";
 import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260331-2";
@@ -22,7 +22,7 @@ import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
-import { startHud } from "./ui/Hud.js?v=20260402-2";
+import { startHud } from "./ui/Hud.js?v=20260402-4";
 import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
@@ -30,12 +30,14 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
+const BUILD_STAMP = "2026-04-02-identity-sync-2";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
 try {
   document.documentElement.style.setProperty("--tc-canvas-opacity", "1");
 } catch (_) {}
+window.tcBuildStamp = BUILD_STAMP;
 
 const STARTING_YTON = 100;
 const STARTING_LEVEL = 0;
@@ -505,24 +507,74 @@ const defaultState = {
   ui: { safe: getSafeArea() },
 };
 
-const loaded = loadStore();
-const initial = loaded
-  ? {
+function buildInitialState(loadedState) {
+  const loadedSnapshot =
+    loadedState && typeof loadedState === "object" ? loadedState : null;
+
+  if (!loadedSnapshot) {
+    return {
       ...defaultState,
-      ...loaded,
-      intro: { ...defaultState.intro, ...(loaded.intro || {}) },
-      player: { ...defaultState.player, ...(loaded.player || {}) },
-      stars: { ...defaultState.stars, ...(loaded.stars || {}) },
-      missions: { ...defaultState.missions, ...(loaded.missions || {}) },
-      dailyLogin: { ...defaultState.dailyLogin, ...(loaded.dailyLogin || {}) },
-      pvp: { ...defaultState.pvp, ...(loaded.pvp || {}) },
       ui: {
         ...(defaultState.ui || {}),
-        ...(loaded.ui || {}),
         safe: getSafeArea(),
       },
-    }
-  : defaultState;
+    };
+  }
+
+  const mergedDefault = {
+    ...defaultState,
+    ...loadedSnapshot,
+    intro: { ...defaultState.intro, ...(loadedSnapshot.intro || {}) },
+    player: { ...defaultState.player, ...(loadedSnapshot.player || {}) },
+    stars: { ...defaultState.stars, ...(loadedSnapshot.stars || {}) },
+    missions: { ...defaultState.missions, ...(loadedSnapshot.missions || {}) },
+    dailyLogin: { ...defaultState.dailyLogin, ...(loadedSnapshot.dailyLogin || {}) },
+    pvp: { ...defaultState.pvp, ...(loadedSnapshot.pvp || {}) },
+    ui: {
+      ...(defaultState.ui || {}),
+      ...(loadedSnapshot.ui || {}),
+      safe: getSafeArea(),
+    },
+  };
+
+  if (!window.Telegram?.WebApp) {
+    return mergedDefault;
+  }
+
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+  const localTelegramId = String(loadedSnapshot?.player?.telegramId || "").trim();
+  const trustedTelegramId = TELEGRAM_PROFILE_KEY_RE.test(localTelegramId)
+    ? localTelegramId
+    : "";
+  const seedTelegramId = String(tgUser?.id || trustedTelegramId || "").trim();
+  const seedUsername = String(
+    tgUser?.username ||
+    [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+    ""
+  ).trim();
+
+  return {
+    ...defaultState,
+    lang: String(loadedSnapshot.lang || defaultState.lang || "tr").trim() || "tr",
+    intro: {
+      ...defaultState.intro,
+      tutorialSeen: !!loadedSnapshot?.intro?.tutorialSeen,
+    },
+    player: {
+      ...defaultState.player,
+      telegramId: seedTelegramId,
+      username: seedUsername,
+    },
+    ui: {
+      ...(defaultState.ui || {}),
+      ...(loadedSnapshot.ui || {}),
+      safe: getSafeArea(),
+    },
+  };
+}
+
+const loaded = loadStore();
+const initial = buildInitialState(loaded);
 
 const store = new Store(initial);
 window.tcStore = store;
@@ -1107,8 +1159,22 @@ function applyRemoteProfile(profile) {
     intro: {
       ...intro,
       splashSeen: true,
-      ageVerified: profile.age != null ? true : !!intro.ageVerified,
-      profileCompleted: profile.age != null ? !!username : !!intro.profileCompleted,
+      ageVerified:
+        profile.age != null
+          ? true
+          : !!(
+              intro.ageVerified ||
+              profile.username ||
+              player.username ||
+              getTelegramUser()?.username
+            ),
+      profileCompleted: !!(
+        profile.telegram_id ||
+        profile.username ||
+        player.username ||
+        getTelegramUser()?.username ||
+        intro.profileCompleted
+      ),
     },
     player: {
       ...player,
@@ -2134,7 +2200,7 @@ window.tc.dev = {
 if (typeof BootScene !== "function") {
   throw new Error('BootScene export bulunamadı. BootScene.js içinde export default veya export class BootScene olmalı.');
 }
-scenes.register("boot", new BootScene({ assets, i18n, scenes, readyPromise: profileBootstrapReady }));
+scenes.register("boot", new BootScene({ assets, i18n, scenes, store, readyPromise: profileBootstrapReady }));
 scenes.register("intro", new IntroScene({ store, input, scenes, assets }));
 scenes.register("home", new HomeScene({ store, input, i18n, assets, scenes }));
 scenes.register("profile", new ProfileScene({ store, input, scenes, assets }));
