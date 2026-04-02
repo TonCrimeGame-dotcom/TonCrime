@@ -1,9 +1,6 @@
 const SUPPORTED_RICH_AD_METHODS = [
   "triggerInterstitialVideo",
   "triggerRewardedVideo",
-  "showRewardedVideo",
-  "showRewarded",
-  "showVideo",
 ];
 const NULL_OBJECT_ERROR_RE =
   /(null is not an object|undefined is not an object|cannot read properties of null|cannot read properties of undefined)/i;
@@ -298,7 +295,8 @@ async function runRichAdsAdOnce(controller) {
 export async function playRichRewardedAd(timeoutMs = 5200) {
   await waitForTelegramMiniAppReady(Math.max(timeoutMs, 4200));
 
-  const controller = await waitForRichAdsController(timeoutMs);
+  resetRichAdsControllerCache();
+  const controller = await waitForRichAdsController(timeoutMs, { forceFresh: true });
   if (!controller) {
     const failure = { ok: false, reason: "controller_missing", controller: null, result: null };
     rememberRichAdsFailure(failure.reason, failure);
