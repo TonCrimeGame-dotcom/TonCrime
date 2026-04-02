@@ -497,7 +497,7 @@ export async function ensureAuthSession() {
       const sessionUser = sessionRes?.data?.session?.user || null;
       if (sessionUser) {
         const currentIdentity = readAuthIdentityKey(sessionUser);
-        if (!expectedTelegramIdentity || !currentIdentity || currentIdentity === expectedTelegramIdentity) {
+        if (!expectedTelegramIdentity || currentIdentity === expectedTelegramIdentity) {
           clearAuthCooldown("session_exists");
           return sessionUser;
         }
@@ -508,7 +508,7 @@ export async function ensureAuthSession() {
       const authUser = userRes?.data?.user || null;
       if (authUser) {
         const currentIdentity = readAuthIdentityKey(authUser);
-        if (!expectedTelegramIdentity || !currentIdentity || currentIdentity === expectedTelegramIdentity) {
+        if (!expectedTelegramIdentity || currentIdentity === expectedTelegramIdentity) {
           clearAuthCooldown("user_exists");
           return authUser;
         }
