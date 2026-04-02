@@ -1,7 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js";
-import { playRichRewardedAd } from "../ads/richAds.js";
+import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -2154,16 +2154,17 @@ class TradeScene {
     try {
       const played = await playRichRewardedAd();
       if (!played.ok) {
+        const detail = describeRichAdFailure(played, "unknown");
         if (played.reason === "controller_missing" || played.reason === "method_missing") {
-          this._showToast(this._ui("RichAds hazir degil", "RichAds is not ready"), 2200);
+          this._showToast(this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`), 2600);
           return;
         }
         if (played.reason === "not_completed") {
-          this._showToast(this._ui("Reklam tamamlanmadi", "Ad was not completed"));
+          this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
           return;
         }
-        console.warn("[TonCrime] TradeScene ad error:", played.error);
-        this._showToast(this._ui("Reklam acilamadi", "Ad could not be opened"), 2200);
+        console.warn("[TonCrime] TradeScene ad error:", detail, played.error || played.result || played);
+        this._showToast(this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`), 2800);
         return;
       }
 
@@ -2177,7 +2178,7 @@ class TradeScene {
       this._startWheelAnimation("free", pool, selectedIndex, reward);
     } catch (error) {
       console.warn("[TonCrime] TradeScene rewarded ad fatal:", error);
-      this._showToast(this._ui("Reklam acilamadi", "Ad could not be opened"), 2200);
+      this._showToast(this._ui(`Reklam acilamadi: ${String(error?.message || error || "unknown")}`, `Ad failed: ${String(error?.message || error || "unknown")}`), 2800);
     } finally {
       this.adBusy = false;
     }
