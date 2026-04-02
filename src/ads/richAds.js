@@ -20,6 +20,66 @@ export function hasRichAdsController(controller) {
   return !!getCallableRichAdsMethod(controller);
 }
 
+function collectFailureBits(value, out = [], depth = 0) {
+  if (value == null || depth > 2) return out;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) out.push(trimmed);
+    return out;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    out.push(String(value));
+    return out;
+  }
+  if (value instanceof Error) {
+    if (value.name) out.push(value.name);
+    if (value.message) out.push(value.message);
+    return out;
+  }
+  if (typeof value === "object") {
+    [
+      value.message,
+      value.reason,
+      value.error,
+      value.description,
+      value.details,
+      value.detail,
+      value.status,
+      value.state,
+      value.result,
+      value.code,
+      value.type,
+    ].forEach((entry) => collectFailureBits(entry, out, depth + 1));
+    return out;
+  }
+  return out;
+}
+
+function normalizeFailureText(value, fallback = "") {
+  const bits = collectFailureBits(value, []);
+  const unique = [];
+  for (const bit of bits) {
+    const normalized = String(bit || "").replace(/\s+/g, " ").trim();
+    if (!normalized) continue;
+    if (!unique.some((entry) => entry.toLowerCase() === normalized.toLowerCase())) {
+      unique.push(normalized);
+    }
+  }
+  const text = unique.join(" | ").slice(0, 160);
+  return text || fallback;
+}
+
+function rememberRichAdsFailure(reason, payload) {
+  try {
+    window.tcLastRichAdsFailure = {
+      at: Date.now(),
+      reason: String(reason || ""),
+      detail: normalizeFailureText(payload, String(reason || "")),
+      payload,
+    };
+  } catch (_) {}
+}
+
 export function isCompletedAdResult(result) {
   if (result == null) return true;
   if (typeof result === "boolean") return result;
@@ -35,6 +95,18 @@ export function isCompletedAdResult(result) {
   }
 
   return true;
+}
+
+export function describeRichAdFailure(playResult, fallback = "") {
+  if (!playResult) return fallback || "unknown";
+
+  const reason = String(playResult.reason || "").trim();
+  const source = playResult.error ?? playResult.result ?? playResult;
+  const detail = normalizeFailureText(source, "");
+
+  if (detail) return detail;
+  if (reason) return reason;
+  return fallback || "unknown";
 }
 
 async function createRichAdsControllerOnDemand() {
@@ -91,21 +163,30 @@ export async function waitForRichAdsController(timeoutMs = 1800) {
 export async function playRichRewardedAd(timeoutMs = 4000) {
   const controller = await waitForRichAdsController(timeoutMs);
   if (!controller) {
-    return { ok: false, reason: "controller_missing", controller: null, result: null };
+    const failure = { ok: false, reason: "controller_missing", controller: null, result: null };
+    rememberRichAdsFailure(failure.reason, failure);
+    return failure;
   }
 
   const run = getCallableRichAdsMethod(controller);
   if (!run) {
-    return { ok: false, reason: "method_missing", controller, result: null };
+    const failure = { ok: false, reason: "method_missing", controller, result: null };
+    rememberRichAdsFailure(failure.reason, failure);
+    return failure;
   }
 
   try {
     const result = await run();
     if (!isCompletedAdResult(result)) {
-      return { ok: false, reason: "not_completed", controller, result };
+      const failure = { ok: false, reason: "not_completed", controller, result };
+      rememberRichAdsFailure(failure.reason, result);
+      return failure;
     }
+    try { window.tcLastRichAdsFailure = null; } catch (_) {}
     return { ok: true, reason: "completed", controller, result };
   } catch (error) {
-    return { ok: false, reason: "error", controller, result: null, error };
+    const failure = { ok: false, reason: "error", controller, result: null, error };
+    rememberRichAdsFailure(failure.reason, error);
+    return failure;
   }
 }
