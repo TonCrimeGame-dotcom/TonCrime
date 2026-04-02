@@ -1001,8 +1001,10 @@ function buildProfilePayload() {
   const p = s.player || {};
   const pvp = s.pvp || {};
   const telegramId = getProfileIdentityKey();
+  const hasVerifiedTelegramUser = !!getTelegramUser()?.id;
 
-  if (!telegramId || !s?.intro?.profileCompleted) return null;
+  if (!telegramId) return null;
+  if (!hasVerifiedTelegramUser && !s?.intro?.profileCompleted) return null;
 
   return {
     telegram_id: telegramId,
@@ -1289,12 +1291,13 @@ async function bootstrapPlayerProfile() {
 
     const restored = await restoreProfileFromCloud(identityKey);
     if (!restored?.restored) {
-      if (getTelegramUser()?.id) {
+      if (restored?.missing && getTelegramUser()?.id) {
         store.set(buildAuthoritativeTelegramResetPatch(store.get()));
-        _profileSyncRetryAfter = Date.now() + 60_000;
-        return false;
+      } else if (restored?.error) {
+        console.warn("Profile restore skipped due to backend fetch error:", restored.reason || "fetch_error");
+      } else {
+        ensureStarterProfileState();
       }
-      ensureStarterProfileState();
     }
 
     await syncProfileToCloud(true).catch(() => null);
