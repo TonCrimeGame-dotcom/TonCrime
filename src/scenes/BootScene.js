@@ -23,12 +23,20 @@ export class BootScene {
       }
     };
 
+    const revealAppShell = () => {
+      try {
+        window.__tcAppShellReady = true;
+        window.dispatchEvent(new Event("tc:app-shell-ready"));
+      } catch (_) {}
+    };
+
     try {
       if (typeof this.assets?.loadAll === "function") {
         await Promise.allSettled([
           Promise.resolve(this.assets.loadAll()),
           waitForReady(),
         ]);
+        revealAppShell();
         this.scenes?.go?.("intro");
         return;
       }
@@ -38,6 +46,7 @@ export class BootScene {
           Promise.resolve(this.assets.load()),
           waitForReady(),
         ]);
+        revealAppShell();
         this.scenes?.go?.("intro");
         return;
       }
@@ -46,6 +55,7 @@ export class BootScene {
     }
 
     await waitForReady();
+    revealAppShell();
     this.scenes?.go?.("intro");
   }
 
