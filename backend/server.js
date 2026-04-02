@@ -1862,7 +1862,12 @@ app.get('/public/profile', makePublicRateLimit('profile-read', 60_000, 120), asy
       return res.status(identity.status || 401).json({ ok: false, error: identity.error });
     }
 
-    const data = await getProfileByKey(identity.profileKey);
+    let data = await getProfileByKey(identity.profileKey);
+    if (!data && identity.verified && !identity.isGuest) {
+      await ensureProfileRecordForIdentity(identity.profileKey, identity.username || 'Player');
+      data = await getProfileByKey(identity.profileKey);
+    }
+
     return res.json({ ok: true, item: data || null, profile_key: identity.profileKey });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message || 'profile fetch failed' });
