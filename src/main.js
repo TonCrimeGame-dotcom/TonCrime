@@ -15,14 +15,14 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260402-4";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
 import { startStarsOverlay } from "./ui/StarsOverlay.js";
-import { startHud } from "./ui/Hud.js?v=20260402-4";
+import { startHud } from "./ui/Hud.js?v=20260402-5";
 import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-cache-bust-1";
+const BUILD_STAMP = "2026-04-02-layout-session-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -48,6 +48,7 @@ const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
 const DESKTOP_SHELL_MIN_VIEWPORT = 560;
 const TELEGRAM_PROFILE_KEY_RE = /^\d{4,20}$/;
+const SINGLE_DEVICE_SESSION_ENABLED = false;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
 const SINGLE_SESSION_OVERLAY_ID = "tc-single-session-lock";
@@ -1047,6 +1048,7 @@ function getProfileIdentityKey() {
 }
 
 function buildSingleSessionPayload() {
+  if (!SINGLE_DEVICE_SESSION_ENABLED) return null;
   const identityKey = getProfileIdentityKey();
   if (!identityKey) return null;
 
@@ -1068,6 +1070,7 @@ function buildSingleSessionPayload() {
 }
 
 async function releaseSingleSession(useBeacon = false) {
+  if (!SINGLE_DEVICE_SESSION_ENABLED) return;
   const payload = buildSingleSessionPayload();
   if (!payload || !_singleSessionState.claimed) return;
 
@@ -1096,6 +1099,7 @@ async function releaseSingleSession(useBeacon = false) {
 }
 
 function startSingleSessionHeartbeat() {
+  if (!SINGLE_DEVICE_SESSION_ENABLED) return;
   stopSingleSessionHeartbeat();
   if (_singleSessionState.locked || !_singleSessionState.claimed || _singleSessionState.supported === false) {
     return;
@@ -1135,6 +1139,12 @@ function startSingleSessionHeartbeat() {
 }
 
 async function claimSingleSession(force = false) {
+  if (!SINGLE_DEVICE_SESSION_ENABLED) {
+    _singleSessionState.locked = false;
+    _singleSessionState.claimed = false;
+    _singleSessionState.supported = false;
+    return true;
+  }
   const payload = buildSingleSessionPayload();
   if (!payload) return false;
   if (_singleSessionState.claimed && !force && !_singleSessionState.locked) return true;
@@ -1185,9 +1195,13 @@ function buildProfilePayload() {
     pvp_losses: readPvpCount(pvp.losses, 0),
     pvp_rating: readPvpRating(pvp.rating, 1000),
     pvp_last_match_at: toIsoTimestamp(pvp.lastMatchAt || pvp.last_match_at),
-    device_id: _singleSessionState.deviceId,
-    session_id: _singleSessionState.sessionId,
-    device_label: _singleSessionState.deviceLabel,
+    ...(SINGLE_DEVICE_SESSION_ENABLED
+      ? {
+          device_id: _singleSessionState.deviceId,
+          session_id: _singleSessionState.sessionId,
+          device_label: _singleSessionState.deviceLabel,
+        }
+      : {}),
     updated_at: new Date().toISOString(),
   };
 }
