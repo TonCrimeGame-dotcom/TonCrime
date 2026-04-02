@@ -1,7 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260402-2";
-import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js";
+import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-1";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -234,6 +234,7 @@ class TradeScene {
     this.toastUntil = 0;
     this.runtimeImages = new Map();
     this.wheelAnim = null;
+    this.rewardOverlay = null;
     this.lastTs = Date.now();
     this.adBusy = false;
   }
@@ -248,6 +249,7 @@ class TradeScene {
     this.moved = 0;
     this.clickCandidate = false;
     this.wheelAnim = null;
+    this.rewardOverlay = null;
     this.lastTs = Date.now();
     this.adBusy = false;
 
@@ -588,7 +590,7 @@ class TradeScene {
     if (/(scarlett blaze)/.test(name)) return "VIP service.";
     if (/(ruby vane)/.test(name)) return "Deluxe service.";
     if (/(luna hart)/.test(name)) return "Elite service.";
-    if (/(golden pass|vip pass)/.test(name)) return "Rare event item.";
+    if (/(event item|bonus)/.test(name)) return "Rare event item.";
     if (/(mystery crate|legendary crate|crate)/.test(name)) return "Open it for a random reward.";
     return raw;
   }
@@ -615,7 +617,7 @@ class TradeScene {
     if (/(scarlett blaze|ruby vane|luna hart|vip service|deluxe service|elite service|escort|girl|companion)/.test(raw)) {
       return "girls";
     }
-    if (/(golden pass|vip pass|pass|event item|bonus)/.test(raw)) {
+    if (/(event item|bonus)/.test(raw)) {
       return "rare";
     }
     if (/(white widow|og kush|moon rocks|kush|widow|rocks|weed|goods?)/.test(raw)) {
@@ -742,7 +744,7 @@ class TradeScene {
     if (/(vip companion|deluxe service|vip girl|companion|service|escort|girl)/.test(raw)) {
       return { imageSrc: "./src/assets/girl.png" };
     }
-    if (/(golden pass|vip pass|pass|bonus)/.test(raw)) {
+    if (/(event item|bonus)/.test(raw)) {
       return { imageSrc: "./src/assets/bonus.png" };
     }
     if (/(crate|sandik|loot|premium_crate|mystery_crate)/.test(raw)) {
@@ -1186,6 +1188,7 @@ class TradeScene {
   }
 
   _setCrateReveal(kind, pool, selectedIndex, reward) {
+    const lane = this._buildCrateRevealTrack(pool, selectedIndex, reward);
     this._setTrade({
       crateReveal: {
         kind,
@@ -1193,11 +1196,55 @@ class TradeScene {
           ...entry,
           item: entry.item ? { ...entry.item } : null,
         })),
+        track: lane.track,
+        stopIndex: lane.stopIndex,
         selectedIndex,
         reward: reward ? { ...reward, item: reward.item ? { ...reward.item } : null } : null,
         updatedAt: Date.now(),
       },
     });
+  }
+
+  _buildCrateRevealTrack(pool, selectedIndex, reward) {
+    const source = Array.isArray(pool) ? pool : [];
+    const total = Math.max(12, source.length * 4);
+    const stopIndex = Math.max(5, total - 3);
+    const track = [];
+
+    for (let i = 0; i < total; i += 1) {
+      const entry = source[(selectedIndex + i + 1) % Math.max(1, source.length)] || reward || source[0] || null;
+      track.push(
+        entry
+          ? {
+              ...entry,
+              item: entry.item ? { ...entry.item } : null,
+            }
+          : null
+      );
+    }
+
+    if (reward && track[stopIndex]) {
+      track[stopIndex] = {
+        ...reward,
+        item: reward.item ? { ...reward.item } : null,
+      };
+    }
+
+    return { track: track.filter(Boolean), stopIndex };
+  }
+
+  _showRewardOverlay(reward, heading, detail = "", delayMs = 0, durationMs = 2400) {
+    if (!reward) return;
+    this.rewardOverlay = {
+      reward: {
+        ...reward,
+        item: reward.item ? { ...reward.item } : null,
+      },
+      heading: String(heading || this._ui("Odul Kazanildi", "Reward Won")),
+      detail: String(detail || this._rewardText(reward) || ""),
+      startAt: Date.now() + Math.max(0, Number(delayMs || 0)),
+      until: Date.now() + Math.max(0, Number(delayMs || 0)) + Math.max(800, Number(durationMs || 0)),
+    };
   }
 
   _startWheelAnimation(mode, pool, selectedIndex, reward) {
@@ -1631,8 +1678,11 @@ class TradeScene {
       textFit(ctx, shortRewardLabel({ ...reward, label: rewardTitle }), x + w / 2, y + h - 26, w - 16);
 
       ctx.fillStyle = "rgba(255,255,255,0.68)";
-      ctx.font = "11px system-ui";
-      textFit(ctx, rewardDetail, x + w / 2, y + h - 12, w - 18);
+      ctx.font = "10px system-ui";
+      const compactDetail = wrapText(ctx, rewardDetail, w - 20, 1);
+      if (compactDetail[0]) {
+        textFit(ctx, compactDetail[0], x + w / 2, y + h - 12, w - 18);
+      }
 
       if (highlight) {
         const chipW = Math.min(Math.max(56, Math.floor(w * 0.42)), w - 18);
@@ -1647,9 +1697,9 @@ class TradeScene {
       return;
     }
 
-    const chipW = highlight ? Math.min(84, Math.max(64, Math.floor(w * 0.22))) : 0;
-    const chipReserve = highlight ? chipW + 20 : 0;
-    const thumbSize = hasRewardArt ? Math.max(42, Math.min(52, Math.floor(h * 0.46))) : Math.max(30, Math.min(38, Math.floor(h * 0.26)));
+    const chipW = highlight ? Math.min(110, Math.max(84, Math.floor(w * 0.28))) : 0;
+    const chipReserve = highlight ? chipW + 26 : 0;
+    const thumbSize = hasRewardArt ? Math.max(42, Math.min(50, Math.floor(h * 0.42))) : Math.max(30, Math.min(38, Math.floor(h * 0.24)));
     const thumbX = x + 16;
     const thumbY = y + Math.round((h - thumbSize) / 2);
     this._drawRewardThumb(ctx, thumbX, thumbY, thumbSize, reward, highlight);
@@ -1663,14 +1713,18 @@ class TradeScene {
     textFit(ctx, typeMeta.category, textX, y + 24, textW);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "900 15px system-ui";
-    textFit(ctx, rewardTitle, textX, y + 52, textW);
+    ctx.font = "900 14px system-ui";
+    textFit(ctx, rewardTitle, textX, y + 48, textW);
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "11px system-ui";
-    textFit(ctx, rewardDetail, textX, y + 74, textW);
+    const detailLines = wrapText(ctx, rewardDetail, textW, highlight ? 2 : 1);
+    detailLines.forEach((line, index) => {
+      ctx.fillText(line, textX, y + 70 + index * 14);
+    });
 
     if (highlight) {
-      fillRoundRect(ctx, x + w - chipW - 14, y + 12, chipW, 24, 12, accent);
+      ctx.fillStyle = accent;
+      fillRoundRect(ctx, x + w - chipW - 14, y + 12, chipW, 24, 12);
       ctx.fillStyle = "#251506";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -1691,7 +1745,7 @@ class TradeScene {
     const cy = y + 180;
     const radius = Math.min(mode === "premium" ? 138 : 130, Math.floor(Math.min(w * (mode === "premium" ? 0.34 : 0.32), mode === "premium" ? 138 : 130)));
     const rewardCardY = Math.round(cy + radius + 24);
-    const rewardCardH = 104;
+    const rewardCardH = 118;
     const boxH = Math.max(430, rewardCardY + rewardCardH + 14 - y);
     this.drawCard(ctx, x, y, w, boxH);
 
@@ -1801,24 +1855,24 @@ class TradeScene {
 
       const mid = start + slice / 2;
       const reward = pool[i];
-      const badgeSize = mode === "premium" ? 42 : 36;
+      const badgeSize = mode === "premium" ? 34 : 28;
       const badgeRadius = radius * (mode === "premium" ? 0.54 : 0.52);
       const badgeX = Math.cos(mid) * badgeRadius;
       const badgeY = Math.sin(mid) * badgeRadius;
       const meta = this._drawWheelBadge(ctx, reward, badgeX, badgeY, badgeSize, highlightSlice);
       const title = String(meta.title || "").trim();
       const subtitle = String(meta.subtitle || "").trim();
-      const labelRadius = radius * (mode === "premium" ? 0.78 : 0.75);
+      const labelRadius = radius * (mode === "premium" ? 0.74 : 0.72);
       const labelX = Math.cos(mid) * labelRadius;
       const labelY = Math.sin(mid) * labelRadius;
-      const labelMaxWidth = Math.max(24, (slice * radius) * 0.68);
+      const labelMaxWidth = Math.max(22, (slice * radius) * 0.58);
       let safeTitle = title;
       let safeSubtitle = subtitle;
 
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = `900 ${mode === "premium" ? 9 : 8}px system-ui`;
+        ctx.font = `900 ${mode === "premium" ? 8 : 7}px system-ui`;
       while (safeTitle.length > 1 && ctx.measureText(safeTitle).width > labelMaxWidth) {
         safeTitle = `${safeTitle.slice(0, -2)}…`;
       }
@@ -1827,7 +1881,7 @@ class TradeScene {
       ctx.fillText(safeTitle, labelX, labelY - (subtitle ? 6 : 0));
 
       if (subtitle) {
-        ctx.font = `800 ${mode === "premium" ? 7 : 6}px system-ui`;
+          ctx.font = `800 ${mode === "premium" ? 6 : 5}px system-ui`;
         while (safeSubtitle.length > 1 && ctx.measureText(safeSubtitle).width > labelMaxWidth) {
           safeSubtitle = `${safeSubtitle.slice(0, -2)}…`;
         }
@@ -1921,19 +1975,26 @@ class TradeScene {
 
   _drawCrateReveal(ctx, x, y, w, reveal) {
     if (!reveal?.reward) return 0;
-    const cards = this._crateDisplayCards(reveal);
-    const cardGap = 10;
-    const sideW = clamp(Math.floor((w - 28 - cardGap * 2) * 0.22), 78, 108);
-    const centerW = w - 28 - cardGap * 2 - sideW * 2;
+    const track = Array.isArray(reveal.track) && reveal.track.length ? reveal.track : this._crateDisplayCards(reveal);
+    const stopIndex = clamp(Number(reveal.stopIndex || 0), 0, Math.max(0, track.length - 1));
     const animAge = Math.max(0, Date.now() - Number(reveal.updatedAt || 0));
-    const animT = clamp(animAge / 520, 0, 1);
-    const eased = 1 - Math.pow(1 - animT, 3);
-    const sideOffset = Math.round((1 - eased) * 28);
-    const centerScale = 0.84 + eased * 0.16;
-    const centerLift = Math.round((1 - eased) * 18);
-    const sideAlpha = 0.22 + eased * 0.50;
+    const animT = clamp(animAge / 1450, 0, 1);
+    const eased = 1 - Math.pow(1 - animT, 4);
+    const boxH = 228;
+    const laneX = x + 14;
+    const laneY = y + 68;
+    const laneW = w - 28;
+    const laneH = 110;
+    const step = clamp(Math.floor(laneW * 0.25), 92, 124);
+    const cardW = step - 12;
+    const cardH = laneH - 14;
+    const centerCardX = laneX + Math.round((laneW - cardW) / 2);
+    const finalOffset = centerCardX - stopIndex * step;
+    const travelSteps = Math.max(6, Math.min(12, track.length - 1));
+    const startOffset = finalOffset - step * travelSteps;
+    const laneOffset = startOffset + (finalOffset - startOffset) * eased;
 
-    this.drawCard(ctx, x, y, w, 204);
+    this.drawCard(ctx, x, y, w, boxH);
     ctx.fillStyle = "#fff";
     ctx.font = "900 16px system-ui";
     ctx.textAlign = "left";
@@ -1941,35 +2002,136 @@ class TradeScene {
     ctx.fillText(reveal.kind === "legendary" ? this._ui("Legendary Sandik Acildi", "Legendary Crate Opened") : this._ui("Mystery Sandik Acildi", "Mystery Crate Opened"), x + 16, y + 28);
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.font = "12px system-ui";
-    ctx.fillText(this._ui("Ortadaki kart verilen oduldur.", "The center card is the granted reward."), x + 16, y + 48);
+    ctx.fillText(this._ui("Kartlar akarak gelir ve verilen odulde durur.", "Cards slide through and stop on the granted reward."), x + 16, y + 48);
 
-    const left = { x: x + 14, y: y + 78, w: sideW, h: 100 };
-    const center = { x: left.x + sideW + cardGap, y: y + 64, w: centerW, h: 120 };
-    const right = { x: center.x + centerW + cardGap, y: y + 78, w: sideW, h: 100 };
+    ctx.fillStyle = "rgba(7,7,10,0.34)";
+    fillRoundRect(ctx, laneX, laneY, laneW, laneH, 18);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, laneX, laneY, laneW, laneH, 18);
 
-    if (cards[0]) {
-      ctx.save();
-      ctx.globalAlpha = sideAlpha;
-      this._drawRewardCard(ctx, left.x - sideOffset, left.y, left.w, left.h, cards[0], false);
-      ctx.restore();
-    }
     ctx.save();
-    ctx.translate(center.x + center.w / 2, center.y + center.h / 2 - centerLift);
-    ctx.scale(centerScale, centerScale);
-    this._drawRewardCard(ctx, -center.w / 2, -center.h / 2, center.w, center.h, reveal.reward, true);
-    if (animT < 1) {
-      ctx.globalAlpha = (1 - eased) * 0.18;
-      ctx.fillStyle = reveal.reward?.accent || "#ffcf7b";
-      fillRoundRect(ctx, -center.w / 2 + 10, -center.h / 2 + 10, center.w - 20, center.h - 20, 18);
+    roundRectPath(ctx, laneX, laneY, laneW, laneH, 18);
+    ctx.clip();
+    for (let i = 0; i < track.length; i += 1) {
+      const reward = track[i];
+      if (!reward) continue;
+      const cardX = laneOffset + i * step;
+      const cardY = laneY + 7;
+      if (cardX > laneX + laneW + 16 || cardX + cardW < laneX - 16) continue;
+
+      const distance = Math.abs(cardX + cardW / 2 - (laneX + laneW / 2));
+      const normalized = clamp(1 - distance / Math.max(1, laneW * 0.5), 0, 1);
+      const scale = 0.9 + normalized * 0.1;
+      ctx.save();
+      ctx.globalAlpha = 0.34 + normalized * 0.66;
+      ctx.translate(cardX + cardW / 2, cardY + cardH / 2);
+      ctx.scale(scale, scale);
+      this._drawRewardCard(ctx, -cardW / 2, -cardH / 2, cardW, cardH, reward, i === stopIndex && animT > 0.82);
+      ctx.restore();
     }
     ctx.restore();
-    if (cards[2]) {
-      ctx.save();
-      ctx.globalAlpha = sideAlpha;
-      this._drawRewardCard(ctx, right.x + sideOffset, right.y, right.w, right.h, cards[2], false);
-      ctx.restore();
+
+    const fadeLeft = ctx.createLinearGradient(laneX, laneY, laneX + 38, laneY);
+    fadeLeft.addColorStop(0, "rgba(8,8,10,0.92)");
+    fadeLeft.addColorStop(1, "rgba(8,8,10,0)");
+    ctx.fillStyle = fadeLeft;
+    ctx.fillRect(laneX, laneY, 38, laneH);
+
+    const fadeRight = ctx.createLinearGradient(laneX + laneW - 38, laneY, laneX + laneW, laneY);
+    fadeRight.addColorStop(0, "rgba(8,8,10,0)");
+    fadeRight.addColorStop(1, "rgba(8,8,10,0.92)");
+    ctx.fillStyle = fadeRight;
+    ctx.fillRect(laneX + laneW - 38, laneY, 38, laneH);
+
+    ctx.strokeStyle = "rgba(255,215,138,0.70)";
+    ctx.lineWidth = 1.5;
+    strokeRoundRect(ctx, centerCardX - 5, laneY + 4, cardW + 10, laneH - 8, 18);
+    ctx.fillStyle = "rgba(255,224,166,0.14)";
+    fillRoundRect(ctx, centerCardX - 5, laneY + 4, cardW + 10, laneH - 8, 18);
+
+    ctx.fillStyle = "rgba(255,228,182,0.76)";
+    ctx.font = "11px system-ui";
+    ctx.fillText(this._ui("Ortadaki kart verilen oduldur.", "The centered card is the granted reward."), x + 16, y + boxH - 18);
+    return boxH;
+  }
+
+  _drawRewardOverlay(ctx, w, h) {
+    const overlay = this.rewardOverlay;
+    if (!overlay) return;
+
+    const now = Date.now();
+    if (now < Number(overlay.startAt || 0)) return;
+    if (now >= Number(overlay.until || 0)) {
+      this.rewardOverlay = null;
+      return;
     }
-    return 204;
+
+    const fadeIn = clamp((now - Number(overlay.startAt || 0)) / 180, 0, 1);
+    const fadeOut = clamp((Number(overlay.until || 0) - now) / 220, 0, 1);
+    const alpha = Math.min(fadeIn, fadeOut);
+    const scale = 0.92 + alpha * 0.08;
+    const cardW = Math.min(330, w - 42);
+    const cardH = 170;
+    const cardX = Math.round((w - cardW) / 2);
+    const cardY = Math.round(h * 0.5 - cardH * 0.56);
+
+    ctx.save();
+    ctx.globalAlpha = 0.18 * alpha;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cardX + cardW / 2, cardY + cardH / 2);
+    ctx.scale(scale, scale);
+
+    const bg = ctx.createLinearGradient(-cardW / 2, -cardH / 2, -cardW / 2, cardH / 2);
+    bg.addColorStop(0, "rgba(23,16,10,0.96)");
+    bg.addColorStop(1, "rgba(9,8,7,0.98)");
+    ctx.fillStyle = bg;
+    fillRoundRect(ctx, -cardW / 2, -cardH / 2, cardW, cardH, 24);
+    ctx.strokeStyle = "rgba(255,214,132,0.72)";
+    ctx.lineWidth = 1.4;
+    strokeRoundRect(ctx, -cardW / 2, -cardH / 2, cardW, cardH, 24);
+
+    ctx.fillStyle = "#ffdfa0";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "800 13px system-ui";
+    ctx.fillText(String(overlay.heading || this._ui("Odul Kazanildi", "Reward Won")), 0, -58);
+
+    this._drawRewardThumb(ctx, -32, -22, 64, overlay.reward, true);
+
+    const title = String(
+      overlay.reward?.weaponName ||
+      overlay.reward?.item?.name ||
+      overlay.reward?.label ||
+      this._rewardText(overlay.reward) ||
+      this._ui("Odul", "Reward")
+    ).trim();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 18px system-ui";
+    textFit(ctx, title, 0, 34, cardW - 40);
+
+    ctx.fillStyle = "rgba(255,255,255,0.74)";
+    ctx.font = "12px system-ui";
+    const detailLines = wrapText(ctx, String(overlay.detail || this._rewardText(overlay.reward) || ""), cardW - 44, 2);
+    detailLines.forEach((line, index) => {
+      ctx.fillText(line, 0, 60 + index * 16);
+    });
+
+    ctx.fillStyle = overlay.reward?.accent || "#f3b35b";
+    fillRoundRect(ctx, -56, -77, 112, 24, 12);
+    ctx.fillStyle = "#251506";
+    ctx.font = "900 10px system-ui";
+    ctx.fillText("KAZANILDI", 0, -64);
+    ctx.restore();
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
   }
 
   _showToast(text, ms = 1400) {
@@ -2250,6 +2412,13 @@ class TradeScene {
 
     this._grantReward(reward, { cost });
     this._setCrateReveal(kind, pool, selectedIndex, reward);
+    this._showRewardOverlay(
+      reward,
+      kind === "legendary" ? this._ui("Legendary Sandik", "Legendary Crate") : this._ui("Mystery Sandik", "Mystery Crate"),
+      this._rewardText(reward),
+      980,
+      2600
+    );
     this._showToast(this._rewardText(reward), 1600);
   }
 
@@ -2321,13 +2490,13 @@ class TradeScene {
       return;
     }
 
-    const lowest = this._findLowestMarketPriceByName(item.name);
-    const defaultPrice = lowest > 0 ? lowest : Number(item.marketPrice || item.sellPrice || 10);
+    const defaultPrice = Number(item.marketPrice || item.sellPrice || 10);
 
     const priceRaw = window.prompt(
-      lowest > 0
-          ? this._ui(`Birim fiyat gir.\nPazardaki en dusuk fiyat: ${lowest} yton`, `Enter unit price.\nLowest market price: ${lowest} yton`)
-          : this._ui("Birim satis fiyatini gir.", "Enter unit sale price."),
+      this._ui(
+        "Birim satis fiyatini gir.\nSerbest piyasa: istedigin fiyatla listeleyebilirsin.",
+        "Enter the unit sale price.\nOpen market: you can list it for any price."
+      ),
       String(defaultPrice)
     );
     if (priceRaw === null) return;
@@ -2859,13 +3028,13 @@ class TradeScene {
       return;
     }
 
-    const lowest = this._findLowestMarketPriceByName(product.name);
-    const defaultPrice = lowest > 0 ? lowest : Number(product.price || 10);
+    const defaultPrice = Number(product.price || 10);
 
     const priceRaw = window.prompt(
-      lowest > 0
-        ? this._ui(`Birim satis fiyatini gir:\nPazardaki en dusuk fiyat: ${lowest} yton`, `Enter unit sale price:\nLowest market price: ${lowest} yton`)
-        : this._ui("Birim satis fiyatini gir:", "Enter unit sale price:"),
+      this._ui(
+        "Birim satis fiyatini gir.\nSerbest piyasa: istedigin fiyatla listeleyebilirsin.",
+        "Enter the unit sale price.\nOpen market: you can list it for any price."
+      ),
       String(defaultPrice)
     );
     if (priceRaw === null) return;
@@ -2976,6 +3145,7 @@ class TradeScene {
       const eased = 1 - Math.pow(1 - t, 3);
       this.wheelAnim.rotation = this.wheelAnim.from + (this.wheelAnim.to - this.wheelAnim.from) * eased;
       if (t >= 1) {
+        const finalReward = this.wheelAnim.reward;
         const trade = this._trade();
         this._setTrade({
           lootWheel: {
@@ -2983,7 +3153,8 @@ class TradeScene {
             rotation: this._rewardRotation(this.wheelAnim.selectedIndex, this.wheelAnim.poolSize),
           },
         });
-        this._showToast(this._rewardText(this.wheelAnim.reward), 1600);
+        this._showRewardOverlay(finalReward, this._ui("Cark Odulu", "Wheel Reward"), this._rewardText(finalReward), 60, 2300);
+        this._showToast(this._rewardText(finalReward), 1600);
         this.wheelAnim = null;
       }
     }
@@ -3506,7 +3677,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
         ctx.font = "11px system-ui";
         textFit(
           ctx,
-          this._ui(`Stok ${fmtNum(p.qty)} - Taban ${fmtNum(p.price)} yton`, `Stock ${fmtNum(p.qty)} - Base ${fmtNum(p.price)} yton`),
+          this._ui(`Stok ${fmtNum(p.qty)} - Serbest piyasa`, `Stock ${fmtNum(p.qty)} - Open market`),
           textStartX,
           rowY + 39,
           textMaxWidth
@@ -3588,8 +3759,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.font = "11px system-ui";
       const basePrice = Number(item.sellPrice || item.price || 0);
       const stockLine = item._sourceType === "business_product"
-        ? this._ui(`Adet ${fmtNum(item.qty)} - Taban ${fmtNum(basePrice)} yton`, `Qty ${fmtNum(item.qty)} - Base ${fmtNum(basePrice)} yton`)
-        : this._ui(`Adet ${fmtNum(item.qty)} - NPC ${fmtNum(basePrice)} yton`, `Qty ${fmtNum(item.qty)} - NPC ${fmtNum(basePrice)} yton`);
+        ? this._ui(`Adet ${fmtNum(item.qty)} - Serbest piyasa`, `Qty ${fmtNum(item.qty)} - Open market`)
+        : this._ui(`Adet ${fmtNum(item.qty)} - Serbest liste`, `Qty ${fmtNum(item.qty)} - Open listing`);
       textFit(ctx, stockLine, x + 78, y + 56, w - 96);
 
       const itemDesc = this._itemDesc(item);
@@ -4201,6 +4372,8 @@ _drawButton(ctx, rect, text, style = "ghost") {
       ctx.textBaseline = "middle";
       ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2);
     }
+
+    this._drawRewardOverlay(ctx, w, h);
   }
 }
 
