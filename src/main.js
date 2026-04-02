@@ -15,7 +15,7 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260402-6";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260402-7";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-wheel-layout-1";
+const BUILD_STAMP = "2026-04-02-blackmarket-loot-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
