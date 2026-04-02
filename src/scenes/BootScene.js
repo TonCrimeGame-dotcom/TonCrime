@@ -1,8 +1,9 @@
 export class BootScene {
-  constructor({ assets, i18n, scenes, readyPromise } = {}) {
+  constructor({ assets, i18n, scenes, store, readyPromise } = {}) {
     this.assets = assets;
     this.i18n = i18n;
     this.scenes = scenes;
+    this.store = store;
     this.readyPromise = readyPromise || null;
     this._started = false;
   }
@@ -30,6 +31,12 @@ export class BootScene {
       } catch (_) {}
     };
 
+    const resolveTargetScene = () => {
+      const snapshot = this.store?.get?.() || {};
+      const username = String(snapshot?.player?.username || "").trim();
+      return snapshot?.intro?.profileCompleted && username ? "home" : "intro";
+    };
+
     try {
       if (typeof this.assets?.loadAll === "function") {
         await Promise.allSettled([
@@ -37,7 +44,7 @@ export class BootScene {
           waitForReady(),
         ]);
         revealAppShell();
-        this.scenes?.go?.("intro");
+        this.scenes?.go?.(resolveTargetScene());
         return;
       }
 
@@ -47,7 +54,7 @@ export class BootScene {
           waitForReady(),
         ]);
         revealAppShell();
-        this.scenes?.go?.("intro");
+        this.scenes?.go?.(resolveTargetScene());
         return;
       }
     } catch (err) {
@@ -56,7 +63,7 @@ export class BootScene {
 
     await waitForReady();
     revealAppShell();
-    this.scenes?.go?.("intro");
+    this.scenes?.go?.(resolveTargetScene());
   }
 
   update() {}
