@@ -12,31 +12,47 @@
   <script src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
   <script>
     (function () {
+      const richAdsConfig = {
+        pubId: "1006898",
+        appId: "6869",
+        debug: /(^localhost$)|(^127\.)|(^192\.168\.)|(^10\.)/i.test(location.hostname),
+      };
+      window.tcRichAdsConfig = richAdsConfig;
+
       let resolveReady = function () {};
       window.tcRichAdsReady = new Promise((resolve) => {
         resolveReady = resolve;
       });
 
-      try {
-        const ControllerCtor = window.TelegramAdsController;
-        if (typeof ControllerCtor !== "function") {
-          resolveReady(null);
-          return;
+      window.tcCreateRichAdsController = async function tcCreateRichAdsController() {
+        if (window.tcRichAdsController) return window.tcRichAdsController;
+
+        try {
+          const ControllerCtor = window.TelegramAdsController;
+          if (typeof ControllerCtor !== "function") {
+            return null;
+          }
+
+          const controller = new ControllerCtor();
+          const initResult = controller.initialize?.(richAdsConfig);
+          if (initResult && typeof initResult.then === "function") {
+            await initResult;
+          }
+
+          window.tcRichAdsController = controller;
+          return controller;
+        } catch (error) {
+          console.error("[TonCrime] RichAds init failed:", error);
+          return null;
         }
+      };
 
-        const controller = new ControllerCtor();
-        controller.initialize({
-          pubId: "1006898",
-          appId: "6869",
-          debug: /(^localhost$)|(^127\.)|(^192\.168\.)|(^10\.)/i.test(location.hostname),
+      window.tcCreateRichAdsController()
+        .then((controller) => resolveReady(controller || null))
+        .catch((error) => {
+          console.error("[TonCrime] RichAds bootstrap failed:", error);
+          resolveReady(null);
         });
-
-        window.tcRichAdsController = controller;
-        resolveReady(controller);
-      } catch (error) {
-        console.error("[TonCrime] RichAds init failed:", error);
-        resolveReady(null);
-      }
     })();
   </script>
 
