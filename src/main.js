@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-2";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-3";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-identity-sync-2";
+const BUILD_STAMP = "2026-04-02-onboarding-guard-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -47,9 +47,6 @@ const DEFAULT_XP_TO_NEXT = 100;
 const MAX_PLAYER_ENERGY = 100;
 const APP_TIMEZONE = "Europe/Istanbul";
 const DESKTOP_SHELL_MIN_VIEWPORT = 560;
-const DESKTOP_SHELL_MAX_WIDTH = 414;
-const DESKTOP_SHELL_MAX_HEIGHT = 896;
-const DESKTOP_SHELL_ASPECT = 390 / 844;
 const TELEGRAM_PROFILE_KEY_RE = /^\d{4,20}$/;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
@@ -171,34 +168,6 @@ function isDesktopTelegramShell(viewportW = window.innerWidth || 0, viewportH = 
   return desktopLike && longSide >= DESKTOP_SHELL_MIN_VIEWPORT && shortSide >= 420;
 }
 
-function getDesktopTelegramShellFrame(viewportW, viewportH) {
-  const safeViewportW = Math.max(360, Math.floor(viewportW || window.innerWidth || 360));
-  const safeViewportH = Math.max(520, Math.floor(viewportH || window.innerHeight || 520));
-  const margin = Math.max(16, Math.min(36, Math.round(Math.min(safeViewportW, safeViewportH) * 0.03)));
-  const maxWidth = Math.max(360, Math.min(DESKTOP_SHELL_MAX_WIDTH, safeViewportW - margin * 2));
-  const maxHeight = Math.max(520, Math.min(DESKTOP_SHELL_MAX_HEIGHT, safeViewportH - margin * 2));
-
-  let width = maxWidth;
-  let height = Math.round(width / DESKTOP_SHELL_ASPECT);
-
-  if (height > maxHeight) {
-    height = maxHeight;
-    width = Math.round(height * DESKTOP_SHELL_ASPECT);
-  }
-
-  const left = Math.max(0, Math.floor((safeViewportW - width) / 2));
-  const top = Math.max(0, Math.floor((safeViewportH - height) / 2));
-
-  return {
-    width,
-    height,
-    left,
-    top,
-    right: Math.max(0, safeViewportW - left - width),
-    bottom: Math.max(0, safeViewportH - top - height),
-  };
-}
-
 function applyViewportFrame(frame, desktopShell = false) {
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--tc-app-width", `${Math.max(1, Math.floor(frame.width || 1))}px`);
@@ -250,10 +219,10 @@ function syncTelegramViewportLock() {
   );
 
   if (isDesktopTelegramShell(nextWidth, nextHeight)) {
-    const frame = getDesktopTelegramShellFrame(nextWidth, nextHeight);
-    _viewportLockHeight = frame.height;
-    _viewportLockWidth = frame.width;
-    applyViewportFrame(frame, true);
+    _viewportLockHeight = Math.max(_viewportLockHeight || 0, nextHeight || 0);
+    _viewportLockWidth = Math.max(_viewportLockWidth || 0, nextWidth || 0);
+    const { w, h } = getViewportSize();
+    applyViewportFrame({ width: w, height: h, left: 0, top: 0, right: 0, bottom: 0 }, false);
     return;
   }
 
@@ -402,6 +371,60 @@ fitCanvas();
 
 /* ===== STORE ===== */
 const STORE_KEY = "toncrime_store_v1";
+const TELEGRAM_ONBOARDING_DONE_PREFIX = "toncrime_onboarding_done_v1_";
+
+function normalizeOnboardingTelegramId(value) {
+  const candidate = String(value || "").trim();
+  return TELEGRAM_PROFILE_KEY_RE.test(candidate) ? candidate : "";
+}
+
+function getTelegramOnboardingStorageKey(telegramId = "") {
+  const normalized = normalizeOnboardingTelegramId(
+    telegramId || getTelegramUser()?.id || ""
+  );
+  return normalized ? `${TELEGRAM_ONBOARDING_DONE_PREFIX}${normalized}` : "";
+}
+
+function hasTelegramOnboardingDone(telegramId = "") {
+  const key = getTelegramOnboardingStorageKey(telegramId);
+  if (!key) return false;
+  try {
+    return String(localStorage.getItem(key) || "").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markTelegramOnboardingDone(telegramId = "") {
+  const key = getTelegramOnboardingStorageKey(telegramId);
+  if (!key) return false;
+  try {
+    localStorage.setItem(key, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearTelegramOnboardingDone(telegramId = "") {
+  const key = getTelegramOnboardingStorageKey(telegramId);
+  if (key) {
+    try { localStorage.removeItem(key); } catch {}
+    return true;
+  }
+
+  try {
+    const keys = Object.keys(localStorage || {});
+    for (const item of keys) {
+      if (String(item || "").startsWith(TELEGRAM_ONBOARDING_DONE_PREFIX)) {
+        localStorage.removeItem(item);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function loadStore() {
   try {
@@ -547,9 +570,13 @@ function buildInitialState(loadedState) {
     ? localTelegramId
     : "";
   const seedTelegramId = String(tgUser?.id || trustedTelegramId || "").trim();
+  const onboardingDone = hasTelegramOnboardingDone(seedTelegramId);
   const seedUsername = String(
     tgUser?.username ||
     [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
+    (normalizeOnboardingTelegramId(loadedSnapshot?.player?.telegramId || "") === seedTelegramId
+      ? loadedSnapshot?.player?.username || ""
+      : "") ||
     ""
   ).trim();
 
@@ -558,6 +585,9 @@ function buildInitialState(loadedState) {
     lang: String(loadedSnapshot.lang || defaultState.lang || "tr").trim() || "tr",
     intro: {
       ...defaultState.intro,
+      splashSeen: onboardingDone || !!loadedSnapshot?.intro?.splashSeen,
+      ageVerified: onboardingDone || !!loadedSnapshot?.intro?.ageVerified,
+      profileCompleted: onboardingDone || !!loadedSnapshot?.intro?.profileCompleted,
       tutorialSeen: !!loadedSnapshot?.intro?.tutorialSeen,
     },
     player: {
@@ -578,6 +608,15 @@ const initial = buildInitialState(loaded);
 
 const store = new Store(initial);
 window.tcStore = store;
+store.subscribe((next) => {
+  const telegramId = normalizeOnboardingTelegramId(
+    next?.player?.telegramId || getTelegramUser()?.id || ""
+  );
+  if (!telegramId) return;
+  if (next?.intro?.profileCompleted && String(next?.player?.username || "").trim()) {
+    markTelegramOnboardingDone(telegramId);
+  }
+});
 
 function buildStarterStatePatch(source = store.get()) {
   const snapshot = source || {};
@@ -1197,6 +1236,8 @@ function applyRemoteProfile(profile) {
     },
   });
 
+  markTelegramOnboardingDone(profile.telegram_id || getProfileIdentityKey());
+
   return true;
 }
 
@@ -1331,6 +1372,7 @@ async function ensureCloudProfileReady(identityKey = getProfileIdentityKey()) {
     }
 
     if (restored?.missing) {
+      clearTelegramOnboardingDone(identityKey);
       if (getTelegramUser()?.id) {
         store.set(buildAuthoritativeTelegramResetPatch(store.get()));
       } else {
