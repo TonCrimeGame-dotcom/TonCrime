@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-3";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-4";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-02-onboarding-guard-1";
+const BUILD_STAMP = "2026-04-02-profile-refresh-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -991,6 +991,8 @@ let _profileBootstrapPromise = null;
 let _profileBootstrapDone = false;
 let _profileCloudReadyState = "pending";
 let _profileCloudRestoreBusy = false;
+let _profileRefreshBusy = false;
+let _lastProfileRefreshAt = 0;
 let _lastLeaderboardSyncAt = 0;
 let _leaderboardSyncBusy = false;
 let _leaderboardSyncRetryAfter = 0;
@@ -1247,6 +1249,33 @@ function buildProfilePayloadKey(payload) {
   return JSON.stringify(stable);
 }
 
+function resetRemovedDailyLoginState(snapshot = store.get()) {
+  const daily = snapshot?.dailyLogin || {};
+  if (
+    !daily.pending &&
+    !daily.pendingKey &&
+    !daily.pendingReward &&
+    !daily.pendingStreak &&
+    !daily.lastClaimKey &&
+    !Number(daily.streak || 0)
+  ) {
+    return false;
+  }
+
+  store.set({
+    dailyLogin: {
+      ...daily,
+      lastClaimKey: "",
+      streak: 0,
+      pending: false,
+      pendingKey: "",
+      pendingReward: 0,
+      pendingStreak: 0,
+    },
+  });
+  return true;
+}
+
 async function fetchProfileFromBackend(identityKey) {
   if (!identityKey) return { ok: false, item: null, reason: "missing_identity" };
   try {
@@ -1345,6 +1374,37 @@ async function restoreProfileFromCloud(identityKey = getProfileIdentityKey()) {
     error: false,
     reason: "missing",
   };
+}
+
+async function refreshProfileFromCloud(force = false, identityKey = getProfileIdentityKey()) {
+  if (!identityKey || _singleSessionState.locked) return false;
+  if (_profileRefreshBusy) return false;
+  if (!force && Date.now() - _lastProfileRefreshAt < 5000) return false;
+
+  _profileRefreshBusy = true;
+  try {
+    const remote = await fetchProfileFromBackend(identityKey);
+    if (!remote.ok) return false;
+    _lastProfileRefreshAt = Date.now();
+
+    if (applyRemoteProfile(remote.item)) {
+      _profileCloudReadyState = "found";
+      _profileSyncRetryAfter = 0;
+      const payload = buildProfilePayload();
+      if (payload) {
+        _lastProfilePayload = buildProfilePayloadKey(payload);
+      }
+      _lastProfileSyncAt = Date.now();
+      return true;
+    }
+
+    if (remote.reason === "missing") {
+      _profileCloudReadyState = "missing";
+    }
+    return false;
+  } finally {
+    _profileRefreshBusy = false;
+  }
 }
 
 async function ensureCloudProfileReady(identityKey = getProfileIdentityKey()) {
@@ -1504,7 +1564,7 @@ async function bootstrapPlayerProfile() {
 
     _profileBootstrapDone = true;
 
-    if (cloudReady) {
+    if (cloudReady && _profileCloudReadyState !== "found") {
       await syncProfileToCloud(true).catch(() => null);
     }
     await syncLeaderboardFromCloud(true).catch(() => null);
@@ -1538,12 +1598,14 @@ window.addEventListener("tc:pvp:leaderboard-sync-now", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !_singleSessionState.locked) {
     claimSingleSession().catch(() => null);
+    refreshProfileFromCloud(true).catch(() => null);
   }
 });
 
 window.addEventListener("focus", () => {
   if (!_singleSessionState.locked) {
     claimSingleSession().catch(() => null);
+    refreshProfileFromCloud(true).catch(() => null);
   }
 });
 
@@ -1561,6 +1623,11 @@ window.addEventListener("beforeunload", () => {
     requestProfileCloudSync(false);
   }
   setTimeout(profileSyncLoop, 1500);
+})();
+
+(function profileRefreshLoop() {
+  refreshProfileFromCloud(false).catch(() => null);
+  setTimeout(profileRefreshLoop, 10_000);
 })();
 
 (function leaderboardSyncLoop() {
@@ -1581,7 +1648,8 @@ let _lastSaveAt = 0;
 
 /* ===== DAILY ENERGY RESET ===== */
 function tickDailyEnergyReset() {
-  ensureDailyEnergyReset();
+ensureDailyEnergyReset();
+resetRemovedDailyLoginState();
 }
 setInterval(tickDailyEnergyReset, 60 * 1000);
 
@@ -2380,30 +2448,7 @@ function startProgressionOverlay(storeRef, i18nRef) {
   }
 
   function ensureDailyLoginPending() {
-    const snapshot = storeRef.get() || {};
-    if (!snapshot?.intro?.profileCompleted) return false;
-
-    const daily = snapshot.dailyLogin || {};
-    const today = dayKey();
-    if (String(daily.lastClaimKey || "") === today || String(daily.pendingKey || "") === today || daily.pending) {
-      return false;
-    }
-
-    const yesterday = dayKey(Date.now() - 24 * 60 * 60 * 1000);
-    const streak = String(daily.lastClaimKey || "") === yesterday
-      ? Math.max(1, Number(daily.streak || 0) + 1)
-      : 1;
-    const reward = Math.min(90, 12 + (streak - 1) * 6);
-
-    storeRef.set({
-      dailyLogin: {
-        ...daily,
-        pending: true,
-        pendingKey: today,
-        pendingReward: reward,
-        pendingStreak: streak,
-      },
-    });
+    resetRemovedDailyLoginState(storeRef.get());
     return true;
   }
 
@@ -2685,16 +2730,11 @@ function startProgressionOverlay(storeRef, i18nRef) {
   }
 
   function evaluate() {
-    if (ensureDailyLoginPending()) return;
+    ensureDailyLoginPending();
 
     const snapshot = storeRef.get() || {};
     if (currentSceneKey !== "home") {
       hide();
-      return;
-    }
-
-    if (snapshot.dailyLogin?.pending) {
-      show("daily");
       return;
     }
 
