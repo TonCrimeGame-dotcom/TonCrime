@@ -53,7 +53,7 @@ export const PREMIUM_WHEEL_REWARDS = [
   { type: "energy", amount: 25, icon: "⚡", label: "+25 Enerji", glow: "#7cf7c0" },
   itemReward("Mystery Crate", "rare", { icon: "📦", glow: "#c77dff", sellPrice: 45, marketPrice: 60, kind: "rare" }),
   itemReward("Legendary Crate", "legendary", { icon: "👑", glow: "#ffcc66", sellPrice: 110, marketPrice: 165, kind: "legendary" }),
-  itemReward("Golden Pass", "legendary", { icon: "👑", glow: "#ffcc66", sellPrice: 250, marketPrice: 0, marketable: false, kind: "rare" }),
+  itemReward("Ruby Vane", "legendary", { icon: "💎", glow: "#ffcc66", sellPrice: 120, marketPrice: 160, marketable: true, kind: "girls", desc: "Deluxe servis." }),
   { type: "energy", amount: 40, icon: "⚡", label: "+40 Enerji", glow: "#7cf7c0" },
   { type: "coins", amount: 250, icon: "💰", label: "+250 YTON", glow: "#ffd166" },
 ];
@@ -65,14 +65,14 @@ export const CRATE_TABLES = {
     { weight: 22, reward: { type: "energy", amount: 20, icon: "⚡", label: "+20 Enerji", glow: "#7cf7c0" } },
     { weight: 15, reward: itemReward("Adrenaline Shot", "epic", { icon: "🧪", glow: "#ff8fab", usable: true, sellPrice: 25, marketPrice: 40, energyGain: 20, marketable: true, sellable: true, kind: "energy" }) },
     { weight: 10, reward: itemReward("Mystery Crate", "rare", { icon: "📦", glow: "#c77dff", sellPrice: 45, marketPrice: 60, kind: "rare" }) },
-    { weight: 5, reward: itemReward("Golden Pass", "legendary", { icon: "👑", glow: "#ffcc66", sellPrice: 250, marketPrice: 0, marketable: false, kind: "rare" }) },
+    { weight: 5, reward: itemReward("Ruby Vane", "legendary", { icon: "💎", glow: "#ffcc66", sellPrice: 120, marketPrice: 160, marketable: true, kind: "girls", desc: "Deluxe servis." }) },
   ],
   legendary: [
     { weight: 25, reward: { type: "coins", amount: 150, icon: "💰", label: "+150 YTON", glow: "#ffd166" } },
     { weight: 18, reward: { type: "coins", amount: 240, icon: "💎", label: "+240 YTON", glow: "#8ab4ff" } },
     { weight: 18, reward: { type: "energy", amount: 35, icon: "⚡", label: "+35 Enerji", glow: "#7cf7c0" } },
     { weight: 14, reward: itemReward("Legendary Crate", "legendary", { icon: "👑", glow: "#ffcc66", sellPrice: 110, marketPrice: 165, kind: "legendary" }) },
-    { weight: 15, reward: itemReward("Golden Pass", "legendary", { icon: "👑", glow: "#ffcc66", sellPrice: 250, marketPrice: 0, marketable: false, kind: "rare" }) },
+    { weight: 15, reward: itemReward("Ruby Vane", "legendary", { icon: "💎", glow: "#ffcc66", sellPrice: 120, marketPrice: 160, marketable: true, kind: "girls", desc: "Deluxe servis." }) },
     { weight: 10, reward: itemReward("Adrenaline Shot", "epic", { icon: "🧪", glow: "#ff8fab", usable: true, sellPrice: 25, marketPrice: 40, energyGain: 20, marketable: true, sellable: true, kind: "energy" }) },
   ],
 };
