@@ -34,9 +34,10 @@ const PUBLIC_RATE_LIMIT_MAX = Number(process.env.PUBLIC_RATE_LIMIT_MAX || 90);
 const CHAT_SEND_WINDOW_MS = Number(process.env.CHAT_SEND_WINDOW_MS || 10_000);
 const CHAT_SEND_MAX = Number(process.env.CHAT_SEND_MAX || 5);
 const TELEGRAM_BOT_TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const DEFAULT_TELEGRAM_INIT_DATA_MAX_AGE_SEC = 30 * 24 * 60 * 60;
 const TELEGRAM_INIT_DATA_MAX_AGE_SEC = Math.max(
   60,
-  Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SEC || 3600)
+  Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SEC || DEFAULT_TELEGRAM_INIT_DATA_MAX_AGE_SEC)
 );
 const ALLOW_INSECURE_PUBLIC_IDENTITY = String(process.env.ALLOW_INSECURE_PUBLIC_IDENTITY || '').trim() === '1';
 const ALLOW_GUEST_PUBLIC_IDENTITY = String(process.env.ALLOW_GUEST_PUBLIC_IDENTITY || '').trim() === '1';
@@ -532,7 +533,7 @@ function resolveIdentityContext(req, { allowGuest = false } = {}) {
       ok: false,
       status: 401,
       error: TELEGRAM_BOT_TOKEN
-        ? 'Verified Telegram session required'
+        ? `Verified Telegram session required${telegram?.reason ? `: ${telegram.reason}` : ''}`
         : 'TELEGRAM_BOT_TOKEN is required for Telegram verification',
     };
   }
@@ -2956,5 +2957,4 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`TonCrime secure admin backend running on :${PORT}`);
 });
- 
  
