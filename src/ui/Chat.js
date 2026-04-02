@@ -1,4 +1,4 @@
-import { fetchBackendJson, supabase } from "../supabase.js";
+import { fetchBackendJson, supabase } from "../supabase.js?v=20260402-2";
 
 const CHAT_STARTING_LEVEL = 0;
 const CHAT_DEMO_PATTERN = /^(test|demo|deneme|sample|ornek|ornk)([\s\d!?.-]|$)/i;
@@ -105,6 +105,21 @@ export function startChat(store) {
   if (!drawer || !header || !msgBox || !input || !sendBtn || !toggleBtn) {
     console.warn("[CHAT] chat elements were not found in index.html");
     return null;
+  }
+
+  let shellVisible = !!window.__tcAppShellReady;
+  drawer.style.transition = drawer.style.transition || "opacity 180ms ease, transform 220ms ease";
+  drawer.style.opacity = shellVisible ? "1" : "0";
+  drawer.style.pointerEvents = shellVisible ? "auto" : "none";
+
+  function revealShell() {
+    shellVisible = true;
+    drawer.style.opacity = "1";
+    drawer.style.pointerEvents = "auto";
+  }
+
+  if (!shellVisible) {
+    window.addEventListener("tc:app-shell-ready", revealShell, { once: true });
   }
 
   if (window.__tcChatStarted) return window.__tcChatApi;
