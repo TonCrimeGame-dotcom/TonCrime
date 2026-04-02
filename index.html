@@ -66,22 +66,27 @@
       --sar: env(safe-area-inset-right, 0px);
       --sab: env(safe-area-inset-bottom, 0px);
       --sal: env(safe-area-inset-left, 0px);
+      --tc-viewport-width: 100vw;
+      --tc-viewport-height: 100vh;
       --tc-app-width: 100vw;
       --tc-app-height: 100vh;
       --tc-app-left: 0px;
       --tc-app-top: 0px;
       --tc-app-radius: 0px;
       --tc-app-shadow: none;
+      --tc-shell-opacity: 0;
     }
 
     html, body {
       margin: 0;
       padding: 0;
-      height: var(--tc-app-height);
-      width: var(--tc-app-width);
-      min-height: var(--tc-app-height);
-      min-width: var(--tc-app-width);
-      background: #0b0b0f;
+      height: var(--tc-viewport-height);
+      width: var(--tc-viewport-width);
+      min-height: var(--tc-viewport-height);
+      min-width: var(--tc-viewport-width);
+      background:
+        radial-gradient(circle at top, rgba(229, 168, 72, 0.14), transparent 36%),
+        linear-gradient(180deg, #161018 0%, #0c0c11 52%, #08090d 100%);
       overflow: hidden;
       touch-action: none;
       overscroll-behavior: none;
@@ -91,8 +96,26 @@
     body {
       position: fixed;
       inset: 0;
-      height: var(--tc-app-height);
-      width: var(--tc-app-width);
+      height: var(--tc-viewport-height);
+      width: var(--tc-viewport-width);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      left: calc(var(--tc-app-left) - 10px);
+      top: calc(var(--tc-app-top) - 10px);
+      width: calc(var(--tc-app-width) + 20px);
+      height: calc(var(--tc-app-height) + 20px);
+      border-radius: calc(var(--tc-app-radius) + 12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)),
+        rgba(12, 12, 16, 0.92);
+      box-shadow: 0 32px 100px rgba(0,0,0,0.46);
+      opacity: var(--tc-shell-opacity);
+      pointer-events: none;
+      z-index: 0;
     }
 
     #game {
