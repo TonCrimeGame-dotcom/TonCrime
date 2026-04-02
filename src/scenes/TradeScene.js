@@ -1,6 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js";
+import { playRichRewardedAd } from "../ads/richAds.js";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -145,40 +146,6 @@ function todayKey() {
   ).padStart(2, "0")}`;
 }
 
-function isCompletedAdResult(result) {
-  if (result == null) return true;
-  if (typeof result === "boolean") return result;
-
-  if (typeof result === "object") {
-    if (typeof result.rewarded === "boolean") return result.rewarded;
-    if (typeof result.completed === "boolean") return result.completed;
-    if (typeof result.success === "boolean") return result.success;
-
-    const status = String(result.status || result.state || result.result || "").toLowerCase();
-    if (status && /(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
-  }
-
-  return true;
-}
-
-async function waitForRichAdsController(timeoutMs = 1800) {
-  const direct = window.tcRichAdsController || window.TelegramAdsController;
-  if (direct && typeof direct.triggerInterstitialVideo === "function") return direct;
-
-  const pending = window.tcRichAdsReady;
-  if (!pending || typeof pending.then !== "function") return null;
-
-  try {
-    const controller = await Promise.race([
-      pending,
-      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-    ]);
-    return controller && typeof controller.triggerInterstitialVideo === "function" ? controller : null;
-  } catch (_) {
-    return null;
-  }
-}
-
 function getImgSafe(assets, key) {
   try {
     if (!assets) return null;
@@ -290,7 +257,7 @@ class TradeScene {
     this.store.set({
       trade: {
         ...trade,
-        activeTab: trade.activeTab || "premium",
+        activeTab: trade.activeTab || "buy",
         selectedBusinessId: trade.selectedBusinessId || null,
         selectedInventoryCategory: trade.selectedInventoryCategory || "all",
         selectedMarketFilter: trade.selectedMarketFilter || "all",
@@ -360,7 +327,7 @@ class TradeScene {
       },
       trade: {
         ...trade,
-        activeTab: trade.activeTab || "premium",
+        activeTab: trade.activeTab || "buy",
         freeSpinDay: trade.freeSpinDay || "",
         freeSpinUsed: Number(trade.freeSpinUsed || 0),
         premiumPreviewType: trade.premiumPreviewType || "nightclub",
@@ -1537,30 +1504,68 @@ class TradeScene {
     ctx.restore();
 
     const typeMeta = this._wheelRewardVisual(reward);
-    this._drawWheelBadge(ctx, reward, x + 58, y + h / 2, 36, highlight);
+    const compact = w < 150 || h < 108;
+    if (compact) {
+      const badgeSize = Math.max(28, Math.min(38, Math.floor(Math.min(w, h) * 0.34)));
+      this._drawWheelBadge(ctx, reward, x + w / 2, y + 34, badgeSize, highlight);
+
+      ctx.fillStyle = "#ffe2a3";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "800 9px system-ui";
+      textFit(ctx, typeMeta.category, x + w / 2, y + 60, w - 18);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "900 12px system-ui";
+      textFit(ctx, shortRewardLabel(reward), x + w / 2, y + h - 26, w - 16);
+
+      ctx.fillStyle = "rgba(255,255,255,0.68)";
+      ctx.font = "11px system-ui";
+      textFit(ctx, this._rewardText(reward), x + w / 2, y + h - 12, w - 18);
+
+      if (highlight) {
+        const chipW = Math.min(Math.max(56, Math.floor(w * 0.42)), w - 18);
+        ctx.fillStyle = accent;
+        fillRoundRect(ctx, x + w - chipW - 9, y + 9, chipW, 22, 11);
+        ctx.fillStyle = "#251506";
+        ctx.font = "900 9px system-ui";
+        ctx.fillText("KAZANILDI", x + w - chipW * 0.5 - 9, y + 20);
+      }
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      return;
+    }
+
+    const badgeRailW = Math.min(118, Math.max(86, Math.floor(w * 0.28)));
+    const badgeSize = Math.max(34, Math.min(38, Math.floor(Math.min(w, h) * 0.28)));
+    this._drawWheelBadge(ctx, reward, x + 18 + badgeSize / 2, y + h / 2, badgeSize, highlight);
 
     ctx.fillStyle = "#ffe2a3";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.font = "800 10px system-ui";
-    ctx.fillText(typeMeta.category, x + 94, y + 25);
+    const textX = x + badgeRailW;
+    const textW = Math.max(60, w - badgeRailW - 20);
+    ctx.fillText(typeMeta.category, textX, y + 25);
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "900 14px system-ui";
-    textFit(ctx, reward?.label || this._rewardText(reward) || "Odul", x + 94, y + 50, w - 164);
+    textFit(ctx, reward?.label || this._rewardText(reward) || "Odul", textX, y + 50, textW - (highlight ? 66 : 0));
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = "12px system-ui";
-    textFit(ctx, this._rewardText(reward), x + 94, y + 70, w - 164);
+    textFit(ctx, this._rewardText(reward), textX, y + 70, textW - (highlight ? 66 : 0));
 
     if (highlight) {
-      ctx.fillStyle = accent;
-      fillRoundRect(ctx, x + w - 72, y + 14, 56, 24, 12);
+      const chipW = Math.min(72, Math.max(56, Math.floor(w * 0.18)));
+      fillRoundRect(ctx, x + w - chipW - 14, y + 14, chipW, 24, 12, accent);
       ctx.fillStyle = "#251506";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "900 10px system-ui";
-      ctx.fillText("KAZANILDI", x + w - 44, y + 26);
+      ctx.fillText("KAZANILDI", x + w - chipW * 0.5 - 14, y + 26);
     }
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
   }
 
   _drawWheel(ctx, x, y, w, trade) {
@@ -1795,10 +1800,10 @@ class TradeScene {
     if (!reveal?.reward) return 0;
     const cards = this._crateDisplayCards(reveal);
     const cardGap = 10;
-    const sideW = Math.floor((w - 28 - cardGap * 2) * 0.26);
+    const sideW = clamp(Math.floor((w - 28 - cardGap * 2) * 0.22), 78, 108);
     const centerW = w - 28 - cardGap * 2 - sideW * 2;
 
-    this.drawCard(ctx, x, y, w, 196);
+    this.drawCard(ctx, x, y, w, 204);
     ctx.fillStyle = "#fff";
     ctx.font = "900 16px system-ui";
     ctx.textAlign = "left";
@@ -1808,9 +1813,9 @@ class TradeScene {
     ctx.font = "12px system-ui";
     ctx.fillText(this._ui("Ortadaki kart verilen oduldur.", "The center card is the granted reward."), x + 16, y + 48);
 
-    const left = { x: x + 14, y: y + 72, w: sideW, h: 96 };
-    const center = { x: left.x + sideW + cardGap, y: y + 62, w: centerW, h: 116 };
-    const right = { x: center.x + centerW + cardGap, y: y + 72, w: sideW, h: 96 };
+    const left = { x: x + 14, y: y + 78, w: sideW, h: 100 };
+    const center = { x: left.x + sideW + cardGap, y: y + 64, w: centerW, h: 120 };
+    const right = { x: center.x + centerW + cardGap, y: y + 78, w: sideW, h: 100 };
 
     if (cards[0]) {
       ctx.save();
@@ -1825,7 +1830,7 @@ class TradeScene {
       this._drawRewardCard(ctx, right.x, right.y, right.w, right.h, cards[2], false);
       ctx.restore();
     }
-    return 196;
+    return 204;
   }
 
   _showToast(text, ms = 1400) {
@@ -2038,15 +2043,18 @@ class TradeScene {
     this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
 
     try {
-      const controller = await waitForRichAdsController();
-      if (!controller) {
-        this._showToast(this._ui("RichAds hazir degil", "RichAds is not ready"), 2200);
-        return;
-      }
-
-      const result = await controller.triggerInterstitialVideo();
-      if (!isCompletedAdResult(result)) {
-        this._showToast(this._ui("Reklam tamamlanmadi", "Ad was not completed"));
+      const played = await playRichRewardedAd();
+      if (!played.ok) {
+        if (played.reason === "controller_missing" || played.reason === "method_missing") {
+          this._showToast(this._ui("RichAds hazir degil", "RichAds is not ready"), 2200);
+          return;
+        }
+        if (played.reason === "not_completed") {
+          this._showToast(this._ui("Reklam tamamlanmadi", "Ad was not completed"));
+          return;
+        }
+        console.warn("[TonCrime] TradeScene ad error:", played.error);
+        this._showToast(this._ui("Reklam acilamadi", "Ad could not be opened"), 2200);
         return;
       }
 
@@ -2059,7 +2067,7 @@ class TradeScene {
       this._setWheelResult("free", pool, selectedIndex, reward);
       this._startWheelAnimation("free", pool, selectedIndex, reward);
     } catch (error) {
-      console.warn("[TonCrime] TradeScene ad error:", error);
+      console.warn("[TonCrime] TradeScene rewarded ad fatal:", error);
       this._showToast(this._ui("Reklam acilamadi", "Ad could not be opened"), 2200);
     } finally {
       this.adBusy = false;
@@ -3771,11 +3779,11 @@ for (const p of products) {
       y,
       w,
       132,
-      this._ui('Premium Merkezi', 'Premium Center'),
+      this._ui('Satin Al', 'Buy'),
       isPremium
-        ? this._ui('Premium aktif. Level 50 ve bir bina acildi.', 'Premium is active. Level 50 and one business are unlocked.')
-        : this._ui('100 TON omurluk uyelik. Bir bina sec ve direkt level 50 ol.', '100 TON lifetime membership. Pick one business and jump straight to level 50.'),
-      isPremium ? 'PREMIUM ON' : '100 TON',
+        ? this._ui('Sunucu urunlerin acik. Premium uyelik aktif ve secili bina acildi.', 'Server store is unlocked. Premium membership is active and your selected business is open.')
+        : this._ui('Sunucu urunleri icinde 100 TON omurluk premium uyelik bulunur. Bir bina sec ve direkt level 50 ol.', 'Server products include a 100 TON lifetime premium membership. Pick one business and jump straight to level 50.'),
+      isPremium ? this._ui('UYELIK AKTIF', 'MEMBERSHIP ON') : this._ui('SERVER URUNLERI', 'SERVER PRODUCTS'),
       { imageKey: 'blackmarket', imageSrc: './src/assets/BlackMarket.png' },
       '#ffcc66'
     );
@@ -3791,7 +3799,7 @@ for (const p of products) {
     this.drawCard(ctx, x, y, w, 104);
     ctx.fillStyle = '#fff';
     ctx.font = '900 15px system-ui';
-    ctx.fillText(this._ui('Premium Avantajlari', 'Premium Benefits'), x + 16, y + 24);
+    ctx.fillText(this._ui('Premium Uyelik', 'Premium Membership'), x + 16, y + 24);
     ctx.fillStyle = 'rgba(255,255,255,0.74)';
     ctx.font = '12px system-ui';
     ctx.fillText(this._ui('• Omurluk uyelik', '• Lifetime membership'), x + 18, y + 48);
@@ -3818,7 +3826,7 @@ for (const p of products) {
 
       const premiumRect = { x: x + 14, y: y + 90, w: 112, h: 24 };
       this.hitButtons.push({ rect: premiumRect, action: 'buy_premium', businessType: def.type });
-      this._drawButton(ctx, premiumRect, isPremium ? this._ui('Premium Acik', 'Premium Active') : 'Premium 100 TON', isPremium ? 'muted' : 'gold');
+      this._drawButton(ctx, premiumRect, isPremium ? this._ui('Uyelik Acik', 'Membership Active') : this._ui('Uyeligi Al', 'Buy Membership'), isPremium ? 'muted' : 'gold');
 
       const normalRect = { x: x + 132, y: y + 90, w: 94, h: 24 };
       this.hitButtons.push({ rect: normalRect, action: 'buy_business', businessType: def.type });
@@ -3908,7 +3916,7 @@ for (const p of products) {
 
     if (trade.view === "main") {
       const tabs = [
-        { key: "premium", label: this._ui("Premium", "Premium") },
+        { key: "buy", label: this._ui("Satin Al", "Buy") },
         { key: "explore", label: this._ui("Kesfet", "Explore") },
         { key: "businesses", label: this._ui("Isletmelerim", "Businesses") },
         { key: "inventory", label: this._ui("Envanter", "Inventory") },
