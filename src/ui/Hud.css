@@ -900,6 +900,136 @@
 }
 
 
+/* ===== 2026-04-02 HUD RESPONSIVE STABILIZER ===== */
+#hudRow {
+  grid-template-columns: minmax(0, 1fr) 146px !important;
+  gap: 10px !important;
+}
+
+#hudCenter {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  left: 0 !important;
+  padding: 0 !important;
+}
+
+#hudShell {
+  min-height: 68px !important;
+  overflow: visible !important;
+}
+
+#hudRight {
+  width: 146px !important;
+  min-width: 146px !important;
+  max-width: 146px !important;
+  justify-self: end !important;
+  margin-left: auto !important;
+  transform: none !important;
+}
+
+#hudIdentityText {
+  padding-right: 4px;
+}
+
+#hudUsername {
+  line-height: 1.05;
+}
+
+@media (max-width: 980px) {
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 140px !important;
+    gap: 8px !important;
+  }
+
+  #hudRight {
+    width: 140px !important;
+    min-width: 140px !important;
+    max-width: 140px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #hudTop {
+    padding: 6px 8px 0 !important;
+  }
+
+  #hudShell {
+    min-height: 60px !important;
+    padding: 8px 8px 6px !important;
+  }
+
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 126px !important;
+    gap: 8px !important;
+  }
+
+  #hudRight {
+    width: 126px !important;
+    min-width: 126px !important;
+    max-width: 126px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  #hudShell {
+    min-height: 58px !important;
+    padding: 7px 7px 5px !important;
+  }
+
+  #hudIdentity {
+    gap: 7px !important;
+  }
+
+  #hudRow {
+    grid-template-columns: minmax(0, 1fr) 112px !important;
+    gap: 7px !important;
+  }
+
+  #hudRight {
+    width: 112px !important;
+    min-width: 112px !important;
+    max-width: 112px !important;
+  }
+
+  #hudAvatarWrap,
+  #hudAvatar {
+    width: 32px !important;
+    height: 32px !important;
+    flex-basis: 32px !important;
+  }
+
+  #hudUsername {
+    font-size: 10px !important;
+  }
+
+  #hudCoins {
+    font-size: 8.5px !important;
+  }
+
+  #hudWeaponName {
+    font-size: 7.5px !important;
+  }
+
+  .hudMiniIcon.hudMiniVisual {
+    width: 14px !important;
+    height: 14px !important;
+    flex-basis: 14px !important;
+  }
+
+  .bar {
+    height: 17px !important;
+  }
+
+  .barText {
+    font-size: 7px !important;
+    padding: 0 5px !important;
+    letter-spacing: 0 !important;
+  }
+}
+
+
 /* ===== HUD INLINE ASSET FIX ===== */
 #hudLeft .line2,
 #hudLeft .line3 {
