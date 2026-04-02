@@ -97,6 +97,7 @@
         <div class="actions">
           <div class="tableHint">Kullanici adi, telegram id veya profil id ile aninda ara</div>
           <button id="purgeProfilesBtn" class="red">Tum Profilleri Sil</button>
+          <button id="hardResetBtn" class="red">Komple Reset</button>
         </div>
       </div>
       <table>
@@ -467,6 +468,55 @@ async function purgeAllProfiles() {
   }
 }
 
+async function hardResetAll() {
+  const confirmPhrase = 'TUM SISTEMI SIFIRLA';
+  const confirmation = prompt(
+    `Bu islem profilleri, bagli oyun verilerini ve TonCrime auth kullanicilarini siler. Devam etmek icin "${confirmPhrase}" yaz.`,
+    ''
+  );
+  if (confirmation === null) {
+    setStatus('Komple reset iptal edildi');
+    return;
+  }
+  if (confirmation.trim().toUpperCase() !== confirmPhrase) {
+    alert('Onay metni yanlis. Islem iptal edildi.');
+    setStatus('Komple reset iptal edildi');
+    return;
+  }
+
+  try {
+    setStatus('Komple reset baslatildi...');
+    const result = await api('/profiles/hard-reset-all', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: confirmPhrase })
+    });
+    const deleted = result.deleted || {};
+    queryInput.value = '';
+    setStatus('Komple reset tamamlandi');
+    alert(
+      `Komple reset tamamlandi.\n` +
+      `Profiller: ${Number(deleted.profiles || 0)}\n` +
+      `Envanter: ${Number(deleted.inventory_items || 0)}\n` +
+      `Isletmeler: ${Number(deleted.businesses || 0)}\n` +
+      `Urunler: ${Number(deleted.business_products || 0)}\n` +
+      `Ilanlar: ${Number(deleted.market_listings || 0)}\n` +
+      `Cekimler: ${Number(deleted.withdraw_requests || 0)}\n` +
+      `Ledger: ${Number(deleted.wallet_ledger || 0)}\n` +
+      `Auth kullanicilari: ${Number(deleted.auth_users_deleted || 0)}\n` +
+      `Guest auth: ${Number(deleted.auth_guest_users || 0)}\n` +
+      `Telegram auth: ${Number(deleted.auth_telegram_users || 0)}`
+    );
+    if (activeTab === 'withdraws') {
+      loadWithdraws();
+    } else {
+      loadProfiles();
+    }
+  } catch (err) {
+    alert(err.message);
+    setStatus('Komple reset hatasi');
+  }
+}
+
 function showTab(name) {
   activeTab = name;
   setQueryPlaceholder();
@@ -480,6 +530,7 @@ tabWithdraws.addEventListener('click', () => showTab('withdraws'));
 tabProfiles.addEventListener('click', () => showTab('profiles'));
 reloadBtn.addEventListener('click', () => triggerReload());
 document.getElementById('purgeProfilesBtn').addEventListener('click', purgeAllProfiles);
+document.getElementById('hardResetBtn').addEventListener('click', hardResetAll);
 queryInput.addEventListener('input', () => scheduleReload(activeTab === 'profiles' ? 180 : 260));
 queryInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
