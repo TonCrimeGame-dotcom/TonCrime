@@ -39,6 +39,7 @@ const TELEGRAM_INIT_DATA_MAX_AGE_SEC = Math.max(
   Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SEC || 3600)
 );
 const ALLOW_INSECURE_PUBLIC_IDENTITY = String(process.env.ALLOW_INSECURE_PUBLIC_IDENTITY || '').trim() === '1';
+const ALLOW_GUEST_PUBLIC_IDENTITY = String(process.env.ALLOW_GUEST_PUBLIC_IDENTITY || '').trim() === '1';
 const IDENTITY_AUTH_SECRET = String(
   process.env.IDENTITY_AUTH_SECRET ||
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -478,6 +479,14 @@ function resolveIdentityContext(req, { allowGuest = false } = {}) {
   if (ALLOW_INSECURE_PUBLIC_IDENTITY) {
     const fallbackKey = requestedProfileKey || requestedIdentityKey;
     if (fallbackKey) {
+      const fallbackIsGuest = isGuestIdentityKey(fallbackKey);
+      if (fallbackIsGuest && !ALLOW_GUEST_PUBLIC_IDENTITY) {
+        return {
+          ok: false,
+          status: 401,
+          error: 'Guest identity is disabled for public routes',
+        };
+      }
       const normalizedProfileKey = isTelegramAuthIdentityKey(fallbackKey)
         ? fallbackKey.replace(/^tg_/, '')
         : fallbackKey;
@@ -498,7 +507,7 @@ function resolveIdentityContext(req, { allowGuest = false } = {}) {
     }
   }
 
-  if (allowGuest && isGuestIdentityKey(requestedProfileKey || requestedIdentityKey)) {
+  if (allowGuest && ALLOW_GUEST_PUBLIC_IDENTITY && isGuestIdentityKey(requestedProfileKey || requestedIdentityKey)) {
     const guestKey = requestedProfileKey || requestedIdentityKey;
     return {
       ok: true,
@@ -525,7 +534,7 @@ function resolveIdentityContext(req, { allowGuest = false } = {}) {
     ok: false,
     status: 401,
     error: allowGuest
-      ? 'Valid Telegram session or guest identity is required'
+      ? 'Valid Telegram session is required'
       : 'Valid Telegram session is required',
   };
 }
@@ -2780,5 +2789,4 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`TonCrime secure admin backend running on :${PORT}`);
 });
- 
  
