@@ -32,6 +32,21 @@ export function startHud(store, i18n) {
     return;
   }
 
+  let shellVisible = !!window.__tcAppShellReady;
+  root.style.transition = root.style.transition || "opacity 180ms ease";
+  root.style.opacity = shellVisible ? "1" : "0";
+  root.style.pointerEvents = shellVisible ? "auto" : "none";
+
+  function revealShell() {
+    shellVisible = true;
+    root.style.opacity = "1";
+    root.style.pointerEvents = "auto";
+  }
+
+  if (!shellVisible) {
+    window.addEventListener("tc:app-shell-ready", revealShell, { once: true });
+  }
+
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const clamp01 = (n) => clamp(n, 0, 1);
   const TELEGRAM_URL = "https://t.me/TonCrimeEu";
