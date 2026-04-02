@@ -1528,6 +1528,52 @@ async function getWithdrawById(id) {
   return data;
 }
 
+function chunkList(items = [], size = 200) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
+async function readAllTableRows(table, columns = '*', orderColumn = 'id', pageSize = 1000) {
+  const rows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .order(orderColumn, { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+
+    const batch = Array.isArray(data) ? data : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+}
+
+async function deleteRowsByIdList(table, ids = [], idColumn = 'id') {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+  if (!uniqueIds.length) return 0;
+
+  for (const chunk of chunkList(uniqueIds, 200)) {
+    const { error } = await supabase
+      .from(table)
+      .delete()
+      .in(idColumn, chunk);
+
+    if (error) throw error;
+  }
+
+  return uniqueIds.length;
+}
+
 /* =========================
    PUBLIC ROUTES
 ========================= */
@@ -2195,6 +2241,119 @@ app.get('/profiles', requireAdmin, adminRateLimit, async (req, res) => {
     res.json({ items: data || [], limit, query: queryText });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load profiles' });
+  }
+});
+
+app.post('/profiles/purge-all', async (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm || '').trim().toUpperCase();
+    if (confirm !== 'TUM PROFILLERI SIL') {
+      return res.status(400).json({ error: 'Confirmation text mismatch' });
+    }
+
+    const profileRows = await readAllTableRows('profiles', 'id, telegram_id, username');
+    const profileIds = profileRows.map((row) => String(row?.id || '').trim()).filter(Boolean);
+    const profileIdSet = new Set(profileIds);
+
+    if (!profileIds.length) {
+      return res.json({
+        ok: true,
+        deleted: {
+          profiles: 0,
+          inventory_items: 0,
+          businesses: 0,
+          business_products: 0,
+          market_listings: 0,
+          withdraw_requests: 0,
+          wallet_ledger: 0,
+        },
+      });
+    }
+
+    const [
+      inventoryRows,
+      businessRows,
+      businessProductRows,
+      marketListingRows,
+      withdrawRows,
+      walletLedgerRows,
+    ] = await Promise.all([
+      readAllTableRows('inventory_items'),
+      readAllTableRows('businesses'),
+      readAllTableRows('business_products'),
+      readAllTableRows('market_listings'),
+      readAllTableRows('withdraw_requests'),
+      readAllTableRows('wallet_ledger'),
+    ]);
+
+    const inventoryIds = inventoryRows
+      .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+    const inventoryIdSet = new Set(inventoryIds);
+
+    const businessIds = businessRows
+      .filter((row) => profileIdSet.has(String(row?.owner_id || '').trim()))
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+    const businessIdSet = new Set(businessIds);
+
+    const businessProductIds = businessProductRows
+      .filter((row) => businessIdSet.has(String(row?.business_id || '').trim()))
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+    const businessProductIdSet = new Set(businessProductIds);
+
+    const marketListingIds = marketListingRows
+      .filter((row) =>
+        profileIdSet.has(String(row?.seller_profile_id || '').trim()) ||
+        profileIdSet.has(String(row?.profile_id || '').trim()) ||
+        profileIdSet.has(String(row?.owner_id || '').trim()) ||
+        businessIdSet.has(String(row?.business_id || '').trim()) ||
+        inventoryIdSet.has(String(row?.inventory_item_id || '').trim()) ||
+        businessProductIdSet.has(String(row?.business_product_id || row?.product_id || '').trim())
+      )
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+
+    const withdrawIds = withdrawRows
+      .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+
+    const walletLedgerIds = walletLedgerRows
+      .filter((row) => profileIdSet.has(String(row?.profile_id || '').trim()))
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+
+    await deleteRowsByIdList('market_listings', marketListingIds);
+    await deleteRowsByIdList('business_products', businessProductIds);
+    await deleteRowsByIdList('inventory_items', inventoryIds);
+    await deleteRowsByIdList('businesses', businessIds);
+    await deleteRowsByIdList('wallet_ledger', walletLedgerIds);
+    await deleteRowsByIdList('withdraw_requests', withdrawIds);
+    await deleteRowsByIdList('profiles', profileIds);
+
+    const deleted = {
+      profiles: profileIds.length,
+      inventory_items: inventoryIds.length,
+      businesses: businessIds.length,
+      business_products: businessProductIds.length,
+      market_listings: marketListingIds.length,
+      withdraw_requests: withdrawIds.length,
+      wallet_ledger: walletLedgerIds.length,
+    };
+
+    await logAdminAction({
+      req,
+      action: 'profiles_purge_all',
+      note: `Deleted ${deleted.profiles} profiles and linked records`,
+      meta: deleted,
+    });
+
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Profile purge failed' });
   }
 });
 
