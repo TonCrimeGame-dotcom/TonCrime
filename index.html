@@ -9,9 +9,10 @@
   <title>TonCrime</title>
 
   <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
-  <script src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
+  <script id="tc-richads-sdk" src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
   <script>
     (function () {
+      const RICH_ADS_SDK_URL = "https://richinfo.co/richpartners/telegram/js/tg-ob.js";
       const richAdsConfig = {
         pubId: "1006898",
         appId: "6869",
@@ -73,6 +74,37 @@
           await sleep(120);
         }
         return typeof window.TelegramAdsController === "function" ? window.TelegramAdsController : null;
+      };
+
+      window.tcReloadRichAdsSdk = async function tcReloadRichAdsSdk(timeoutMs = 5000) {
+        try {
+          const current = document.getElementById("tc-richads-sdk");
+          if (current?.parentNode) current.parentNode.removeChild(current);
+        } catch (_) {}
+
+        try {
+          delete window.TelegramAdsController;
+        } catch (_) {
+          window.TelegramAdsController = undefined;
+        }
+
+        const script = document.createElement("script");
+        script.id = "tc-richads-sdk";
+        script.src = `${RICH_ADS_SDK_URL}?v=${Date.now()}`;
+
+        const loaded = new Promise((resolve) => {
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+        });
+
+        document.head.appendChild(script);
+        const ok = await Promise.race([
+          loaded,
+          new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+        ]);
+
+        if (!ok) return null;
+        return window.tcWaitForRichAdsSdk(timeoutMs);
       };
 
       let resolveReady = function () {};
@@ -503,7 +535,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260402-12",
+          "./src/main.js?v=20260403-2",
           "./main.js"
         ]);
 
