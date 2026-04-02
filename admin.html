@@ -29,10 +29,14 @@
     .miniInput{min-width:84px;padding:8px 10px;font-size:13px}
     .inlineInputs{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .muted{font-size:12px;color:rgba(255,255,255,.62)}
+    .tableMeta{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;color:rgba(255,255,255,.72);font-size:13px}
+    .tableMeta strong{color:#fff}
+    .tableHint{font-size:12px;color:rgba(255,255,255,.52)}
     @media (max-width: 960px){
       .toolbar{grid-template-columns:1fr}
       .wrap{padding:0 10px}
       th,td{font-size:13px}
+      .tableMeta{flex-direction:column;align-items:flex-start}
     }
   </style>
 </head>
@@ -67,6 +71,10 @@
     </div>
 
     <div id="withdrawsView" class="card">
+      <div class="tableMeta">
+        <div id="withdrawMeta"><strong>Cekimler</strong></div>
+        <div class="tableHint">Durum, kullanici, telegram id veya cuzdan ile ara</div>
+      </div>
       <table>
         <thead>
           <tr>
@@ -83,6 +91,10 @@
     </div>
 
     <div id="profilesView" class="card hidden">
+      <div class="tableMeta">
+        <div id="profileMeta"><strong>Profiller</strong></div>
+        <div class="tableHint">Kullanici adi, telegram id veya profil id ile aninda ara</div>
+      </div>
       <table>
         <thead>
           <tr>
@@ -106,6 +118,8 @@ const queryInput = document.getElementById('queryInput');
 const reloadBtn = document.getElementById('reloadBtn');
 const withdrawRows = document.getElementById('withdrawRows');
 const profileRows = document.getElementById('profileRows');
+const withdrawMeta = document.getElementById('withdrawMeta');
+const profileMeta = document.getElementById('profileMeta');
 const statusText = document.getElementById('statusText');
 const withdrawsView = document.getElementById('withdrawsView');
 const profilesView = document.getElementById('profilesView');
@@ -114,6 +128,13 @@ const tabProfiles = document.getElementById('tabProfiles');
 
 let activeTab = 'withdraws';
 let lastPendingCount = 0;
+let queryDebounce = 0;
+
+function setQueryPlaceholder() {
+  queryInput.placeholder = activeTab === 'profiles'
+    ? 'kullanici, telegram id veya profil id ara'
+    : 'status, kullanici, telegram id veya cuzdan ara';
+}
 
 function setStatus(text) {
   statusText.textContent = text;
@@ -139,6 +160,43 @@ function parseNumberInput(id, fallback = 0) {
   const el = document.getElementById(id);
   const num = Number(el?.value ?? fallback);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function updateMeta(target, title, count, query = '') {
+  const countText = `${count} kayit`;
+  const suffix = query ? ` · arama: ${query}` : '';
+  target.innerHTML = `<strong>${escapeHtml(title)}</strong> <span class="muted">${escapeHtml(countText + suffix)}</span>`;
+}
+
+function scoreProfileMatch(item, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return 0;
+  const username = String(item?.username || '').toLowerCase();
+  const telegramId = String(item?.telegram_id || '').toLowerCase();
+  const profileId = String(item?.id || '').toLowerCase();
+  let score = 0;
+  if (telegramId === q) score += 500;
+  if (profileId === q) score += 450;
+  if (username === q) score += 400;
+  if (telegramId.startsWith(q)) score += 220;
+  if (profileId.startsWith(q)) score += 200;
+  if (username.startsWith(q)) score += 180;
+  if (telegramId.includes(q)) score += 120;
+  if (profileId.includes(q)) score += 110;
+  if (username.includes(q)) score += 100;
+  return score;
+}
+
+function triggerReload() {
+  if (activeTab === 'withdraws') return loadWithdraws();
+  return loadProfiles();
+}
+
+function scheduleReload(delay = 250) {
+  clearTimeout(queryDebounce);
+  queryDebounce = window.setTimeout(() => {
+    triggerReload();
+  }, delay);
 }
 
 async function api(path, options = {}) {
@@ -176,6 +234,7 @@ function playBeep() {
 
 async function loadWithdraws() {
   withdrawRows.innerHTML = '<tr><td colspan="6">Yukleniyor...</td></tr>';
+  updateMeta(withdrawMeta, 'Cekimler', 0, queryInput.value.trim());
   try {
     const rawQ = queryInput.value.trim();
     const status = ['pending', 'paid', 'rejected', 'all'].includes(rawQ) ? rawQ : 'all';
@@ -192,6 +251,7 @@ async function loadWithdraws() {
     const pendingCount = items.filter((x) => x.status === 'pending').length;
     if (pendingCount > lastPendingCount) playBeep();
     lastPendingCount = pendingCount;
+    updateMeta(withdrawMeta, 'Cekimler', items.length, rawQ);
 
     if (!items.length) {
       withdrawRows.innerHTML = '<tr><td colspan="6">Kayit yok</td></tr>';
@@ -231,9 +291,15 @@ async function loadWithdraws() {
 
 async function loadProfiles() {
   profileRows.innerHTML = '<tr><td colspan="6">Yukleniyor...</td></tr>';
+  updateMeta(profileMeta, 'Profiller', 0, queryInput.value.trim());
   try {
-    const data = await api(`/profiles?query=${encodeURIComponent(queryInput.value.trim())}`);
-    const items = data.items || [];
+    const rawQ = queryInput.value.trim();
+    const profileLimit = rawQ ? 250 : 120;
+    const data = await api(`/profiles?limit=${profileLimit}&query=${encodeURIComponent(rawQ)}`);
+    const items = (data.items || []).sort((left, right) =>
+      scoreProfileMatch(right, rawQ) - scoreProfileMatch(left, rawQ)
+    );
+    updateMeta(profileMeta, 'Profiller', items.length, rawQ);
     if (!items.length) {
       profileRows.innerHTML = '<tr><td colspan="6">Kayit yok</td></tr>';
       return;
@@ -347,6 +413,7 @@ async function saveProfile(id) {
 
 function showTab(name) {
   activeTab = name;
+  setQueryPlaceholder();
   withdrawsView.classList.toggle('hidden', name !== 'withdraws');
   profilesView.classList.toggle('hidden', name !== 'profiles');
   if (name === 'withdraws') loadWithdraws();
@@ -355,12 +422,26 @@ function showTab(name) {
 
 tabWithdraws.addEventListener('click', () => showTab('withdraws'));
 tabProfiles.addEventListener('click', () => showTab('profiles'));
-reloadBtn.addEventListener('click', () => activeTab === 'withdraws' ? loadWithdraws() : loadProfiles());
+reloadBtn.addEventListener('click', () => triggerReload());
+queryInput.addEventListener('input', () => scheduleReload(activeTab === 'profiles' ? 180 : 260));
+queryInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    clearTimeout(queryDebounce);
+    triggerReload();
+  }
+  if (event.key === 'Escape') {
+    queryInput.value = '';
+    clearTimeout(queryDebounce);
+    triggerReload();
+  }
+});
 
 setInterval(() => {
   if (activeTab === 'withdraws') loadWithdraws();
 }, 10000);
 
+setQueryPlaceholder();
 showTab('withdraws');
 </script>
 </body>
