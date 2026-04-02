@@ -574,6 +574,83 @@ async function findAuthUserByEmail(email) {
   return null;
 }
 
+function isManagedTonCrimeAuthUser(user) {
+  const email = String(user?.email || '').trim().toLowerCase();
+  if (!email.endsWith('@toncrime.local')) return false;
+
+  const identityKey = sanitizeIdentityKey(
+    user?.user_metadata?.identity_key ||
+    user?.app_metadata?.identity_key ||
+    ''
+  );
+
+  if (!identityKey) return true;
+  return isGuestIdentityKey(identityKey) || isTelegramAuthIdentityKey(identityKey) || isTelegramProfileKey(identityKey);
+}
+
+function summarizeManagedAuthUsers(users = []) {
+  const summary = {
+    auth_users: 0,
+    auth_guest_users: 0,
+    auth_telegram_users: 0,
+  };
+
+  for (const user of users) {
+    if (!isManagedTonCrimeAuthUser(user)) continue;
+    summary.auth_users += 1;
+
+    const identityKey = sanitizeIdentityKey(
+      user?.user_metadata?.identity_key ||
+      user?.app_metadata?.identity_key ||
+      ''
+    );
+
+    if (isGuestIdentityKey(identityKey)) {
+      summary.auth_guest_users += 1;
+    } else {
+      summary.auth_telegram_users += 1;
+    }
+  }
+
+  return summary;
+}
+
+async function listManagedTonCrimeAuthUsers() {
+  const rows = [];
+  let page = 1;
+  const perPage = 200;
+
+  while (page <= 50) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const users = Array.isArray(data?.users) ? data.users : [];
+    rows.push(...users.filter((user) => isManagedTonCrimeAuthUser(user)));
+
+    if (users.length < perPage) break;
+    page += 1;
+  }
+
+  return rows;
+}
+
+async function deleteManagedAuthUsers(users = []) {
+  const uniqueIds = [...new Set((users || []).map((user) => String(user?.id || '').trim()).filter(Boolean))];
+  let deleted = 0;
+
+  for (const chunk of chunkList(uniqueIds, 10)) {
+    await Promise.all(
+      chunk.map(async (userId) => {
+        const { error } = await supabase.auth.admin.deleteUser(userId, false);
+        if (error) throw error;
+        deleted += 1;
+      })
+    );
+  }
+
+  return deleted;
+}
+
 async function ensureIdentityAuthUser(identityKey, username = 'Player') {
   const email = buildIdentityEmail(identityKey);
   const password = buildIdentityPassword(identityKey);
@@ -2428,6 +2505,50 @@ app.post('/profiles/purge-all', async (req, res) => {
     res.json({ ok: true, deleted });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Profile purge failed' });
+  }
+});
+
+app.post('/profiles/hard-reset-all', async (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm || '').trim().toUpperCase();
+    if (confirm !== 'TUM SISTEMI SIFIRLA') {
+      return res.status(400).json({ error: 'Confirmation text mismatch' });
+    }
+
+    const profileRows = await readAllTableRows('profiles', 'id, telegram_id, username');
+    const profileIds = profileRows.map((row) => String(row?.id || '').trim()).filter(Boolean);
+    const authUsers = await listManagedTonCrimeAuthUsers();
+    const authSummary = summarizeManagedAuthUsers(authUsers);
+
+    const deletedProfiles = profileIds.length
+      ? await purgeProfilesByIds(profileIds)
+      : {
+          profiles: 0,
+          inventory_items: 0,
+          businesses: 0,
+          business_products: 0,
+          market_listings: 0,
+          withdraw_requests: 0,
+          wallet_ledger: 0,
+        };
+
+    const deletedAuthUsers = authUsers.length ? await deleteManagedAuthUsers(authUsers) : 0;
+    const deleted = {
+      ...deletedProfiles,
+      ...authSummary,
+      auth_users_deleted: deletedAuthUsers,
+    };
+
+    await logAdminAction({
+      req,
+      action: 'profiles_hard_reset_all',
+      note: `Hard reset completed for ${deletedProfiles.profiles} profiles and ${deletedAuthUsers} auth users`,
+      meta: deleted,
+    });
+
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Hard reset failed' });
   }
 });
 
