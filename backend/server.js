@@ -2163,31 +2163,113 @@ app.get('/withdraws', async (req, res) => {
   }
 });
 
-app.get('/profiles', async (req, res) => {
+app.get('/profiles', requireAdmin, adminRateLimit, async (req, res) => {
   try {
     const queryText = String(req.query.query || '').trim();
+    const limit = Math.max(20, Math.min(250, asInteger(req.query.limit, 120)));
 
     let query = supabase
       .from('profiles')
       .select('id, telegram_id, username, level, coins, energy, energy_max, created_at, updated_at')
+      .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(limit);
 
     if (queryText) {
-      const safe = queryText.replace(/[%(),]/g, ' ').trim();
-      query = query.or(`telegram_id.ilike.%${safe}%,username.ilike.%${safe}%`);
+      const safe = queryText.replace(/[%(),]/g, ' ').trim().slice(0, 64);
+      if (safe) {
+        const filters = [
+          `telegram_id.ilike.%${safe}%`,
+          `username.ilike.%${safe}%`,
+        ];
+        if (/^[0-9a-f-]{8,}$/i.test(safe)) {
+          filters.unshift(`id.eq.${safe}`);
+        }
+        query = query.or(filters.join(','));
+      }
     }
 
     const { data, error } = await query;
     if (error) throw error;
 
-    res.json({ items: data || [] });
+    res.json({ items: data || [], limit, query: queryText });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load profiles' });
   }
 });
 
-app.post('/profiles/:id/reset-energy', async (req, res) => {
+app.post('/profiles/:id/update', requireAdmin, adminRateLimit, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+      return res.status(400).json({ error: 'Profile id is required' });
+    }
+
+    const { data: current, error: currentError } = await supabase
+      .from('profiles')
+      .select('id, telegram_id, username, level, coins, energy, energy_max')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (currentError) throw currentError;
+    if (!current) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const nextLevel = Math.max(0, Math.min(9999, Math.floor(asNumber(req.body?.level, current.level || 0))));
+    const nextCoins = Math.max(
+      0,
+      Math.min(999999999, Math.floor(asNumber(req.body?.coins ?? req.body?.yton, current.coins || 0)))
+    );
+    const nextEnergyMax = Math.max(
+      1,
+      Math.min(500, Math.floor(asNumber(req.body?.energy_max ?? req.body?.energyMax, current.energy_max || 100)))
+    );
+    const nextEnergy = Math.max(
+      0,
+      Math.min(nextEnergyMax, Math.floor(asNumber(req.body?.energy, current.energy || 0)))
+    );
+
+    const payload = {
+      level: nextLevel,
+      coins: nextCoins,
+      energy: nextEnergy,
+      energy_max: nextEnergyMax,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', id)
+      .select('id, telegram_id, username, level, coins, energy, energy_max, created_at, updated_at')
+      .single();
+
+    if (error) throw error;
+
+    await logAdminAction({
+      req,
+      action: 'profile_update',
+      targetId: id,
+      note: `Profile updated for ${current.username || current.telegram_id || id}`,
+      meta: {
+        before: {
+          level: asNumber(current.level, 0),
+          coins: asNumber(current.coins, 0),
+          energy: asNumber(current.energy, 0),
+          energy_max: asNumber(current.energy_max, 100),
+        },
+        after: payload,
+      },
+    });
+
+    res.json({ item: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Profile update failed' });
+  }
+});
+
+app.post('/profiles/:id/reset-energy', requireAdmin, adminRateLimit, async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
     const value = Math.max(1, Math.min(500, asNumber(req.body?.energy, 50)));
