@@ -197,14 +197,24 @@ export async function fetchBackendJson(path, options = {}) {
   let lastErr = null;
 
   for (const base of getBackendCandidates()) {
-    const url = `${base}${path}`;
+    const { headers: optionHeaders = {}, method: optionMethod, ...restOptions } = options || {};
+    const method = String(optionMethod || "GET").toUpperCase();
+    const requestUrl = new URL(path, `${base}/`);
+    if (method === "GET") {
+      requestUrl.searchParams.set("__tc", `${Date.now()}`);
+    }
 
     try {
-      const res = await fetch(url, {
-        ...options,
+      const res = await fetch(requestUrl.toString(), {
+        ...restOptions,
+        method,
+        cache: "no-store",
         headers: withTelegramInitDataHeaders({
           "Content-Type": "application/json",
-          ...(options.headers || {}),
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+          ...optionHeaders,
         }),
       });
 
