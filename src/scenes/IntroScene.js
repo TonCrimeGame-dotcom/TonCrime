@@ -4,6 +4,7 @@ const STARTING_LEVEL = 0;
 const STARTING_XP = 0;
 const STARTING_XP_TO_NEXT = 0;
 const MAX_PLAYER_ENERGY = 100;
+const TELEGRAM_PROFILE_KEY_RE = /^\d{4,20}$/;
 
 function safeGetLocalStorage(key) {
   try {
@@ -37,13 +38,32 @@ function getTelegramWebAppUser() {
   }
 }
 
-function getRuntimeProfileKey(store = null) {
-  const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
-  if (fromStore) return fromStore;
+function isTelegramMiniAppContext() {
+  try {
+    return !!window.Telegram?.WebApp;
+  } catch {
+    return false;
+  }
+}
 
+function isTrustedTelegramProfileKey(value) {
+  return TELEGRAM_PROFILE_KEY_RE.test(String(value || "").trim());
+}
+
+function getRuntimeProfileKey(store = null) {
   const tgUser = getTelegramWebAppUser();
   const tgId = String(tgUser?.id || "").trim();
   if (tgId) return tgId;
+
+  const fromStore = String(store?.get?.()?.player?.telegramId || "").trim();
+  if (isTrustedTelegramProfileKey(fromStore)) return fromStore;
+
+  const fromBridge = String(window.tcGetProfileKey?.(store) || "").trim();
+  if (isTrustedTelegramProfileKey(fromBridge)) return fromBridge;
+
+  if (isTelegramMiniAppContext()) {
+    return "";
+  }
 
   let guestKey = safeGetLocalStorage(PROFILE_KEY_STORAGE).trim();
   if (!guestKey) {
@@ -120,6 +140,11 @@ export class IntroScene {
 
     const tgUser = getTelegramWebAppUser();
     const telegramId = getRuntimeProfileKey(this.store);
+    if (!telegramId) {
+      window.alert("Telegram kimligi henuz hazir degil. Mini App'i kapatip tekrar acin.");
+      this.lock = false;
+      return;
+    }
     let username =
       tgUser?.username ||
       [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(" ") ||
