@@ -1796,29 +1796,39 @@ class TradeScene {
       ctx.stroke();
 
       const mid = start + slice / 2;
-      ctx.save();
-      ctx.rotate(mid);
-      const normalizedMid = ((mid % TAU) + TAU) % TAU;
-      const flip = normalizedMid > Math.PI / 2 && normalizedMid < (Math.PI * 3) / 2;
-      if (flip) ctx.rotate(Math.PI);
       const reward = pool[i];
-      const badgeSize = mode === "premium" ? 54 : 48;
-      const badgeX = radius * 0.62;
-      const badgeY = -12;
+      const badgeSize = mode === "premium" ? 52 : 46;
+      const badgeRadius = radius * (mode === "premium" ? 0.56 : 0.54);
+      const badgeX = Math.cos(mid) * badgeRadius;
+      const badgeY = Math.sin(mid) * badgeRadius;
       const meta = this._drawWheelBadge(ctx, reward, badgeX, badgeY, badgeSize, highlightSlice);
       const title = String(meta.title || "").trim();
       const subtitle = String(meta.subtitle || "").trim();
+      const labelRadius = radius * (mode === "premium" ? 0.83 : 0.80);
+      const labelX = Math.cos(mid) * labelRadius;
+      const labelY = Math.sin(mid) * labelRadius;
+      const labelMaxWidth = Math.max(30, (slice * radius) * 0.88);
+      let safeTitle = title;
+      let safeSubtitle = subtitle;
 
+      ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = highlightSlice ? "#fff8eb" : "rgba(255,242,214,0.96)";
       ctx.font = `900 ${mode === "premium" ? 11 : 10}px system-ui`;
-      ctx.fillText(title, badgeX, badgeY + badgeSize * 0.86);
+      while (safeTitle.length > 1 && ctx.measureText(safeTitle).width > labelMaxWidth) {
+        safeTitle = `${safeTitle.slice(0, -2)}…`;
+      }
+
+      ctx.fillStyle = highlightSlice ? "#fff8eb" : "rgba(255,242,214,0.96)";
+      ctx.fillText(safeTitle, labelX, labelY - (subtitle ? 6 : 0));
 
       if (subtitle) {
-        ctx.fillStyle = highlightSlice ? "rgba(255,242,214,0.88)" : "rgba(255,233,192,0.72)";
         ctx.font = `800 ${mode === "premium" ? 8 : 7}px system-ui`;
-        ctx.fillText(subtitle, badgeX, badgeY + badgeSize * 1.08);
+        while (safeSubtitle.length > 1 && ctx.measureText(safeSubtitle).width > labelMaxWidth) {
+          safeSubtitle = `${safeSubtitle.slice(0, -2)}…`;
+        }
+        ctx.fillStyle = highlightSlice ? "rgba(255,242,214,0.88)" : "rgba(255,233,192,0.72)";
+        ctx.fillText(safeSubtitle, labelX, labelY + 8);
       }
       ctx.restore();
     }
