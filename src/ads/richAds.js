@@ -1,6 +1,9 @@
 const SUPPORTED_RICH_AD_METHODS = [
-  "triggerInterstitialVideo",
   "triggerRewardedVideo",
+  "showRewardedVideo",
+  "showRewarded",
+  "showVideo",
+  "triggerInterstitialVideo",
 ];
 const NULL_OBJECT_ERROR_RE =
   /(null is not an object|undefined is not an object|cannot read properties of null|cannot read properties of undefined)/i;
