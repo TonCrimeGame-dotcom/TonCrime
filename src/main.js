@@ -15,7 +15,7 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260403-5";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260403-6";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-03-richads-fallback-1";
+const BUILD_STAMP = "2026-04-03-persistence-fix-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -595,23 +595,22 @@ function buildInitialState(loadedState) {
   ).trim();
 
   return {
-    ...defaultState,
+    ...mergedDefault,
     lang: String(loadedSnapshot.lang || defaultState.lang || "tr").trim() || "tr",
     intro: {
-      ...defaultState.intro,
-      splashSeen: onboardingDone || !!loadedSnapshot?.intro?.splashSeen,
-      ageVerified: onboardingDone || !!loadedSnapshot?.intro?.ageVerified,
-      profileCompleted: onboardingDone || !!loadedSnapshot?.intro?.profileCompleted,
-      tutorialSeen: !!loadedSnapshot?.intro?.tutorialSeen,
+      ...(mergedDefault.intro || {}),
+      splashSeen: onboardingDone || !!mergedDefault?.intro?.splashSeen,
+      ageVerified: onboardingDone || !!mergedDefault?.intro?.ageVerified,
+      profileCompleted: onboardingDone || !!mergedDefault?.intro?.profileCompleted,
+      tutorialSeen: !!mergedDefault?.intro?.tutorialSeen,
     },
     player: {
-      ...defaultState.player,
-      telegramId: seedTelegramId,
-      username: seedUsername,
+      ...(mergedDefault.player || {}),
+      telegramId: seedTelegramId || String(mergedDefault?.player?.telegramId || "").trim(),
+      username: seedUsername || String(mergedDefault?.player?.username || "").trim(),
     },
     ui: {
-      ...(defaultState.ui || {}),
-      ...(loadedSnapshot.ui || {}),
+      ...(mergedDefault.ui || {}),
       safe: getSafeArea(),
     },
   };
