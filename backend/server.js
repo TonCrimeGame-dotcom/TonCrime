@@ -1393,18 +1393,46 @@ async function resolveVerifiedProfile(req, { allowGuest = true } = {}) {
   return { identity, profile };
 }
 
+function getBusinessOwnerId(row = {}) {
+  return readRowText(row, ['owner_profile_id', 'owner_id', 'profile_id']);
+}
+
+async function queryBusinessesOwnedBy(profileId, { businessId = '', businessType = '', maybeSingle = false } = {}) {
+  const ownerColumns = ['owner_profile_id', 'owner_id'];
+  let lastError = null;
+
+  for (const ownerColumn of ownerColumns) {
+    let query = supabase
+      .from('businesses')
+      .select('*')
+      .eq(ownerColumn, profileId);
+
+    if (businessId) query = query.eq('id', businessId);
+    if (businessType) query = query.eq('business_type', businessType);
+    if (!maybeSingle) query = query.order('created_at', { ascending: true });
+
+    const { data, error } = maybeSingle
+      ? await query.maybeSingle()
+      : await query;
+
+    if (!error) return data || (maybeSingle ? null : []);
+
+    const missingColumn = parseMissingColumnName(error, 'businesses');
+    if (missingColumn === ownerColumn) {
+      lastError = error;
+      continue;
+    }
+
+    throw error;
+  }
+
+  if (lastError && !maybeSingle) return [];
+  if (lastError && maybeSingle) return null;
+  return maybeSingle ? null : [];
+}
+
 async function getOwnedBusiness(profileId, businessId = '', businessType = '') {
-  let query = supabase
-    .from('businesses')
-    .select('*')
-    .eq('owner_id', profileId);
-
-  if (businessId) query = query.eq('id', businessId);
-  if (businessType) query = query.eq('business_type', businessType);
-
-  const { data, error } = await query.maybeSingle();
-  if (error) throw error;
-  return data || null;
+  return queryBusinessesOwnedBy(profileId, { businessId, businessType, maybeSingle: true });
 }
 
 async function getOwnedInventoryItem(profileId, itemKey) {
@@ -1770,14 +1798,8 @@ async function persistPurchasedInventory({ buyerProfileId, item, quantity }) {
 }
 
 async function listOwnedBusinesses(profileId) {
-  const { data, error } = await supabase
-    .from('businesses')
-    .select('*')
-    .eq('owner_id', profileId)
-    .order('created_at', { ascending: true });
-
-  if (error) throw error;
-  return Array.isArray(data) ? data : [];
+  const rows = await queryBusinessesOwnedBy(profileId, { maybeSingle: false });
+  return Array.isArray(rows) ? rows : [];
 }
 
 async function listBusinessProductsByBusinessIds(businessIds = []) {
@@ -1906,7 +1928,7 @@ function buildBusinessUiFromRow(row = {}, ownerName = '', productRows = []) {
     imageKey: readRowText(row, ['image_key', 'imageKey'], def?.imageKey || ''),
     imageSrc: readRowText(row, ['image_src', 'image', 'image_url', 'imageUrl'], def?.imageSrc || ''),
     name: readRowText(row, ['name', 'title'], def?.defaultName || 'Business'),
-    ownerId: readRowText(row, ['owner_id']),
+    ownerId: getBusinessOwnerId(row),
     ownerName: String(ownerName || 'Player'),
     dailyProduction: Math.max(0, Math.floor(asNumber(
       row?.daily_production ??
@@ -2048,6 +2070,7 @@ async function createBusinessWithProducts({
   const nowIso = new Date().toISOString();
   const safeName = String(businessName || def.defaultName || 'Business').trim() || def.defaultName || 'Business';
   const businessPayload = {
+    owner_profile_id: ownerProfile.id,
     owner_id: ownerProfile.id,
     business_type: normalizedType,
     type: normalizedType,
@@ -2253,7 +2276,7 @@ async function collectProfileCascadeDeleteSummary(profileIds = []) {
   const inventoryIdSet = new Set(inventoryIds);
 
   const businessIds = businessRows
-    .filter((row) => profileIdSet.has(String(row?.owner_id || '').trim()))
+    .filter((row) => profileIdSet.has(String(getBusinessOwnerId(row) || '').trim()))
     .map((row) => String(row?.id || '').trim())
     .filter(Boolean);
   const businessIdSet = new Set(businessIds);
@@ -2268,7 +2291,7 @@ async function collectProfileCascadeDeleteSummary(profileIds = []) {
     .filter((row) =>
       profileIdSet.has(String(row?.seller_profile_id || '').trim()) ||
       profileIdSet.has(String(row?.profile_id || '').trim()) ||
-      profileIdSet.has(String(row?.owner_id || '').trim()) ||
+      profileIdSet.has(String(getBusinessOwnerId(row) || '').trim()) ||
       businessIdSet.has(String(row?.business_id || '').trim()) ||
       inventoryIdSet.has(String(row?.inventory_item_id || '').trim()) ||
       businessProductIdSet.has(String(row?.business_product_id || row?.product_id || '').trim())
@@ -2735,7 +2758,7 @@ app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), 
         'inventory_items',
         activeListingRows.map((row) => readRowText(row, ['inventory_item_id'])).filter(Boolean)
       ).catch(() => []),
-      getProfilesByIdMap(allBusinessRows.map((row) => readRowText(row, ['owner_id'])).filter(Boolean)).catch(() => new Map()),
+      getProfilesByIdMap(allBusinessRows.map((row) => getBusinessOwnerId(row)).filter(Boolean)).catch(() => new Map()),
     ]);
 
     const businessRowsById = new Map();
@@ -2763,7 +2786,7 @@ app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), 
 
     const businessUiById = new Map();
     const allBusinessesUi = (allBusinessRows || []).map((row) => {
-      const ownerId = readRowText(row, ['owner_id']);
+      const ownerId = getBusinessOwnerId(row);
       const ownerName = sanitizeUsername(ownerProfiles.get(ownerId)?.username || 'Player');
       const ui = buildBusinessUiFromRow(
         row,
@@ -3234,8 +3257,8 @@ app.post('/public/market/buy', makePublicRateLimit('market-buy', 60_000, 80), as
     const business = await getBusinessById(readRowText(listing, ['business_id'])).catch(() => null);
     const sellerProfileId = readRowText(
       listing,
-      ['seller_profile_id', 'profile_id', 'owner_id'],
-      readRowText(business, ['owner_id'])
+      ['seller_profile_id', 'profile_id', 'owner_profile_id', 'owner_id'],
+      getBusinessOwnerId(business)
     );
 
     if (!sellerProfileId) {
