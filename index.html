@@ -36,6 +36,18 @@
         return supportedMethods.some((methodName) => typeof controller?.[methodName] === "function");
       }
 
+      function shouldReuseRichAdsController(controller) {
+        if (!hasRichAdsMethod(controller)) return false;
+
+        const snapshot = getTelegramSnapshot();
+        const meta = window.tcRichAdsControllerMeta || null;
+        if (!meta) return true;
+
+        if (snapshot.userId && meta.userId && snapshot.userId !== meta.userId) return false;
+        if (snapshot.initData && !Number(meta.initDataLength || 0)) return false;
+        return true;
+      }
+
       function getTelegramSnapshot() {
         const tg = window.Telegram?.WebApp || null;
         const user = tg?.initDataUnsafe?.user || null;
@@ -118,7 +130,7 @@
             ? options
             : !!(options && typeof options === "object" && options.forceFresh);
 
-        if (!forceFresh && hasRichAdsMethod(window.tcRichAdsController)) {
+        if (!forceFresh && shouldReuseRichAdsController(window.tcRichAdsController)) {
           return window.tcRichAdsController;
         }
 
@@ -535,7 +547,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260403-12",
+          "./src/main.js?v=20260403-13",
           "./main.js"
         ]);
 
