@@ -80,12 +80,23 @@
       window.tcWaitForRichAdsSdk = async function tcWaitForRichAdsSdk(timeoutMs = 4500) {
         const startedAt = Date.now();
         while (Date.now() - startedAt < timeoutMs) {
+          if (typeof window.tcRichAdsControllerCtor === "function") {
+            return window.tcRichAdsControllerCtor;
+          }
           if (typeof window.TelegramAdsController === "function") {
-            return window.TelegramAdsController;
+            window.tcRichAdsControllerCtor = window.TelegramAdsController;
+            return window.tcRichAdsControllerCtor;
           }
           await sleep(120);
         }
-        return typeof window.TelegramAdsController === "function" ? window.TelegramAdsController : null;
+        if (typeof window.tcRichAdsControllerCtor === "function") {
+          return window.tcRichAdsControllerCtor;
+        }
+        if (typeof window.TelegramAdsController === "function") {
+          window.tcRichAdsControllerCtor = window.TelegramAdsController;
+          return window.tcRichAdsControllerCtor;
+        }
+        return null;
       };
 
       window.tcReloadRichAdsSdk = async function tcReloadRichAdsSdk(timeoutMs = 5000) {
@@ -99,6 +110,9 @@
         } catch (_) {
           window.TelegramAdsController = undefined;
         }
+        window.tcRichAdsControllerCtor = null;
+        window.TelegramAdsControllerInstance = null;
+        window.richadsController = null;
 
         const script = document.createElement("script");
         script.id = "tc-richads-sdk";
@@ -143,10 +157,13 @@
           if (typeof ControllerCtor !== "function") {
             return null;
           }
+          window.tcRichAdsControllerCtor = ControllerCtor;
 
           if (forceFresh) {
             window.tcRichAdsController = null;
             window.tcRichAdsControllerMeta = null;
+            window.TelegramAdsControllerInstance = null;
+            window.richadsController = null;
           }
 
           const controller = new ControllerCtor();
@@ -160,6 +177,8 @@
           }
 
           window.tcRichAdsController = controller;
+          window.TelegramAdsControllerInstance = controller;
+          window.richadsController = controller;
           window.tcRichAdsControllerMeta = {
             createdAt: Date.now(),
             userId: snapshot.userId,
@@ -550,7 +569,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260403-15",
+          "./src/main.js?v=20260403-17",
           "./main.js"
         ]);
 
