@@ -1,22 +1,30 @@
 const SUPPORTED_RICH_AD_METHODS = [
+  "triggerInterstitialVideo",
   "triggerRewardedVideo",
   "showRewardedVideo",
   "showRewarded",
   "showVideo",
-  "triggerInterstitialVideo",
 ];
 const RICH_ADS_SDK_URL = "https://richinfo.co/richpartners/telegram/js/tg-ob.js";
 const NULL_OBJECT_ERROR_RE =
   /(null is not an object|undefined is not an object|cannot read properties of null|cannot read properties of undefined)/i;
 
-function getCallableRichAdsMethod(controller) {
+function getCallableRichAdsMethods(controller) {
   if (!controller || typeof controller !== "object") return null;
+  const methods = [];
   for (const methodName of SUPPORTED_RICH_AD_METHODS) {
     if (typeof controller[methodName] === "function") {
-      return controller[methodName].bind(controller);
+      methods.push({
+        methodName,
+        run: controller[methodName].bind(controller),
+      });
     }
   }
-  return null;
+  return methods.length ? methods : null;
+}
+
+function getCallableRichAdsMethod(controller) {
+  return getCallableRichAdsMethods(controller)?.[0]?.run || null;
 }
 
 export function hasRichAdsController(controller) {
@@ -178,10 +186,13 @@ export function describeRichAdFailure(playResult, fallback = "") {
   if (!playResult) return fallback || "unknown";
 
   const reason = String(playResult.reason || "").trim();
+  const methodName = String(playResult.methodName || "").trim();
   const source = playResult.error ?? playResult.result ?? playResult;
   const detail = normalizeFailureText(source, "");
 
-  if (detail) return detail;
+  if (detail) return methodName ? `${methodName}: ${detail}` : detail;
+  if (methodName && reason) return `${methodName}: ${reason}`;
+  if (methodName) return methodName;
   if (reason) return reason;
   return fallback || "unknown";
 }
@@ -341,23 +352,37 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
 }
 
 async function runRichAdsAdOnce(controller) {
-  const run = getCallableRichAdsMethod(controller);
-  if (!run) {
+  const methods = getCallableRichAdsMethods(controller);
+  if (!methods?.length) {
     return { ok: false, reason: "method_missing", controller, result: null };
   }
 
-  try {
-    const result = await run();
-    if (!isCompletedAdResult(result)) {
-      return { ok: false, reason: "not_completed", controller, result };
-    }
+  let lastError = null;
+
+  for (const candidate of methods) {
     try {
-      window.tcLastRichAdsFailure = null;
-    } catch (_) {}
-    return { ok: true, reason: "completed", controller, result };
-  } catch (error) {
-    return { ok: false, reason: "error", controller, result: null, error };
+      const result = await candidate.run();
+      if (!isCompletedAdResult(result)) {
+        return { ok: false, reason: "not_completed", controller, result, methodName: candidate.methodName };
+      }
+      try {
+        window.tcLastRichAdsFailure = null;
+      } catch (_) {}
+      return { ok: true, reason: "completed", controller, result, methodName: candidate.methodName };
+    } catch (error) {
+      lastError = {
+        ok: false,
+        reason: "error",
+        controller,
+        result: null,
+        error,
+        methodName: candidate.methodName,
+      };
+      continue;
+    }
   }
+
+  return lastError || { ok: false, reason: "error", controller, result: null };
 }
 
 export async function playRichRewardedAd(timeoutMs = 5200) {
