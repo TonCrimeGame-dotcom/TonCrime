@@ -50,6 +50,7 @@ function getRichAdsConfig() {
 function getGlobalRichAdsControllerCandidate() {
   const candidates = [
     window.tcRichAdsController,
+    window.TelegramAdsControllerInstance,
     window.TelegramAdsController,
     window.richadsController,
   ];
@@ -60,6 +61,7 @@ function getGlobalRichAdsControllerCandidate() {
 }
 
 function getRichAdsConstructorCandidate() {
+  if (typeof window.tcRichAdsControllerCtor === "function") return window.tcRichAdsControllerCtor;
   return typeof window.TelegramAdsController === "function" ? window.TelegramAdsController : null;
 }
 
@@ -94,6 +96,8 @@ function rememberRichAdsController(controller, snapshot = getTelegramMiniAppSnap
   if (!hasRichAdsController(controller)) return null;
 
   window.tcRichAdsController = controller;
+  window.TelegramAdsControllerInstance = controller;
+  window.richadsController = controller;
   window.tcRichAdsControllerMeta = {
     createdAt: Date.now(),
     userId: snapshot?.userId || "",
@@ -107,6 +111,8 @@ function resetRichAdsControllerCache() {
   try {
     window.tcRichAdsController = null;
     window.tcRichAdsControllerMeta = null;
+    window.TelegramAdsControllerInstance = null;
+    window.richadsController = null;
     window.tcRichAdsReady = Promise.resolve(null);
   } catch (_) {}
 }
@@ -183,6 +189,23 @@ function rememberRichAdsFailure(reason, payload) {
       payload,
     };
   } catch (_) {}
+}
+
+export function getRichAdsDiagnosticLabel(playResult = null) {
+  const snapshot = getTelegramMiniAppSnapshot();
+  const meta = getRichAdsControllerMeta() || {};
+  const build = String(window.tcBuildStamp || "").trim() || "na";
+  const methodName = String(playResult?.methodName || "").trim();
+  const parts = [
+    `b=${build}`,
+    `tg=${snapshot.user ? 1 : 0}${snapshot.initData ? 1 : 0}`,
+    `uid=${snapshot.userId ? 1 : 0}`,
+    `i=${String(snapshot.initData || "").length}`,
+    `c=${hasRichAdsController(getGlobalRichAdsControllerCandidate()) ? 1 : 0}`,
+    `m=${Number(meta.initDataLength || 0)}`,
+  ];
+  if (methodName) parts.push(`fn=${methodName}`);
+  return parts.join(" ").slice(0, 120);
 }
 
 export function isCompletedAdResult(result) {
@@ -390,35 +413,25 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
   }
 }
 
-function tryCreateFreshRichAdsControllerImmediately() {
-  const snapshot = getTelegramMiniAppSnapshot();
-  if (!isTelegramMiniAppSnapshotReady(snapshot)) return null;
+export async function warmRichAdsController(timeoutMs = 4200, options = {}) {
+  const forceFresh = !!options.forceFresh;
+  await waitForTelegramMiniAppReady(Math.max(timeoutMs, 4200));
 
-  const ControllerCtor = getRichAdsConstructorCandidate();
-  const config = getRichAdsConfig();
-  if (typeof ControllerCtor !== "function" || !config) return null;
+  let controller = await waitForRichAdsController(timeoutMs, { forceFresh: false });
+  if (controller) return controller;
 
-  try {
+  if (forceFresh) {
     resetRichAdsControllerCache();
-    const controller = new ControllerCtor();
-    const initResult = controller.initialize?.(config);
-    if (initResult && typeof initResult.then === "function") {
-      window.tcRichAdsReady = Promise.resolve(initResult)
-        .then(() => rememberRichAdsController(controller, snapshot))
-        .catch(() => null);
-      return null;
-    }
-    return rememberRichAdsController(controller, snapshot);
-  } catch (_) {
-    return null;
+    controller = await createRichAdsControllerOnDemand({ forceFresh: true }).catch(() => null);
+    if (controller) return controller;
   }
+
+  controller = await createRichAdsControllerOnDemand({ forceFresh: false }).catch(() => null);
+  return controller || null;
 }
 
 export function tryPlayRichRewardedAdImmediately() {
-  let controller = getGlobalRichAdsControllerCandidate();
-  if (!controller || shouldReplaceCachedController(controller, false) || !hasRichAdsController(controller)) {
-    controller = tryCreateFreshRichAdsControllerImmediately();
-  }
+  const controller = getGlobalRichAdsControllerCandidate();
   if (!controller || shouldReplaceCachedController(controller, false) || !hasRichAdsController(controller)) {
     return null;
   }
@@ -469,12 +482,7 @@ async function runRichAdsAdOnce(controller) {
 export async function playRichRewardedAd(timeoutMs = 5200) {
   await waitForTelegramMiniAppReady(Math.max(timeoutMs, 4200));
 
-  const retryTimeout = Math.max(timeoutMs, 4800);
-  let controller = await waitForRichAdsController(timeoutMs, { forceFresh: false });
-  if (!controller) {
-    await reloadRichAdsSdk(retryTimeout).catch(() => null);
-    controller = await waitForRichAdsController(retryTimeout, { forceFresh: true });
-  }
+  const controller = await warmRichAdsController(timeoutMs, { forceFresh: false });
   if (!controller) {
     const debug = {
       hasGlobalController: !!getGlobalRichAdsControllerCandidate(),
@@ -495,28 +503,10 @@ export async function playRichRewardedAd(timeoutMs = 5200) {
   }
 
   let played = await runRichAdsAdOnce(controller);
-  if (!played.ok && played.reason !== "controller_missing") {
-    resetRichAdsControllerCache();
-    await reloadRichAdsSdk(retryTimeout).catch(() => null);
-    const retriedController = await waitForRichAdsController(retryTimeout, { forceFresh: true });
-    if (retriedController) {
-      played = await runRichAdsAdOnce(retriedController);
-    }
-  }
   if (!played.ok && played.reason === "error" && isNullObjectFailure(played.error)) {
-    resetRichAdsControllerCache();
-    const retriedController = await waitForRichAdsController(timeoutMs, { forceFresh: true });
-    if (retriedController) {
+    const retriedController = await warmRichAdsController(Math.max(timeoutMs, 4800), { forceFresh: true });
+    if (retriedController && retriedController !== controller) {
       played = await runRichAdsAdOnce(retriedController);
-    }
-
-    if (!played.ok && played.reason === "error" && isNullObjectFailure(played.error)) {
-      await reloadRichAdsSdk(Math.max(timeoutMs, 4800));
-      resetRichAdsControllerCache();
-      const reloadedController = await waitForRichAdsController(Math.max(timeoutMs, 4800), { forceFresh: true });
-      if (reloadedController) {
-        played = await runRichAdsAdOnce(reloadedController);
-      }
     }
   }
 
