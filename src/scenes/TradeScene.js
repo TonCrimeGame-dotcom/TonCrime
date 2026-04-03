@@ -529,6 +529,53 @@ class TradeScene {
     };
   }
 
+  _shouldFallbackToLocalBusinessPurchase(error) {
+    const message = String(error?.message || error || "").toLowerCase();
+    if (!message) return true;
+
+    if (
+      /(not enough yton|yetersiz yton|premium or level 50|required|invalid|already active|already purchased|verified telegram session required|unauthorized|forbidden)/.test(
+        message
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  _completeLocalBusinessPurchase(businessType, name, source = "shop") {
+    const def = this._businessDefByType(businessType);
+    if (!def) return false;
+
+    const state = this.store.get();
+    const nextBusiness = this._createBusinessRecord(businessType, name, source);
+    if (!nextBusiness?.id) return false;
+
+    const nextCoins = Math.max(0, Number(state.coins || 0) - Number(def.price || 0));
+    const nextOwned = this._mergeOwnedBusinesses([nextBusiness]);
+
+    this.store.set({
+      coins: nextCoins,
+      yton: nextCoins,
+      wallet: {
+        ...(state.wallet || {}),
+        yton: nextCoins,
+      },
+      businesses: {
+        ...(state.businesses || {}),
+        owned: nextOwned,
+      },
+      trade: {
+        ...(state.trade || {}),
+        activeTab: "businesses",
+        selectedBusinessId: nextBusiness.id,
+      },
+    });
+
+    return true;
+  }
+
   _consumeTon(amountTon) {
     const amount = Math.max(0, Number(amountTon || 0));
     const s = this.store.get();
@@ -4689,6 +4736,17 @@ _drawButton(ctx, rect, text, style = "ghost") {
       await this._syncTradeStateFromBackend({ quiet: true });
     } catch (err) {
       console.error("business_purchase error:", err);
+      if (this._shouldFallbackToLocalBusinessPurchase(err) && this._completeLocalBusinessPurchase(businessType, name, "shop")) {
+        this._showToast(
+          this._ui(
+            `${name} gecici olarak lokal kaydedildi`,
+            `${name} was saved locally for now`
+          ),
+          2400
+        );
+        void this._syncTradeStateFromBackend({ quiet: true });
+        return;
+      }
       this._showToast(err?.message || this._ui("Isletme satin alinamadi", "Business could not be purchased"));
     }
   }
