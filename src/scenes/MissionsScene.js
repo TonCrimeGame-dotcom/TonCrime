@@ -1,4 +1,4 @@
-import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-4";
+import { describeRichAdFailure, playRichRewardedAd, tryPlayRichRewardedAdImmediately } from "../ads/richAds.js?v=20260403-5";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -204,6 +204,8 @@ export class MissionsScene {
     this.adBusy = false;
     this.toastText = "";
     this.toastUntil = 0;
+    this.consumeNextRelease = false;
+    this.removeInputClickListener = null;
   }
 
   onEnter() {
@@ -216,11 +218,20 @@ export class MissionsScene {
     this.hitButtons = [];
     this.hitBack = null;
     this.scrollArea = null;
+    if (!this.removeInputClickListener && typeof this.input?.onClick === "function") {
+      this.removeInputClickListener = this.input.onClick(({ x, y }) => {
+        this._handleImmediateGestureClick(x, y);
+      });
+    }
   }
 
   onExit() {
     this.dragging = false;
     this.justDragged = false;
+    if (this.removeInputClickListener) {
+      this.removeInputClickListener();
+      this.removeInputClickListener = null;
+    }
   }
 
   _lang() {
@@ -355,6 +366,79 @@ export class MissionsScene {
     this._claim("dailyAd", { silent: true });
   }
 
+  _handleAdPlaybackResult(played) {
+    if (!played?.ok) {
+      const detail = describeRichAdFailure(played, "unknown");
+      if (played?.reason === "controller_missing" || played?.reason === "method_missing") {
+        this._showToast(
+          this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`),
+          2600
+        );
+        return;
+      }
+      if (played?.reason === "not_completed") {
+        this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
+        return;
+      }
+      console.warn("[TonCrime] RichAds video error:", detail, played?.error || played?.result || played);
+      this._showToast(
+        this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`),
+        2800
+      );
+      return;
+    }
+
+    const current = this._missionsState();
+    const nextCount = clamp(Number(current.dailyAdWatched || 0) + 1, 0, 20);
+    this._setMissions({ dailyAdWatched: nextCount });
+
+    if (nextCount >= 20) {
+      this._claim("dailyAd");
+    } else {
+      this._showToast(
+        this._ui(`Reklam sayildi (${nextCount}/20).`, `Ad counted (${nextCount}/20).`)
+      );
+    }
+  }
+
+  _runAdPlayback(playPromise) {
+    if (!playPromise) return;
+
+    this.adBusy = true;
+    this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
+
+    Promise.resolve(playPromise)
+      .then((played) => {
+        this._handleAdPlaybackResult(played);
+      })
+      .catch((error) => {
+        console.warn("[TonCrime] MissionsScene rewarded ad fatal:", error);
+        this._showToast(
+          this._ui(
+            `Reklam acilamadi: ${String(error?.message || error || "unknown")}`,
+            `Ad failed: ${String(error?.message || error || "unknown")}`
+          ),
+          2800
+        );
+      })
+      .finally(() => {
+        this.adBusy = false;
+      });
+  }
+
+  _handleImmediateGestureClick(px, py) {
+    const adButton = this.hitButtons.find(
+      (button) => button?.action === "watchAd" && pointInRect(px, py, button.rect)
+    );
+    if (!adButton) return;
+
+    const immediatePlay = tryPlayRichRewardedAdImmediately();
+    if (!immediatePlay) return;
+
+    this.consumeNextRelease = true;
+    this._runAdPlayback(immediatePlay);
+  }
+
   _buildReferralShareMeta() {
     const player = this._playerState();
     const username = String(player.username || "").trim() || "player";
@@ -471,52 +555,7 @@ export class MissionsScene {
       return;
     }
 
-    this.adBusy = true;
-    this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
-
-    try {
-      const played = await playRichRewardedAd();
-      if (!played.ok) {
-        const detail = describeRichAdFailure(played, "unknown");
-        if (played.reason === "controller_missing" || played.reason === "method_missing") {
-          this._showToast(
-            this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`),
-            2600
-          );
-          return;
-        }
-        if (played.reason === "not_completed") {
-          this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
-          return;
-        }
-        console.warn("[TonCrime] RichAds video error:", detail, played.error || played.result || played);
-        this._showToast(
-          this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`),
-          2800
-        );
-        return;
-      }
-
-      const current = this._missionsState();
-      const nextCount = clamp(Number(current.dailyAdWatched || 0) + 1, 0, 20);
-      this._setMissions({ dailyAdWatched: nextCount });
-
-      if (nextCount >= 20) {
-        this._claim("dailyAd");
-      } else {
-        this._showToast(
-          this._ui(`Reklam sayildi (${nextCount}/20).`, `Ad counted (${nextCount}/20).`)
-        );
-      }
-    } catch (error) {
-      console.warn("[TonCrime] MissionsScene rewarded ad fatal:", error);
-      this._showToast(
-        this._ui(`Reklam acilamadi: ${String(error?.message || error || "unknown")}`, `Ad failed: ${String(error?.message || error || "unknown")}`),
-        2800
-      );
-    } finally {
-      this.adBusy = false;
-    }
+    this._runAdPlayback(playRichRewardedAd());
   }
 
   _shareReferral() {
@@ -638,6 +677,11 @@ export class MissionsScene {
     const dragged = this.justDragged;
     this.dragging = false;
     this.justDragged = false;
+
+    if (this.consumeNextRelease) {
+      this.consumeNextRelease = false;
+      return;
+    }
 
     if (dragged) return;
 
