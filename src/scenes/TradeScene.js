@@ -2507,6 +2507,12 @@ class TradeScene {
     return merged;
   }
 
+  _normalizeServerBusinessList(items = []) {
+    return (items || [])
+      .map((item) => this._normalizeServerBusinessSnapshot(item))
+      .filter((item) => item?.id);
+  }
+
   _normalizeServerShopSnapshot(shop = {}) {
     const type =
       this._normalizeBusinessType(shop.type || shop.businessType || shop.business_type || "") ||
@@ -2605,15 +2611,11 @@ class TradeScene {
     this.tradeSyncPromise = (async () => {
       try {
         let json = await fetchBackendJson("/public/trade/state");
-        let remoteBusinesses = Array.isArray(json?.businesses)
-          ? json.businesses.map((item) => this._normalizeServerBusinessSnapshot(item)).filter((item) => item?.id)
-          : [];
+        let remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
         const migrated = await this._migrateLocalBusinesses(remoteBusinesses);
         if (migrated) {
           json = await fetchBackendJson("/public/trade/state");
-          remoteBusinesses = Array.isArray(json?.businesses)
-            ? json.businesses.map((item) => this._normalizeServerBusinessSnapshot(item)).filter((item) => item?.id)
-            : [];
+          remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
         }
         const remoteShops = Array.isArray(json?.market?.shops)
           ? json.market.shops.map((item) => this._normalizeServerShopSnapshot(item)).filter((item) => item?.id)
@@ -4546,7 +4548,12 @@ _drawButton(ctx, rect, text, style = "ghost") {
         }),
       });
       const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
-      if (!remoteBusiness?.id) {
+      const remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
+      const nextOwned = remoteBusinesses.length
+        ? this._mergeOwnedBusinesses(remoteBusinesses)
+        : this._mergeOwnedBusinesses(remoteBusiness?.id ? [remoteBusiness] : []);
+      const targetBusinessId = remoteBusiness?.id || remoteBusinesses[0]?.id || nextOwned[0]?.id || null;
+      if (!nextOwned.length) {
         throw new Error(this._ui("Isletme kaydedilemedi", "Business could not be saved"));
       }
 
@@ -4569,11 +4576,12 @@ _drawButton(ctx, rect, text, style = "ghost") {
         player,
         businesses: {
           ...(state2.businesses || {}),
-          owned: this._mergeOwnedBusinesses([remoteBusiness]),
+          owned: nextOwned,
         },
         trade: {
           ...(state2.trade || {}),
-          selectedBusinessId: remoteBusiness.id,
+          activeTab: "businesses",
+          selectedBusinessId: targetBusinessId,
         },
       });
 
@@ -4588,7 +4596,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
       this._pushSystemChat(this._ui((player.username || 'Player') + ' premium aldi ve ' + name + ' mekanini acti.', (player.username || 'Player') + ' purchased premium and unlocked ' + name + '.'));
       this._showToast(this._ui('Premium aktif edildi', 'Premium activated'), 2200);
-      void this._syncTradeStateFromBackend({ quiet: true });
+      await this._syncTradeStateFromBackend({ quiet: true });
     } catch (err) {
       const state2 = this.store.get();
       const wallet = { ...(state2.wallet || {}) };
@@ -4631,7 +4639,12 @@ _drawButton(ctx, rect, text, style = "ghost") {
         }),
       });
       const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
-      if (!remoteBusiness?.id) {
+      const remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
+      const nextOwned = remoteBusinesses.length
+        ? this._mergeOwnedBusinesses(remoteBusinesses)
+        : this._mergeOwnedBusinesses(remoteBusiness?.id ? [remoteBusiness] : []);
+      const targetBusinessId = remoteBusiness?.id || remoteBusinesses[0]?.id || nextOwned[0]?.id || null;
+      if (!nextOwned.length) {
         throw new Error(this._ui("Isletme kaydedilemedi", "Business could not be saved"));
       }
 
@@ -4663,16 +4676,17 @@ _drawButton(ctx, rect, text, style = "ghost") {
         },
         businesses: {
           ...(state2.businesses || {}),
-          owned: this._mergeOwnedBusinesses([remoteBusiness]),
+          owned: nextOwned,
         },
         trade: {
           ...(state2.trade || {}),
-          selectedBusinessId: remoteBusiness.id,
+          activeTab: "businesses",
+          selectedBusinessId: targetBusinessId,
         },
       });
 
       this._showToast(this._ui(name + ' satin alindi', name + ' purchased'));
-      void this._syncTradeStateFromBackend({ quiet: true });
+      await this._syncTradeStateFromBackend({ quiet: true });
     } catch (err) {
       console.error("business_purchase error:", err);
       this._showToast(err?.message || this._ui("Isletme satin alinamadi", "Business could not be purchased"));
