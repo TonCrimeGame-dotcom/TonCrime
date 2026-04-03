@@ -11,11 +11,11 @@ import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
 import { HomeScene } from "./scenes/HomeScene.js";
-import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260403-9";
+import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260403-10";
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260403-12";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260403-13";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-03-richads-watch-gate-1";
+const BUILD_STAMP = "2026-04-03-richads-controller-refresh-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -2063,16 +2063,7 @@ class LegacyMissionsScene {
     for (const b of this.hitButtons) {
       if (pointInRect(px, py, b.rect)) {
         if (b.action === "watchAd") {
-          const s = this.store.get();
-          const m = s.missions || {};
-          if (m.dailyAdWatched < 20) {
-            this.store.set({
-              missions: {
-                ...m,
-                dailyAdWatched: Math.min(20, Number(m.dailyAdWatched || 0) + 1),
-              },
-            });
-          }
+          console.warn("[TonCrime] LegacyMissionsScene watchAd ignored; modular ad flow should handle rewarded ads.");
           return;
         }
 
