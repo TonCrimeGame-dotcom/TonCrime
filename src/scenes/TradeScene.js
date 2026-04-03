@@ -3616,6 +3616,134 @@ class TradeScene {
     void this._persistBusinessState(biz.id, { quiet: true });
   }
 
+  async _resolveBusinessProductForListing(bizId, productId) {
+    const state = this.store.get();
+    const localBusiness = (state.businesses?.owned || []).find((b) => String(b.id) === String(bizId));
+    if (!localBusiness) return null;
+
+    const localProduct = (localBusiness.products || []).find((p) => String(p.id) === String(productId));
+    if (!localProduct) return null;
+
+    if (!String(localBusiness.id).startsWith("biz_")) {
+      return { business: localBusiness, product: localProduct, migrated: false };
+    }
+
+    await this._syncTradeStateFromBackend({ quiet: true });
+
+    const refreshedState = this.store.get();
+    const matchKey = this._businessMatchKey(localBusiness);
+    const remoteBusiness = (refreshedState.businesses?.owned || []).find((item) => {
+      if (String(item.id || "").startsWith("biz_")) return false;
+      return matchKey ? this._businessMatchKey(item) === matchKey : false;
+    });
+
+    if (!remoteBusiness) {
+      return { business: localBusiness, product: localProduct, migrated: false };
+    }
+
+    const productKey = String(localProduct.productKey || localProduct.key || "").trim().toLowerCase();
+    const productName = String(localProduct.name || "").trim().toLowerCase();
+    const remoteProduct = (remoteBusiness.products || []).find((item) => {
+      const remoteKey = String(item.productKey || item.key || "").trim().toLowerCase();
+      const remoteName = String(item.name || "").trim().toLowerCase();
+      return (productKey && remoteKey === productKey) || (productName && remoteName === productName);
+    });
+
+    if (!remoteProduct) {
+      return { business: localBusiness, product: localProduct, migrated: false };
+    }
+
+    return { business: remoteBusiness, product: remoteProduct, migrated: true };
+  }
+
+  _applyBusinessProductListingToStore({
+    businessId,
+    productId,
+    qty,
+    price,
+    listingId = "",
+    serverManaged = false,
+  } = {}) {
+    const state = this.store.get();
+    const businesses = (state.businesses?.owned || []).map((b) => ({
+      ...b,
+      products: (b.products || []).map((p) => ({ ...p })),
+    }));
+    const listings = (state.market?.listings || []).map((x) => ({ ...x }));
+    const shops = (state.market?.shops || []).map((x) => ({ ...x }));
+
+    const biz = businesses.find((b) => String(b.id) === String(businessId));
+    if (!biz) return false;
+
+    const product = (biz.products || []).find((p) => String(p.id) === String(productId));
+    if (!product) return false;
+
+    product.qty = Math.max(0, Number(product.qty || 0) - Number(qty || 0));
+    biz.stock = Math.max(
+      0,
+      (biz.products || []).reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0)
+    );
+
+    const shopId = "shop_from_" + businessId;
+    let shop = shops.find((x) => String(x.id) === shopId);
+
+    if (!shop) {
+      shop = {
+        id: shopId,
+        businessId,
+        type: biz.type,
+        icon: biz.icon || iconForType(biz.type),
+        imageKey: biz.imageKey || this._businessArt(biz.type)?.imageKey || "",
+        imageSrc: biz.imageSrc || this._businessArt(biz.type)?.imageSrc || "",
+        name: biz.name,
+        ownerId: String(biz.ownerId || ""),
+        ownerName: String(biz.ownerName || state.player?.username || "Player"),
+        online: true,
+        theme: biz.theme || biz.type,
+        rating: 5,
+        totalListings: 0,
+      };
+      shops.unshift(shop);
+    }
+
+    listings.unshift({
+      id: String(listingId || `listing_local_${Date.now()}`),
+      shopId: shop.id,
+      icon: product.icon || "IT",
+      imageKey: product.imageKey || "",
+      imageSrc: product.imageSrc || product.image || "",
+      itemName: product.name,
+      kind: this._inventoryKindFor(product, biz.type),
+      rarity: product.rarity || "common",
+      stock: Math.max(1, Number(qty || 1)),
+      price: Math.max(1, Number(price || 1)),
+      energyGain: Number(product.energyGain || 0),
+      usable: Number(product.energyGain || 0) > 0,
+      desc: product.desc || this._ui("Isletme urunu", "Business product"),
+      businessId,
+      businessProductId: productId,
+      serverManaged,
+    });
+
+    for (const sh of shops) {
+      sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
+    }
+
+    this.store.set({
+      businesses: {
+        ...(state.businesses || {}),
+        owned: businesses,
+      },
+      market: {
+        ...(state.market || {}),
+        shops,
+        listings,
+      },
+    });
+
+    return true;
+  }
+
   async _sellBusinessProduct(bizId, productId) {
     const s = this.store.get();
     const businesses = (s.businesses?.owned || []).map((b) => ({
@@ -3658,11 +3786,36 @@ class TradeScene {
     const price = Math.max(1, parseInt(priceRaw, 10) || 0);
 
     try {
+      const resolved = await this._resolveBusinessProductForListing(bizId, productId);
+      const requestBizId = String(resolved?.business?.id || bizId);
+      const requestProductId = String(resolved?.product?.id || productId);
+
+      if (requestBizId.startsWith("biz_") || requestProductId.startsWith("biz_")) {
+        const applied = this._applyBusinessProductListingToStore({
+          businessId: bizId,
+          productId,
+          qty,
+          price,
+          serverManaged: false,
+        });
+        if (!applied) {
+          throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
+        }
+        this._showToast(
+          this._ui(
+            `${qty} adet lokal pazara eklendi`,
+            `${qty} items were added to the local market`
+          ),
+          2400
+        );
+        return;
+      }
+
       const json = await fetchBackendJson("/public/market/list-business-product", {
         method: "POST",
         body: JSON.stringify({
-          business_id: String(bizId),
-          business_product_id: String(productId),
+          business_id: requestBizId,
+          business_product_id: requestProductId,
           quantity: qty,
           price_yton: price,
         }),
@@ -3672,83 +3825,20 @@ class TradeScene {
         throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
       }
 
-      const state2 = this.store.get();
-      const businesses2 = (state2.businesses?.owned || []).map((b) => ({
-        ...b,
-        products: (b.products || []).map((p) => ({ ...p })),
-      }));
-
-      const listings = (state2.market?.listings || []).map((x) => ({ ...x }));
-      const shops = (state2.market?.shops || []).map((x) => ({ ...x }));
-
-      const biz2 = businesses2.find((b) => String(b.id) === String(bizId));
-      if (biz2) {
-        const product2 = (biz2.products || []).find((p) => String(p.id) === String(productId));
-        if (product2) {
-          product2.qty = Math.max(0, Number(product2.qty || 0) - qty);
-        }
-        biz2.stock = Math.max(0, Number(biz2.stock || 0) - qty);
-      }
-
-      const shopId = "shop_from_" + bizId;
-      let shop = shops.find((x) => String(x.id) === shopId);
-
-      if (!shop) {
-        shop = {
-          id: shopId,
-          businessId: bizId,
-          type: biz.type,
-          icon: biz.icon || iconForType(biz.type),
-          imageKey: biz.imageKey || this._businessArt(biz.type)?.imageKey || "",
-          imageSrc: biz.imageSrc || this._businessArt(biz.type)?.imageSrc || "",
-          name: biz.name,
-          ownerId: String(biz.ownerId || ""),
-          ownerName: String(biz.ownerName || state2.player?.username || "Player"),
-          online: true,
-          theme: biz.theme || biz.type,
-          rating: 5,
-          totalListings: 0,
-        };
-        shops.unshift(shop);
-      }
-
-      listings.unshift({
-        id: String(row?.id || "listing_" + Date.now()),
-        shopId: shop.id,
-        icon: product.icon || "IT",
-        imageKey: product.imageKey || "",
-        imageSrc: product.imageSrc || product.image || "",
-        itemName: product.name,
-        kind: this._inventoryKindFor(product, biz.type),
-        rarity: product.rarity || "common",
-        stock: qty,
+      const applied = this._applyBusinessProductListingToStore({
+        businessId: requestBizId,
+        productId: requestProductId,
+        qty,
         price,
-        energyGain: Number(product.energyGain || 0),
-        usable: Number(product.energyGain || 0) > 0,
-        desc: product.desc || this._ui("Isletme urunu", "Business product"),
-        businessId: bizId,
-        businessProductId: productId,
+        listingId: String(row?.id || ""),
         serverManaged: true,
       });
-
-      for (const sh of shops) {
-        sh.totalListings = listings.filter((x) => x.shopId === sh.id).length;
+      if (!applied) {
+        throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
       }
 
-      this.store.set({
-        businesses: {
-          ...(state2.businesses || {}),
-          owned: businesses2,
-        },
-        market: {
-          ...(state2.market || {}),
-          shops,
-          listings,
-        },
-      });
-
       this._showToast(this._ui(`${qty} adet satisa cikarildi`, `${qty} items listed`));
-      void this._persistBusinessState(bizId, { quiet: true });
+      void this._persistBusinessState(requestBizId, { quiet: true });
     } catch (err) {
       console.error("create_market_listing error:", err);
       this._showToast(err?.message || this._ui("Ilan olusturulamadi", "Listing could not be created"));
