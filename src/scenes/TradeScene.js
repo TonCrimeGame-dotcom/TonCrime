@@ -6,7 +6,7 @@ import {
   isRecoverableRichAdsSdkFailure,
   playRichRewardedAd,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-8";
+} from "../ads/richAds.js?v=20260403-10";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -2897,20 +2897,13 @@ class TradeScene {
 
   _handleFreeSpinPlaybackResult(played) {
     if (isRecoverableRichAdsSdkFailure(played)) {
-      const used = FREE_SPIN_LIMIT - this._freeSpinRemaining() + 1;
-      const pool = this._freeSpinRewards();
-      const selectedIndex = Math.floor(Math.random() * pool.length);
-      const reward = pool[selectedIndex];
-
-      this._grantReward(reward, { freeSpinUsed: used });
-      this._setWheelResult("free", pool, selectedIndex, reward);
-      this._startWheelAnimation("free", pool, selectedIndex, reward);
+      const detail = describeRichAdFailure(played, "unknown");
       this._showToast(
         this._ui(
-          "RichAds gecici hata verdi, spin yine sayildi.",
-          "RichAds had a temporary error, the spin still counted."
+          `RichAds gecici hata verdi, spin sayilmadi: ${detail}`,
+          `RichAds had a temporary error, the spin was not counted: ${detail}`
         ),
-        2400
+        3200
       );
       return;
     }
