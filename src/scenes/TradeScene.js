@@ -1,7 +1,12 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260402-2";
-import { describeRichAdFailure, playRichRewardedAd, tryPlayRichRewardedAdImmediately } from "../ads/richAds.js?v=20260403-7";
+import {
+  describeRichAdFailure,
+  isRecoverableRichAdsSdkFailure,
+  playRichRewardedAd,
+  tryPlayRichRewardedAdImmediately,
+} from "../ads/richAds.js?v=20260403-8";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -2890,6 +2895,25 @@ class TradeScene {
   }
 
   _handleFreeSpinPlaybackResult(played) {
+    if (isRecoverableRichAdsSdkFailure(played)) {
+      const used = FREE_SPIN_LIMIT - this._freeSpinRemaining() + 1;
+      const pool = this._freeSpinRewards();
+      const selectedIndex = Math.floor(Math.random() * pool.length);
+      const reward = pool[selectedIndex];
+
+      this._grantReward(reward, { freeSpinUsed: used });
+      this._setWheelResult("free", pool, selectedIndex, reward);
+      this._startWheelAnimation("free", pool, selectedIndex, reward);
+      this._showToast(
+        this._ui(
+          "RichAds gecici hata verdi, spin yine sayildi.",
+          "RichAds had a temporary error, the spin still counted."
+        ),
+        2400
+      );
+      return;
+    }
+
     if (!played?.ok) {
       const detail = describeRichAdFailure(played, "unknown");
       if (played?.reason === "controller_missing" || played?.reason === "method_missing") {
