@@ -8,7 +8,7 @@ import {
   playRichRewardedAd,
   warmRichAdsController,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-18";
+} from "../ads/richAds.js?v=20260403-19";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
