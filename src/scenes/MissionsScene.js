@@ -3,7 +3,7 @@ import {
   isRecoverableRichAdsSdkFailure,
   playRichRewardedAd,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-8";
+} from "../ads/richAds.js?v=20260403-9";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -373,21 +373,14 @@ export class MissionsScene {
 
   _handleAdPlaybackResult(played) {
     if (isRecoverableRichAdsSdkFailure(played)) {
-      const current = this._missionsState();
-      const nextCount = clamp(Number(current.dailyAdWatched || 0) + 1, 0, 20);
-      this._setMissions({ dailyAdWatched: nextCount });
-
-      if (nextCount >= 20) {
-        this._claim("dailyAd");
-      } else {
-        this._showToast(
-          this._ui(
-            `RichAds gecici hata verdi, reklam sayildi (${nextCount}/20).`,
-            `RichAds had a temporary error, the ad still counted (${nextCount}/20).`
-          ),
-          2600
-        );
-      }
+      const detail = describeRichAdFailure(played, "unknown");
+      this._showToast(
+        this._ui(
+          `RichAds gecici hata verdi, reklam sayilmadi: ${detail}`,
+          `RichAds had a temporary error, the ad was not counted: ${detail}`
+        ),
+        3200
+      );
       return;
     }
 
