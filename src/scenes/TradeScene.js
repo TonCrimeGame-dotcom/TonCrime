@@ -2,6 +2,12 @@ import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260402-2";
 import {
+  getBusinessCatalog,
+  getBusinessDef,
+  mergeProductsWithCatalog,
+  sortBusinessProductsByCatalog,
+} from "../data/businessCatalog.js?v=20260403-20";
+import {
   describeRichAdFailure,
   getRichAdsDiagnosticLabel,
   isRecoverableRichAdsSdkFailure,
@@ -297,6 +303,7 @@ class TradeScene {
     this.consumeNextRelease = false;
 
     this._ensureTradeState();
+    this._ensureLocalBusinessCatalogState();
     this._refreshBusinessProduction();
     void this._syncTradeStateFromBackend();
     if (!this.removeInputClickListener && typeof this.input?.onClick === "function") {
@@ -471,54 +478,69 @@ class TradeScene {
   }
 
   _businessDefs() {
-    return {
-      nightclub: {
-        price: 1000,
-        nameTr: "Nightclub",
-        nameEn: "Nightclub",
-        theme: "neon",
-        icon: "NB",
-        imageKey: "nightclub",
-        imageSrc: "./src/assets/nightclub.jpg",
-        products: [
-          { key: "street_whiskey", icon: "SW", imageSrc: "./src/assets/street.png", name: "Street Whiskey", rarity: "common", qty: 0, price: 27, energyGain: 8, desc: "Nightclub urunu." },
-          { key: "club_prosecco", icon: "CP", imageSrc: "./src/assets/club.png", name: "Club Prosecco", rarity: "rare", qty: 0, price: 33, energyGain: 11, desc: "Kulup ici icecek." },
-          { key: "blue_venom", icon: "BV", imageSrc: "./src/assets/mafia.png", name: "Blue Venom", rarity: "epic", qty: 0, price: 40, energyGain: 13, desc: "VIP kokteyl." },
-        ],
-      },
-      coffeeshop: {
-        price: 850,
-        nameTr: "Coffeeshop",
-        nameEn: "Coffeeshop",
-        theme: "green",
-        icon: "CF",
-        imageKey: "coffeeshop",
-        imageSrc: "./src/assets/coffeeshop.jpg",
-        products: [
-          { key: "white_widow", icon: "WW", imageSrc: "./src/assets/white.png", name: "White Widow", rarity: "rare", qty: 0, price: 36, energyGain: 12, desc: "Coffeeshop urunu." },
-          { key: "og_kush", icon: "OG", imageSrc: "./src/assets/og.png", name: "OG Kush", rarity: "epic", qty: 0, price: 48, energyGain: 16, desc: "Klasik kush." },
-          { key: "moon_rocks", icon: "MR", imageSrc: "./src/assets/diamond.png", name: "Moon Rocks", rarity: "legendary", qty: 0, price: 62, energyGain: 18, desc: "Nadir urun." },
-        ],
-      },
-      brothel: {
-        price: 1200,
-        nameTr: "Genelev",
-        nameEn: "Brothel",
-        theme: "red",
-        icon: "BR",
-        imageKey: "xxx",
-        imageSrc: "./src/assets/xxx.jpg",
-        products: [
-          { key: "scarlett_blaze", icon: "SB", imageSrc: "./src/assets/g_star1.png", name: "Scarlett Blaze", rarity: "epic", qty: 0, price: 95, energyGain: 22, desc: "Vip servis." },
-          { key: "ruby_vane", icon: "RV", imageSrc: "./src/assets/g_star2.png", name: "Ruby Vane", rarity: "legendary", qty: 0, price: 120, energyGain: 26, desc: "Deluxe servis." },
-          { key: "luna_hart", icon: "LH", imageSrc: "./src/assets/g_star3.png", name: "Luna Hart", rarity: "legendary", qty: 0, price: 145, energyGain: 30, desc: "Elite servis." },
-        ],
-      },
-    };
+    return getBusinessCatalog();
   }
 
   _businessDefByType(type) {
-    return this._businessDefs()[String(type || "").toLowerCase()] || null;
+    return getBusinessDef(type);
+  }
+
+  _mergeLocalBusinessProducts(type, products = [], businessId = "") {
+    const safeBusinessId = String(businessId || "").trim();
+    return mergeProductsWithCatalog(products, type, {
+      makeId: (product, index) =>
+        safeBusinessId
+          ? `${safeBusinessId}_p${index + 1}_${String(product?.key || "item").trim()}`
+          : `biz_${String(type || "business").trim()}_p${index + 1}_${String(product?.key || "item").trim()}`,
+    }).map((item) => ({
+      ...item,
+      qty: Math.max(0, Number(item.qty || 0)),
+    }));
+  }
+
+  _ensureLocalBusinessCatalogState() {
+    const state = this.store.get();
+    const owned = Array.isArray(state.businesses?.owned) ? state.businesses.owned : [];
+    if (!owned.length) return;
+
+    let changed = false;
+    const nextOwned = owned.map((business) => {
+      const businessId = String(business?.id || "").trim();
+      if (!businessId.startsWith("biz_")) return business;
+
+      const nextProducts = this._mergeLocalBusinessProducts(
+        business.type || business.business_type || "",
+        business.products || [],
+        businessId
+      );
+      const prevProducts = Array.isArray(business.products) ? business.products : [];
+      const productChanged =
+        nextProducts.length !== prevProducts.length ||
+        nextProducts.some((item, index) => {
+          const prev = prevProducts[index] || {};
+          return (
+            String(item.id || "") !== String(prev.id || "") ||
+            String(item.productKey || item.key || "") !== String(prev.productKey || prev.key || "") ||
+            Number(item.qty || 0) !== Number(prev.qty || 0)
+          );
+        });
+
+      if (!productChanged) return business;
+      changed = true;
+      return {
+        ...business,
+        products: nextProducts,
+        stock: nextProducts.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0),
+      };
+    });
+
+    if (!changed) return;
+    this.store.set({
+      businesses: {
+        ...(state.businesses || {}),
+        owned: nextOwned,
+      },
+    });
   }
 
   _createBusinessRecord(type, name, source = "shop") {
@@ -527,10 +549,7 @@ class TradeScene {
 
     const businessId = `biz_${type}_${Date.now()}`;
     const player = this._player();
-    const products = (def.products || []).map((product, idx) => ({
-      ...product,
-      id: `${businessId}_p${idx + 1}`,
-    }));
+    const products = this._mergeLocalBusinessProducts(type, def.products || [], businessId);
 
     return {
       id: businessId,
@@ -2447,9 +2466,12 @@ class TradeScene {
       String(business.type || business.business_type || "").toLowerCase().trim() ||
       "blackmarket";
     const art = this._businessArt(type) || {};
-    const products = Array.isArray(business.products)
-      ? business.products.map((item) => this._normalizeServerProductSnapshot(item, type))
-      : [];
+    const products = sortBusinessProductsByCatalog(
+      Array.isArray(business.products)
+        ? business.products.map((item) => this._normalizeServerProductSnapshot(item, type))
+        : [],
+      type
+    );
     const productStock = products.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
 
     return {
@@ -2498,16 +2520,19 @@ class TradeScene {
       if (itemKey) localProductsByKey.set(itemKey, item);
     }
 
-    const products = remoteProducts.map((item) => {
-      const itemId = String(item?.id || "").trim();
-      const itemKey = String(item?.productKey || item?.product_key || item?.key || "").trim().toLowerCase();
-      const localProduct = localProductsById.get(itemId) || localProductsByKey.get(itemKey) || null;
-      return {
-        ...(localProduct || {}),
-        ...item,
-        qty: Math.max(0, Number(item.qty || item.quantity || 0)),
-      };
-    });
+    const products = sortBusinessProductsByCatalog(
+      remoteProducts.map((item) => {
+        const itemId = String(item?.id || "").trim();
+        const itemKey = String(item?.productKey || item?.product_key || item?.key || "").trim().toLowerCase();
+        const localProduct = localProductsById.get(itemId) || localProductsByKey.get(itemKey) || null;
+        return {
+          ...(localProduct || {}),
+          ...item,
+          qty: Math.max(0, Number(item.qty || item.quantity || 0)),
+        };
+      }),
+      remoteBusiness?.type || localBusiness?.type || ""
+    );
 
     return {
       ...(localBusiness || {}),
@@ -3687,10 +3712,15 @@ class TradeScene {
   }
   
   _createPendingProduction(products = [], totalDaily = 50) {
-    const safeProducts = (products || []).map((p) => ({ ...p }));
-    if (!safeProducts.length) return [];
+    const safeProducts = (products || [])
+      .map((product) => ({
+        ...product,
+        id: String(product?.id || "").trim(),
+      }))
+      .filter((product) => product.id);
+    const dailyTotal = Math.max(0, Math.floor(Number(totalDaily || 0)));
+    if (!safeProducts.length || !dailyTotal) return [];
 
-    const rows = safeProducts.map((p) => ({ productId: p.id, qty: 0 }));
     const ranked = safeProducts
       .map((p, idx) => ({ ...p, _index: idx, _price: Math.max(1, Number(p.price || 1)) }))
       .sort((a, b) => a._price - b._price);
@@ -3698,21 +3728,61 @@ class TradeScene {
       index: p._index,
       weight: Math.max(1, Math.pow(ranked.length - idx, 2)),
     }));
-    const totalWeight = weights.reduce((sum, row) => sum + row.weight, 0);
 
-    for (let i = 0; i < Math.max(0, Number(totalDaily || 0)); i += 1) {
+    const maxActive = Math.min(
+      weights.length,
+      dailyTotal,
+      Math.max(2, Math.min(4, weights.length))
+    );
+    const minActive = Math.min(maxActive, weights.length <= 2 ? 1 : 2);
+    const activeCount =
+      maxActive <= minActive
+        ? maxActive
+        : minActive + Math.floor(Math.random() * (maxActive - minActive + 1));
+    const remaining = weights.map((row) => ({ ...row }));
+    const activeWeights = [];
+
+    while (activeWeights.length < Math.max(1, activeCount) && remaining.length) {
+      const totalWeight = remaining.reduce((sum, row) => sum + row.weight, 0) || remaining.length;
       let roll = Math.random() * totalWeight;
-      let picked = weights[weights.length - 1]?.index || 0;
-      for (const row of weights) {
+      let pickedIndex = remaining.length - 1;
+      for (let i = 0; i < remaining.length; i += 1) {
+        roll -= remaining[i].weight;
+        if (roll <= 0) {
+          pickedIndex = i;
+          break;
+        }
+      }
+      activeWeights.push(remaining[pickedIndex]);
+      remaining.splice(pickedIndex, 1);
+    }
+
+    if (!activeWeights.length && weights.length) {
+      activeWeights.push(weights[0]);
+    }
+
+    const rowsByIndex = new Map(
+      activeWeights.map((row) => [row.index, { productId: safeProducts[row.index].id, qty: 0 }])
+    );
+    const activeTotalWeight = activeWeights.reduce((sum, row) => sum + row.weight, 0) || activeWeights.length;
+
+    for (let i = 0; i < dailyTotal; i += 1) {
+      let roll = Math.random() * activeTotalWeight;
+      let picked = activeWeights[activeWeights.length - 1]?.index || 0;
+      for (const row of activeWeights) {
         roll -= row.weight;
         if (roll <= 0) {
           picked = row.index;
           break;
         }
       }
-      rows[picked].qty += 1;
+      rowsByIndex.get(picked).qty += 1;
     }
-    return rows.filter((row) => Number(row.qty || 0) > 0);
+
+    return [...rowsByIndex.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map((entry) => entry[1])
+      .filter((row) => Number(row.qty || 0) > 0);
   }
 
   _refreshBusinessProduction() {
