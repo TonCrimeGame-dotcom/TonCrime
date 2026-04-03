@@ -352,17 +352,29 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
 }
 
 export function tryPlayRichRewardedAdImmediately() {
-  const controller = getGlobalRichAdsControllerCandidate();
-  if (!controller || shouldReplaceCachedController(controller, false) || !hasRichAdsController(controller)) {
-    return null;
-  }
+  return (async () => {
+    await waitForTelegramMiniAppReady(1200);
 
-  return runRichAdsAdOnce(controller).then((played) => {
+    let controller = null;
+    try {
+      controller = await createRichAdsControllerOnDemand({ forceFresh: true });
+    } catch (_) {
+      controller = null;
+    }
+
+    if (!hasRichAdsController(controller)) {
+      controller = getGlobalRichAdsControllerCandidate();
+    }
+    if (!controller || shouldReplaceCachedController(controller, false) || !hasRichAdsController(controller)) {
+      return null;
+    }
+
+    const played = await runRichAdsAdOnce(controller);
     if (!played?.ok) {
       rememberRichAdsFailure(played?.reason || "error", played?.error ?? played?.result ?? played);
     }
     return played;
-  });
+  })();
 }
 
 async function runRichAdsAdOnce(controller) {
