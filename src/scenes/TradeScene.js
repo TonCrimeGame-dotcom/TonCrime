@@ -6,7 +6,7 @@ import {
   isRecoverableRichAdsSdkFailure,
   playRichRewardedAd,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-10";
+} from "../ads/richAds.js?v=20260403-15";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -2578,6 +2578,124 @@ class TradeScene {
     return merged;
   }
 
+  _buildBusinessSyncSnapshot(localBusiness, remoteBusiness) {
+    const local = localBusiness
+      ? {
+          ...localBusiness,
+          products: (localBusiness.products || []).map((item) => ({ ...item })),
+          pendingProduction: (localBusiness.pendingProduction || []).map((item) => ({ ...item })),
+        }
+      : null;
+    const remote = this._normalizeServerBusinessSnapshot(remoteBusiness || {});
+    if (!remote?.id) return null;
+
+    const localProducts = Array.isArray(local?.products) ? local.products : [];
+    const localProductsById = new Map();
+    const localProductsByKey = new Map();
+    const localProductsByName = new Map();
+
+    for (const product of localProducts) {
+      const productId = String(product?.id || "").trim();
+      const productKey = String(product?.productKey || product?.product_key || product?.key || "").trim().toLowerCase();
+      const productName = String(product?.name || "").trim().toLowerCase();
+      if (productId) localProductsById.set(productId, product);
+      if (productKey) localProductsByKey.set(productKey, product);
+      if (productName) localProductsByName.set(productName, product);
+    }
+
+    const remoteProductIdByLocalId = new Map();
+    const products = (remote.products || []).map((product) => {
+      const productId = String(product?.id || "").trim();
+      const productKey = String(product?.productKey || product?.product_key || product?.key || "").trim().toLowerCase();
+      const productName = String(product?.name || "").trim().toLowerCase();
+      const localProduct =
+        localProductsById.get(productId) ||
+        localProductsByKey.get(productKey) ||
+        localProductsByName.get(productName) ||
+        null;
+
+      if (localProduct?.id && productId) {
+        remoteProductIdByLocalId.set(String(localProduct.id), productId);
+      }
+
+      return {
+        ...(localProduct || {}),
+        ...product,
+        id: productId,
+        key: String(product?.key || product?.productKey || localProduct?.key || localProduct?.productKey || "").trim(),
+        productKey: String(product?.productKey || product?.key || localProduct?.productKey || localProduct?.key || "").trim(),
+        qty:
+          localProduct != null
+            ? Math.max(0, Number(localProduct.qty || 0))
+            : Math.max(0, Number(product.qty || product.quantity || product.stock_qty || 0)),
+      };
+    });
+
+    const pendingProduction = (local?.pendingProduction || [])
+      .map((row) => {
+        const localProductId = String(row?.productId || row?.product_id || row?.id || "").trim();
+        return {
+          productId: remoteProductIdByLocalId.get(localProductId) || "",
+          qty: Math.max(0, Number(row?.qty || row?.quantity || 0)),
+        };
+      })
+      .filter((row) => row.productId && row.qty > 0);
+
+    return {
+      ...(local || {}),
+      ...remote,
+      id: String(remote.id),
+      ownerId: String(remote.ownerId || local?.ownerId || ""),
+      ownerName: String(remote.ownerName || local?.ownerName || "Player"),
+      products,
+      stock: products.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0),
+      acquiredFrom: String(remote.acquiredFrom || local?.acquiredFrom || "shop"),
+      productionDayKey: String(local?.productionDayKey || remote.productionDayKey || ""),
+      productionReadyAt: Math.max(0, Number(local?.productionReadyAt || 0) || Number(remote.productionReadyAt || 0)),
+      productionClaimUntil: Math.max(0, Number(local?.productionClaimUntil || 0) || Number(remote.productionClaimUntil || 0)),
+      productionCollectedAt: Math.max(
+        0,
+        Number(local?.productionCollectedAt || 0) || Number(remote.productionCollectedAt || 0)
+      ),
+      productionMissedAt: Math.max(0, Number(local?.productionMissedAt || 0) || Number(remote.productionMissedAt || 0)),
+      pendingProduction: pendingProduction.length
+        ? pendingProduction
+        : Array.isArray(remote.pendingProduction)
+          ? remote.pendingProduction.map((item) => ({ ...item }))
+          : [],
+      serverManaged: true,
+    };
+  }
+
+  _removeLocalBusinessMarketArtifacts(businessId) {
+    const safeBusinessId = String(businessId || "").trim();
+    if (!safeBusinessId) return;
+
+    const state = this.store.get();
+    const shopId = "shop_from_" + safeBusinessId;
+    const shops = (state.market?.shops || []).filter(
+      (item) => String(item?.id || "") !== shopId && String(item?.businessId || "") !== safeBusinessId
+    );
+    const listings = (state.market?.listings || []).filter(
+      (item) => String(item?.shopId || "") !== shopId && String(item?.businessId || "") !== safeBusinessId
+    );
+
+    this.store.set({
+      market: {
+        ...(state.market || {}),
+        shops,
+        listings,
+      },
+      trade:
+        String(state.trade?.selectedShopId || "") === shopId
+          ? {
+              ...(state.trade || {}),
+              selectedShopId: null,
+            }
+          : state.trade,
+    });
+  }
+
   _normalizeServerBusinessList(items = []) {
     return (items || [])
       .map((item) => this._normalizeServerBusinessSnapshot(item))
@@ -2640,40 +2758,81 @@ class TradeScene {
   async _migrateLocalBusinesses(remoteBusinesses = []) {
     const state = this.store.get();
     const localBusinesses = (state.businesses?.owned || []).filter((item) => !item?.serverManaged);
-    if (!localBusinesses.length) return false;
+    if (!localBusinesses.length) {
+      return {
+        refetch: false,
+        preserveLocalMatchKeys: [],
+        preserveRemoteBusinessIds: [],
+      };
+    }
 
-    const knownKeys = new Set(
-      (remoteBusinesses || []).map((item) => this._businessMatchKey(item)).filter(Boolean)
-    );
-    let migratedAny = false;
+    const remoteByMatchKey = new Map();
+    for (const item of remoteBusinesses || []) {
+      const matchKey = this._businessMatchKey(item);
+      if (matchKey && !remoteByMatchKey.has(matchKey)) {
+        remoteByMatchKey.set(matchKey, this._normalizeServerBusinessSnapshot(item));
+      }
+    }
+
+    let refetch = false;
+    const preserveLocalMatchKeys = new Set();
+    const preserveRemoteBusinessIds = new Set();
 
     for (const business of localBusinesses) {
       const type = this._normalizeBusinessType(business?.type || business?.business_type || "");
       const matchKey = this._businessMatchKey(business);
-      if (!type || type === "blackmarket" || (matchKey && knownKeys.has(matchKey))) continue;
+      if (!type || type === "blackmarket") continue;
+
+      let remoteBusiness = matchKey ? remoteByMatchKey.get(matchKey) || null : null;
 
       try {
-        const json = await fetchBackendJson("/public/businesses/purchase", {
-          method: "POST",
-          body: JSON.stringify({
-            business_type: type,
-            name: String(business?.name || this._typeLabel(type) || "").trim(),
-            restore_existing: true,
-            grant_premium: String(business?.acquiredFrom || business?.source || "").toLowerCase() === "premium",
-          }),
+        if (!remoteBusiness?.id) {
+          const json = await fetchBackendJson("/public/businesses/purchase", {
+            method: "POST",
+            body: JSON.stringify({
+              business_type: type,
+              name: String(business?.name || this._typeLabel(type) || "").trim(),
+              restore_existing: true,
+              grant_premium: String(business?.acquiredFrom || business?.source || "").toLowerCase() === "premium",
+            }),
+          });
+          remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
+        }
+
+        if (!remoteBusiness?.id) {
+          if (matchKey) preserveLocalMatchKeys.add(matchKey);
+          continue;
+        }
+
+        if (matchKey) {
+          remoteByMatchKey.set(matchKey, remoteBusiness);
+        }
+
+        const syncSnapshot = this._buildBusinessSyncSnapshot(business, remoteBusiness);
+        const syncedBusiness = await this._persistBusinessState(remoteBusiness.id, {
+          quiet: true,
+          businessOverride: syncSnapshot,
         });
-        const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
-        if (!remoteBusiness?.id) continue;
-        migratedAny = true;
-        if (matchKey) knownKeys.add(matchKey);
-        const remoteKey = this._businessMatchKey(remoteBusiness);
-        if (remoteKey) knownKeys.add(remoteKey);
+        if (!syncedBusiness?.id) {
+          if (matchKey) preserveLocalMatchKeys.add(matchKey);
+          preserveRemoteBusinessIds.add(String(remoteBusiness.id));
+          continue;
+        }
+
+        refetch = true;
+        this._removeLocalBusinessMarketArtifacts(business.id);
       } catch (err) {
         console.error("local_business_migrate error:", err);
+        if (matchKey) preserveLocalMatchKeys.add(matchKey);
+        if (remoteBusiness?.id) preserveRemoteBusinessIds.add(String(remoteBusiness.id));
       }
     }
 
-    return migratedAny;
+    return {
+      refetch,
+      preserveLocalMatchKeys: [...preserveLocalMatchKeys],
+      preserveRemoteBusinessIds: [...preserveRemoteBusinessIds],
+    };
   }
 
   async _syncTradeStateFromBackend({ quiet = true } = {}) {
@@ -2683,17 +2842,36 @@ class TradeScene {
       try {
         let json = await fetchBackendJson("/public/trade/state");
         let remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
-        const migrated = await this._migrateLocalBusinesses(remoteBusinesses);
-        if (migrated) {
+        const migration = await this._migrateLocalBusinesses(remoteBusinesses);
+        if (migration?.refetch) {
           json = await fetchBackendJson("/public/trade/state");
           remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
         }
-        const remoteShops = Array.isArray(json?.market?.shops)
+
+        const preserveLocalMatchKeys = new Set(migration?.preserveLocalMatchKeys || []);
+        const preserveRemoteBusinessIds = new Set(migration?.preserveRemoteBusinessIds || []);
+        if (preserveLocalMatchKeys.size || preserveRemoteBusinessIds.size) {
+          remoteBusinesses = remoteBusinesses.filter((item) => {
+            const businessId = String(item?.id || "");
+            const matchKey = this._businessMatchKey(item);
+            if (businessId && preserveRemoteBusinessIds.has(businessId)) return false;
+            if (matchKey && preserveLocalMatchKeys.has(matchKey)) return false;
+            return true;
+          });
+        }
+
+        const remoteShopsRaw = Array.isArray(json?.market?.shops)
           ? json.market.shops.map((item) => this._normalizeServerShopSnapshot(item)).filter((item) => item?.id)
           : [];
-        const remoteListings = Array.isArray(json?.market?.listings)
+        const remoteShops = remoteShopsRaw.filter(
+          (item) => !preserveRemoteBusinessIds.has(String(item?.businessId || ""))
+        );
+        const remoteListingsRaw = Array.isArray(json?.market?.listings)
           ? json.market.listings.map((item) => this._normalizeServerListingSnapshot(item)).filter((item) => item?.id)
           : [];
+        const remoteListings = remoteListingsRaw.filter(
+          (item) => !preserveRemoteBusinessIds.has(String(item?.businessId || ""))
+        );
         const state = this.store.get();
         const localShops = (state.market?.shops || []).map((item) => ({ ...item }));
         const localListings = (state.market?.listings || []).map((item) => ({ ...item }));
@@ -2811,9 +2989,15 @@ class TradeScene {
     return this.tradeSyncPromise;
   }
 
-  async _persistBusinessState(bizId, { quiet = true } = {}) {
+  async _persistBusinessState(bizId, { quiet = true, businessOverride = null } = {}) {
     const state = this.store.get();
-    const business = (state.businesses?.owned || []).find((item) => String(item.id) === String(bizId));
+    const business = businessOverride
+      ? {
+          ...businessOverride,
+          products: (businessOverride.products || []).map((item) => ({ ...item })),
+          pendingProduction: (businessOverride.pendingProduction || []).map((item) => ({ ...item })),
+        }
+      : (state.businesses?.owned || []).find((item) => String(item.id) === String(bizId));
     if (!business?.id || String(business.id).startsWith("biz_")) return false;
 
     try {
@@ -2847,9 +3031,10 @@ class TradeScene {
             owned: this._mergeOwnedBusinesses([remoteBusiness]),
           },
         });
+        return remoteBusiness;
       }
 
-      return true;
+      return business;
     } catch (err) {
       console.error("business_state_sync error:", err);
       if (!quiet) {
@@ -3785,24 +3970,12 @@ class TradeScene {
       const requestProductId = String(resolved?.product?.id || productId);
 
       if (requestBizId.startsWith("biz_") || requestProductId.startsWith("biz_")) {
-        const applied = this._applyBusinessProductListingToStore({
-          businessId: bizId,
-          productId,
-          qty,
-          price,
-          serverManaged: false,
-        });
-        if (!applied) {
-          throw new Error(this._ui("Ilan olusturulamadi", "Listing could not be created"));
-        }
-        this._showToast(
+        throw new Error(
           this._ui(
-            `${qty} adet lokal pazara eklendi`,
-            `${qty} items were added to the local market`
-          ),
-          2400
+            "Isletme henuz sunucuya senkronlanmadi. Ilanin herkese gorunmesi icin biraz sonra tekrar dene.",
+            "This business is not synced to the server yet. Try again shortly so the listing is visible to everyone."
+          )
         );
-        return;
       }
 
       const json = await fetchBackendJson("/public/market/list-business-product", {
