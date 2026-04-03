@@ -2004,6 +2004,33 @@ function buildMarketListingUiFromRow(row = {}, options = {}) {
   };
 }
 
+async function buildOwnedBusinessUiList(profileId, ownerName = 'Player') {
+  const businessRows = await listOwnedBusinesses(profileId).catch(() => []);
+  const filteredRows = (businessRows || []).filter((row) => {
+    const type = String(readRowText(row, ['business_type', 'type'])).trim().toLowerCase();
+    return type !== 'blackmarket';
+  });
+  const productRows = await listBusinessProductsByBusinessIds(
+    filteredRows.map((row) => String(row?.id || '').trim()).filter(Boolean)
+  ).catch(() => []);
+  const productRowsByBusinessId = new Map();
+
+  for (const row of productRows || []) {
+    const businessId = String(row?.business_id || '').trim();
+    if (!businessId) continue;
+    if (!productRowsByBusinessId.has(businessId)) productRowsByBusinessId.set(businessId, []);
+    productRowsByBusinessId.get(businessId).push(row);
+  }
+
+  return filteredRows.map((row) =>
+    buildBusinessUiFromRow(
+      row,
+      sanitizeUsername(ownerName || 'Player'),
+      productRowsByBusinessId.get(String(row?.id || '').trim()) || []
+    )
+  );
+}
+
 async function createBusinessWithProducts({
   ownerProfile = null,
   businessType = '',
@@ -2089,8 +2116,16 @@ async function createBusinessWithProducts({
       created_at: nowIso,
       updated_at: nowIso,
     };
-    const row = await insertRowWithPruning('business_products', payload);
-    if (row?.id) productRows.push(row);
+    try {
+      const row = await insertRowWithPruning('business_products', payload);
+      if (row?.id) productRows.push(row);
+    } catch (error) {
+      console.warn('[TonCrime] createBusinessWithProducts product insert skipped:', {
+        businessType: normalizedType,
+        productKey,
+        error: error?.message || error,
+      });
+    }
   }
 
   return {
@@ -2869,6 +2904,10 @@ app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase',
       ok: true,
       profile: await getProfileById(originalProfile.id).catch(() => buyerAfterUpdate || originalProfile) || buyerAfterUpdate || originalProfile,
       business: created?.business || null,
+      businesses: await buildOwnedBusinessUiList(
+        originalProfile.id,
+        buyerAfterUpdate?.username || originalProfile.username || profile.username || 'Player'
+      ).catch(() => (created?.business ? [created.business] : [])),
       granted_premium: grantPremium,
       restored_existing: restoreExisting,
     });
