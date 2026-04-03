@@ -16,7 +16,7 @@
       const richAdsConfig = {
         pubId: "1006898",
         appId: "6869",
-        debug: /(^localhost$)|(^127\.)|(^192\.168\.)|(^10\.)/i.test(location.hostname),
+        debug: true,
       };
       window.tcRichAdsConfig = richAdsConfig;
 
@@ -535,7 +535,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260403-7",
+          "./src/main.js?v=20260403-8",
           "./main.js"
         ]);
 
