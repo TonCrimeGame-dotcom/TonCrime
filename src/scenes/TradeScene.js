@@ -3,10 +3,12 @@ import { supabase } from "../supabase.js";
 import { fetchBackendJson } from "../supabase.js?v=20260402-2";
 import {
   describeRichAdFailure,
+  getRichAdsDiagnosticLabel,
   isRecoverableRichAdsSdkFailure,
   playRichRewardedAd,
+  warmRichAdsController,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-15";
+} from "../ads/richAds.js?v=20260403-17";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -327,6 +329,7 @@ class TradeScene {
         crateReveal: trade.crateReveal || null,
       },
     });
+    void warmRichAdsController(5200).catch(() => null);
   }
 
   _lang() {
@@ -3081,12 +3084,13 @@ class TradeScene {
   }
 
   _handleFreeSpinPlaybackResult(played) {
+    const diag = getRichAdsDiagnosticLabel(played);
     if (isRecoverableRichAdsSdkFailure(played)) {
       const detail = describeRichAdFailure(played, "unknown");
       this._showToast(
         this._ui(
-          `RichAds gecici hata verdi, spin sayilmadi: ${detail}`,
-          `RichAds had a temporary error, the spin was not counted: ${detail}`
+          `RichAds gecici hata verdi, spin sayilmadi: ${detail} [${diag}]`,
+          `RichAds had a temporary error, the spin was not counted: ${detail} [${diag}]`
         ),
         3200
       );
@@ -3096,15 +3100,15 @@ class TradeScene {
     if (!played?.ok) {
       const detail = describeRichAdFailure(played, "unknown");
       if (played?.reason === "controller_missing" || played?.reason === "method_missing") {
-        this._showToast(this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`), 2600);
+        this._showToast(this._ui(`RichAds hazir degil: ${detail} [${diag}]`, `RichAds is not ready: ${detail} [${diag}]`), 2600);
         return;
       }
       if (played?.reason === "not_completed") {
-        this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
+        this._showToast(this._ui(`Reklam tamamlanmadi: ${detail} [${diag}]`, `Ad was not completed: ${detail} [${diag}]`), 2400);
         return;
       }
       console.warn("[TonCrime] TradeScene ad error:", detail, played?.error || played?.result || played);
-      this._showToast(this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`), 2800);
+      this._showToast(this._ui(`Reklam acilamadi: ${detail} [${diag}]`, `Ad failed: ${detail} [${diag}]`), 2800);
       return;
     }
 
@@ -3150,10 +3154,25 @@ class TradeScene {
     if (!button || this.wheelAnim || this.adBusy || !this._isFreeSpinReady()) return;
 
     const immediatePlay = tryPlayRichRewardedAdImmediately();
-    if (!immediatePlay) return;
-
     this.consumeNextRelease = true;
-    this._runFreeSpinAdPlayback(immediatePlay);
+    if (immediatePlay) {
+      this._runFreeSpinAdPlayback(immediatePlay);
+      return;
+    }
+
+    this.adBusy = true;
+    this._showToast(
+      this._ui(
+        "RichAds hazirlaniyor, spin icin tekrar dokun.",
+        "RichAds is getting ready. Tap again for the spin."
+      ),
+      2200
+    );
+    Promise.resolve(warmRichAdsController(5200, { forceFresh: true }))
+      .catch(() => null)
+      .finally(() => {
+        this.adBusy = false;
+      });
   }
 
   async _doFreeSpin() {
