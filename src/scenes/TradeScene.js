@@ -268,6 +268,8 @@ class TradeScene {
     this.rewardOverlay = null;
     this.lastTs = Date.now();
     this.adBusy = false;
+    this.tradeSyncPromise = null;
+    this.lastTradeSyncAt = 0;
   }
 
   onEnter() {
@@ -286,6 +288,7 @@ class TradeScene {
 
     this._ensureTradeState();
     this._refreshBusinessProduction();
+    void this._syncTradeStateFromBackend();
 
     this.store.set({
       trade: {
@@ -2303,6 +2306,7 @@ class TradeScene {
     if (t === "nightclub") return "nightclub";
     if (t === "coffeeshop") return "coffeeshop";
     if (t === "brothel") return "brothel";
+    if (t === "blackmarket") return "blackmarket";
 
     return null;
   }
@@ -2323,6 +2327,463 @@ class TradeScene {
       theme: row.business_type,
       products: [],
     };
+  }
+
+  _normalizeTimestampMs(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return Math.max(0, Math.floor(numeric));
+    const parsed = Date.parse(value || 0);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  }
+
+  _businessMatchKey(business) {
+    const type = this._normalizeBusinessType(business?.type || business?.business_type || "");
+    const name = String(business?.name || "").trim().toLowerCase();
+    return type && name ? `${type}::${name}` : "";
+  }
+
+  _normalizeServerProductSnapshot(product = {}, businessType = "") {
+    const safeType = this._normalizeBusinessType(businessType || product.businessType || product.business_type || "") || businessType || "";
+    const art = this._itemArt(product, safeType) || {};
+    const price = Math.max(
+      1,
+      Number(product.price || product.marketPrice || product.market_price || product.sellPrice || product.sell_price || 1)
+    );
+
+    return {
+      id: String(product.id || product.productId || product.product_id || product.key || product.productKey || ""),
+      key: String(product.key || product.productKey || product.product_key || product.itemKey || "").trim(),
+      productKey: String(product.productKey || product.product_key || product.key || product.itemKey || "").trim(),
+      icon: String(product.icon || "IT"),
+      imageKey: String(product.imageKey || art.imageKey || ""),
+      imageSrc: String(product.imageSrc || product.image || product.image_url || art.imageSrc || ""),
+      name: String(product.name || product.itemName || "Product"),
+      rarity: String(product.rarity || "common"),
+      qty: Math.max(0, Number(product.qty || product.quantity || product.stock_qty || 0)),
+      price,
+      energyGain: Math.max(0, Number(product.energyGain || product.energy_gain || product.energy || 0)),
+      desc: String(product.desc || product.description || ""),
+      kind: this._inventoryKindFor(product, safeType),
+    };
+  }
+
+  _normalizeServerBusinessSnapshot(business = {}) {
+    const type =
+      this._normalizeBusinessType(business.type || business.business_type || "") ||
+      String(business.type || business.business_type || "").toLowerCase().trim() ||
+      "blackmarket";
+    const art = this._businessArt(type) || {};
+    const products = Array.isArray(business.products)
+      ? business.products.map((item) => this._normalizeServerProductSnapshot(item, type))
+      : [];
+    const productStock = products.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
+
+    return {
+      id: String(business.id || ""),
+      type,
+      icon: String(business.icon || iconForType(type)),
+      imageKey: String(business.imageKey || art.imageKey || ""),
+      imageSrc: String(business.imageSrc || business.image || art.imageSrc || ""),
+      name: String(business.name || this._typeLabel(type)),
+      ownerId: String(business.ownerId || business.owner_id || ""),
+      ownerName: String(business.ownerName || "Player"),
+      dailyProduction: Math.max(0, Number(business.dailyProduction || business.daily_production || 50)),
+      stock: products.length
+        ? productStock
+        : Math.max(0, Number(business.stock || business.stock_qty || 0)),
+      theme: String(business.theme || type || "dark"),
+      products,
+      acquiredFrom: String(business.acquiredFrom || business.acquired_from || "shop"),
+      productionDayKey: String(business.productionDayKey || business.production_day_key || ""),
+      productionReadyAt: this._normalizeTimestampMs(business.productionReadyAt || business.production_ready_at),
+      productionClaimUntil: this._normalizeTimestampMs(business.productionClaimUntil || business.production_claim_until),
+      productionCollectedAt: this._normalizeTimestampMs(business.productionCollectedAt || business.production_collected_at),
+      productionMissedAt: this._normalizeTimestampMs(business.productionMissedAt || business.production_missed_at),
+      pendingProduction: Array.isArray(business.pendingProduction || business.pending_production)
+        ? (business.pendingProduction || business.pending_production)
+            .map((row) => ({
+              productId: String(row?.productId || row?.product_id || row?.id || ""),
+              qty: Math.max(0, Number(row?.qty || row?.quantity || 0)),
+            }))
+            .filter((row) => row.productId && row.qty > 0)
+        : [],
+      serverManaged: true,
+    };
+  }
+
+  _mergeBusinessSnapshot(localBusiness, remoteBusiness) {
+    const localProducts = Array.isArray(localBusiness?.products) ? localBusiness.products : [];
+    const remoteProducts = Array.isArray(remoteBusiness?.products) ? remoteBusiness.products : [];
+    const localProductsById = new Map();
+    const localProductsByKey = new Map();
+
+    for (const item of localProducts) {
+      const itemId = String(item?.id || "").trim();
+      const itemKey = String(item?.productKey || item?.product_key || item?.key || "").trim().toLowerCase();
+      if (itemId) localProductsById.set(itemId, item);
+      if (itemKey) localProductsByKey.set(itemKey, item);
+    }
+
+    const products = remoteProducts.map((item) => {
+      const itemId = String(item?.id || "").trim();
+      const itemKey = String(item?.productKey || item?.product_key || item?.key || "").trim().toLowerCase();
+      const localProduct = localProductsById.get(itemId) || localProductsByKey.get(itemKey) || null;
+      return {
+        ...(localProduct || {}),
+        ...item,
+        qty: Math.max(0, Number(item.qty || item.quantity || 0)),
+      };
+    });
+
+    return {
+      ...(localBusiness || {}),
+      ...remoteBusiness,
+      products,
+      stock: products.length
+        ? products.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0)
+        : Math.max(0, Number(remoteBusiness.stock || localBusiness?.stock || 0)),
+      pendingProduction:
+        Array.isArray(remoteBusiness.pendingProduction) && remoteBusiness.pendingProduction.length
+          ? remoteBusiness.pendingProduction.map((item) => ({ ...item }))
+          : Array.isArray(localBusiness?.pendingProduction)
+            ? localBusiness.pendingProduction.map((item) => ({ ...item }))
+            : [],
+      productionDayKey: String(remoteBusiness.productionDayKey || localBusiness?.productionDayKey || ""),
+      productionReadyAt: Math.max(
+        0,
+        Number(remoteBusiness.productionReadyAt || 0) || Number(localBusiness?.productionReadyAt || 0)
+      ),
+      productionClaimUntil: Math.max(
+        0,
+        Number(remoteBusiness.productionClaimUntil || 0) || Number(localBusiness?.productionClaimUntil || 0)
+      ),
+      productionCollectedAt: Math.max(
+        0,
+        Number(remoteBusiness.productionCollectedAt || 0) || Number(localBusiness?.productionCollectedAt || 0)
+      ),
+      productionMissedAt: Math.max(
+        0,
+        Number(remoteBusiness.productionMissedAt || 0) || Number(localBusiness?.productionMissedAt || 0)
+      ),
+      serverManaged: true,
+    };
+  }
+
+  _mergeOwnedBusinesses(remoteBusinesses = []) {
+    const localOwned = (this.store.get()?.businesses?.owned || []).map((item) => ({
+      ...item,
+      products: (item.products || []).map((product) => ({ ...product })),
+      pendingProduction: (item.pendingProduction || []).map((row) => ({ ...row })),
+    }));
+    const consumedIndexes = new Set();
+    const merged = [];
+
+    for (const remoteRaw of remoteBusinesses || []) {
+      const remote = this._normalizeServerBusinessSnapshot(remoteRaw);
+      if (!remote?.id) continue;
+
+      let matchedIndex = localOwned.findIndex(
+        (item, index) => !consumedIndexes.has(index) && String(item?.id || "") === String(remote.id)
+      );
+
+      if (matchedIndex < 0) {
+        const matchKey = this._businessMatchKey(remote);
+        if (matchKey) {
+          matchedIndex = localOwned.findIndex(
+            (item, index) => !consumedIndexes.has(index) && this._businessMatchKey(item) === matchKey
+          );
+        }
+      }
+
+      const localBusiness = matchedIndex >= 0 ? localOwned[matchedIndex] : null;
+      if (matchedIndex >= 0) consumedIndexes.add(matchedIndex);
+      merged.push(this._mergeBusinessSnapshot(localBusiness, remote));
+    }
+
+    localOwned.forEach((item, index) => {
+      if (!consumedIndexes.has(index)) merged.push(item);
+    });
+
+    return merged;
+  }
+
+  _normalizeServerShopSnapshot(shop = {}) {
+    const type =
+      this._normalizeBusinessType(shop.type || shop.businessType || shop.business_type || "") ||
+      String(shop.type || "").toLowerCase().trim() ||
+      "blackmarket";
+    const art = this._businessArt(type) || {};
+
+    return {
+      id: String(shop.id || ""),
+      businessId: String(shop.businessId || shop.business_id || ""),
+      type,
+      icon: String(shop.icon || iconForType(type)),
+      imageKey: String(shop.imageKey || art.imageKey || ""),
+      imageSrc: String(shop.imageSrc || shop.image || art.imageSrc || ""),
+      name: String(shop.name || this._typeLabel(type)),
+      ownerId: String(shop.ownerId || shop.owner_id || ""),
+      ownerName: String(shop.ownerName || "Player"),
+      online: shop.online !== false,
+      theme: String(shop.theme || type || "dark"),
+      rating: Math.max(0, Number(shop.rating || 5)),
+      totalListings: Math.max(0, Number(shop.totalListings || shop.total_listings || 0)),
+      totalSold: Math.max(0, Number(shop.totalSold || shop.total_sold || 0)),
+      totalRevenue: Math.max(0, Number(shop.totalRevenue || shop.total_revenue || 0)),
+      lastSaleAt: this._normalizeTimestampMs(shop.lastSaleAt || shop.last_sale_at),
+      serverManaged: true,
+    };
+  }
+
+  _normalizeServerListingSnapshot(listing = {}) {
+    const art = this._itemArt(listing, listing.businessType || listing.business_type || "") || {};
+    const price = Math.max(1, Number(listing.price || listing.price_yton || listing.marketPrice || 1));
+
+    return {
+      id: String(listing.id || ""),
+      shopId: String(listing.shopId || listing.shop_id || ""),
+      icon: String(listing.icon || "IT"),
+      imageKey: String(listing.imageKey || art.imageKey || ""),
+      imageSrc: String(listing.imageSrc || listing.image || listing.image_url || art.imageSrc || ""),
+      itemName: String(listing.itemName || listing.name || "Item"),
+      kind: this._inventoryKindFor(listing, listing.businessType || listing.business_type || ""),
+      rarity: String(listing.rarity || "common"),
+      stock: Math.max(0, Number(listing.stock || listing.quantity || listing.qty || 0)),
+      price,
+      energyGain: Math.max(0, Number(listing.energyGain || listing.energy_gain || 0)),
+      usable: !!listing.usable || Number(listing.energyGain || listing.energy_gain || 0) > 0,
+      desc: String(listing.desc || listing.description || ""),
+      inventoryItemId: String(listing.inventoryItemId || listing.inventory_item_id || ""),
+      businessId: String(listing.businessId || listing.business_id || ""),
+      businessProductId: String(listing.businessProductId || listing.business_product_id || listing.product_id || ""),
+      serverManaged: true,
+    };
+  }
+
+  async _migrateLocalBusinesses(remoteBusinesses = []) {
+    const state = this.store.get();
+    const localBusinesses = (state.businesses?.owned || []).filter((item) => !item?.serverManaged);
+    if (!localBusinesses.length) return false;
+
+    const knownKeys = new Set(
+      (remoteBusinesses || []).map((item) => this._businessMatchKey(item)).filter(Boolean)
+    );
+    let migratedAny = false;
+
+    for (const business of localBusinesses) {
+      const type = this._normalizeBusinessType(business?.type || business?.business_type || "");
+      const matchKey = this._businessMatchKey(business);
+      if (!type || type === "blackmarket" || (matchKey && knownKeys.has(matchKey))) continue;
+
+      try {
+        const json = await fetchBackendJson("/public/businesses/purchase", {
+          method: "POST",
+          body: JSON.stringify({
+            business_type: type,
+            name: String(business?.name || this._typeLabel(type) || "").trim(),
+            restore_existing: true,
+            grant_premium: String(business?.acquiredFrom || business?.source || "").toLowerCase() === "premium",
+          }),
+        });
+        const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
+        if (!remoteBusiness?.id) continue;
+        migratedAny = true;
+        if (matchKey) knownKeys.add(matchKey);
+        const remoteKey = this._businessMatchKey(remoteBusiness);
+        if (remoteKey) knownKeys.add(remoteKey);
+      } catch (err) {
+        console.error("local_business_migrate error:", err);
+      }
+    }
+
+    return migratedAny;
+  }
+
+  async _syncTradeStateFromBackend({ quiet = true } = {}) {
+    if (this.tradeSyncPromise) return this.tradeSyncPromise;
+
+    this.tradeSyncPromise = (async () => {
+      try {
+        let json = await fetchBackendJson("/public/trade/state");
+        let remoteBusinesses = Array.isArray(json?.businesses)
+          ? json.businesses.map((item) => this._normalizeServerBusinessSnapshot(item)).filter((item) => item?.id)
+          : [];
+        const migrated = await this._migrateLocalBusinesses(remoteBusinesses);
+        if (migrated) {
+          json = await fetchBackendJson("/public/trade/state");
+          remoteBusinesses = Array.isArray(json?.businesses)
+            ? json.businesses.map((item) => this._normalizeServerBusinessSnapshot(item)).filter((item) => item?.id)
+            : [];
+        }
+        const remoteShops = Array.isArray(json?.market?.shops)
+          ? json.market.shops.map((item) => this._normalizeServerShopSnapshot(item)).filter((item) => item?.id)
+          : [];
+        const remoteListings = Array.isArray(json?.market?.listings)
+          ? json.market.listings.map((item) => this._normalizeServerListingSnapshot(item)).filter((item) => item?.id)
+          : [];
+        const state = this.store.get();
+        const localShops = (state.market?.shops || []).map((item) => ({ ...item }));
+        const localListings = (state.market?.listings || []).map((item) => ({ ...item }));
+        const mergedBusinesses = this._mergeOwnedBusinesses(remoteBusinesses);
+        const remoteShopIds = new Set(remoteShops.map((item) => String(item.id)));
+        const remoteBusinessIds = new Set(remoteShops.map((item) => String(item.businessId || "")));
+        const remoteListingIds = new Set(remoteListings.map((item) => String(item.id)));
+        const mergedShops = [
+          ...remoteShops,
+          ...localShops.filter(
+            (item) =>
+              !remoteShopIds.has(String(item.id)) &&
+              !remoteBusinessIds.has(String(item.businessId || "")) &&
+              !item.serverManaged
+          ),
+        ];
+        const mergedListings = [
+          ...remoteListings,
+          ...localListings.filter(
+            (item) =>
+              !remoteListingIds.has(String(item.id)) &&
+              !this._isBackendManagedMarketListing(item)
+          ),
+        ];
+
+        for (const shop of mergedShops) {
+          shop.totalListings = mergedListings.filter((item) => String(item.shopId) === String(shop.id)).length;
+        }
+
+        const profile = json?.profile || null;
+        const coins = Number.isFinite(Number(profile?.coins))
+          ? Math.max(0, Number(profile.coins))
+          : Math.max(0, Number(state.coins || 0));
+        const level = Number.isFinite(Number(profile?.level))
+          ? Math.max(1, Number(profile.level))
+          : Math.max(1, Number(state.player?.level || 1));
+        const membership = String(
+          profile?.membership ||
+          state.player?.membership ||
+          ((state.premium || state.isPremium) ? "premium" : "standard")
+        ).trim() || "standard";
+        const isPremium = !!(
+          state.premium ||
+          state.isPremium ||
+          profile?.premium ||
+          profile?.is_premium ||
+          membership === "premium"
+        );
+        const selectedBusinessId = (() => {
+          const currentId = String(state.trade?.selectedBusinessId || "");
+          if (currentId && mergedBusinesses.some((item) => String(item.id) === currentId)) return currentId;
+          return mergedBusinesses[0]?.id || null;
+        })();
+        const selectedShopId = (() => {
+          const currentId = String(state.trade?.selectedShopId || "");
+          if (currentId && mergedShops.some((item) => String(item.id) === currentId)) return currentId;
+          return state.trade?.selectedShopId || null;
+        })();
+
+        this.store.set({
+          coins,
+          yton: coins,
+          premium: isPremium,
+          isPremium,
+          wallet: {
+            ...(state.wallet || {}),
+            yton: coins,
+          },
+          player: {
+            ...(state.player || {}),
+            id: String(profile?.id || state.player?.id || ""),
+            telegramId: String(
+              profile?.telegram_id ||
+              state.player?.telegramId ||
+              this._getTelegramId() ||
+              window.tcGetProfileKey?.() ||
+              ""
+            ),
+            username: String(profile?.username || state.player?.username || "Player"),
+            level,
+            membership,
+            canOwnBusiness: isPremium || level >= 50,
+            canWithdraw: isPremium || level >= 50,
+          },
+          businesses: {
+            ...(state.businesses || {}),
+            owned: mergedBusinesses,
+          },
+          market: {
+            ...(state.market || {}),
+            shops: mergedShops,
+            listings: mergedListings,
+          },
+          trade: {
+            ...(state.trade || {}),
+            selectedBusinessId,
+            selectedShopId,
+          },
+        });
+
+        this.lastTradeSyncAt = Date.now();
+        this._refreshBusinessProduction();
+        return true;
+      } catch (err) {
+        console.error("trade_state_sync error:", err);
+        if (!quiet) {
+          this._showToast(err?.message || this._ui("Trade verisi yuklenemedi", "Trade state could not be loaded"));
+        }
+        return false;
+      } finally {
+        this.tradeSyncPromise = null;
+      }
+    })();
+
+    return this.tradeSyncPromise;
+  }
+
+  async _persistBusinessState(bizId, { quiet = true } = {}) {
+    const state = this.store.get();
+    const business = (state.businesses?.owned || []).find((item) => String(item.id) === String(bizId));
+    if (!business?.id || String(business.id).startsWith("biz_")) return false;
+
+    try {
+      const json = await fetchBackendJson("/public/businesses/sync", {
+        method: "POST",
+        body: JSON.stringify({
+          business_id: String(business.id),
+          stock_qty: Math.max(0, Number(business.stock || 0)),
+          products: (business.products || []).map((item) => ({
+            id: String(item.id || ""),
+            qty: Math.max(0, Number(item.qty || 0)),
+          })),
+          pending_production: (business.pendingProduction || []).map((row) => ({
+            productId: String(row.productId || row.product_id || row.id || ""),
+            qty: Math.max(0, Number(row.qty || row.quantity || 0)),
+          })),
+          production_day_key: String(business.productionDayKey || ""),
+          production_ready_at: Number(business.productionReadyAt || 0) || null,
+          production_claim_until: Number(business.productionClaimUntil || 0) || null,
+          production_collected_at: Number(business.productionCollectedAt || 0) || null,
+          production_missed_at: Number(business.productionMissedAt || 0) || null,
+        }),
+      });
+
+      const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
+      if (remoteBusiness?.id) {
+        const state2 = this.store.get();
+        this.store.set({
+          businesses: {
+            ...(state2.businesses || {}),
+            owned: this._mergeOwnedBusinesses([remoteBusiness]),
+          },
+        });
+      }
+
+      return true;
+    } catch (err) {
+      console.error("business_state_sync error:", err);
+      if (!quiet) {
+        this._showToast(err?.message || this._ui("Isletme kaydedilemedi", "Business state could not be saved"));
+      }
+      return false;
+    }
   }
 
   _ensurePlayerMarketShop() {
@@ -2901,7 +3362,8 @@ class TradeScene {
         owned: businesses,
       },
     });
-        this._showToast(this._ui(`+${gain} enerji`, `+${gain} energy`));
+    this._showToast(this._ui(`+${gain} enerji`, `+${gain} energy`));
+    void this._persistBusinessState(biz.id, { quiet: true });
   }
   
   _createPendingProduction(products = [], totalDaily = 50) {
@@ -3029,6 +3491,7 @@ class TradeScene {
     });
 
     this._showToast(this._ui(fmtNum(pendingTotal) + ' urun toplandi', this._num(pendingTotal) + ' products collected'));
+    void this._persistBusinessState(biz.id, { quiet: true });
   }
 
   async _sellBusinessProduct(bizId, productId) {
@@ -3163,6 +3626,7 @@ class TradeScene {
       });
 
       this._showToast(this._ui(`${qty} adet satisa cikarildi`, `${qty} items listed`));
+      void this._persistBusinessState(bizId, { quiet: true });
     } catch (err) {
       console.error("create_market_listing error:", err);
       this._showToast(err?.message || this._ui("Ilan olusturulamadi", "Listing could not be created"));
@@ -4045,7 +4509,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     return y;
   }
 
-  _buyPremiumMembership(businessType) {
+  async _buyPremiumMembership(businessType) {
     const def = this._businessDefByType(businessType);
     if (!def) return;
 
@@ -4072,39 +4536,70 @@ _drawButton(ctx, rect, text, style = "ghost") {
       return;
     }
 
-    const s = this.store.get();
-    const player = { ...(s.player || {}) };
-    player.level = Math.max(50, Number(player.level || 1));
-    player.membership = 'premium';
-    player.canOwnBusiness = true;
-    player.canWithdraw = true;
-
-    const newBusiness = this._createBusinessRecord(businessType, name, 'premium');
-
-    this.store.set({
-      premium: true,
-      isPremium: true,
-      player,
-      businesses: {
-        ...(s.businesses || {}),
-        owned: [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))],
-      },
-    });
-
     try {
-      window.tcActivityFeed?.push?.({
-        event: "premium",
-        actor: player.username || "Player",
-        venueName: name,
-        amountTon: PREMIUM_COST_TON,
+      const json = await fetchBackendJson("/public/businesses/purchase", {
+        method: "POST",
+        body: JSON.stringify({
+          business_type: String(businessType),
+          name,
+          grant_premium: true,
+        }),
       });
-    } catch (_) {}
+      const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
+      if (!remoteBusiness?.id) {
+        throw new Error(this._ui("Isletme kaydedilemedi", "Business could not be saved"));
+      }
 
-    this._pushSystemChat(this._ui((player.username || 'Player') + ' premium aldi ve ' + name + ' mekanini acti.', (player.username || 'Player') + ' purchased premium and unlocked ' + name + '.'));
-    this._showToast(this._ui('Premium aktif edildi', 'Premium activated'), 2200);
+      const state2 = this.store.get();
+      const profile = json?.profile || null;
+      const nextLevel = Math.max(50, Number(profile?.level || state2.player?.level || 1));
+      const player = {
+        ...(state2.player || {}),
+        id: String(profile?.id || state2.player?.id || ""),
+        username: String(profile?.username || state2.player?.username || "Player"),
+        level: nextLevel,
+        membership: "premium",
+        canOwnBusiness: true,
+        canWithdraw: true,
+      };
+
+      this.store.set({
+        premium: true,
+        isPremium: true,
+        player,
+        businesses: {
+          ...(state2.businesses || {}),
+          owned: this._mergeOwnedBusinesses([remoteBusiness]),
+        },
+        trade: {
+          ...(state2.trade || {}),
+          selectedBusinessId: remoteBusiness.id,
+        },
+      });
+
+      try {
+        window.tcActivityFeed?.push?.({
+          event: "premium",
+          actor: player.username || "Player",
+          venueName: name,
+          amountTon: PREMIUM_COST_TON,
+        });
+      } catch (_) {}
+
+      this._pushSystemChat(this._ui((player.username || 'Player') + ' premium aldi ve ' + name + ' mekanini acti.', (player.username || 'Player') + ' purchased premium and unlocked ' + name + '.'));
+      this._showToast(this._ui('Premium aktif edildi', 'Premium activated'), 2200);
+      void this._syncTradeStateFromBackend({ quiet: true });
+    } catch (err) {
+      const state2 = this.store.get();
+      const wallet = { ...(state2.wallet || {}) };
+      wallet.tonBalance = roundTokenAmount(Number(wallet.tonBalance || 0) + PREMIUM_COST_TON);
+      this.store.set({ wallet });
+      console.error("premium_purchase error:", err);
+      this._showToast(err?.message || this._ui("Premium satin alinamadi", "Premium could not be purchased"));
+    }
   }
 
-  _buyBusiness(businessType) {
+  async _buyBusiness(businessType) {
     const def = this._businessDefByType(businessType);
     if (!def) return;
 
@@ -4127,17 +4622,61 @@ _drawButton(ctx, rect, text, style = "ghost") {
     if (nameRaw === null) return;
     const name = String(nameRaw || baseName).trim() || baseName;
 
-    const newBusiness = this._createBusinessRecord(businessType, name, 'shop');
+    try {
+      const json = await fetchBackendJson("/public/businesses/purchase", {
+        method: "POST",
+        body: JSON.stringify({
+          business_type: String(businessType),
+          name,
+        }),
+      });
+      const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
+      if (!remoteBusiness?.id) {
+        throw new Error(this._ui("Isletme kaydedilemedi", "Business could not be saved"));
+      }
 
-    this.store.set({
-      coins: Math.max(0, Number(s.coins || 0) - Number(def.price || 0)),
-      businesses: {
-        ...(s.businesses || {}),
-        owned: [newBusiness, ...((s.businesses?.owned || []).map((x) => ({ ...x })))],
-      },
-    });
+      const state2 = this.store.get();
+      const profile = json?.profile || null;
+      const coins = Number.isFinite(Number(profile?.coins))
+        ? Math.max(0, Number(profile.coins))
+        : Math.max(0, Number(state2.coins || 0) - Number(def.price || 0));
+      const level = Number.isFinite(Number(profile?.level))
+        ? Math.max(1, Number(profile.level))
+        : Math.max(1, Number(state2.player?.level || 1));
+      const isPremium = !!(state2.premium || state2.isPremium || profile?.premium || profile?.is_premium);
 
-    this._showToast(this._ui(name + ' satin alindi', name + ' purchased'));
+      this.store.set({
+        coins,
+        yton: coins,
+        wallet: {
+          ...(state2.wallet || {}),
+          yton: coins,
+        },
+        player: {
+          ...(state2.player || {}),
+          id: String(profile?.id || state2.player?.id || ""),
+          username: String(profile?.username || state2.player?.username || "Player"),
+          level,
+          membership: String(profile?.membership || state2.player?.membership || (isPremium ? "premium" : "standard")),
+          canOwnBusiness: isPremium || level >= 50,
+          canWithdraw: isPremium || level >= 50,
+        },
+        businesses: {
+          ...(state2.businesses || {}),
+          owned: this._mergeOwnedBusinesses([remoteBusiness]),
+        },
+        trade: {
+          ...(state2.trade || {}),
+          selectedBusinessId: remoteBusiness.id,
+        },
+      });
+
+      this._showToast(this._ui(name + ' satin alindi', name + ' purchased'));
+      void this._syncTradeStateFromBackend({ quiet: true });
+    } catch (err) {
+      console.error("business_purchase error:", err);
+      this._showToast(err?.message || this._ui("Isletme satin alinamadi", "Business could not be purchased"));
+    }
   }
 
   _renderBuy(ctx, x, y, w) {
