@@ -1,4 +1,4 @@
-import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-3";
+import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-4";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
