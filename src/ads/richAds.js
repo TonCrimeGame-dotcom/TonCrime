@@ -6,6 +6,7 @@ const SUPPORTED_RICH_AD_METHODS = [
   "showVideo",
 ];
 const RICH_ADS_SDK_URL = "https://richinfo.co/richpartners/telegram/js/tg-ob.js";
+const RICH_ADS_INIT_SETTLE_MS = 1600;
 const NULL_OBJECT_ERROR_RE =
   /(null is not an object|undefined is not an object|cannot read properties of null|cannot read properties of undefined)/i;
 
@@ -95,16 +96,26 @@ function getRichAdsControllerMeta() {
 function rememberRichAdsController(controller, snapshot = getTelegramMiniAppSnapshot()) {
   if (!hasRichAdsController(controller)) return null;
 
+  const createdAt = Date.now();
   window.tcRichAdsController = controller;
   window.TelegramAdsControllerInstance = controller;
   window.richadsController = controller;
   window.tcRichAdsControllerMeta = {
-    createdAt: Date.now(),
+    createdAt,
+    readyAt: createdAt + RICH_ADS_INIT_SETTLE_MS,
     userId: snapshot?.userId || "",
     initDataLength: String(snapshot?.initData || "").length,
   };
   window.tcRichAdsReady = Promise.resolve(controller);
   return controller;
+}
+
+function isRichAdsControllerSettled(controller, now = Date.now()) {
+  if (!hasRichAdsController(controller)) return false;
+  const meta = getRichAdsControllerMeta();
+  if (!meta) return true;
+  const readyAt = Number(meta.readyAt || 0);
+  return !readyAt || now >= readyAt;
 }
 
 function resetRichAdsControllerCache() {
@@ -203,6 +214,7 @@ export function getRichAdsDiagnosticLabel(playResult = null) {
     `i=${String(snapshot.initData || "").length}`,
     `c=${hasRichAdsController(getGlobalRichAdsControllerCandidate()) ? 1 : 0}`,
     `m=${Number(meta.initDataLength || 0)}`,
+    `r=${Math.max(0, Number(meta.readyAt || 0) - Date.now()) > 0 ? 0 : 1}`,
   ];
   if (methodName) parts.push(`fn=${methodName}`);
   return parts.join(" ").slice(0, 120);
@@ -387,7 +399,13 @@ async function createRichAdsControllerOnDemand(options = {}) {
 export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
   const forceFresh = !!options.forceFresh;
   const direct = getGlobalRichAdsControllerCandidate();
-  if (!shouldReplaceCachedController(direct, forceFresh) && hasRichAdsController(direct)) return direct;
+  if (
+    !shouldReplaceCachedController(direct, forceFresh) &&
+    hasRichAdsController(direct) &&
+    isRichAdsControllerSettled(direct)
+  ) {
+    return direct;
+  }
 
   const pending = forceFresh ? null : window.tcRichAdsReady;
   if (!forceFresh && pending && typeof pending.then === "function") {
@@ -396,7 +414,13 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
         pending,
         new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
       ]);
-      if (!shouldReplaceCachedController(controller, false) && hasRichAdsController(controller)) return controller;
+      if (
+        !shouldReplaceCachedController(controller, false) &&
+        hasRichAdsController(controller) &&
+        isRichAdsControllerSettled(controller)
+      ) {
+        return controller;
+      }
     } catch (_) {}
   }
 
@@ -405,7 +429,14 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
       createRichAdsControllerOnDemand({ forceFresh }),
       new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
-    return hasRichAdsController(controller) && !shouldReplaceCachedController(controller, forceFresh)
+    if (hasRichAdsController(controller) && !shouldReplaceCachedController(controller, forceFresh)) {
+      const meta = getRichAdsControllerMeta();
+      const waitMs = Math.max(0, Number(meta?.readyAt || 0) - Date.now());
+      if (waitMs > 0 && waitMs < timeoutMs) {
+        await sleep(waitMs);
+      }
+    }
+    return hasRichAdsController(controller) && !shouldReplaceCachedController(controller, forceFresh) && isRichAdsControllerSettled(controller)
       ? controller
       : null;
   } catch (_) {
