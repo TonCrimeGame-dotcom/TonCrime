@@ -3,7 +3,7 @@ import {
   isRecoverableRichAdsSdkFailure,
   playRichRewardedAd,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-10";
+} from "../ads/richAds.js?v=20260403-15";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
