@@ -37,8 +37,7 @@ function getDefaultRichAdsConfig() {
   return {
     pubId: "1006898",
     appId: "6869",
-    // Temporary debug mode to validate the live Telegram/RichAds integration path.
-    debug: true,
+    debug: false,
   };
 }
 
