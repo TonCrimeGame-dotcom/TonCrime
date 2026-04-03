@@ -1,7 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260402-2";
-import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-1";
+import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-2";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
