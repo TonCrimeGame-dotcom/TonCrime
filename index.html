@@ -136,6 +136,9 @@
 
         try {
           const snapshot = await window.tcWaitForTelegramMiniAppReady(4500);
+          if (!snapshot?.user || !snapshot?.initData) {
+            return null;
+          }
           const ControllerCtor = await window.tcWaitForRichAdsSdk(4500);
           if (typeof ControllerCtor !== "function") {
             return null;
@@ -547,7 +550,7 @@
         ]);
 
         await loadFirst([
-          "./src/main.js?v=20260403-13",
+          "./src/main.js?v=20260403-15",
           "./main.js"
         ]);
 
