@@ -11,11 +11,11 @@ import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
 import { HomeScene } from "./scenes/HomeScene.js";
-import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260403-2";
+import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260403-3";
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260403-3";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260403-4";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
