@@ -2333,10 +2333,11 @@ class TradeScene {
   }
 
   _isBackendManagedMarketListing(listing) {
+    const listingId = String(listing?.id || "");
     return !!(
       listing?.serverManaged ||
       listing?.inventoryItemId ||
-      listing?.businessProductId
+      (listing?.businessProductId && !listingId.startsWith("listing_local_"))
     );
   }
 
