@@ -5,6 +5,8 @@ export class Input {
     this._pressed = false;
     this._justPressed = false;
     this._justReleased = false;
+    this._downPos = null;
+    this._clickListeners = new Set();
 
     this.pointer = { x: 0, y: 0 };
 
@@ -12,11 +14,27 @@ export class Input {
       this._pressed = true;
       this._justPressed = true;
       this._setXY(e);
+      this._downPos = { x: this.pointer.x, y: this.pointer.y };
     };
     const onUp = (e) => {
       this._pressed = false;
       this._justReleased = true;
       this._setXY(e);
+      const down = this._downPos;
+      this._downPos = null;
+
+      if (down) {
+        const dx = this.pointer.x - down.x;
+        const dy = this.pointer.y - down.y;
+        const moved = Math.hypot(dx, dy);
+        if (moved <= 10) {
+          for (const fn of this._clickListeners) {
+            try {
+              fn({ x: this.pointer.x, y: this.pointer.y, event: e });
+            } catch (_) {}
+          }
+        }
+      }
     };
     const onMove = (e) => this._setXY(e);
 
@@ -44,6 +62,14 @@ export class Input {
 
   justReleased() {
     return this._justReleased;
+  }
+
+  onClick(fn) {
+    if (typeof fn !== "function") return () => {};
+    this._clickListeners.add(fn);
+    return () => {
+      this._clickListeners.delete(fn);
+    };
   }
 
   _setXY(e) {
