@@ -1,8 +1,8 @@
 const SUPPORTED_RICH_AD_METHODS = [
-  "triggerInterstitialVideo",
   "triggerRewardedVideo",
   "showRewardedVideo",
   "showRewarded",
+  "triggerInterstitialVideo",
   "showVideo",
 ];
 const RICH_ADS_SDK_URL = "https://richinfo.co/richpartners/telegram/js/tg-ob.js";
@@ -167,8 +167,14 @@ function rememberRichAdsFailure(reason, payload) {
 }
 
 export function isCompletedAdResult(result) {
-  if (result == null) return true;
+  if (result == null) return false;
   if (typeof result === "boolean") return result;
+  if (typeof result === "string") {
+    const status = result.trim().toLowerCase();
+    if (!status) return false;
+    if (/(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
+    return /(reward|complete|completed|success|done|finish)/.test(status);
+  }
 
   if (typeof result === "object") {
     if (typeof result.rewarded === "boolean") return result.rewarded;
@@ -178,9 +184,10 @@ export function isCompletedAdResult(result) {
 
     const status = String(result.status || result.state || result.result || "").toLowerCase();
     if (status && /(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
+    if (status) return /(reward|complete|completed|success|done|finish)/.test(status);
   }
 
-  return true;
+  return false;
 }
 
 export function describeRichAdFailure(playResult, fallback = "") {
@@ -364,23 +371,12 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
 }
 
 export function tryPlayRichRewardedAdImmediately() {
+  const controller = getGlobalRichAdsControllerCandidate();
+  if (!controller || shouldReplaceCachedController(controller, false) || !hasRichAdsController(controller)) {
+    return null;
+  }
+
   return (async () => {
-    await waitForTelegramMiniAppReady(1200);
-
-    let controller = null;
-    try {
-      controller = await createRichAdsControllerOnDemand({ forceFresh: true });
-    } catch (_) {
-      controller = null;
-    }
-
-    if (!hasRichAdsController(controller)) {
-      controller = getGlobalRichAdsControllerCandidate();
-    }
-    if (!controller || shouldReplaceCachedController(controller, false) || !hasRichAdsController(controller)) {
-      return null;
-    }
-
     const played = await runRichAdsAdOnce(controller);
     if (!played?.ok) {
       rememberRichAdsFailure(played?.reason || "error", played?.error ?? played?.result ?? played);
