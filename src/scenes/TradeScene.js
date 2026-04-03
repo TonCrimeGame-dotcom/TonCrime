@@ -1,7 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260402-2";
-import { describeRichAdFailure, playRichRewardedAd } from "../ads/richAds.js?v=20260403-4";
+import { describeRichAdFailure, playRichRewardedAd, tryPlayRichRewardedAdImmediately } from "../ads/richAds.js?v=20260403-5";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -270,6 +270,8 @@ class TradeScene {
     this.adBusy = false;
     this.tradeSyncPromise = null;
     this.lastTradeSyncAt = 0;
+    this.consumeNextRelease = false;
+    this.removeInputClickListener = null;
   }
 
   onEnter() {
@@ -285,10 +287,16 @@ class TradeScene {
     this.rewardOverlay = null;
     this.lastTs = Date.now();
     this.adBusy = false;
+    this.consumeNextRelease = false;
 
     this._ensureTradeState();
     this._refreshBusinessProduction();
     void this._syncTradeStateFromBackend();
+    if (!this.removeInputClickListener && typeof this.input?.onClick === "function") {
+      this.removeInputClickListener = this.input.onClick(({ x, y }) => {
+        this._handleImmediateGestureClick(x, y);
+      });
+    }
 
     this.store.set({
       trade: {
@@ -386,6 +394,16 @@ class TradeScene {
         salesHistory: Array.isArray(market.salesHistory) ? market.salesHistory : [],
       },
     });
+  }
+
+  onExit() {
+    this.dragging = false;
+    this.clickCandidate = false;
+    this.consumeNextRelease = false;
+    if (this.removeInputClickListener) {
+      this.removeInputClickListener();
+      this.removeInputClickListener = null;
+    }
   }
 
   _trade() {
@@ -2871,6 +2889,70 @@ class TradeScene {
     return shop;
   }
 
+  _handleFreeSpinPlaybackResult(played) {
+    if (!played?.ok) {
+      const detail = describeRichAdFailure(played, "unknown");
+      if (played?.reason === "controller_missing" || played?.reason === "method_missing") {
+        this._showToast(this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`), 2600);
+        return;
+      }
+      if (played?.reason === "not_completed") {
+        this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
+        return;
+      }
+      console.warn("[TonCrime] TradeScene ad error:", detail, played?.error || played?.result || played);
+      this._showToast(this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`), 2800);
+      return;
+    }
+
+    const used = FREE_SPIN_LIMIT - this._freeSpinRemaining() + 1;
+    const pool = this._freeSpinRewards();
+    const selectedIndex = Math.floor(Math.random() * pool.length);
+    const reward = pool[selectedIndex];
+
+    this._grantReward(reward, { freeSpinUsed: used });
+    this._setWheelResult("free", pool, selectedIndex, reward);
+    this._startWheelAnimation("free", pool, selectedIndex, reward);
+  }
+
+  _runFreeSpinAdPlayback(playPromise) {
+    if (!playPromise) return;
+
+    this.adBusy = true;
+    this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
+
+    Promise.resolve(playPromise)
+      .then((played) => {
+        this._handleFreeSpinPlaybackResult(played);
+      })
+      .catch((error) => {
+        console.warn("[TonCrime] TradeScene rewarded ad fatal:", error);
+        this._showToast(
+          this._ui(
+            `Reklam acilamadi: ${String(error?.message || error || "unknown")}`,
+            `Ad failed: ${String(error?.message || error || "unknown")}`
+          ),
+          2800
+        );
+      })
+      .finally(() => {
+        this.adBusy = false;
+      });
+  }
+
+  _handleImmediateGestureClick(px, py) {
+    const button = this.hitButtons.find(
+      (item) => item?.action === "free_spin" && pointInRect(px, py, item.rect)
+    );
+    if (!button || this.wheelAnim || this.adBusy || !this._isFreeSpinReady()) return;
+
+    const immediatePlay = tryPlayRichRewardedAdImmediately();
+    if (!immediatePlay) return;
+
+    this.consumeNextRelease = true;
+    this._runFreeSpinAdPlayback(immediatePlay);
+  }
+
   async _doFreeSpin() {
     if (this.wheelAnim || this.adBusy) {
       this._showToast(this._ui("Cark donuyor", "Wheel is spinning"));
@@ -2881,40 +2963,7 @@ class TradeScene {
       return;
     }
 
-    this.adBusy = true;
-    this._showToast(this._ui("Reklam yukleniyor...", "Loading ad..."), 1400);
-
-    try {
-      const played = await playRichRewardedAd();
-      if (!played.ok) {
-        const detail = describeRichAdFailure(played, "unknown");
-        if (played.reason === "controller_missing" || played.reason === "method_missing") {
-          this._showToast(this._ui(`RichAds hazir degil: ${detail}`, `RichAds is not ready: ${detail}`), 2600);
-          return;
-        }
-        if (played.reason === "not_completed") {
-          this._showToast(this._ui(`Reklam tamamlanmadi: ${detail}`, `Ad was not completed: ${detail}`), 2400);
-          return;
-        }
-        console.warn("[TonCrime] TradeScene ad error:", detail, played.error || played.result || played);
-        this._showToast(this._ui(`Reklam acilamadi: ${detail}`, `Ad failed: ${detail}`), 2800);
-        return;
-      }
-
-      const used = FREE_SPIN_LIMIT - this._freeSpinRemaining() + 1;
-      const pool = this._freeSpinRewards();
-      const selectedIndex = Math.floor(Math.random() * pool.length);
-      const reward = pool[selectedIndex];
-
-      this._grantReward(reward, { freeSpinUsed: used });
-      this._setWheelResult("free", pool, selectedIndex, reward);
-      this._startWheelAnimation("free", pool, selectedIndex, reward);
-    } catch (error) {
-      console.warn("[TonCrime] TradeScene rewarded ad fatal:", error);
-      this._showToast(this._ui(`Reklam acilamadi: ${String(error?.message || error || "unknown")}`, `Ad failed: ${String(error?.message || error || "unknown")}`), 2800);
-    } finally {
-      this.adBusy = false;
-    }
+    this._runFreeSpinAdPlayback(playRichRewardedAd());
   }
 
   _doPremiumSpin() {
@@ -3724,6 +3773,11 @@ class TradeScene {
 
     if (this.dragging && justReleased(this.input)) {
       this.dragging = false;
+
+      if (this.consumeNextRelease) {
+        this.consumeNextRelease = false;
+        return;
+      }
 
       if (!this.clickCandidate) return;
 
