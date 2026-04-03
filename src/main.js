@@ -15,7 +15,7 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260403-10";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260403-11";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-03-richads-failsafe-1";
+const BUILD_STAMP = "2026-04-03-business-listing-fix-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
