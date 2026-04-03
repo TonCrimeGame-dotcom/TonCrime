@@ -1224,6 +1224,157 @@ function sanitizeMarketPrice(value, fallback = 1) {
   return Math.max(1, Math.min(1_000_000_000, Math.floor(asNumber(value, fallback))));
 }
 
+const SERVER_BUSINESS_DEFS = {
+  nightclub: {
+    defaultName: 'Nightclub',
+    priceYton: 1000,
+    dailyProduction: 50,
+    icon: 'NB',
+    imageKey: 'nightclub',
+    imageSrc: './src/assets/nightclub.jpg',
+    theme: 'neon',
+    products: [
+      { key: 'street_whiskey', icon: 'SW', imageSrc: './src/assets/street.png', name: 'Street Whiskey', rarity: 'common', price: 27, energyGain: 8, desc: 'Nightclub urunu.' },
+      { key: 'club_prosecco', icon: 'CP', imageSrc: './src/assets/club.png', name: 'Club Prosecco', rarity: 'rare', price: 33, energyGain: 11, desc: 'Kulup ici icecek.' },
+      { key: 'blue_venom', icon: 'BV', imageSrc: './src/assets/mafia.png', name: 'Blue Venom', rarity: 'epic', price: 40, energyGain: 13, desc: 'VIP kokteyl.' },
+    ],
+  },
+  coffeeshop: {
+    defaultName: 'Coffeeshop',
+    priceYton: 850,
+    dailyProduction: 50,
+    icon: 'CF',
+    imageKey: 'coffeeshop',
+    imageSrc: './src/assets/coffeeshop.jpg',
+    theme: 'green',
+    products: [
+      { key: 'white_widow', icon: 'WW', imageSrc: './src/assets/white.png', name: 'White Widow', rarity: 'rare', price: 36, energyGain: 12, desc: 'Coffeeshop urunu.' },
+      { key: 'og_kush', icon: 'OG', imageSrc: './src/assets/og.png', name: 'OG Kush', rarity: 'epic', price: 48, energyGain: 16, desc: 'Klasik kush.' },
+      { key: 'moon_rocks', icon: 'MR', imageSrc: './src/assets/diamond.png', name: 'Moon Rocks', rarity: 'legendary', price: 62, energyGain: 18, desc: 'Nadir urun.' },
+    ],
+  },
+  brothel: {
+    defaultName: 'Brothel',
+    priceYton: 1200,
+    dailyProduction: 50,
+    icon: 'BR',
+    imageKey: 'xxx',
+    imageSrc: './src/assets/xxx.jpg',
+    theme: 'red',
+    products: [
+      { key: 'scarlett_blaze', icon: 'SB', imageSrc: './src/assets/g_star1.png', name: 'Scarlett Blaze', rarity: 'epic', price: 95, energyGain: 22, desc: 'Vip servis.' },
+      { key: 'ruby_vane', icon: 'RV', imageSrc: './src/assets/g_star2.png', name: 'Ruby Vane', rarity: 'legendary', price: 120, energyGain: 26, desc: 'Deluxe servis.' },
+      { key: 'luna_hart', icon: 'LH', imageSrc: './src/assets/g_star3.png', name: 'Luna Hart', rarity: 'legendary', price: 145, energyGain: 30, desc: 'Elite servis.' },
+    ],
+  },
+  blackmarket: {
+    defaultName: 'Black Market',
+    priceYton: 0,
+    dailyProduction: 0,
+    icon: 'BM',
+    imageKey: 'blackmarket',
+    imageSrc: './src/assets/BlackMarket.png',
+    theme: 'dark',
+    products: [],
+  },
+};
+
+function getServerBusinessDef(type = '') {
+  return SERVER_BUSINESS_DEFS[String(type || '').trim().toLowerCase()] || null;
+}
+
+function parseMissingColumnName(error, tableName = '') {
+  const msg = String(error?.message || '');
+  const table = String(tableName || '').trim().toLowerCase();
+  const patterns = [
+    /column ["']?([a-zA-Z0-9_]+)["']? of relation ["']?([a-zA-Z0-9_]+)["']? does not exist/i,
+    /Could not find the ['"]([a-zA-Z0-9_]+)['"] column of ['"]([a-zA-Z0-9_]+)['"]/i,
+    /schema cache.*column ['"]([a-zA-Z0-9_]+)['"].*['"]([a-zA-Z0-9_]+)['"]/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = msg.match(pattern);
+    if (!match) continue;
+    const [, columnName, relationName] = match;
+    if (!table || String(relationName || '').trim().toLowerCase() === table) {
+      return String(columnName || '').trim();
+    }
+  }
+
+  return '';
+}
+
+async function insertRowWithPruning(tableName, rawPayload = {}) {
+  const payload = { ...(rawPayload || {}) };
+  const stripped = new Set();
+
+  while (Object.keys(payload).length) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .insert(payload)
+      .select('*')
+      .maybeSingle();
+
+    if (!error) return data || null;
+
+    const missingColumn = parseMissingColumnName(error, tableName);
+    if (!missingColumn || !hasOwn(payload, missingColumn) || stripped.has(missingColumn)) {
+      throw error;
+    }
+
+    stripped.add(missingColumn);
+    delete payload[missingColumn];
+  }
+
+  throw new Error(`insert failed for ${tableName}`);
+}
+
+async function updateRowWithPruning(tableName, rowId, rawPatch = {}) {
+  const patch = { ...(rawPatch || {}) };
+  const stripped = new Set();
+
+  while (Object.keys(patch).length) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .update(patch)
+      .eq('id', rowId)
+      .select('*')
+      .maybeSingle();
+
+    if (!error) return data || null;
+
+    const missingColumn = parseMissingColumnName(error, tableName);
+    if (!missingColumn || !hasOwn(patch, missingColumn) || stripped.has(missingColumn)) {
+      throw error;
+    }
+
+    stripped.add(missingColumn);
+    delete patch[missingColumn];
+  }
+
+  return null;
+}
+
+function normalizeTimestampMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  const parsed = Date.parse(value || 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function readJsonArray(row, keys = []) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+  }
+  return [];
+}
+
 async function resolveVerifiedProfile(req, { allowGuest = true } = {}) {
   const identity = resolveIdentityContext(req, { allowGuest });
   if (!identity.ok) {
@@ -1616,6 +1767,357 @@ async function persistPurchasedInventory({ buyerProfileId, item, quantity }) {
   }
 
   return { persisted: true, row: data || null };
+}
+
+async function listOwnedBusinesses(profileId) {
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('*')
+    .eq('owner_id', profileId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function listBusinessProductsByBusinessIds(businessIds = []) {
+  const ids = [...new Set((businessIds || []).map((value) => String(value || '').trim()).filter(Boolean))];
+  if (!ids.length) return [];
+
+  const rows = [];
+  for (const chunk of chunkList(ids, 200)) {
+    const { data, error } = await supabase
+      .from('business_products')
+      .select('*')
+      .in('business_id', chunk);
+
+    if (error) throw error;
+    rows.push(...(Array.isArray(data) ? data : []));
+  }
+
+  return rows;
+}
+
+async function listMarketListingRows(limit = 500) {
+  const { data, error } = await supabase
+    .from('market_listings')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, Math.min(1000, asInteger(limit, 500))));
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+async function getProfilesByIdMap(profileIds = []) {
+  const ids = [...new Set((profileIds || []).map((value) => String(value || '').trim()).filter(Boolean))];
+  const out = new Map();
+  if (!ids.length) return out;
+
+  for (const chunk of chunkList(ids, 200)) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .in('id', chunk);
+
+    if (error) throw error;
+
+    for (const row of data || []) {
+      const id = String(row?.id || '').trim();
+      if (id) out.set(id, row);
+    }
+  }
+
+  return out;
+}
+
+async function getTableRowsByIds(tableName, ids = []) {
+  const uniqueIds = [...new Set((ids || []).map((value) => String(value || '').trim()).filter(Boolean))];
+  const rows = [];
+  if (!uniqueIds.length) return rows;
+
+  for (const chunk of chunkList(uniqueIds, 200)) {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .in('id', chunk);
+
+    if (error) throw error;
+    rows.push(...(Array.isArray(data) ? data : []));
+  }
+
+  return rows;
+}
+
+function buildBusinessProductUiFromRow(row = {}, businessType = '') {
+  const normalizedType = String(businessType || readRowText(row, ['business_type', 'type'])).trim().toLowerCase();
+  const businessDef = getServerBusinessDef(normalizedType);
+  const productKey = normalizeMarketItemKey(
+    readRowText(row, ['product_key', 'item_key', 'key', 'slug'])
+      || readRowText(row, ['name', 'item_name', 'title'])
+  );
+  const fallbackDef = (businessDef?.products || []).find((item) => item.key === productKey) || null;
+  const energyGain = Math.max(0, Math.floor(asNumber(
+    row?.energy_gain ??
+    row?.energy ??
+    row?.energyGain,
+    fallbackDef?.energyGain ?? 0
+  )));
+
+  return {
+    id: String(row?.id || productKey || `product_${Date.now()}`),
+    key: productKey,
+    productKey,
+    icon: readRowText(row, ['icon'], fallbackDef?.icon || 'IT') || 'IT',
+    imageKey: readRowText(row, ['image_key', 'imageKey'], fallbackDef?.imageKey || ''),
+    imageSrc: readRowText(row, ['image_src', 'image', 'image_url', 'imageUrl'], fallbackDef?.imageSrc || ''),
+    name: readRowText(row, ['name', 'item_name', 'title'], fallbackDef?.name || 'Product'),
+    rarity: readRowText(row, ['rarity'], fallbackDef?.rarity || 'common') || 'common',
+    qty: Math.max(0, readRowQuantity(row, ['quantity', 'qty', 'stock_qty'])),
+    price: Math.max(1, Math.floor(asNumber(
+      row?.price ??
+      row?.market_price ??
+      row?.sell_price,
+      fallbackDef?.price ?? 1
+    ))),
+    energyGain,
+    desc: readRowText(row, ['desc', 'description'], fallbackDef?.desc || ''),
+    kind: inferMarketItemKind(
+      {
+        ...row,
+        product_key: productKey,
+        item_key: productKey,
+      },
+      normalizedType
+    ),
+  };
+}
+
+function buildBusinessUiFromRow(row = {}, ownerName = '', productRows = []) {
+  const businessType = String(readRowText(row, ['business_type', 'type'])).trim().toLowerCase();
+  const def = getServerBusinessDef(businessType);
+  const products = (productRows || []).map((item) => buildBusinessProductUiFromRow(item, businessType));
+  const stockFromProducts = products.reduce((sum, item) => sum + Math.max(0, Number(item?.qty || 0)), 0);
+
+  return {
+    id: String(row?.id || ''),
+    type: businessType,
+    icon: readRowText(row, ['icon'], def?.icon || 'MK') || 'MK',
+    imageKey: readRowText(row, ['image_key', 'imageKey'], def?.imageKey || ''),
+    imageSrc: readRowText(row, ['image_src', 'image', 'image_url', 'imageUrl'], def?.imageSrc || ''),
+    name: readRowText(row, ['name', 'title'], def?.defaultName || 'Business'),
+    ownerId: readRowText(row, ['owner_id']),
+    ownerName: String(ownerName || 'Player'),
+    dailyProduction: Math.max(0, Math.floor(asNumber(
+      row?.daily_production ??
+      row?.dailyProduction,
+      def?.dailyProduction ?? 0
+    ))),
+    stock: products.length
+      ? stockFromProducts
+      : Math.max(0, readRowQuantity(row, ['stock_qty', 'stock', 'qty'])),
+    theme: readRowText(row, ['theme'], def?.theme || businessType) || businessType || 'dark',
+    products,
+    acquiredFrom: readRowText(row, ['acquired_from', 'source'], 'shop'),
+    productionDayKey: readRowText(row, ['production_day_key', 'productionDayKey']),
+    productionReadyAt: normalizeTimestampMs(row?.production_ready_at ?? row?.productionReadyAt),
+    productionClaimUntil: normalizeTimestampMs(row?.production_claim_until ?? row?.productionClaimUntil),
+    productionCollectedAt: normalizeTimestampMs(row?.production_collected_at ?? row?.productionCollectedAt),
+    productionMissedAt: normalizeTimestampMs(row?.production_missed_at ?? row?.productionMissedAt),
+    pendingProduction: readJsonArray(row, ['pending_production', 'pendingProduction'])
+      .map((item) => ({
+        productId: String(item?.productId || item?.product_id || item?.id || ''),
+        qty: Math.max(0, Math.floor(asNumber(item?.qty ?? item?.quantity, 0))),
+      }))
+      .filter((item) => item.productId && item.qty > 0),
+    serverManaged: true,
+  };
+}
+
+function buildMarketShopUiFromBusiness(business = {}, totalListings = 0) {
+  const type = String(business?.type || business?.business_type || '').trim().toLowerCase();
+  const def = getServerBusinessDef(type);
+
+  return {
+    id: `shop_from_${String(business?.id || '')}`,
+    businessId: String(business?.id || ''),
+    type,
+    icon: String(business?.icon || def?.icon || 'MK'),
+    imageKey: String(business?.imageKey || def?.imageKey || ''),
+    imageSrc: String(business?.imageSrc || def?.imageSrc || ''),
+    name: String(business?.name || def?.defaultName || 'Business'),
+    ownerId: String(business?.ownerId || business?.owner_id || ''),
+    ownerName: String(business?.ownerName || 'Player'),
+    online: true,
+    theme: String(business?.theme || def?.theme || type || 'dark'),
+    rating: 5,
+    totalListings: Math.max(0, Math.floor(asNumber(totalListings, 0))),
+    totalSold: 0,
+    totalRevenue: 0,
+    lastSaleAt: 0,
+    serverManaged: true,
+  };
+}
+
+function buildMarketListingUiFromRow(row = {}, options = {}) {
+  const business = options?.business || null;
+  const inventoryItem = options?.inventoryItem || null;
+  const businessProduct = options?.businessProduct || null;
+  const source = inventoryItem || businessProduct || row || {};
+  const businessType = String(
+    business?.type ||
+    business?.business_type ||
+    readRowText(source, ['business_type', 'type'])
+  ).trim().toLowerCase();
+  const quantityKey = detectQuantityKey(row);
+  const priceKey = detectPriceKey(row);
+  const stock = Math.max(0, readRowQuantity(row, quantityKey ? [quantityKey] : []));
+  const unitPrice = Math.max(1, Math.floor(asNumber(
+    priceKey ? row?.[priceKey] : undefined,
+    source?.market_price ?? source?.price ?? source?.sell_price ?? 1
+  )));
+  const energyGain = Math.max(0, Math.floor(asNumber(
+    source?.energy_gain ??
+    source?.energy ??
+    source?.energyGain,
+    0
+  )));
+
+  return {
+    id: String(row?.id || ''),
+    shopId: `shop_from_${String(business?.id || readRowText(row, ['business_id']) || '')}`,
+    icon: readRowText(source, ['icon'], 'IT') || 'IT',
+    imageKey: readRowText(source, ['image_key', 'imageKey']),
+    imageSrc: readRowText(source, ['image_src', 'image', 'image_url', 'imageUrl']),
+    itemName: readRowText(source, ['name', 'item_name', 'title'], 'Market Item'),
+    kind: inferMarketItemKind(source, businessType),
+    rarity: readRowText(source, ['rarity'], 'common') || 'common',
+    stock,
+    price: unitPrice,
+    energyGain,
+    usable: readBooleanish(source, ['usable'], energyGain > 0) || energyGain > 0,
+    desc: readRowText(source, ['desc', 'description'], 'Market Item'),
+    inventoryItemId: readRowText(row, ['inventory_item_id']),
+    businessId: readRowText(row, ['business_id'], business?.id || ''),
+    businessProductId: readRowText(row, ['business_product_id', 'product_id']),
+    serverManaged: true,
+  };
+}
+
+async function createBusinessWithProducts({
+  ownerProfile = null,
+  businessType = '',
+  businessName = '',
+  acquiredFrom = 'shop',
+} = {}) {
+  const normalizedType = String(businessType || '').trim().toLowerCase();
+  const def = getServerBusinessDef(normalizedType);
+  if (!ownerProfile?.id || !def) {
+    const error = new Error('business definition is invalid');
+    error.status = 400;
+    throw error;
+  }
+
+  const nowIso = new Date().toISOString();
+  const safeName = String(businessName || def.defaultName || 'Business').trim() || def.defaultName || 'Business';
+  const businessPayload = {
+    owner_id: ownerProfile.id,
+    business_type: normalizedType,
+    type: normalizedType,
+    name: safeName,
+    title: safeName,
+    icon: def.icon || 'MK',
+    image_key: def.imageKey || '',
+    image_src: def.imageSrc || '',
+    image: def.imageSrc || '',
+    image_url: def.imageSrc || '',
+    theme: def.theme || normalizedType,
+    daily_production: Math.max(0, Math.floor(asNumber(def.dailyProduction, 0))),
+    stock_qty: 0,
+    stock: 0,
+    qty: 0,
+    acquired_from: acquiredFrom || 'shop',
+    pending_production: JSON.stringify([]),
+    production_day_key: '',
+    production_ready_at: null,
+    production_claim_until: null,
+    production_collected_at: null,
+    production_missed_at: null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const businessRow = await insertRowWithPruning('businesses', businessPayload);
+  const productRows = [];
+
+  for (const product of def.products || []) {
+    const productKey = normalizeMarketItemKey(product?.key || product?.name);
+    const productName = String(product?.name || productKey || 'Product').trim() || 'Product';
+    const quantityValue = 0;
+    const payload = {
+      business_id: businessRow.id,
+      business_type: normalizedType,
+      type: normalizedType,
+      product_key: productKey,
+      item_key: productKey,
+      key: productKey,
+      slug: productKey,
+      name: productName,
+      item_name: productName,
+      title: productName,
+      kind: inferMarketItemKind({ ...product, key: productKey, name: productName }, normalizedType),
+      category: inferMarketItemKind({ ...product, key: productKey, name: productName }, normalizedType),
+      icon: String(product?.icon || 'IT'),
+      image_key: String(product?.imageKey || ''),
+      image_src: String(product?.imageSrc || ''),
+      image: String(product?.imageSrc || ''),
+      image_url: String(product?.imageSrc || ''),
+      rarity: String(product?.rarity || 'common'),
+      quantity: quantityValue,
+      qty: quantityValue,
+      stock_qty: quantityValue,
+      usable: Math.max(0, asNumber(product?.energyGain, 0)) > 0,
+      sellable: true,
+      marketable: true,
+      energy_gain: Math.max(0, Math.floor(asNumber(product?.energyGain, 0))),
+      energy: Math.max(0, Math.floor(asNumber(product?.energyGain, 0))),
+      price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
+      market_price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
+      sell_price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
+      desc: String(product?.desc || ''),
+      description: String(product?.desc || ''),
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+    const row = await insertRowWithPruning('business_products', payload);
+    if (row?.id) productRows.push(row);
+  }
+
+  return {
+    businessRow,
+    productRows,
+    business: buildBusinessUiFromRow(
+      businessRow,
+      sanitizeUsername(ownerProfile.username || 'Player'),
+      productRows
+    ),
+  };
+}
+
+async function ensureOwnedBlackmarketBusiness(profile = null) {
+  if (!profile?.id) return null;
+
+  const existing = await getOwnedBusiness(profile.id, '', 'blackmarket').catch(() => null);
+  if (existing?.id) return existing;
+
+  const created = await createBusinessWithProducts({
+    ownerProfile: profile,
+    businessType: 'blackmarket',
+    businessName: 'Black Market',
+    acquiredFrom: 'system',
+  }).catch(() => null);
+
+  return created?.businessRow || existing || null;
 }
 
 async function getWithdrawById(id) {
@@ -2153,6 +2655,316 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
   }
 });
 
+app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), async (req, res) => {
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    await ensureOwnedBlackmarketBusiness(profile).catch(() => null);
+
+    const [freshProfile, ownedBusinessRows, rawListingRows] = await Promise.all([
+      getProfileById(profile.id).catch(() => profile),
+      listOwnedBusinesses(profile.id),
+      listMarketListingRows(500),
+    ]);
+
+    const ownedBusinessIdSet = new Set(
+      (ownedBusinessRows || []).map((row) => String(row?.id || '').trim()).filter(Boolean)
+    );
+
+    const activeListingRows = (rawListingRows || []).filter((row) => {
+      const quantityKey = detectQuantityKey(row);
+      if (!quantityKey) return false;
+      if (Math.max(0, readRowQuantity(row, [quantityKey])) <= 0) return false;
+      if (hasOwn(row, 'is_active') && !readBooleanish(row, ['is_active'], true)) return false;
+
+      const status = String(row?.status || '').trim().toLowerCase();
+      if (status && ['inactive', 'sold_out', 'deleted', 'removed', 'cancelled'].includes(status)) {
+        return false;
+      }
+
+      return !!readRowText(row, ['business_id']);
+    });
+
+    const listingBusinessIds = activeListingRows
+      .map((row) => readRowText(row, ['business_id']))
+      .filter(Boolean);
+    const missingBusinessIds = listingBusinessIds.filter((id) => !ownedBusinessIdSet.has(String(id)));
+    const missingBusinessRows = await getTableRowsByIds('businesses', missingBusinessIds).catch(() => []);
+    const allBusinessRows = [...(ownedBusinessRows || []), ...(missingBusinessRows || [])];
+    const allBusinessIds = allBusinessRows
+      .map((row) => String(row?.id || '').trim())
+      .filter(Boolean);
+
+    const [allProductRows, inventoryRows, ownerProfiles] = await Promise.all([
+      listBusinessProductsByBusinessIds(allBusinessIds).catch(() => []),
+      getTableRowsByIds(
+        'inventory_items',
+        activeListingRows.map((row) => readRowText(row, ['inventory_item_id'])).filter(Boolean)
+      ).catch(() => []),
+      getProfilesByIdMap(allBusinessRows.map((row) => readRowText(row, ['owner_id'])).filter(Boolean)).catch(() => new Map()),
+    ]);
+
+    const businessRowsById = new Map();
+    for (const row of allBusinessRows || []) {
+      const id = String(row?.id || '').trim();
+      if (id) businessRowsById.set(id, row);
+    }
+
+    const businessProductsByBusinessId = new Map();
+    const businessProductsById = new Map();
+    for (const row of allProductRows || []) {
+      const businessId = String(row?.business_id || '').trim();
+      const rowId = String(row?.id || '').trim();
+      if (rowId) businessProductsById.set(rowId, row);
+      if (!businessId) continue;
+      if (!businessProductsByBusinessId.has(businessId)) businessProductsByBusinessId.set(businessId, []);
+      businessProductsByBusinessId.get(businessId).push(row);
+    }
+
+    const inventoryById = new Map();
+    for (const row of inventoryRows || []) {
+      const id = String(row?.id || '').trim();
+      if (id) inventoryById.set(id, row);
+    }
+
+    const businessUiById = new Map();
+    const allBusinessesUi = (allBusinessRows || []).map((row) => {
+      const ownerId = readRowText(row, ['owner_id']);
+      const ownerName = sanitizeUsername(ownerProfiles.get(ownerId)?.username || 'Player');
+      const ui = buildBusinessUiFromRow(
+        row,
+        ownerName,
+        businessProductsByBusinessId.get(String(row?.id || '').trim()) || []
+      );
+      if (ui?.id) businessUiById.set(ui.id, ui);
+      return ui;
+    });
+
+    const listings = activeListingRows
+      .map((row) => {
+        const businessId = readRowText(row, ['business_id']);
+        const businessUi = businessUiById.get(String(businessId || '').trim()) || null;
+        if (!businessUi?.id) return null;
+
+        return buildMarketListingUiFromRow(row, {
+          business: businessUi,
+          inventoryItem: inventoryById.get(readRowText(row, ['inventory_item_id'])) || null,
+          businessProduct: businessProductsById.get(readRowText(row, ['business_product_id', 'product_id'])) || null,
+        });
+      })
+      .filter((item) => item?.id && item?.shopId);
+
+    const listingCountByBusinessId = new Map();
+    for (const item of listings) {
+      const businessId = String(item?.businessId || '').trim();
+      if (!businessId) continue;
+      listingCountByBusinessId.set(
+        businessId,
+        Math.max(0, asInteger(listingCountByBusinessId.get(businessId), 0) + 1)
+      );
+    }
+
+    const shops = [...listingCountByBusinessId.entries()]
+      .map(([businessId, totalListings]) => {
+        const business = businessUiById.get(String(businessId || '').trim()) || null;
+        if (!business?.id) return null;
+        return buildMarketShopUiFromBusiness(business, totalListings);
+      })
+      .filter((item) => item?.id);
+
+    const ownedBusinesses = allBusinessesUi.filter(
+      (item) =>
+        item?.id &&
+        ownedBusinessIdSet.has(String(item.id)) &&
+        String(item.type || '').toLowerCase() !== 'blackmarket'
+    );
+
+    return res.json({
+      ok: true,
+      profile: freshProfile || profile,
+      businesses: ownedBusinesses,
+      market: {
+        shops,
+        listings,
+      },
+      synced_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'trade state failed' });
+  }
+});
+
+app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase', 60_000, 40), async (req, res) => {
+  let buyerAfterUpdate = null;
+  let originalProfile = null;
+
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const businessType = String(req.body?.business_type || req.body?.type || '').trim().toLowerCase();
+    const def = getServerBusinessDef(businessType);
+    const grantPremium = !!(req.body?.grant_premium || req.body?.premium_membership || req.body?.premium);
+    const restoreExisting = !!(req.body?.restore_existing || req.body?.restoreExisting);
+
+    if (!def || businessType === 'blackmarket') {
+      return res.status(400).json({ ok: false, error: 'business_type is invalid' });
+    }
+
+    originalProfile = await getProfileById(profile.id).catch(() => profile);
+    if (!originalProfile?.id) {
+      return res.status(404).json({ ok: false, error: 'Profile was not found' });
+    }
+
+    const requestedName = String(req.body?.name || def.defaultName || 'Business').trim().slice(0, 80);
+    const safeName = requestedName || def.defaultName || 'Business';
+
+    if (grantPremium) {
+      const nextLevel = Math.max(50, asInteger(originalProfile.level, 1));
+      buyerAfterUpdate = await updateRowWithPruning('profiles', originalProfile.id, {
+        level: nextLevel,
+        membership: 'premium',
+        premium: true,
+        can_own_business: true,
+        can_withdraw: true,
+        updated_at: new Date().toISOString(),
+      }).catch(() => null);
+      buyerAfterUpdate = buyerAfterUpdate || await getProfileById(originalProfile.id).catch(() => originalProfile) || originalProfile;
+    } else if (!restoreExisting) {
+      const priceYton = Math.max(1, Math.floor(asNumber(def.priceYton, 1)));
+      const currentCoins = Math.max(0, asNumber(originalProfile.coins, 0));
+      if (currentCoins < priceYton) {
+        return res.status(400).json({ ok: false, error: 'Not enough yton' });
+      }
+      buyerAfterUpdate = await updateProfileCoinsExact(originalProfile, currentCoins - priceYton);
+    } else {
+      buyerAfterUpdate = originalProfile;
+    }
+
+    let created = null;
+    try {
+      created = await createBusinessWithProducts({
+        ownerProfile: {
+          ...originalProfile,
+          ...(buyerAfterUpdate || {}),
+        },
+        businessType,
+        businessName: safeName,
+        acquiredFrom: grantPremium ? 'premium' : 'shop',
+      });
+    } catch (err) {
+      if (grantPremium) {
+        await updateRowWithPruning('profiles', originalProfile.id, {
+          level: originalProfile.level,
+          membership: originalProfile.membership ?? null,
+          premium: originalProfile.premium ?? null,
+          can_own_business: originalProfile.can_own_business ?? null,
+          can_withdraw: originalProfile.can_withdraw ?? null,
+          updated_at: new Date().toISOString(),
+        }).catch(() => null);
+      } else if (originalProfile?.id) {
+        await forceUpdateProfileCoins(originalProfile.id, asNumber(originalProfile.coins, 0)).catch(() => null);
+      }
+      throw err;
+    }
+
+    return res.json({
+      ok: true,
+      profile: await getProfileById(originalProfile.id).catch(() => buyerAfterUpdate || originalProfile) || buyerAfterUpdate || originalProfile,
+      business: created?.business || null,
+      granted_premium: grantPremium,
+      restored_existing: restoreExisting,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'business purchase failed' });
+  }
+});
+
+app.post('/public/businesses/sync', makePublicRateLimit('business-sync', 60_000, 80), async (req, res) => {
+  try {
+    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const businessId = sanitizeMarketId(req.body?.business_id || req.body?.id);
+    if (!businessId) {
+      return res.status(400).json({ ok: false, error: 'business_id is required' });
+    }
+
+    const businessRow = await getOwnedBusiness(profile.id, businessId);
+    if (!businessRow?.id) {
+      return res.status(404).json({ ok: false, error: 'Business was not found' });
+    }
+
+    const productRows = await listBusinessProductsByBusinessIds([businessRow.id]).catch(() => []);
+    const productRowsById = new Map();
+    for (const row of productRows || []) {
+      const id = String(row?.id || '').trim();
+      if (id) productRowsById.set(id, row);
+    }
+
+    const requestProducts = Array.isArray(req.body?.products) ? req.body.products : [];
+    const updatedProductsById = new Map();
+    const nowIso = new Date().toISOString();
+
+    for (const item of requestProducts) {
+      const productId = sanitizeMarketId(item?.id || item?.product_id);
+      const productRow = productRowsById.get(productId);
+      if (!productRow?.id) continue;
+
+      const quantityKey = detectQuantityKey(productRow) || 'quantity';
+      const nextQty = Math.max(0, Math.floor(asNumber(item?.qty ?? item?.quantity, readRowQuantity(productRow, [quantityKey]))));
+      const updatedRow = await updateRowWithPruning('business_products', productRow.id, {
+        [quantityKey]: nextQty,
+        quantity: nextQty,
+        qty: nextQty,
+        stock_qty: nextQty,
+        updated_at: nowIso,
+      }).catch(() => null);
+
+      updatedProductsById.set(productId, {
+        ...productRow,
+        ...(updatedRow || {}),
+        [quantityKey]: nextQty,
+        quantity: nextQty,
+        qty: nextQty,
+        stock_qty: nextQty,
+      });
+    }
+
+    const finalProductRows = (productRows || []).map((row) => updatedProductsById.get(String(row?.id || '').trim()) || row);
+    const explicitStock = req.body?.stock_qty ?? req.body?.stock;
+    const nextStock = Number.isFinite(Number(explicitStock))
+      ? Math.max(0, Math.floor(asNumber(explicitStock, 0)))
+      : finalProductRows.reduce((sum, row) => sum + Math.max(0, readRowQuantity(row, ['quantity', 'qty', 'stock_qty'])), 0);
+    const pendingProduction = Array.isArray(req.body?.pending_production || req.body?.pendingProduction)
+      ? (req.body?.pending_production || req.body?.pendingProduction)
+      : null;
+
+    const updatedBusinessRow = await updateRowWithPruning('businesses', businessRow.id, {
+      stock_qty: nextStock,
+      stock: nextStock,
+      qty: nextStock,
+      pending_production: pendingProduction ? JSON.stringify(pendingProduction) : undefined,
+      production_day_key: req.body?.production_day_key ?? req.body?.productionDayKey,
+      production_ready_at: toIsoTimestampOrNull(req.body?.production_ready_at ?? req.body?.productionReadyAt),
+      production_claim_until: toIsoTimestampOrNull(req.body?.production_claim_until ?? req.body?.productionClaimUntil),
+      production_collected_at: toIsoTimestampOrNull(req.body?.production_collected_at ?? req.body?.productionCollectedAt),
+      production_missed_at: toIsoTimestampOrNull(req.body?.production_missed_at ?? req.body?.productionMissedAt),
+      updated_at: nowIso,
+    }).catch(() => null);
+
+    const ownerName = sanitizeUsername(profile.username || 'Player');
+    const business = buildBusinessUiFromRow(
+      updatedBusinessRow || { ...businessRow, stock_qty: nextStock, stock: nextStock, qty: nextStock },
+      ownerName,
+      finalProductRows
+    );
+
+    return res.json({
+      ok: true,
+      business,
+      synced_at: nowIso,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'business sync failed' });
+  }
+});
+
 app.post('/public/chat/cleanup-demo', requireAdmin, adminRateLimit, async (_req, res) => {
   try {
     const filters = CHAT_DEMO_PATTERNS.map((pattern) => `text.ilike.${pattern}`).join(',');
@@ -2263,7 +3075,7 @@ app.post('/public/market/list-inventory', makePublicRateLimit('market-list-inven
       return res.status(400).json({ ok: false, error: 'Not enough inventory quantity' });
     }
 
-    const marketBusiness = await getOwnedBusiness(profile.id, '', 'blackmarket');
+    const marketBusiness = await ensureOwnedBlackmarketBusiness(profile);
     if (!marketBusiness?.id) {
       return res.status(400).json({ ok: false, error: 'Blackmarket business is required' });
     }
