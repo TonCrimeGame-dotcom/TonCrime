@@ -198,6 +198,17 @@ export function describeRichAdFailure(playResult, fallback = "") {
   return fallback || "unknown";
 }
 
+export function isRecoverableRichAdsSdkFailure(playResult) {
+  const detail = describeRichAdFailure(playResult, "").toLowerCase();
+  if (!detail) return false;
+
+  return (
+    detail.includes("triggerinterstitialvideo") &&
+    detail.includes("cannot read properties of null") &&
+    detail.includes("length")
+  );
+}
+
 function isNullObjectFailure(error) {
   const detail = normalizeFailureText(error, "");
   return NULL_OBJECT_ERROR_RE.test(detail);
