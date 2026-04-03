@@ -35,7 +35,8 @@ function getDefaultRichAdsConfig() {
   return {
     pubId: "1006898",
     appId: "6869",
-    debug: /(^localhost$)|(^127\.)|(^192\.168\.)|(^10\.)/i.test(location.hostname),
+    // Temporary debug mode to validate the live Telegram/RichAds integration path.
+    debug: true,
   };
 }
 
