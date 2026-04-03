@@ -175,6 +175,37 @@ function textFit(ctx, text, x, y, maxWidth) {
   ctx.fillText(`${out}...`, x, y);
 }
 
+function wrapText(ctx, text, maxWidth, maxLines = 3) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (!line || ctx.measureText(next).width <= maxWidth) {
+      line = next;
+      continue;
+    }
+
+    lines.push(line);
+    line = word;
+
+    if (lines.length >= maxLines) break;
+  }
+
+  if (line && lines.length < maxLines) lines.push(line);
+
+  if (lines.length === maxLines && words.length) {
+    let tail = lines[maxLines - 1] || "";
+    while (tail.length > 1 && ctx.measureText(`${tail}...`).width > maxWidth) {
+      tail = tail.slice(0, -1);
+    }
+    lines[maxLines - 1] = `${tail}...`;
+  }
+
+  return lines;
+}
+
 function drawCoverImage(ctx, img, x, y, w, h) {
   if (!img || !img.complete || !(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) return false;
   const iw = img.naturalWidth || img.width;
