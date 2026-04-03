@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { TonClient, WalletContractV4, internal, toNano, SendMode } from '@ton/ton';
 import { beginCell, Address } from '@ton/core';
 import { mnemonicToPrivateKey } from '@ton/crypto';
+import { getBusinessDef as getSharedBusinessDef, sortBusinessProductsByCatalog } from '../src/data/businessCatalog.js';
 
 const app = express();
 app.use(cors());
@@ -1224,63 +1225,8 @@ function sanitizeMarketPrice(value, fallback = 1) {
   return Math.max(1, Math.min(1_000_000_000, Math.floor(asNumber(value, fallback))));
 }
 
-const SERVER_BUSINESS_DEFS = {
-  nightclub: {
-    defaultName: 'Nightclub',
-    priceYton: 1000,
-    dailyProduction: 50,
-    icon: 'NB',
-    imageKey: 'nightclub',
-    imageSrc: './src/assets/nightclub.jpg',
-    theme: 'neon',
-    products: [
-      { key: 'street_whiskey', icon: 'SW', imageSrc: './src/assets/street.png', name: 'Street Whiskey', rarity: 'common', price: 27, energyGain: 8, desc: 'Nightclub urunu.' },
-      { key: 'club_prosecco', icon: 'CP', imageSrc: './src/assets/club.png', name: 'Club Prosecco', rarity: 'rare', price: 33, energyGain: 11, desc: 'Kulup ici icecek.' },
-      { key: 'blue_venom', icon: 'BV', imageSrc: './src/assets/mafia.png', name: 'Blue Venom', rarity: 'epic', price: 40, energyGain: 13, desc: 'VIP kokteyl.' },
-    ],
-  },
-  coffeeshop: {
-    defaultName: 'Coffeeshop',
-    priceYton: 850,
-    dailyProduction: 50,
-    icon: 'CF',
-    imageKey: 'coffeeshop',
-    imageSrc: './src/assets/coffeeshop.jpg',
-    theme: 'green',
-    products: [
-      { key: 'white_widow', icon: 'WW', imageSrc: './src/assets/white.png', name: 'White Widow', rarity: 'rare', price: 36, energyGain: 12, desc: 'Coffeeshop urunu.' },
-      { key: 'og_kush', icon: 'OG', imageSrc: './src/assets/og.png', name: 'OG Kush', rarity: 'epic', price: 48, energyGain: 16, desc: 'Klasik kush.' },
-      { key: 'moon_rocks', icon: 'MR', imageSrc: './src/assets/diamond.png', name: 'Moon Rocks', rarity: 'legendary', price: 62, energyGain: 18, desc: 'Nadir urun.' },
-    ],
-  },
-  brothel: {
-    defaultName: 'Brothel',
-    priceYton: 1200,
-    dailyProduction: 50,
-    icon: 'BR',
-    imageKey: 'xxx',
-    imageSrc: './src/assets/xxx.jpg',
-    theme: 'red',
-    products: [
-      { key: 'scarlett_blaze', icon: 'SB', imageSrc: './src/assets/g_star1.png', name: 'Scarlett Blaze', rarity: 'epic', price: 95, energyGain: 22, desc: 'Vip servis.' },
-      { key: 'ruby_vane', icon: 'RV', imageSrc: './src/assets/g_star2.png', name: 'Ruby Vane', rarity: 'legendary', price: 120, energyGain: 26, desc: 'Deluxe servis.' },
-      { key: 'luna_hart', icon: 'LH', imageSrc: './src/assets/g_star3.png', name: 'Luna Hart', rarity: 'legendary', price: 145, energyGain: 30, desc: 'Elite servis.' },
-    ],
-  },
-  blackmarket: {
-    defaultName: 'Black Market',
-    priceYton: 0,
-    dailyProduction: 0,
-    icon: 'BM',
-    imageKey: 'blackmarket',
-    imageSrc: './src/assets/BlackMarket.png',
-    theme: 'dark',
-    products: [],
-  },
-};
-
 function getServerBusinessDef(type = '') {
-  return SERVER_BUSINESS_DEFS[String(type || '').trim().toLowerCase()] || null;
+  return getSharedBusinessDef(type);
 }
 
 function parseMissingColumnName(error, tableName = '') {
@@ -1820,6 +1766,148 @@ async function listBusinessProductsByBusinessIds(businessIds = []) {
   return rows;
 }
 
+function buildBusinessProductSeedPayload(businessRow = {}, product = {}, nowIso = new Date().toISOString()) {
+  const businessId = String(businessRow?.id || '').trim();
+  const businessType = String(readRowText(businessRow, ['business_type', 'type'])).trim().toLowerCase();
+  const productKey = normalizeMarketItemKey(product?.key || product?.productKey || product?.name);
+  const productName = String(product?.name || productKey || 'Product').trim() || 'Product';
+  const itemKind = inferMarketItemKind({ ...product, key: productKey, name: productName }, businessType);
+  const quantityValue = 0;
+
+  return {
+    business_id: businessId,
+    business_type: businessType,
+    type: businessType,
+    product_key: productKey,
+    item_key: productKey,
+    key: productKey,
+    slug: productKey,
+    name: productName,
+    item_name: productName,
+    title: productName,
+    kind: itemKind,
+    category: itemKind,
+    icon: String(product?.icon || 'IT'),
+    image_key: String(product?.imageKey || ''),
+    image_src: String(product?.imageSrc || ''),
+    image: String(product?.imageSrc || ''),
+    image_url: String(product?.imageSrc || ''),
+    rarity: String(product?.rarity || 'common'),
+    quantity: quantityValue,
+    qty: quantityValue,
+    stock_qty: quantityValue,
+    usable: Math.max(0, asNumber(product?.energyGain, 0)) > 0,
+    sellable: true,
+    marketable: true,
+    energy_gain: Math.max(0, Math.floor(asNumber(product?.energyGain, 0))),
+    energy: Math.max(0, Math.floor(asNumber(product?.energyGain, 0))),
+    price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
+    market_price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
+    sell_price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
+    desc: String(product?.desc || ''),
+    description: String(product?.desc || ''),
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
+async function ensureBusinessProductCatalog(businessRow = null, productRows = []) {
+  const businessId = String(businessRow?.id || '').trim();
+  const businessType = String(readRowText(businessRow, ['business_type', 'type'])).trim().toLowerCase();
+  const def = getServerBusinessDef(businessType);
+  const currentRows = Array.isArray(productRows) ? productRows.map((row) => ({ ...row })) : [];
+  if (!businessId || !def?.products?.length) {
+    return sortBusinessProductsByCatalog(currentRows, businessType);
+  }
+
+  const existingKeys = new Set();
+  for (const row of currentRows) {
+    [
+      row?.product_key,
+      row?.item_key,
+      row?.key,
+      row?.slug,
+      row?.name,
+      row?.item_name,
+      row?.title,
+    ].forEach((value) => {
+      const normalized = normalizeMarketItemKey(value);
+      if (normalized) existingKeys.add(normalized);
+    });
+  }
+
+  let shouldRefetch = false;
+  const nowIso = new Date().toISOString();
+
+  for (const product of def.products || []) {
+    const productKey = normalizeMarketItemKey(product?.key || product?.name);
+    if (!productKey || existingKeys.has(productKey)) continue;
+
+    try {
+      const row = await insertRowWithPruning(
+        'business_products',
+        buildBusinessProductSeedPayload(businessRow, product, nowIso)
+      );
+      if (row?.id) {
+        currentRows.push(row);
+        existingKeys.add(productKey);
+        shouldRefetch = true;
+      }
+    } catch (error) {
+      shouldRefetch = true;
+      console.warn('[TonCrime] ensureBusinessProductCatalog insert skipped:', {
+        businessId,
+        businessType,
+        productKey,
+        error: error?.message || error,
+      });
+    }
+  }
+
+  const finalRows = shouldRefetch
+    ? await listBusinessProductsByBusinessIds([businessId]).catch(() => currentRows)
+    : currentRows;
+
+  return sortBusinessProductsByCatalog(finalRows, businessType);
+}
+
+async function ensureBusinessProductCatalogs(businessRows = [], productRows = []) {
+  const byBusinessId = new Map();
+
+  for (const row of productRows || []) {
+    const businessId = String(row?.business_id || '').trim();
+    if (!businessId) continue;
+    if (!byBusinessId.has(businessId)) byBusinessId.set(businessId, []);
+    byBusinessId.get(businessId).push({ ...row });
+  }
+
+  const ensuredByBusinessId = new Map();
+  const ensuredById = new Map();
+  const ensuredRows = [];
+
+  for (const businessRow of businessRows || []) {
+    const businessId = String(businessRow?.id || '').trim();
+    if (!businessId) continue;
+    const currentRows = byBusinessId.get(businessId) || [];
+    const finalRows = await ensureBusinessProductCatalog(businessRow, currentRows).catch(() =>
+      sortBusinessProductsByCatalog(currentRows, readRowText(businessRow, ['business_type', 'type']))
+    );
+    ensuredByBusinessId.set(businessId, finalRows);
+
+    for (const row of finalRows) {
+      ensuredRows.push(row);
+      const rowId = String(row?.id || '').trim();
+      if (rowId) ensuredById.set(rowId, row);
+    }
+  }
+
+  return {
+    byBusinessId: ensuredByBusinessId,
+    byId: ensuredById,
+    rows: ensuredRows,
+  };
+}
+
 async function listMarketListingRows(limit = 500) {
   const { data, error } = await supabase
     .from('market_listings')
@@ -1918,7 +2006,10 @@ function buildBusinessProductUiFromRow(row = {}, businessType = '') {
 function buildBusinessUiFromRow(row = {}, ownerName = '', productRows = []) {
   const businessType = String(readRowText(row, ['business_type', 'type'])).trim().toLowerCase();
   const def = getServerBusinessDef(businessType);
-  const products = (productRows || []).map((item) => buildBusinessProductUiFromRow(item, businessType));
+  const products = sortBusinessProductsByCatalog(
+    (productRows || []).map((item) => buildBusinessProductUiFromRow(item, businessType)),
+    businessType
+  );
   const stockFromProducts = products.reduce((sum, item) => sum + Math.max(0, Number(item?.qty || 0)), 0);
 
   return {
@@ -2032,23 +2123,18 @@ async function buildOwnedBusinessUiList(profileId, ownerName = 'Player') {
     const type = String(readRowText(row, ['business_type', 'type'])).trim().toLowerCase();
     return type !== 'blackmarket';
   });
-  const productRows = await listBusinessProductsByBusinessIds(
+  const rawProductRows = await listBusinessProductsByBusinessIds(
     filteredRows.map((row) => String(row?.id || '').trim()).filter(Boolean)
   ).catch(() => []);
-  const productRowsByBusinessId = new Map();
-
-  for (const row of productRows || []) {
-    const businessId = String(row?.business_id || '').trim();
-    if (!businessId) continue;
-    if (!productRowsByBusinessId.has(businessId)) productRowsByBusinessId.set(businessId, []);
-    productRowsByBusinessId.get(businessId).push(row);
-  }
+  const ensuredProducts = await ensureBusinessProductCatalogs(filteredRows, rawProductRows).catch(() => ({
+    byBusinessId: new Map(),
+  }));
 
   return filteredRows.map((row) =>
     buildBusinessUiFromRow(
       row,
       sanitizeUsername(ownerName || 'Player'),
-      productRowsByBusinessId.get(String(row?.id || '').trim()) || []
+      ensuredProducts.byBusinessId.get(String(row?.id || '').trim()) || []
     )
   );
 }
@@ -2098,58 +2184,7 @@ async function createBusinessWithProducts({
   };
 
   const businessRow = await insertRowWithPruning('businesses', businessPayload);
-  const productRows = [];
-
-  for (const product of def.products || []) {
-    const productKey = normalizeMarketItemKey(product?.key || product?.name);
-    const productName = String(product?.name || productKey || 'Product').trim() || 'Product';
-    const quantityValue = 0;
-    const payload = {
-      business_id: businessRow.id,
-      business_type: normalizedType,
-      type: normalizedType,
-      product_key: productKey,
-      item_key: productKey,
-      key: productKey,
-      slug: productKey,
-      name: productName,
-      item_name: productName,
-      title: productName,
-      kind: inferMarketItemKind({ ...product, key: productKey, name: productName }, normalizedType),
-      category: inferMarketItemKind({ ...product, key: productKey, name: productName }, normalizedType),
-      icon: String(product?.icon || 'IT'),
-      image_key: String(product?.imageKey || ''),
-      image_src: String(product?.imageSrc || ''),
-      image: String(product?.imageSrc || ''),
-      image_url: String(product?.imageSrc || ''),
-      rarity: String(product?.rarity || 'common'),
-      quantity: quantityValue,
-      qty: quantityValue,
-      stock_qty: quantityValue,
-      usable: Math.max(0, asNumber(product?.energyGain, 0)) > 0,
-      sellable: true,
-      marketable: true,
-      energy_gain: Math.max(0, Math.floor(asNumber(product?.energyGain, 0))),
-      energy: Math.max(0, Math.floor(asNumber(product?.energyGain, 0))),
-      price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
-      market_price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
-      sell_price: Math.max(1, Math.floor(asNumber(product?.price, 1))),
-      desc: String(product?.desc || ''),
-      description: String(product?.desc || ''),
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-    try {
-      const row = await insertRowWithPruning('business_products', payload);
-      if (row?.id) productRows.push(row);
-    } catch (error) {
-      console.warn('[TonCrime] createBusinessWithProducts product insert skipped:', {
-        businessType: normalizedType,
-        productKey,
-        error: error?.message || error,
-      });
-    }
-  }
+  const productRows = await ensureBusinessProductCatalog(businessRow, []);
 
   return {
     businessRow,
@@ -2767,16 +2802,12 @@ app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), 
       if (id) businessRowsById.set(id, row);
     }
 
-    const businessProductsByBusinessId = new Map();
-    const businessProductsById = new Map();
-    for (const row of allProductRows || []) {
-      const businessId = String(row?.business_id || '').trim();
-      const rowId = String(row?.id || '').trim();
-      if (rowId) businessProductsById.set(rowId, row);
-      if (!businessId) continue;
-      if (!businessProductsByBusinessId.has(businessId)) businessProductsByBusinessId.set(businessId, []);
-      businessProductsByBusinessId.get(businessId).push(row);
-    }
+    const ensuredProductState = await ensureBusinessProductCatalogs(allBusinessRows, allProductRows).catch(() => ({
+      byBusinessId: new Map(),
+      byId: new Map(),
+    }));
+    const businessProductsByBusinessId = ensuredProductState.byBusinessId;
+    const businessProductsById = ensuredProductState.byId;
 
     const inventoryById = new Map();
     for (const row of inventoryRows || []) {
@@ -2952,7 +2983,8 @@ app.post('/public/businesses/sync', makePublicRateLimit('business-sync', 60_000,
       return res.status(404).json({ ok: false, error: 'Business was not found' });
     }
 
-    const productRows = await listBusinessProductsByBusinessIds([businessRow.id]).catch(() => []);
+    const rawProductRows = await listBusinessProductsByBusinessIds([businessRow.id]).catch(() => []);
+    const productRows = await ensureBusinessProductCatalog(businessRow, rawProductRows).catch(() => rawProductRows);
     const productRowsById = new Map();
     for (const row of productRows || []) {
       const id = String(row?.id || '').trim();
