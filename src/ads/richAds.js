@@ -1,8 +1,8 @@
 const SUPPORTED_RICH_AD_METHODS = [
-  "triggerInterstitialVideo",
   "triggerRewardedVideo",
   "showRewardedVideo",
   "showRewarded",
+  "triggerInterstitialVideo",
   "showVideo",
 ];
 const RICH_ADS_SDK_URL = "https://richinfo.co/richpartners/telegram/js/tg-ob.js";
@@ -11,18 +11,19 @@ const NULL_OBJECT_ERROR_RE =
   /(null is not an object|undefined is not an object|cannot read properties of null|cannot read properties of undefined)/i;
 
 function getCallableRichAdsMethods(controller) {
-  if (!controller || typeof controller !== "object") return null;
+  if (!controller || typeof controller !== "object") return [];
+
+  const methods = [];
   for (const methodName of SUPPORTED_RICH_AD_METHODS) {
     if (typeof controller[methodName] === "function") {
-      return [
-        {
+      methods.push({
         methodName,
         run: controller[methodName].bind(controller),
-        },
-      ];
+      });
     }
   }
-  return null;
+
+  return methods;
 }
 
 function getCallableRichAdsMethod(controller) {
@@ -36,15 +37,32 @@ export function hasRichAdsController(controller) {
 function getDefaultRichAdsConfig() {
   return {
     pubId: "1006898",
-    appId: "6869",
+    appId: "6915",
     debug: false,
   };
 }
 
+function sanitizeRichAdsConfig(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const pubId = String(value.pubId || "").trim();
+  const appId = String(value.appId || "").trim();
+  if (!pubId || !appId) return null;
+
+  return {
+    pubId,
+    appId,
+    debug: !!value.debug,
+  };
+}
+
 function getRichAdsConfig() {
-  const config = window.tcRichAdsConfig;
-  if (config && typeof config === "object" && config.pubId && config.appId) return config;
-  return getDefaultRichAdsConfig();
+  const fromWindow =
+    sanitizeRichAdsConfig(window.tcRichAdsConfig) ||
+    sanitizeRichAdsConfig(window.richAdsConfig) ||
+    sanitizeRichAdsConfig(window.__richAdsConfig);
+
+  return fromWindow || getDefaultRichAdsConfig();
 }
 
 function getGlobalRichAdsControllerCandidate() {
@@ -53,16 +71,31 @@ function getGlobalRichAdsControllerCandidate() {
     window.TelegramAdsControllerInstance,
     window.TelegramAdsController,
     window.richadsController,
+    window.tcRichAdsInstance,
   ];
+
   for (const candidate of candidates) {
     if (hasRichAdsController(candidate)) return candidate;
   }
+
   return null;
+}
+
+function getRichAdsConstructorFromInstance(instance) {
+  if (!instance || typeof instance !== "object") return null;
+  const ctor = instance.constructor;
+  if (typeof ctor !== "function") return null;
+  if (ctor === Object) return null;
+  return ctor;
 }
 
 function getRichAdsConstructorCandidate() {
   if (typeof window.tcRichAdsControllerCtor === "function") return window.tcRichAdsControllerCtor;
-  return typeof window.TelegramAdsController === "function" ? window.TelegramAdsController : null;
+  if (typeof window.TelegramAdsControllerCtor === "function") return window.TelegramAdsControllerCtor;
+  if (typeof window.TelegramAdsController === "function") return window.TelegramAdsController;
+
+  const instanceCtor = getRichAdsConstructorFromInstance(getGlobalRichAdsControllerCandidate());
+  return typeof instanceCtor === "function" ? instanceCtor : null;
 }
 
 function sleep(ms) {
@@ -96,14 +129,23 @@ function rememberRichAdsController(controller, snapshot = getTelegramMiniAppSnap
   if (!hasRichAdsController(controller)) return null;
 
   const createdAt = Date.now();
+  const ctor = getRichAdsConstructorFromInstance(controller);
+
   window.tcRichAdsController = controller;
   window.TelegramAdsControllerInstance = controller;
   window.richadsController = controller;
+  window.tcRichAdsInstance = controller;
+  if (typeof ctor === "function") {
+    window.tcRichAdsControllerCtor = ctor;
+    window.TelegramAdsControllerCtor = ctor;
+  }
+
   window.tcRichAdsControllerMeta = {
     createdAt,
     readyAt: createdAt + RICH_ADS_INIT_SETTLE_MS,
     userId: snapshot?.userId || "",
     initDataLength: String(snapshot?.initData || "").length,
+    config: getRichAdsConfig(),
   };
   window.tcRichAdsReady = Promise.resolve(controller);
   return controller;
@@ -123,6 +165,7 @@ function resetRichAdsControllerCache() {
     window.tcRichAdsControllerMeta = null;
     window.TelegramAdsControllerInstance = null;
     window.richadsController = null;
+    window.tcRichAdsInstance = null;
     window.tcRichAdsReady = Promise.resolve(null);
   } catch (_) {}
 }
@@ -206,6 +249,7 @@ export function getRichAdsDiagnosticLabel(playResult = null) {
   const meta = getRichAdsControllerMeta() || {};
   const build = String(window.tcBuildStamp || "").trim() || "na";
   const methodName = String(playResult?.methodName || "").trim();
+  const cfg = meta.config || getRichAdsConfig() || {};
   const parts = [
     `b=${build}`,
     `tg=${snapshot.user ? 1 : 0}${snapshot.initData ? 1 : 0}`,
@@ -214,6 +258,7 @@ export function getRichAdsDiagnosticLabel(playResult = null) {
     `c=${hasRichAdsController(getGlobalRichAdsControllerCandidate()) ? 1 : 0}`,
     `m=${Number(meta.initDataLength || 0)}`,
     `r=${Math.max(0, Number(meta.readyAt || 0) - Date.now()) > 0 ? 0 : 1}`,
+    `app=${String(cfg.appId || "na")}`,
   ];
   if (methodName) parts.push(`fn=${methodName}`);
   return parts.join(" ").slice(0, 120);
@@ -234,6 +279,7 @@ export function isCompletedAdResult(result) {
     if (typeof result.completed === "boolean") return result.completed;
     if (typeof result.success === "boolean") return result.success;
     if (typeof result.done === "boolean") return result.done;
+    if (typeof result.reward === "boolean") return result.reward;
 
     const status = String(result.status || result.state || result.result || "").toLowerCase();
     if (status && /(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
@@ -316,6 +362,14 @@ async function waitForRichAdsSdk(timeoutMs = 4000) {
   return getGlobalRichAdsControllerCandidate() || getRichAdsConstructorCandidate() || null;
 }
 
+function getExistingRichAdsScript() {
+  return (
+    document.getElementById("tc-richads-sdk") ||
+    Array.from(document.scripts || []).find((script) => String(script?.src || "").includes("/tg-ob.js")) ||
+    null
+  );
+}
+
 async function reloadRichAdsSdk(timeoutMs = 5000) {
   if (typeof window.tcReloadRichAdsSdk === "function") {
     try {
@@ -327,7 +381,7 @@ async function reloadRichAdsSdk(timeoutMs = 5000) {
   }
 
   try {
-    const current = document.getElementById("tc-richads-sdk");
+    const current = getExistingRichAdsScript();
     if (current?.parentNode) current.parentNode.removeChild(current);
   } catch (_) {}
 
@@ -347,8 +401,18 @@ async function reloadRichAdsSdk(timeoutMs = 5000) {
     new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs)),
   ]);
 
-  if (!ok) return getGlobalRichAdsControllerCandidate() || null;
+  if (!ok) return getGlobalRichAdsControllerCandidate() || getRichAdsConstructorCandidate() || null;
   return waitForRichAdsSdk(timeoutMs);
+}
+
+async function ensureRichAdsSdkAvailable(timeoutMs = 5200, options = {}) {
+  const forceFresh = !!options.forceFresh;
+  if (!forceFresh) {
+    const existing = await waitForRichAdsSdk(Math.min(timeoutMs, 1800));
+    if (existing) return existing;
+  }
+
+  return reloadRichAdsSdk(timeoutMs);
 }
 
 async function createRichAdsControllerOnDemand(options = {}) {
@@ -365,27 +429,38 @@ async function createRichAdsControllerOnDemand(options = {}) {
     try {
       const controller = await window.tcCreateRichAdsController({ forceFresh });
       if (hasRichAdsController(controller) && !shouldReplaceCachedController(controller, forceFresh)) {
-        return controller;
+        return rememberRichAdsController(controller);
       }
     } catch (_) {}
   }
 
   const readySnapshot = await waitForTelegramMiniAppReady(4200);
   if (!isTelegramMiniAppSnapshotReady(readySnapshot)) return null;
-  const ctorOrController = await waitForRichAdsSdk(4200);
-  if (hasRichAdsController(ctorOrController)) return ctorOrController;
 
-  const ControllerCtor = getRichAdsConstructorCandidate();
+  let ctorOrController = await ensureRichAdsSdkAvailable(5200, { forceFresh });
+  if (hasRichAdsController(ctorOrController)) {
+    return rememberRichAdsController(ctorOrController, readySnapshot);
+  }
+
+  const ControllerCtor =
+    (typeof ctorOrController === "function" ? ctorOrController : null) || getRichAdsConstructorCandidate();
   const config = getRichAdsConfig();
   if (typeof ControllerCtor !== "function" || !config) return null;
 
   try {
     if (forceFresh) resetRichAdsControllerCache();
+    window.tcRichAdsConfig = { ...config };
+
     const controller = new ControllerCtor();
     const initResult = controller.initialize?.(config);
     if (initResult && typeof initResult.then === "function") {
       await initResult;
     }
+
+    if (!hasRichAdsController(controller)) {
+      await sleep(400);
+    }
+
     const remembered = rememberRichAdsController(controller, readySnapshot);
     return hasRichAdsController(remembered) && !shouldReplaceCachedController(remembered, forceFresh)
       ? remembered
@@ -435,7 +510,9 @@ export async function waitForRichAdsController(timeoutMs = 1800, options = {}) {
         await sleep(waitMs);
       }
     }
-    return hasRichAdsController(controller) && !shouldReplaceCachedController(controller, forceFresh) && isRichAdsControllerSettled(controller)
+    return hasRichAdsController(controller) &&
+      !shouldReplaceCachedController(controller, forceFresh) &&
+      isRichAdsControllerSettled(controller)
       ? controller
       : null;
   } catch (_) {
@@ -481,32 +558,42 @@ async function runRichAdsAdOnce(controller) {
     return { ok: false, reason: "method_missing", controller, result: null };
   }
 
-  const candidate = methods[0];
-  try {
-    const result = await candidate.run();
-    if (!isCompletedAdResult(result)) {
-      return {
+  let lastFailure = null;
+
+  for (const candidate of methods) {
+    try {
+      const result = await candidate.run();
+      if (isCompletedAdResult(result)) {
+        try {
+          window.tcLastRichAdsFailure = null;
+        } catch (_) {}
+        return { ok: true, reason: "completed", controller, result, methodName: candidate.methodName };
+      }
+
+      lastFailure = {
         ok: false,
         reason: "not_completed",
         controller,
         result,
         methodName: candidate.methodName,
       };
+    } catch (error) {
+      lastFailure = {
+        ok: false,
+        reason: "error",
+        controller,
+        result: null,
+        error,
+        methodName: candidate.methodName,
+      };
+
+      if (!isNullObjectFailure(error)) {
+        continue;
+      }
     }
-    try {
-      window.tcLastRichAdsFailure = null;
-    } catch (_) {}
-    return { ok: true, reason: "completed", controller, result, methodName: candidate.methodName };
-  } catch (error) {
-    return {
-      ok: false,
-      reason: "error",
-      controller,
-      result: null,
-      error,
-      methodName: candidate.methodName,
-    };
   }
+
+  return lastFailure || { ok: false, reason: "not_completed", controller, result: null };
 }
 
 export async function playRichRewardedAd(timeoutMs = 5200) {
@@ -535,7 +622,7 @@ export async function playRichRewardedAd(timeoutMs = 5200) {
   let played = await runRichAdsAdOnce(controller);
   if (!played.ok && played.reason === "error" && isNullObjectFailure(played.error)) {
     const retriedController = await warmRichAdsController(Math.max(timeoutMs, 4800), { forceFresh: true });
-    if (retriedController && retriedController !== controller) {
+    if (retriedController) {
       played = await runRichAdsAdOnce(retriedController);
     }
   }
