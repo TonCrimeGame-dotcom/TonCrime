@@ -2250,7 +2250,7 @@ function buildBusinessUiFromRow(row = {}, ownerName = '', productRows = []) {
     icon: readRowText(row, ['icon'], def?.icon || 'MK') || 'MK',
     imageKey: readRowText(row, ['image_key', 'imageKey'], def?.imageKey || ''),
     imageSrc: readRowText(row, ['image_src', 'image', 'image_url', 'imageUrl'], def?.imageSrc || ''),
-    name: readRowText(row, ['name', 'title'], def?.defaultName || 'Business'),
+    name: readRowText(row, ['business_name', 'name', 'title'], def?.defaultName || 'Business'),
     ownerId: getBusinessOwnerId(row),
     ownerName: String(ownerName || 'Player'),
     dailyProduction: Math.max(0, Math.floor(asNumber(
@@ -2392,6 +2392,7 @@ async function createBusinessWithProducts({
     owner_id: ownerProfile.id,
     business_type: normalizedType,
     type: normalizedType,
+    business_name: safeName,
     name: safeName,
     title: safeName,
     icon: def.icon || 'MK',
@@ -3167,7 +3168,7 @@ app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase',
       }).catch(() => []);
       const requestedNameKey = String(safeName || '').trim().toLowerCase();
       const existingRow = (existingRows || []).find((row) =>
-        String(readRowText(row, ['name', 'title'])).trim().toLowerCase() === requestedNameKey
+        String(readRowText(row, ['business_name', 'name', 'title'])).trim().toLowerCase() === requestedNameKey
       ) || (existingRows || [])[0] || null;
 
       if (existingRow?.id) {
