@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260402-6";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260408-1";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -15,7 +15,7 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260403-20";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260408-1";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-03-business-random-pool-1";
+const BUILD_STAMP = "2026-04-08-single-session-enforced-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -61,7 +61,7 @@ const SYNC_PROFILE_FIELD_KEYS = [
   "pvp_last_match_at",
 ];
 const SYNC_PROFILE_FIELD_KEY_SET = new Set(SYNC_PROFILE_FIELD_KEYS);
-const SINGLE_DEVICE_SESSION_ENABLED = false;
+const SINGLE_DEVICE_SESSION_ENABLED = true;
 const SINGLE_SESSION_DEVICE_KEY = "toncrime_device_instance_id_v1";
 const SINGLE_SESSION_HEARTBEAT_MS = 15_000;
 const SINGLE_SESSION_OVERLAY_ID = "tc-single-session-lock";
@@ -1112,6 +1112,7 @@ function buildSingleSessionPayload() {
     tg_init_data: String(window.Telegram?.WebApp?.initData || "").trim(),
   };
 }
+window.tcGetSingleSessionPayload = buildSingleSessionPayload;
 
 async function releaseSingleSession(useBeacon = false) {
   if (!SINGLE_DEVICE_SESSION_ENABLED) return;
