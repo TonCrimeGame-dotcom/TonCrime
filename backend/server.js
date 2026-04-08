@@ -1187,6 +1187,56 @@ function normalizeMarketItemKey(value) {
     .slice(0, 80);
 }
 
+function getBusinessProductIdentifierTokens(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  return [...new Set([
+    raw,
+    raw.toLowerCase(),
+    normalizeMarketItemKey(raw),
+  ].filter(Boolean))];
+}
+
+function normalizeBusinessProductLookupCandidates(values = []) {
+  const list = Array.isArray(values) ? values : [values];
+  return [...new Set(
+    list
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .map((value) => sanitizeMarketId(value))
+      .filter(Boolean)
+  )];
+}
+
+function getBusinessProductRowLookupTokens(row = {}) {
+  const productKey = readRowText(row, ['product_key', 'item_key', 'key', 'slug']);
+  const productName = readRowText(row, ['name', 'item_name', 'title']);
+
+  return [...new Set([
+    String(row?.id || '').trim(),
+    ...getBusinessProductIdentifierTokens(productKey),
+    ...getBusinessProductIdentifierTokens(productName),
+  ].filter(Boolean))];
+}
+
+function findBusinessProductRowByIdentifier(rows = [], identifier = '') {
+  const needleSet = new Set(getBusinessProductIdentifierTokens(identifier));
+  if (!needleSet.size) return null;
+
+  return (rows || []).find((row) =>
+    getBusinessProductRowLookupTokens(row).some((token) => needleSet.has(token))
+  ) || null;
+}
+
+function findBusinessProductRowByCandidates(rows = [], candidates = []) {
+  for (const candidate of normalizeBusinessProductLookupCandidates(candidates)) {
+    const match = findBusinessProductRowByIdentifier(rows, candidate);
+    if (match) return match;
+  }
+  return null;
+}
+
 function inferMarketItemKind(source = {}, businessType = '') {
   const explicit = readRowText(source, ['kind', 'item_kind', 'category']);
   if (explicit) return explicit;
@@ -1394,15 +1444,26 @@ async function getOwnedInventoryItem(profileId, itemKey) {
 }
 
 async function getOwnedBusinessProduct(businessId, productId) {
+  const productCandidates = normalizeBusinessProductLookupCandidates(productId);
+  const primaryProductId = productCandidates[0] || '';
+  if (!businessId || !primaryProductId) return null;
+
   const { data, error } = await supabase
     .from('business_products')
     .select('*')
     .eq('business_id', businessId)
-    .eq('id', productId)
+    .eq('id', primaryProductId)
     .maybeSingle();
 
-  if (error) throw error;
-  return data || null;
+  if (error) {
+    const missingColumn = parseMissingColumnName(error, 'business_products');
+    if (missingColumn !== 'id') throw error;
+  } else if (data) {
+    return data || null;
+  }
+
+  const rows = await listBusinessProductsByBusinessIds([businessId]).catch(() => []);
+  return findBusinessProductRowByCandidates(rows, productCandidates);
 }
 
 async function createMarketListingSecure(params = {}) {
@@ -1457,16 +1518,55 @@ async function getBusinessById(businessId) {
   return data || null;
 }
 
-async function getBusinessProductById(productId) {
-  if (!productId) return null;
+async function getBusinessProductById(productId, businessId = '') {
+  const productCandidates = normalizeBusinessProductLookupCandidates(productId);
+  const primaryProductId = productCandidates[0] || '';
+  if (!primaryProductId) return null;
+  if (businessId) {
+    const rows = await listBusinessProductsByBusinessIds([businessId]).catch(() => []);
+    return findBusinessProductRowByCandidates(rows, productCandidates);
+  }
+
   const { data, error } = await supabase
     .from('business_products')
     .select('*')
-    .eq('id', productId)
+    .eq('id', primaryProductId)
     .maybeSingle();
 
-  if (error) throw error;
-  return data || null;
+  if (error) {
+    const missingColumn = parseMissingColumnName(error, 'business_products');
+    if (missingColumn !== 'id') throw error;
+  } else if (data) {
+    return data || null;
+  }
+
+  const lookupValues = [...new Set([
+    ...productCandidates,
+    ...productCandidates.map((value) => normalizeMarketItemKey(value)),
+  ].filter(Boolean))];
+  const lookupColumns = ['product_key', 'item_key', 'key', 'slug'];
+
+  for (const value of lookupValues) {
+    for (const column of lookupColumns) {
+      const { data: rows, error: lookupError } = await supabase
+        .from('business_products')
+        .select('*')
+        .eq(column, value)
+        .limit(1);
+
+      if (lookupError) {
+        const missingColumn = parseMissingColumnName(lookupError, 'business_products');
+        if (missingColumn === column) continue;
+        throw lookupError;
+      }
+
+      if (Array.isArray(rows) && rows[0]) {
+        return rows[0];
+      }
+    }
+  }
+
+  return null;
 }
 
 async function updateProfileCoinsExact(profileRow, nextCoins) {
@@ -2996,8 +3096,17 @@ app.post('/public/businesses/sync', makePublicRateLimit('business-sync', 60_000,
     const nowIso = new Date().toISOString();
 
     for (const item of requestProducts) {
-      const productId = sanitizeMarketId(item?.id || item?.product_id);
-      const productRow = productRowsById.get(productId);
+      const productLookupCandidates = normalizeBusinessProductLookupCandidates([
+        item?.id,
+        item?.product_id,
+        item?.product_key,
+        item?.item_key,
+        item?.key,
+        item?.name,
+      ]);
+      const productRow =
+        productRowsById.get(productLookupCandidates[0] || '') ||
+        findBusinessProductRowByCandidates(productRows, productLookupCandidates);
       if (!productRow?.id) continue;
 
       const quantityKey = detectQuantityKey(productRow) || 'quantity';
@@ -3010,7 +3119,7 @@ app.post('/public/businesses/sync', makePublicRateLimit('business-sync', 60_000,
         updated_at: nowIso,
       }).catch(() => null);
 
-      updatedProductsById.set(productId, {
+      updatedProductsById.set(String(productRow.id), {
         ...productRow,
         ...(updatedRow || {}),
         [quantityKey]: nextQty,
@@ -3201,15 +3310,23 @@ app.post('/public/market/list-business-product', makePublicRateLimit('market-lis
   try {
     const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
     const businessId = sanitizeMarketId(req.body?.business_id);
-    const productId = sanitizeMarketId(req.body?.business_product_id || req.body?.product_id);
+    const productLookupCandidates = normalizeBusinessProductLookupCandidates([
+      req.body?.business_product_id,
+      req.body?.product_id,
+      req.body?.product_key,
+      req.body?.item_key,
+      req.body?.key,
+      req.body?.product_name,
+      req.body?.name,
+    ]);
     const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
     const priceYton = sanitizeMarketPrice(req.body?.price_yton, 1);
 
     if (!businessId) {
       return res.status(400).json({ ok: false, error: 'business_id is required' });
     }
-    if (!productId) {
-      return res.status(400).json({ ok: false, error: 'business_product_id is required' });
+    if (!productLookupCandidates.length) {
+      return res.status(400).json({ ok: false, error: 'business_product_id or product_key is required' });
     }
 
     const business = await getOwnedBusiness(profile.id, businessId);
@@ -3217,7 +3334,7 @@ app.post('/public/market/list-business-product', makePublicRateLimit('market-lis
       return res.status(404).json({ ok: false, error: 'Business was not found' });
     }
 
-    const businessProduct = await getOwnedBusinessProduct(business.id, productId);
+    const businessProduct = await getOwnedBusinessProduct(business.id, productLookupCandidates);
     if (!businessProduct?.id) {
       return res.status(404).json({ ok: false, error: 'Business product was not found' });
     }
@@ -3317,7 +3434,10 @@ app.post('/public/market/buy', makePublicRateLimit('market-buy', 60_000, 80), as
     }
 
     const inventoryItem = await getInventoryItemById(readRowText(listing, ['inventory_item_id'])).catch(() => null);
-    const businessProduct = await getBusinessProductById(readRowText(listing, ['business_product_id', 'product_id'])).catch(() => null);
+    const businessProduct = await getBusinessProductById(
+      readRowText(listing, ['business_product_id', 'product_id']),
+      readRowText(listing, ['business_id'])
+    ).catch(() => null);
     const item = buildPurchasedItemSnapshot({
       listing,
       inventoryItem,
