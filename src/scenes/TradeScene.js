@@ -1,6 +1,6 @@
 import { supabase } from "../supabase.js";
 
-import { fetchBackendJson } from "../supabase.js?v=20260402-2";
+import { fetchBackendJson } from "../supabase.js?v=20260408-1";
 import {
   getBusinessCatalog,
   getBusinessDef,
