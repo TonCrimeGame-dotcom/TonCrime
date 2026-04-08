@@ -193,11 +193,53 @@ export function withTelegramInitDataHeaders(headers = {}) {
     : { ...headers };
 }
 
+function shouldAttachSingleSession(path = "", method = "GET") {
+  const normalizedPath = String(path || "").trim();
+  const normalizedMethod = String(method || "GET").toUpperCase();
+  if (!normalizedPath.startsWith("/public/")) return false;
+  if (normalizedMethod === "GET" || normalizedMethod === "HEAD") return false;
+  if (normalizedPath.startsWith("/public/session/")) return false;
+  if (normalizedPath.startsWith("/public/auth/session")) return false;
+  return true;
+}
+
+function readSingleSessionPayload() {
+  try {
+    const payload = window.tcGetSingleSessionPayload?.();
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeSingleSessionPayloadIntoBody(path, method, body) {
+  if (!shouldAttachSingleSession(path, method)) return body;
+
+  const sessionPayload = readSingleSessionPayload();
+  if (!sessionPayload) return body;
+
+  let jsonBody = {};
+  if (typeof body === "string" && body.trim()) {
+    try {
+      jsonBody = JSON.parse(body);
+    } catch {
+      return body;
+    }
+  } else if (body && typeof body === "object" && !(body instanceof FormData) && !(body instanceof Blob)) {
+    jsonBody = { ...body };
+  } else if (body != null && body !== "") {
+    return body;
+  }
+
+  const merged = { ...sessionPayload, ...jsonBody };
+  return JSON.stringify(merged);
+}
+
 export async function fetchBackendJson(path, options = {}) {
   let lastErr = null;
 
   for (const base of getBackendCandidates()) {
-    const { headers: optionHeaders = {}, method: optionMethod, ...restOptions } = options || {};
+    const { headers: optionHeaders = {}, method: optionMethod, body: optionBody, ...restOptions } = options || {};
     const method = String(optionMethod || "GET").toUpperCase();
     const requestUrl = new URL(path, `${base}/`);
     if (method === "GET") {
@@ -208,6 +250,7 @@ export async function fetchBackendJson(path, options = {}) {
       const res = await fetch(requestUrl.toString(), {
         ...restOptions,
         method,
+        body: mergeSingleSessionPayloadIntoBody(path, method, optionBody),
         cache: "no-store",
         headers: withTelegramInitDataHeaders({
           "Content-Type": "application/json",
