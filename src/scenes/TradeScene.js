@@ -1,6 +1,6 @@
 import { supabase } from "../supabase.js";
 
-import { fetchBackendJson } from "../supabase.js?v=20260408-1";
+import { fetchBackendJson } from "../supabase.js?v=20260408-2";
 import {
   getBusinessCatalog,
   getBusinessDef,
@@ -3889,6 +3889,49 @@ class TradeScene {
     void this._persistBusinessState(biz.id, { quiet: true });
   }
 
+  async _ensureRemoteBusinessForLocalRecord(localBusiness) {
+    if (!localBusiness?.id || !String(localBusiness.id).startsWith("biz_")) return localBusiness || null;
+
+    const type = this._normalizeBusinessType(localBusiness?.type || localBusiness?.business_type || "");
+    if (!type || type === "blackmarket") return null;
+
+    const matchKey = this._businessMatchKey(localBusiness);
+    const findRemoteBusiness = () =>
+      (this.store.get()?.businesses?.owned || []).find((item) => {
+        const itemId = String(item?.id || "");
+        if (!itemId || itemId.startsWith("biz_")) return false;
+        if (matchKey && this._businessMatchKey(item) === matchKey) return true;
+        return this._normalizeBusinessType(item?.type || item?.business_type || "") === type;
+      }) || null;
+
+    await this._syncTradeStateFromBackend({ quiet: true });
+    let remoteBusiness = findRemoteBusiness();
+    if (remoteBusiness?.id) return remoteBusiness;
+
+    const json = await fetchBackendJson("/public/businesses/purchase", {
+      method: "POST",
+      body: JSON.stringify({
+        business_type: type,
+        name: String(localBusiness?.name || this._typeLabel(type) || "").trim(),
+        restore_existing: true,
+        grant_premium: String(localBusiness?.acquiredFrom || localBusiness?.source || "").toLowerCase() === "premium",
+      }),
+    });
+    remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
+    if (!remoteBusiness?.id) return null;
+
+    const syncSnapshot = this._buildBusinessSyncSnapshot(localBusiness, remoteBusiness);
+    const syncedBusiness = await this._persistBusinessState(remoteBusiness.id, {
+      quiet: true,
+      businessOverride: syncSnapshot,
+    });
+    if (!syncedBusiness?.id) return null;
+
+    this._removeLocalBusinessMarketArtifacts(localBusiness.id);
+    await this._syncTradeStateFromBackend({ quiet: true });
+    return findRemoteBusiness() || syncedBusiness || remoteBusiness;
+  }
+
   async _resolveBusinessProductForListing(bizId, productId) {
     const state = this.store.get();
     const localBusiness = (state.businesses?.owned || []).find((b) => String(b.id) === String(bizId));
@@ -3901,14 +3944,7 @@ class TradeScene {
       return { business: localBusiness, product: localProduct, migrated: false };
     }
 
-    await this._syncTradeStateFromBackend({ quiet: true });
-
-    const refreshedState = this.store.get();
-    const matchKey = this._businessMatchKey(localBusiness);
-    const remoteBusiness = (refreshedState.businesses?.owned || []).find((item) => {
-      if (String(item.id || "").startsWith("biz_")) return false;
-      return matchKey ? this._businessMatchKey(item) === matchKey : false;
-    });
+    const remoteBusiness = await this._ensureRemoteBusinessForLocalRecord(localBusiness);
 
     if (!remoteBusiness) {
       return { business: localBusiness, product: localProduct, migrated: false };
