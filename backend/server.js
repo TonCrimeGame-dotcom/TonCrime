@@ -1673,6 +1673,117 @@ async function updateMarketListingQuantityExact(listingRow, nextQuantity) {
   return data;
 }
 
+async function normalizeMarketListingRow(
+  listingRow = null,
+  {
+    sellerProfileId = '',
+    businessId = '',
+    businessProductId = '',
+    inventoryItemId = '',
+    quantity = 0,
+    priceYton = 0,
+    businessProduct = null,
+    inventoryItem = null,
+  } = {}
+) {
+  if (!listingRow?.id) return listingRow || null;
+
+  const source = inventoryItem || businessProduct || listingRow || {};
+  const quantityKey = detectQuantityKey(listingRow);
+  const priceKey = detectPriceKey(listingRow);
+  const quantityValue = Math.max(
+    1,
+    Math.floor(asNumber(quantity, readRowQuantity(listingRow, quantityKey ? [quantityKey] : []) || 1))
+  );
+  const priceValue = Math.max(
+    1,
+    Math.floor(asNumber(priceYton, priceKey ? listingRow?.[priceKey] : 1))
+  );
+  const nowIso = new Date().toISOString();
+  const energyGain = Math.max(0, Math.floor(asNumber(
+    source?.energy_gain ??
+    source?.energy ??
+    source?.energyGain ??
+    listingRow?.energy_gain ??
+    listingRow?.energy ??
+    listingRow?.energyGain,
+    0
+  )));
+  const itemName = readRowText(
+    source,
+    ['name', 'item_name', 'title'],
+    readRowText(listingRow, ['name', 'item_name', 'title'], 'Market Item')
+  );
+  const itemKey = normalizeMarketItemKey(
+    readRowText(source, ['item_key', 'product_key', 'key', 'slug'], itemName)
+  );
+  const businessType = readRowText(source, ['business_type', 'type'], readRowText(listingRow, ['business_type', 'type']));
+  const candidate = {
+    seller_profile_id: String(sellerProfileId || '').trim() || undefined,
+    business_id: String(businessId || readRowText(listingRow, ['business_id'])).trim() || undefined,
+    business_product_id: String(
+      businessProductId || readRowText(listingRow, ['business_product_id', 'product_id'])
+    ).trim() || undefined,
+    product_id: String(
+      businessProductId || readRowText(listingRow, ['business_product_id', 'product_id'])
+    ).trim() || undefined,
+    inventory_item_id: String(
+      inventoryItemId || readRowText(listingRow, ['inventory_item_id'])
+    ).trim() || undefined,
+    item_key: itemKey || undefined,
+    product_key: itemKey || undefined,
+    key: itemKey || undefined,
+    name: itemName || undefined,
+    item_name: itemName || undefined,
+    title: itemName || undefined,
+    business_type: businessType || undefined,
+    type: businessType || undefined,
+    icon: readRowText(source, ['icon'], readRowText(listingRow, ['icon'])) || undefined,
+    image_key: readRowText(source, ['image_key', 'imageKey'], readRowText(listingRow, ['image_key', 'imageKey'])) || undefined,
+    image_src: readRowText(
+      source,
+      ['image_src', 'image', 'image_url', 'imageUrl'],
+      readRowText(listingRow, ['image_src', 'image', 'image_url', 'imageUrl'])
+    ) || undefined,
+    image: readRowText(
+      source,
+      ['image_src', 'image', 'image_url', 'imageUrl'],
+      readRowText(listingRow, ['image_src', 'image', 'image_url', 'imageUrl'])
+    ) || undefined,
+    image_url: readRowText(
+      source,
+      ['image_src', 'image', 'image_url', 'imageUrl'],
+      readRowText(listingRow, ['image_src', 'image', 'image_url', 'imageUrl'])
+    ) || undefined,
+    rarity: readRowText(source, ['rarity'], readRowText(listingRow, ['rarity'], 'common')) || undefined,
+    desc: readRowText(source, ['desc', 'description'], readRowText(listingRow, ['desc', 'description'])) || undefined,
+    description: readRowText(source, ['desc', 'description'], readRowText(listingRow, ['desc', 'description'])) || undefined,
+    usable: readBooleanish(source, ['usable'], energyGain > 0) || energyGain > 0,
+    energy_gain: energyGain,
+    energy: energyGain,
+    quantity: quantityValue,
+    qty: quantityValue,
+    stock_qty: quantityValue,
+    remaining_qty: quantityValue,
+    stock: quantityValue,
+    price_yton: priceValue,
+    price: priceValue,
+    unit_price: priceValue,
+    market_price: priceValue,
+    is_active: quantityValue > 0,
+    status: quantityValue > 0 ? 'active' : 'sold_out',
+    updated_at: nowIso,
+  };
+  const patch = {};
+  for (const [key, value] of Object.entries(candidate)) {
+    if (value !== undefined) patch[key] = value;
+  }
+
+  const normalized = await updateRowWithPruning('market_listings', listingRow.id, patch).catch(() => null);
+  if (normalized?.id) return normalized;
+  return await getMarketListingById(listingRow.id).catch(() => listingRow) || listingRow;
+}
+
 function buildPurchasedItemSnapshot({
   listing = null,
   inventoryItem = null,
@@ -3314,10 +3425,18 @@ app.post('/public/market/list-inventory', makePublicRateLimit('market-list-inven
       p_quantity: quantity,
       p_price_yton: priceYton,
     });
+    const normalizedItem = await normalizeMarketListingRow(item, {
+      sellerProfileId: profile.id,
+      businessId: marketBusiness.id,
+      inventoryItemId: invRow.id,
+      quantity,
+      priceYton,
+      inventoryItem: invRow,
+    });
 
     return res.json({
       ok: true,
-      item,
+      item: normalizedItem || item,
       inventory_item_id: invRow.id,
       business: {
         id: marketBusiness.id,
@@ -3376,10 +3495,18 @@ app.post('/public/market/list-business-product', makePublicRateLimit('market-lis
       p_quantity: quantity,
       p_price_yton: priceYton,
     });
+    const normalizedItem = await normalizeMarketListingRow(item, {
+      sellerProfileId: profile.id,
+      businessId: business.id,
+      businessProductId: businessProduct.id,
+      quantity,
+      priceYton,
+      businessProduct,
+    });
 
     return res.json({
       ok: true,
-      item,
+      item: normalizedItem || item,
       business_product_id: businessProduct.id,
       business: {
         id: business.id,
