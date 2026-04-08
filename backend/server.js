@@ -3160,6 +3160,34 @@ app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase',
       buyerAfterUpdate = originalProfile;
     }
 
+    if (restoreExisting) {
+      const existingRows = await queryBusinessesOwnedBy(originalProfile.id, {
+        businessType,
+        maybeSingle: false,
+      }).catch(() => []);
+      const requestedNameKey = String(safeName || '').trim().toLowerCase();
+      const existingRow = (existingRows || []).find((row) =>
+        String(readRowText(row, ['name', 'title'])).trim().toLowerCase() === requestedNameKey
+      ) || (existingRows || [])[0] || null;
+
+      if (existingRow?.id) {
+        const existingProductRows = await listBusinessProductsByBusinessIds([existingRow.id]).catch(() => []);
+        const ensuredProducts = await ensureBusinessProductCatalog(existingRow, existingProductRows).catch(() => existingProductRows);
+        const ownerName = sanitizeUsername(
+          buyerAfterUpdate?.username || originalProfile.username || profile.username || 'Player'
+        );
+
+        return res.json({
+          ok: true,
+          profile: await getProfileById(originalProfile.id).catch(() => buyerAfterUpdate || originalProfile) || buyerAfterUpdate || originalProfile,
+          business: buildBusinessUiFromRow(existingRow, ownerName, ensuredProducts),
+          businesses: await buildOwnedBusinessUiList(originalProfile.id, ownerName).catch(() => []),
+          granted_premium: grantPremium,
+          restored_existing: true,
+        });
+      }
+    }
+
     let created = null;
     try {
       created = await createBusinessWithProducts({
