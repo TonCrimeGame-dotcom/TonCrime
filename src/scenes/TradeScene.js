@@ -3036,6 +3036,10 @@ class TradeScene {
           stock_qty: Math.max(0, Number(business.stock || 0)),
           products: (business.products || []).map((item) => ({
             id: String(item.id || ""),
+            product_key: String(item.productKey || item.product_key || item.key || ""),
+            item_key: String(item.productKey || item.product_key || item.key || ""),
+            key: String(item.key || item.productKey || item.product_key || ""),
+            name: String(item.name || ""),
             qty: Math.max(0, Number(item.qty || 0)),
           })),
           pending_production: (business.pendingProduction || []).map((row) => ({
@@ -4072,6 +4076,35 @@ class TradeScene {
         body: JSON.stringify({
           business_id: requestBizId,
           business_product_id: requestProductId,
+          product_key: String(
+            resolved?.product?.productKey ||
+            resolved?.product?.product_key ||
+            resolved?.product?.key ||
+            product.productKey ||
+            product.product_key ||
+            product.key ||
+            ""
+          ),
+          item_key: String(
+            resolved?.product?.productKey ||
+            resolved?.product?.product_key ||
+            resolved?.product?.key ||
+            product.productKey ||
+            product.product_key ||
+            product.key ||
+            ""
+          ),
+          key: String(
+            resolved?.product?.key ||
+            resolved?.product?.productKey ||
+            resolved?.product?.product_key ||
+            product.key ||
+            product.productKey ||
+            product.product_key ||
+            ""
+          ),
+          product_name: String(resolved?.product?.name || product.name || ""),
+          name: String(resolved?.product?.name || product.name || ""),
           quantity: qty,
           price_yton: price,
         }),
