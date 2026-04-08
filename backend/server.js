@@ -1024,10 +1024,6 @@ async function assertSingleDeviceSessionAccess(profileKey, body = {}) {
   const safeSessionId = sanitizeSessionToken(body?.session_id);
   const safeDeviceId = sanitizeSessionToken(body?.device_id);
 
-  if (!safeSessionId || !safeDeviceId) {
-    return { ok: true, supported: true, skipped: true };
-  }
-
   const state = await readSingleSessionProfile(profileKey);
   if (!state.supported) {
     return { ok: true, supported: false, skipped: true };
@@ -1035,7 +1031,20 @@ async function assertSingleDeviceSessionAccess(profileKey, body = {}) {
 
   const row = state.row || null;
   if (!row?.active_session_id) {
+    if (!safeSessionId || !safeDeviceId) {
+      return { ok: true, supported: true, skipped: true };
+    }
     return { ok: true, supported: true, skipped: true };
+  }
+
+  if (!safeSessionId || !safeDeviceId) {
+    return {
+      ok: false,
+      supported: true,
+      status: 409,
+      error: 'session_required',
+      row,
+    };
   }
 
   const rowSessionId = sanitizeSessionToken(row.active_session_id);
@@ -1051,6 +1060,18 @@ async function assertSingleDeviceSessionAccess(profileKey, body = {}) {
     error: 'session_active_elsewhere',
     row,
   };
+}
+
+async function writeSessionAccessError(res, profileKey, body = {}) {
+  const sessionAccess = await assertSingleDeviceSessionAccess(profileKey, body);
+  if (sessionAccess.ok) return false;
+
+  res.status(sessionAccess.status || 409).json({
+    ok: false,
+    error: sessionAccess.error || 'session_active_elsewhere',
+    active_session: buildSingleSessionSummary(sessionAccess.row),
+  });
+  return true;
 }
 
 function readProfilePvpStats(row = {}) {
@@ -2987,7 +3008,8 @@ app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase',
   let originalProfile = null;
 
   try {
-    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const { identity, profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    if (await writeSessionAccessError(res, identity.profileKey, req.body)) return;
     const businessType = String(req.body?.business_type || req.body?.type || '').trim().toLowerCase();
     const def = getServerBusinessDef(businessType);
     const grantPremium = !!(req.body?.grant_premium || req.body?.premium_membership || req.body?.premium);
@@ -3072,7 +3094,8 @@ app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase',
 
 app.post('/public/businesses/sync', makePublicRateLimit('business-sync', 60_000, 80), async (req, res) => {
   try {
-    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const { identity, profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    if (await writeSessionAccessError(res, identity.profileKey, req.body)) return;
     const businessId = sanitizeMarketId(req.body?.business_id || req.body?.id);
     if (!businessId) {
       return res.status(400).json({ ok: false, error: 'business_id is required' });
@@ -3259,7 +3282,8 @@ app.post('/public/chat/send', makePublicRateLimit('chat-send', 60_000, 80), asyn
 
 app.post('/public/market/list-inventory', makePublicRateLimit('market-list-inventory', 60_000, 60), async (req, res) => {
   try {
-    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const { identity, profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    if (await writeSessionAccessError(res, identity.profileKey, req.body)) return;
     const itemKey = sanitizeMarketId(req.body?.item_key || req.body?.inventory_key);
     const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
     const priceYton = sanitizeMarketPrice(req.body?.price_yton, 1);
@@ -3308,7 +3332,8 @@ app.post('/public/market/list-inventory', makePublicRateLimit('market-list-inven
 
 app.post('/public/market/list-business-product', makePublicRateLimit('market-list-business-product', 60_000, 60), async (req, res) => {
   try {
-    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const { identity, profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    if (await writeSessionAccessError(res, identity.profileKey, req.body)) return;
     const businessId = sanitizeMarketId(req.body?.business_id);
     const productLookupCandidates = normalizeBusinessProductLookupCandidates([
       req.body?.business_product_id,
@@ -3372,7 +3397,8 @@ app.post('/public/market/buy', makePublicRateLimit('market-buy', 60_000, 80), as
   let sellerAfterCredit = null;
 
   try {
-    const { profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    const { identity, profile } = await resolveVerifiedProfile(req, { allowGuest: true });
+    if (await writeSessionAccessError(res, identity.profileKey, req.body)) return;
     const listingId = sanitizeMarketId(req.body?.listing_id || req.body?.id);
     const quantity = sanitizeMarketQuantity(req.body?.quantity, 1);
 
