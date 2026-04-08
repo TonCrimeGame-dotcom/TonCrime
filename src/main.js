@@ -4,7 +4,7 @@ import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260408-1";
+import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260408-2";
 
 import { StarsScene } from "./scenes/StarsScene.js";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
@@ -15,7 +15,7 @@ import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=202
 import { ProfileScene } from "./scenes/ProfileScene.js";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260408-1";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260408-2";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-08-single-session-enforced-1";
+const BUILD_STAMP = "2026-04-08-business-migration-2";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
