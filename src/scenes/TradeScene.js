@@ -3427,6 +3427,7 @@ class TradeScene {
       });
 
       this._showToast(this._ui(`${qty} adet pazara kondu`, `${qty} items listed`));
+      void this._syncTradeStateFromBackend({ quiet: true });
     } catch (err) {
       console.error("list_inventory_item error:", err);
       this._showToast(err?.message || this._ui("Item pazara konamadi", "Item could not be listed"));
@@ -4128,6 +4129,7 @@ class TradeScene {
 
       this._showToast(this._ui(`${qty} adet satisa cikarildi`, `${qty} items listed`));
       void this._persistBusinessState(requestBizId, { quiet: true });
+      void this._syncTradeStateFromBackend({ quiet: true });
     } catch (err) {
       console.error("create_market_listing error:", err);
       this._showToast(err?.message || this._ui("Ilan olusturulamadi", "Listing could not be created"));
@@ -4136,6 +4138,9 @@ class TradeScene {
 
   update() {
     const now = Date.now();
+    if (!this.tradeSyncPromise && now - Number(this.lastTradeSyncAt || 0) > 15000) {
+      void this._syncTradeStateFromBackend({ quiet: true });
+    }
     if (this.wheelAnim) {
       const t = clamp((now - this.wheelAnim.start) / Math.max(1, this.wheelAnim.duration), 0, 1);
       const eased = 1 - Math.pow(1 - t, 3);
