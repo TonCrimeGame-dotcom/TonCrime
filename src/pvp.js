@@ -174,6 +174,7 @@
     arena: 5,
     slotarena: 3,
   };
+  const BOT_FALLBACK_MS = 4200;
 
   const PVP_TEXT = {
     tr: {
@@ -884,7 +885,13 @@
       };
     }
 
-    _makeOpponent() {
+    _makeOpponent(modeId = this.matchModeId) {
+      const fromEngine = window.tcBotEngine?.pickOpponent?.({
+        mode: modeId || this.matchModeId || "grid",
+        source: this.source || "general",
+      });
+      if (fromEngine?.username) return fromEngine;
+
       const level = this._getPlayerMeta().level;
       const names = [
         "ShadowWolf", "NightTiger", "GhostMafia", "RicoVane", "IronFist", "VoltKral", "SlyRaven",
@@ -896,6 +903,35 @@
         level: Math.max(1, level + Math.floor(Math.random() * 7) - 3),
         rank: this._getPlayerMeta().rank,
         isBot: true,
+        kind: "weak",
+        group: "Sokak Rakipleri",
+        botTuning: {
+          kind: "weak",
+          difficulty: 34,
+          reactionMs: 1180,
+          mistakeRate: 0.32,
+          playerWinChance: 0.68,
+        },
+      };
+    }
+
+    _buildBotMatchContext(opponent, modeId, reason = "bot_fallback") {
+      return {
+        matchId: null,
+        userId: null,
+        modeId: modeId || this.matchModeId || "grid",
+        sqlMode: this._mapModeIdToSqlMode(modeId || this.matchModeId),
+        amIPlayer1: true,
+        isBotMatch: true,
+        botFallback: true,
+        reason,
+        player1Id: "local_player",
+        player2Id: opponent?.id || "local_rival",
+        player1Username: this._getPlayerMeta().username || "Player",
+        player2Username: opponent?.username || this._text("opponent"),
+        opponentUsername: opponent?.username || this._text("opponent"),
+        opponentLevel: opponent?.level ?? STARTING_LEVEL,
+        botProfileId: opponent?.id || "",
       };
     }
 
@@ -1268,16 +1304,6 @@
       const energyCost = getEnergyCostForMode(id);
       const ytonBalance = getWalletYton(s);
 
-      if (!sb || !userId || !mode || !stake) {
-        this.matchState = "menu";
-        try {
-          window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: this._text("matchAuthUnavailable") },
-          }));
-        } catch (_) {}
-        return;
-      }
-
       if (currentEnergy < energyCost) {
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
@@ -1303,6 +1329,21 @@
         return;
       }
 
+      if (!mode || !stake) {
+        this.matchState = "menu";
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: this._text("matchAuthUnavailable") },
+          }));
+        } catch (_) {}
+        return;
+      }
+
+      if (!sb || !userId) {
+        this.matchFallbackTimer = setTimeout(() => this._fallbackToBotMatch(id, "offline"), 650);
+        return;
+      }
+
       try {
         try {
           await cancelBetPvp(sb, mode, stake);
@@ -1322,6 +1363,8 @@
             queueStatus: queueData?.status || "searching",
           },
         });
+
+        this.matchFallbackTimer = setTimeout(() => this._fallbackToBotMatch(id, "no_live_player"), BOT_FALLBACK_MS);
 
         if (await this._resolveRpcMatchResult(sb, queueData, userId, mode, stake, id)) {
           return;
@@ -1409,13 +1452,21 @@
         }, 1000);
       } catch (err) {
         console.error("[TonCrime] betting matchmaking error:", err);
-        this.matchState = "menu";
-        try {
-          window.dispatchEvent(new CustomEvent("tc:toast", {
-            detail: { text: this._text("queueStartFailed") },
-          }));
-        } catch (_) {}
+        this.matchFallbackTimer = setTimeout(() => this._fallbackToBotMatch(id, "queue_error"), 650);
       }
+    }
+
+    _fallbackToBotMatch(id, reason = "fallback") {
+      if (this.matchState !== "searching") return;
+      const opponent = this._makeOpponent(id);
+      const matchCtx = this._buildBotMatchContext(opponent, id, reason);
+      this._cancelRealtimeQueue().catch(() => {});
+      try {
+        window.dispatchEvent(new CustomEvent("tc:toast", {
+          detail: { text: `${opponent.username} arenaya girdi` },
+        }));
+      } catch (_) {}
+      this.onMatchFound(opponent, matchCtx);
     }
 
     onMatchFound(opponent, matchRecord = null) {
@@ -1436,6 +1487,17 @@
       this.matchRecord = matchRecord || null;
       this.matchState = "found";
       this.matchFoundAt = Date.now();
+      try {
+        const latest = this.store?.get?.() || {};
+        this.store?.set?.({
+          pvp: {
+            ...(latest.pvp || {}),
+            currentOpponent: opponent?.username || "",
+            currentOpponentProfileId: opponent?.id || "",
+            currentOpponentProfile: opponent && typeof opponent === "object" ? { ...opponent } : null,
+          },
+        });
+      } catch (_) {}
 
       this.matchLaunchTimer = setTimeout(() => {
         const id = this.matchModeId;
@@ -1663,7 +1725,7 @@
         if (dom.spinner) dom.spinner.classList.remove("hidden");
 
         if (id === "grid") {
-          await loadPvpGameScript(["./src/pvpcrush.js", "./pvpcrush.js"]);
+          await loadPvpGameScript(["./src/pvpcrush.js?v=20260413-bots-1", "./pvpcrush.js?v=20260413-bots-1"]);
 
           if (!window.TonCrimePVP_CRUSH) {
             throw new Error("TonCrimePVP_CRUSH not found");
@@ -1727,7 +1789,7 @@
         }
 
         if (id === "slotarena") {
-          await loadPvpGameScript(["./src/pvpslotarena.js", "./pvpslotarena.js"]);
+          await loadPvpGameScript(["./src/pvpslotarena.js?v=20260413-bots-1", "./pvpslotarena.js?v=20260413-bots-1"]);
 
           if (!window.TonCrimePVP_SLOT) {
             throw new Error("TonCrimePVP_SLOT not found");
@@ -1791,7 +1853,7 @@
         }
 
         if (id === "arena") {
-          await loadPvpGameScript(["./src/pvpcage.js", "./pvpcage.js"]);
+          await loadPvpGameScript(["./src/pvpcage.js?v=20260413-bots-1", "./pvpcage.js?v=20260413-bots-1"]);
 
           if (!window.TonCrimePVP_CAGE) {
             throw new Error("TonCrimePVP_CAGE not found");
