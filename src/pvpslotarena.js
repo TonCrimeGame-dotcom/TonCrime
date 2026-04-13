@@ -1141,14 +1141,39 @@
       this._render();
     },
 
-    _setupState() {
-      const startsAsMe = this._matchCtx?.amIPlayer1 !== false;
-      this._state = {
-        board: makeBoard(),
+    _slotBotHandicap() {
+      const base = {
         meHp: START_HP,
         enemyHp: START_HP,
         meSpins: BASE_SPINS,
         enemySpins: BASE_SPINS,
+      };
+      const isBotMatch = !!(this._matchCtx?.isBotMatch || this._opponent?.isBot);
+      if (!isBotMatch || this._isOnlineMatch()) return base;
+
+      const tuning = this._opponent?.botTuning || this._opponent?.performance || {};
+      const rawChance = Number(tuning.playerWinChance);
+      const playerWinChance = clamp(Number.isFinite(rawChance) ? rawChance : 0.58, 0.28, 0.76);
+      const strongPressure = clamp((0.58 - playerWinChance) / 0.30, 0, 1);
+      const softPressure = clamp((playerWinChance - 0.58) / 0.18, 0, 1);
+
+      return {
+        meHp: Math.round(START_HP * clamp(1 - strongPressure * 0.08 + softPressure * 0.02, 0.90, 1)),
+        enemyHp: Math.round(START_HP * clamp(1 - softPressure * 0.16, 0.84, 1)),
+        meSpins: clamp(BASE_SPINS + Math.round(softPressure * 2), 22, 26),
+        enemySpins: clamp(BASE_SPINS + Math.round(strongPressure * 3) - Math.round(softPressure * 3), 20, 27),
+      };
+    },
+
+    _setupState() {
+      const startsAsMe = this._matchCtx?.amIPlayer1 !== false;
+      const botHandicap = this._slotBotHandicap();
+      this._state = {
+        board: makeBoard(),
+        meHp: botHandicap.meHp,
+        enemyHp: botHandicap.enemyHp,
+        meSpins: botHandicap.meSpins,
+        enemySpins: botHandicap.enemySpins,
         turn: startsAsMe ? "me" : "enemy",
         finished: false,
         spinning: false,
