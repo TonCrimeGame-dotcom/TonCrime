@@ -1,8 +1,8 @@
 const SUPPORTED_RICH_AD_METHODS = [
+  "triggerInterstitialVideo",
   "triggerRewardedVideo",
   "showRewardedVideo",
   "showRewarded",
-  "triggerInterstitialVideo",
   "showVideo",
 ];
 const RICH_ADS_SDK_URL = "https://richinfo.co/richpartners/telegram/js/tg-ob.js";
@@ -265,11 +265,11 @@ export function getRichAdsDiagnosticLabel(playResult = null) {
 }
 
 export function isCompletedAdResult(result) {
-  if (result == null) return false;
+  if (result == null) return true;
   if (typeof result === "boolean") return result;
   if (typeof result === "string") {
     const status = result.trim().toLowerCase();
-    if (!status) return false;
+    if (!status) return true;
     if (/(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
     return /(reward|complete|completed|success|done|finish)/.test(status);
   }
@@ -284,9 +284,15 @@ export function isCompletedAdResult(result) {
     const status = String(result.status || result.state || result.result || "").toLowerCase();
     if (status && /(close|closed|cancel|skip|error|fail|reject)/.test(status)) return false;
     if (status) return /(reward|complete|completed|success|done|finish)/.test(status);
+
+    const detail = normalizeFailureText(result, "").toLowerCase();
+    if (detail && /(close|closed|cancel|skip|error|fail|reject|no fill|nofill|not available)/.test(detail)) {
+      return false;
+    }
+    if (detail && /(reward|complete|completed|success|done|finish)/.test(detail)) return true;
   }
 
-  return false;
+  return true;
 }
 
 export function describeRichAdFailure(playResult, fallback = "") {
