@@ -570,10 +570,11 @@
         ? parseCellKey(intersectionKey)
         : (longestMatch?.cells?.[Math.floor((longestMatch.cells.length || 1) / 2)] || uniqueCells[0] || null);
 
+      const longestLen = Number(longestMatch?.len || 0);
       let special = null;
-      if (hasHorizontal && hasVertical && uniqueCells.length >= 5) special = SPECIAL.BOMB;
-      else if (Number(longestMatch?.len || 0) >= 5) special = SPECIAL.ROCKET;
-      else if (Number(longestMatch?.len || 0) === 4) special = SPECIAL.BULLET;
+      if (longestLen >= 6) special = SPECIAL.ROCKET;
+      else if (longestLen === 5) special = SPECIAL.BOMB;
+      else if (longestLen === 4) special = SPECIAL.BULLET;
 
       groups.push({
         type: longestMatch?.type || "",
@@ -885,6 +886,7 @@
       const out = [];
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
           const rr = cell.r + dr;
           const cc = cell.c + dc;
           if (inBounds(rr, cc)) out.push({ r: rr, c: cc });
@@ -897,7 +899,7 @@
       const pool = collectBoardCells(board)
         .filter((pos) => !(pos.r === cell.r && pos.c === cell.c));
       shuffleInPlace(pool);
-      return [cell, ...pool.slice(0, 5)];
+      return pool.slice(0, 10);
     }
 
     return [cell];
@@ -927,6 +929,7 @@
 
     const targets = buildSpecialTargets(board, cell, special);
     const remove = new Set(targets.map((target) => cellKey(target.r, target.c)));
+    remove.add(cellKey(cell.r, cell.c));
     const summary = summarizeDestroyedTiles(board, targets);
 
     return {
@@ -2920,6 +2923,35 @@
               color: i % 2 ? "#4d3a2d" : "#2d261f",
             });
           }
+
+          const targets = Array.isArray(burst.targets) ? burst.targets : [];
+          targets.forEach((target, idx) => {
+            const targetRect = this._tileRects.find((tileRect) => tileRect.r === target?.r && tileRect.c === target?.c);
+            if (!targetRect) return;
+            const tx = targetRect.x + targetRect.w / 2;
+            const ty = targetRect.y + targetRect.h / 2;
+            this._effects.push({
+              type: "soft_glow",
+              x: tx,
+              y: ty,
+              r: targetRect.w * 0.12,
+              maxR: targetRect.w * 0.56,
+              life: -idx * 18,
+              duration: 420,
+              color: "#ffb45c",
+              strength: 0.44,
+            });
+            this._effects.push({
+              type: "ring",
+              x: tx,
+              y: ty,
+              r: targetRect.w * 0.08,
+              maxR: targetRect.w * 0.48,
+              life: -idx * 18,
+              duration: 380,
+              color: "#ffd38a",
+            });
+          });
         }
 
         if (burst.special === SPECIAL.BULLET && burst.kind === "special") {
