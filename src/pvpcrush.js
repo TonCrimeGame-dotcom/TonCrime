@@ -4,7 +4,7 @@
   const START_MOVES = 12;
   const ACTIONS_PER_TURN = 2;
   const TURN_TIME_MS = 30000;
-  const TURN_BANNER_MS = 1300;
+  const TURN_BANNER_MS = 1650;
   const DRAG_THRESHOLD = 16;
 
   const TILE = {
@@ -255,8 +255,8 @@
     return text;
   }
 
-  PVP_CRUSH_TEXT.tr.rule = "Surukleyerek veya dokunarak tas degistir - Raund basi 30sn - Ozel ikon patlatmak 1 hamle sayilir";
-  PVP_CRUSH_TEXT.en.rule = "Swap tiles by dragging or tapping - 30s per round - Triggering a special costs 1 move";
+  PVP_CRUSH_TEXT.tr.rule = "4lu, 5li ve 6li birlesmeler ekstra hak verir - Tur hakki en fazla 2/2 olur";
+  PVP_CRUSH_TEXT.en.rule = "4, 5, and 6 matches grant an extra action - turn actions cap at 2/2";
   PVP_CRUSH_TEXT.tr.matchLeft = "Mactan ciktin - mac kaybi";
   PVP_CRUSH_TEXT.en.matchLeft = "You left the match - match lost";
   PVP_CRUSH_TEXT.tr.opponentLeftWon = "Rakip cikti - galibiyet senin";
@@ -674,22 +674,20 @@
   }
 
   function getExtraMoveCount(len) {
-    if (len >= 6) return 3;
-    if (len === 5) return 2;
-    if (len === 4) return 1;
+    if (len >= 4) return 1;
     return 0;
   }
 
   function getMatchFxLabel(len) {
     if (getPvpCrushLang() === "en") {
-      if (len >= 6) return "ULTRA MOVE +3";
-      if (len === 5) return "MEGA MOVE +2";
-      if (len === 4) return "EXTRA MOVE +1";
+      if (len >= 6) return "ULTRA EXTRA";
+      if (len === 5) return "MEGA EXTRA";
+      if (len === 4) return "EXTRA MOVE";
       return "";
     }
-    if (len >= 6) return "ULTRA HAMLE +3";
-    if (len === 5) return "MEGA HAMLE +2";
-    if (len === 4) return "EKSTRA HAMLE +1";
+    if (len >= 6) return "ULTRA EKSTRA";
+    if (len === 5) return "MEGA EKSTRA";
+    if (len === 4) return "EKSTRA HAMLE";
     return "";
   }
 
@@ -803,8 +801,8 @@
           special: tile.special || null,
           r,
           c,
-          delay: seq * 45 + randInt(0, 35),
-          duration: 340 + randInt(0, 90),
+          delay: seq * 34 + randInt(0, 28),
+          duration: 430 + randInt(0, 120),
           startOffset: 1 + (seq % 3) * 0.55 + Math.random() * 0.9,
         });
         seq += 1;
@@ -1081,29 +1079,64 @@
     const special = getTileSpecial(tile);
     const specialMeta = SPECIAL_META[special] || null;
     const img = ICON_IMAGES[meta.assetKey];
+    const mainColor = specialMeta?.color || meta.color;
     const r = Math.max(8, Math.floor(size * 0.18));
     const lowFx = isLowFxDevice();
 
     if (lowFx) {
-      fillRoundRect(ctx, x, y, size, size, r, meta.color + "16");
+      fillRoundRect(ctx, x, y, size, size, r, mainColor + "18");
     } else {
       const tileGrad = ctx.createLinearGradient(x, y, x + size, y + size);
-      tileGrad.addColorStop(0, meta.color + "22");
-      tileGrad.addColorStop(1, meta.color + "0a");
+      tileGrad.addColorStop(0, mainColor + (specialMeta ? "34" : "22"));
+      tileGrad.addColorStop(0.58, mainColor + (specialMeta ? "16" : "10"));
+      tileGrad.addColorStop(1, "rgba(4,6,12,0.22)");
       fillRoundRect(ctx, x, y, size, size, r, tileGrad);
     }
 
     if (selected) {
       const pulse = 0.7 + 0.3 * Math.sin((animT || 0) * 0.006);
-      strokeRoundRect(ctx, x, y, size, size, r, meta.color + Math.round(pulse * 255).toString(16).padStart(2, "0"), 2.5);
+      strokeRoundRect(ctx, x, y, size, size, r, mainColor + Math.round(pulse * 255).toString(16).padStart(2, "0"), 2.5);
     } else {
-      strokeRoundRect(ctx, x, y, size, size, r, meta.color + "33", 1);
+      strokeRoundRect(ctx, x, y, size, size, r, mainColor + (specialMeta ? "77" : "33"), specialMeta ? 1.6 : 1);
     }
 
-    ctx.fillStyle = meta.color + "bb";
-    ctx.beginPath();
-    ctx.arc(x + size - 7, y + 7, 3.5, 0, Math.PI * 2);
-    ctx.fill();
+    if (!specialMeta) {
+      ctx.fillStyle = mainColor + "bb";
+      ctx.beginPath();
+      ctx.arc(x + size - 7, y + 7, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (specialMeta) {
+      if (!lowFx) {
+        const pulse = 0.72 + 0.28 * Math.sin((animT || 0) * 0.009);
+        const glow = ctx.createRadialGradient(x + size / 2, y + size / 2, 2, x + size / 2, y + size / 2, size * 0.62);
+        glow.addColorStop(0, specialMeta.color + Math.round(120 * pulse).toString(16).padStart(2, "0"));
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x + size / 2, y + size / 2, size * 0.56, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (special === SPECIAL.BULLET) {
+        drawPistolTileOverlay(ctx, x, y, size, animT);
+        return;
+      }
+      if (special === SPECIAL.ROCKET) {
+        drawRocketTileOverlay(ctx, x, y, size, animT);
+        return;
+      }
+      if (special === SPECIAL.BOMB) {
+        drawBombTileOverlay(ctx, x, y, size, animT);
+        return;
+      }
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `900 ${Math.max(16, Math.floor(size * 0.38))}px system-ui, Arial`;
+      ctx.fillStyle = "#fff4db";
+      ctx.fillText(specialMeta.badge, x + size / 2, y + size / 2);
+      return;
+    }
 
     if (img && img.complete && (img.naturalWidth || img.width)) {
       const pad = Math.max(3, Math.floor(size * 0.1));
@@ -1117,55 +1150,15 @@
       ctx.fillText(meta.emoji, x + size / 2, y + size / 2 + 1);
     }
 
-    if (!specialMeta) return;
-    if (special === SPECIAL.BULLET) {
-      drawPistolTileOverlay(ctx, x, y, size, animT);
-      return;
-    }
-    if (special === SPECIAL.ROCKET) {
-      drawRocketTileOverlay(ctx, x, y, size, animT);
-      return;
-    }
-    if (special === SPECIAL.BOMB) {
-      drawBombTileOverlay(ctx, x, y, size, animT);
-      return;
-    }
-
-    const pulse = 0.72 + 0.28 * Math.sin((animT || 0) * 0.01);
-    const badgeW = Math.max(18, Math.floor(size * 0.34));
-    const badgeH = Math.max(14, Math.floor(size * 0.24));
-    const badgeX = x + size - badgeW - 5;
-    const badgeY = y + size - badgeH - 5;
-    const glow = ctx.createRadialGradient(
-      badgeX + badgeW * 0.5,
-      badgeY + badgeH * 0.5,
-      2,
-      badgeX + badgeW * 0.5,
-      badgeY + badgeH * 0.5,
-      badgeW
-    );
-    glow.addColorStop(0, specialMeta.color + "bb");
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(badgeX + badgeW * 0.5, badgeY + badgeH * 0.5, badgeW * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-    fillRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, Math.max(6, Math.floor(badgeH * 0.45)), "rgba(8,10,18,0.88)");
-    strokeRoundRect(ctx, badgeX, badgeY, badgeW, badgeH, Math.max(6, Math.floor(badgeH * 0.45)), specialMeta.color + Math.round(pulse * 255).toString(16).padStart(2, "0"), 1.5);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = `900 ${Math.max(9, Math.floor(size * 0.16))}px system-ui, Arial`;
-    ctx.fillStyle = "#fff4db";
-    ctx.fillText(specialMeta.badge, badgeX + badgeW * 0.5, badgeY + badgeH * 0.54);
   }
 
   function drawBombTileOverlay(ctx, x, y, size, animT) {
     const t = Number(animT || Date.now());
     const pulse = 0.72 + 0.28 * Math.sin(t * 0.01);
     const lowFx = isLowFxDevice();
-    const cx = x + size * 0.74;
-    const cy = y + size * 0.72;
-    const radius = Math.max(10, size * 0.19);
+    const cx = x + size * 0.5;
+    const cy = y + size * 0.57;
+    const radius = Math.max(12, size * 0.32);
 
     ctx.save();
     ctx.globalAlpha = 0.98;
@@ -1324,10 +1317,10 @@
 
   function drawPistolTileOverlay(ctx, x, y, size, animT) {
     const pulse = 0.74 + 0.26 * Math.sin(Number(animT || Date.now()) * 0.008);
-    const w = size * 0.62;
-    const h = size * 0.42;
-    const px = x + size * 0.2;
-    const py = y + size * 0.44;
+    const w = size * 0.82;
+    const h = size * 0.56;
+    const px = x + size * 0.08;
+    const py = y + size * 0.31;
     const lowFx = isLowFxDevice();
 
     ctx.save();
@@ -1435,8 +1428,8 @@
     const pulse = 0.74 + 0.26 * Math.sin(Number(animT || Date.now()) * 0.009);
     const lowFx = isLowFxDevice();
     ctx.save();
-    const cx = x + size * 0.72;
-    const cy = y + size * 0.52;
+    const cx = x + size * 0.5;
+    const cy = y + size * 0.53;
     if (!lowFx) {
       const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, size * 0.42);
       glow.addColorStop(0, `rgba(255,132,48,${0.16 * pulse})`);
@@ -1446,7 +1439,7 @@
       ctx.arc(cx, cy, size * 0.3, 0, Math.PI * 2);
       ctx.fill();
     }
-    drawRocketSprite(ctx, cx, cy, size * 0.62, { flame: 0.14 * pulse });
+    drawRocketSprite(ctx, cx, cy, size * 0.9, { flame: 0.18 * pulse });
     ctx.restore();
   }
 
@@ -1488,7 +1481,7 @@
           <div class="tc-cage-toast tc-crush-toast" id="tcCrushToast"></div>
         </div>
 
-        <div class="tc-cage-rule tc-crush-rule">${pvpCrushText("rule", "Surukleyerek veya dokunarak tas degistir • Raund basi 40sn • Extra move en fazla 2 hakta kalir")}</div>
+        <div class="tc-cage-rule tc-crush-rule">${pvpCrushText("rule", "4lu, 5li ve 6li birlesmeler ekstra hak verir - Tur hakki en fazla 2/2 olur")}</div>
       </div>
     `;
   }
@@ -2121,7 +2114,7 @@
         from,
         to,
         startAt: performance.now(),
-        duration: 240,
+        duration: 290,
         board: cloneBoard(this._state.board),
         nextState: netState,
         nextMeta: { ...meta, fromRemote: false, move: null },
@@ -2136,7 +2129,7 @@
         from: { r: Number(from.r), c: Number(from.c) },
         to: { r: Number(to.r), c: Number(to.c) },
         startAt: performance.now(),
-        duration: 210,
+        duration: 280,
         board: cloneBoard(boardBefore),
       };
       this._render();
@@ -2820,29 +2813,43 @@
         const color = burst.color || meta?.color || "#ffd166";
         const cx = rect.x + rect.w / 2;
         const cy = rect.y + rect.h / 2;
-        const count = scaleFxCount(burst.kind === "extra" ? 18 + burst.len * 2 : 10 + burst.len * 2, burst.kind === "extra" ? 10 : 6);
+        const isExtraFx = burst.kind === "extra";
+        const isSpecialCreateFx = burst.kind === "special_create";
+        const count = scaleFxCount(isExtraFx ? 20 + burst.len * 2 : 12 + burst.len * 2, isExtraFx ? 12 : 7);
 
-        this._flashAlpha = Math.max(this._flashAlpha, 0.3 + Math.min(0.34, burst.len * 0.045));
+        this._flashAlpha = Math.max(this._flashAlpha, 0.18 + Math.min(0.24, burst.len * 0.034));
         this._flashColor = color;
-        this._kickShake(120 + burst.len * 30, 0.72 + burst.len * 0.06);
+        this._kickShake(90 + burst.len * 22, 0.44 + burst.len * 0.045);
         this._playExplosionSound(burst.len + (burst.kind === "extra" ? 2 : 0));
         this._vibrate(burst.kind === "extra" ? [12, 20, 22] : [10, 14, 10]);
 
         this._effects.push({
-          type: "label",
+          type: "soft_glow",
           x: cx,
           y: cy,
+          r: rect.w * (isExtraFx ? 0.28 : 0.22),
+          maxR: rect.w * (isExtraFx ? 1.08 : 0.88),
           life: 0,
-          duration: burst.kind === "extra" ? 860 : 620,
+          duration: isExtraFx ? 720 : 560,
+          color,
+          strength: isExtraFx ? 0.58 : 0.42,
+        });
+
+        this._effects.push({
+          type: "label",
+          x: cx,
+          y: cy - rect.h * (isExtraFx ? 0.12 : 0.08),
+          life: 0,
+          duration: isExtraFx || isSpecialCreateFx ? 980 : 760,
           text: burst.label,
           color,
-          big: burst.kind === "extra",
+          big: isExtraFx || isSpecialCreateFx,
         });
 
         if (burst.special === SPECIAL.BOMB && burst.kind === "special") {
-          this._flashAlpha = Math.max(this._flashAlpha, 0.62);
+          this._flashAlpha = Math.max(this._flashAlpha, 0.48);
           this._flashColor = "#ffb45c";
-          this._kickShake(460, 1.8);
+          this._kickShake(420, 1.26);
           this._playExplosionSound(burst.len + 7);
           this._vibrate([16, 22, 28]);
 
@@ -2932,7 +2939,7 @@
 
             this._flashAlpha = Math.max(this._flashAlpha, 0.32);
             this._flashColor = "#ffcd73";
-            this._kickShake(250, 1.08);
+            this._kickShake(260, 0.92);
             this._playExplosionSound(6 + burst.len);
             this._vibrate([10, 16, 10]);
 
@@ -2984,7 +2991,7 @@
 
           this._flashAlpha = Math.max(this._flashAlpha, 0.3);
           this._flashColor = "#ff8a45";
-          this._kickShake(340, 1.24);
+          this._kickShake(340, 1.02);
           this._playExplosionSound(5 + uniqueTargets.length);
           this._vibrate([12, 18, 18]);
 
@@ -3227,7 +3234,7 @@
       this._startLocalSwapAnimation(boardBefore, a, b);
       this._state.turnMadeAction = true;
       this._render();
-      await this._sleep(180);
+      await this._sleep(250);
       const turnFx = await this._resolveTurn("me", { initialResolution: evalNow });
 
       if (!this._running) return;
@@ -3367,7 +3374,7 @@
         this._state.info = this._text("opponentPlaying", "Rakip oynuyor");
         this._updateHud();
         this._render();
-        await this._sleep(randInt(190, 340));
+        await this._sleep(randInt(250, 390));
         await this._resolveTurn("enemy");
       }
 
@@ -3396,7 +3403,7 @@
         chain += 1;
         totalDamage += res.damage;
         totalHeal += res.heal;
-        totalExtra += res.extraMoves;
+        if (Number(res.extraMoves || 0) > 0) totalExtra = 1;
 
         this._render();
         this._spawnMatchEffects(res.fxBursts);
@@ -3451,7 +3458,9 @@
         this._state.meMoves = Math.max(0, this._state.meMoves - 1);
         this._state.meHp = clamp(this._state.meHp + totalHeal, 0, START_HP);
         this._state.enemyHp = clamp(this._state.enemyHp - totalDamage, 0, START_HP);
-        this._state.meActionLeft = clamp(this._state.meActionLeft - 1 + totalExtra, 0, ACTIONS_PER_TURN);
+        this._state.meActionLeft = totalExtra > 0
+          ? ACTIONS_PER_TURN
+          : clamp(this._state.meActionLeft - 1, 0, ACTIONS_PER_TURN);
 
         if (totalExtra > 0) {
           this._toast(
@@ -3478,7 +3487,9 @@
         this._state.enemyMoves = Math.max(0, this._state.enemyMoves - 1);
         this._state.enemyHp = clamp(this._state.enemyHp + totalHeal, 0, START_HP);
         this._state.meHp = clamp(this._state.meHp - totalDamage, 0, START_HP);
-        this._state.enemyActionLeft = clamp(this._state.enemyActionLeft - 1 + totalExtra, 0, ACTIONS_PER_TURN);
+        this._state.enemyActionLeft = totalExtra > 0
+          ? ACTIONS_PER_TURN
+          : clamp(this._state.enemyActionLeft - 1, 0, ACTIONS_PER_TURN);
 
         if (totalExtra > 0) {
           this._toast(
@@ -3669,6 +3680,21 @@
           ctx.beginPath();
           ctx.arc(fx.x, fx.y, fx.radius * (0.8 + (1 - t) * 0.35), 0, Math.PI * 2);
           ctx.fill();
+        } else if (fx.type === "soft_glow") {
+          const glowT = easeOutCubic(t);
+          const r = lerp(Number(fx.r || 4), Number(fx.maxR || 28), glowT);
+          const strength = Number(fx.strength || 0.45);
+          const fxColor = String(fx.color || "#ffd166");
+          const glowColor = /^#[0-9a-f]{6}$/i.test(fxColor) ? `${fxColor}aa` : fxColor;
+          ctx.globalAlpha = alpha * strength;
+          const glow = ctx.createRadialGradient(fx.x, fx.y, 1, fx.x, fx.y, r);
+          glow.addColorStop(0, "rgba(255,255,255,0.72)");
+          glow.addColorStop(0.18, glowColor);
+          glow.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
+          ctx.fill();
         } else if (fx.type === "bomb_blast") {
           const blastT = easeOutCubic(t);
           ctx.globalAlpha = alpha * 0.82;
@@ -3824,19 +3850,26 @@
           ctx.fillStyle = fx.color;
           fillRoundRect(ctx, fx.x - fx.size * 0.5, fx.y - fx.size * 0.5, fx.size, fx.size, 2, fx.color);
         } else if (fx.type === "label") {
+          const pop = 1 + Math.sin(Math.PI * t) * (fx.big ? 0.18 : 0.10);
+          ctx.save();
+          ctx.translate(fx.x, fx.y);
+          ctx.scale(pop, pop);
           ctx.globalAlpha = alpha;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.font = fx.big ? "900 18px system-ui, Arial" : "900 14px system-ui, Arial";
-          ctx.lineWidth = fx.big ? 5 : 4;
-          ctx.strokeStyle = "rgba(0,0,0,0.55)";
-          ctx.strokeText(fx.text, fx.x, fx.y);
+          ctx.font = fx.big ? "900 22px system-ui, Arial" : "900 15px system-ui, Arial";
+          ctx.lineWidth = fx.big ? 7 : 5;
+          ctx.strokeStyle = "rgba(0,0,0,0.64)";
+          ctx.shadowBlur = fx.big ? 18 : 10;
+          ctx.shadowColor = fx.color;
+          ctx.strokeText(fx.text, 0, 0);
           ctx.fillStyle = fx.color;
-          ctx.fillText(fx.text, fx.x, fx.y);
+          ctx.fillText(fx.text, 0, 0);
+          ctx.restore();
         } else if (fx.type === "ring") {
-          ctx.globalAlpha = alpha * 0.7;
+          ctx.globalAlpha = alpha * 0.58;
           ctx.strokeStyle = fx.color;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.arc(fx.x, fx.y, fx.r, 0, Math.PI * 2);
           ctx.stroke();
@@ -3844,10 +3877,16 @@
           const life = Math.max(0, fx.life - Number(fx.delay || 0));
           if (life <= 0) continue;
           const tt = clamp(life / fx.duration, 0, 1);
-          const ease = 1 - Math.pow(1 - tt, 3);
-          const y = fx.y + (fx.toY - fx.y) * ease;
-          ctx.globalAlpha = Math.min(1, 0.35 + tt * 0.8);
-          renderCrushTile(ctx, { type: fx.tileType, special: fx.special || null }, fx.x, y, fx.size, false, Date.now());
+          const ease = easeOutCubic(tt);
+          const bounce = Math.sin(tt * Math.PI) * Math.min(8, fx.size * 0.08);
+          const y = fx.y + (fx.toY - fx.y) * ease - bounce;
+          const scale = 1 + Math.sin(tt * Math.PI) * 0.045;
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, 0.28 + tt * 0.86);
+          ctx.translate(fx.x + fx.size / 2, y + fx.size / 2);
+          ctx.scale(scale, scale);
+          renderCrushTile(ctx, { type: fx.tileType, special: fx.special || null }, -fx.size / 2, -fx.size / 2, fx.size, false, Date.now());
+          ctx.restore();
         }
       }
       ctx.globalAlpha = 1;
@@ -3867,56 +3906,119 @@
 
       const t = clamp(1 - left / TURN_BANNER_MS, 0, 1);
       const alpha = t < 0.2 ? t / 0.2 : (t > 0.82 ? (1 - t) / 0.18 : 1);
-      const y = h * 0.5 - 12 * Math.sin(t * Math.PI);
-      const glowColor = "rgba(255,126,74," + (0.22 * alpha).toFixed(3) + ")";
-      const halo = ctx.createRadialGradient(w * 0.5, y, 10, w * 0.5, y, Math.min(w, h) * 0.34);
+      const y = h * 0.5 - 18 * Math.sin(t * Math.PI);
+      const scale = 0.92 + Math.sin(t * Math.PI) * 0.14;
+      const glowColor = "rgba(255,180,92," + (0.28 * alpha).toFixed(3) + ")";
+      const halo = ctx.createRadialGradient(w * 0.5, y, 10, w * 0.5, y, Math.min(w, h) * 0.42);
       halo.addColorStop(0, glowColor);
       halo.addColorStop(1, "rgba(0,0,0,0)");
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.fillStyle = halo;
       ctx.beginPath();
-      ctx.arc(w * 0.5, y, Math.min(w, h) * 0.26, 0, Math.PI * 2);
+      ctx.arc(w * 0.5, y, Math.min(w, h) * 0.34, 0, Math.PI * 2);
       ctx.fill();
+
+      const panelW = Math.min(w - 32, Math.max(230, w * 0.58));
+      const panelH = Math.max(58, Math.min(82, h * 0.13));
+      const panelX = w * 0.5 - panelW / 2;
+      const panelY = y - panelH / 2;
+      const panelGrad = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
+      panelGrad.addColorStop(0, "rgba(255,180,80,0.10)");
+      panelGrad.addColorStop(0.5, "rgba(255,230,160,0.20)");
+      panelGrad.addColorStop(1, "rgba(255,92,64,0.10)");
+      fillRoundRect(ctx, panelX, panelY, panelW, panelH, 22, panelGrad);
+      strokeRoundRect(ctx, panelX, panelY, panelW, panelH, 22, "rgba(255,220,144,0.56)", 1.6);
+
+      ctx.globalAlpha = alpha * 0.44;
+      ctx.strokeStyle = "rgba(255,220,144,0.75)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const offset = (i - 1) * 16 + Math.sin(t * Math.PI) * 12;
+        ctx.beginPath();
+        ctx.moveTo(panelX + 18, y + offset);
+        ctx.lineTo(panelX + panelW - 18, y - offset * 0.42);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = alpha;
+      ctx.translate(w * 0.5, y);
+      ctx.scale(scale, scale);
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = `900 ${Math.max(28, Math.floor(Math.min(w, h) * 0.085))}px system-ui, Arial`;
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.strokeText(text, w * 0.5, y);
-      ctx.shadowBlur = isLowFxDevice() ? 14 : 28;
-      ctx.shadowColor = "#ff7a4a";
-      ctx.fillStyle = "#ffd784";
-      ctx.fillText(text, w * 0.5, y);
+      ctx.font = `900 ${Math.max(31, Math.floor(Math.min(w, h) * 0.095))}px system-ui, Arial`;
+      ctx.lineWidth = 9;
+      ctx.strokeStyle = "rgba(0,0,0,0.68)";
+      ctx.strokeText(text, 0, 0);
+      ctx.shadowBlur = isLowFxDevice() ? 16 : 32;
+      ctx.shadowColor = "#ff9a4a";
+      ctx.fillStyle = "#ffe39d";
+      ctx.fillText(text, 0, 0);
       ctx.restore();
     },
 
     _renderResultOverlay(ctx, w, h) {
       const overlay = this._resultOverlay;
       if (!overlay) return;
-      const boxW = Math.min(w - 32, 320);
-      const boxH = Math.min(h - 36, 170);
+      const elapsed = Date.now() - Number(overlay.shownAt || Date.now());
+      const intro = easeOutCubic(clamp(elapsed / 420, 0, 1));
+      const pulse = 1 + Math.sin(elapsed * 0.006) * 0.018;
+      const boxW = Math.min(w - 28, 360);
+      const boxH = Math.min(h - 36, overlay.rewardYton ? 190 : 170);
       const boxX = Math.floor((w - boxW) / 2);
       const boxY = Math.floor((h - boxH) / 2);
       const titleColor = overlay.win ? "#7dff9b" : "#ff7d93";
-      fillRoundRect(ctx, boxX, boxY, boxW, boxH, 24, "rgba(5,10,18,0.82)");
-      strokeRoundRect(ctx, boxX, boxY, boxW, boxH, 24, titleColor + "88", 2);
+
+      ctx.save();
+      ctx.globalAlpha = intro;
+      const shade = ctx.createRadialGradient(w * 0.5, h * 0.5, 10, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
+      shade.addColorStop(0, overlay.win ? "rgba(64,255,138,0.12)" : "rgba(255,80,112,0.12)");
+      shade.addColorStop(1, "rgba(0,0,0,0.54)");
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.translate(w * 0.5, h * 0.5);
+      ctx.scale(pulse * (0.94 + intro * 0.06), pulse * (0.94 + intro * 0.06));
+      ctx.translate(-w * 0.5, -h * 0.5);
+
+      const panel = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
+      panel.addColorStop(0, "rgba(7,12,22,0.92)");
+      panel.addColorStop(0.5, "rgba(18,20,30,0.90)");
+      panel.addColorStop(1, overlay.win ? "rgba(16,46,32,0.88)" : "rgba(48,18,28,0.88)");
+      fillRoundRect(ctx, boxX, boxY, boxW, boxH, 26, panel);
+      strokeRoundRect(ctx, boxX, boxY, boxW, boxH, 26, titleColor + "aa", 2.4);
+
+      const halo = ctx.createRadialGradient(boxX + boxW / 2, boxY + 42, 5, boxX + boxW / 2, boxY + 42, boxW * 0.42);
+      halo.addColorStop(0, titleColor + "66");
+      halo.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(boxX + boxW / 2, boxY + 46, boxW * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.font = "900 30px system-ui, Arial";
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = "rgba(0,0,0,0.68)";
+      ctx.shadowBlur = 22;
+      ctx.shadowColor = titleColor;
+      ctx.font = "900 34px system-ui, Arial";
       ctx.strokeText(overlay.title, boxX + boxW / 2, boxY + 44);
       ctx.fillStyle = titleColor;
       ctx.fillText(overlay.title, boxX + boxW / 2, boxY + 44);
+      ctx.shadowBlur = 0;
       ctx.font = "800 15px system-ui, Arial";
       ctx.fillStyle = "rgba(255,255,255,0.88)";
       ctx.fillText(String(overlay.reason || ""), boxX + boxW / 2, boxY + 86);
       if (overlay.rewardYton) {
-        ctx.font = "900 24px system-ui, Arial";
+        const rewardY = boxY + 132;
+        fillRoundRect(ctx, boxX + 46, rewardY - 23, boxW - 92, 46, 18, "rgba(255,209,102,0.12)");
+        strokeRoundRect(ctx, boxX + 46, rewardY - 23, boxW - 92, 46, 18, "rgba(255,209,102,0.34)", 1.4);
+        ctx.font = "900 25px system-ui, Arial";
         ctx.fillStyle = "#ffd166";
-        ctx.fillText(`+${overlay.rewardYton} YTON`, boxX + boxW / 2, boxY + 124);
+        ctx.fillText(`+${overlay.rewardYton} YTON`, boxX + boxW / 2, rewardY);
       }
+      ctx.restore();
     },
 
     _renderRemoteSwap(ctx) {
@@ -3932,7 +4034,7 @@
       if (!fromTile || !toTile) return;
 
       const t = clamp((performance.now() - anim.startAt) / anim.duration, 0, 1);
-      const ease = t < 0.55 ? 2.4 * t * t : 1 - Math.pow(-2 * t + 2, 2.4) / 2;
+      const ease = easeInOutCubic(t);
       const swapGlow = Math.sin(t * Math.PI);
       const mix = (a, b) => a + (b - a) * ease;
       const pad = 2;
