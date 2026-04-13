@@ -37,7 +37,7 @@ export function hasRichAdsController(controller) {
 function getDefaultRichAdsConfig() {
   return {
     pubId: "1006898",
-    appId: "6915",
+    appId: "6869",
     debug: false,
   };
 }
