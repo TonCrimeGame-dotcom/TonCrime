@@ -225,6 +225,7 @@ const PROFILE_TEXT = {
     tabProfile: "Genel",
     tabWallet: "Cuzdan",
     tabRanking: "Siralama",
+    tabRivals: "Rakipler",
     heroLevel: "Level",
     heroClan: "Clan",
     heroEnergy: "Enerji",
@@ -244,11 +245,14 @@ const PROFILE_TEXT = {
     telegram: "TonCrime Telegram",
     rankingTitle: "Siralama",
     rankingSub: "PvP kayitlari",
+    rivalsTitle: "Rakip Profilleri",
+    rivalsSub: "Arena Rakipleri, Black Market Rivals ve sokak kayitlari",
   },
   en: {
     tabProfile: "Profile",
     tabWallet: "Wallet",
     tabRanking: "Ranking",
+    tabRivals: "Rivals",
     heroLevel: "Level",
     heroClan: "Clan",
     heroEnergy: "Energy",
@@ -268,6 +272,8 @@ const PROFILE_TEXT = {
     telegram: "TonCrime Telegram",
     rankingTitle: "Ranking",
     rankingSub: "PvP records",
+    rivalsTitle: "Rival Profiles",
+    rivalsSub: "Arena Rivals, Black Market Rivals, and street records",
   },
 };
 
@@ -299,7 +305,7 @@ export class ProfileScene {
     this._ensureWalletState();
     this._seedLeaderboard();
     const uiTab = String(this.store.get()?.ui?.profileTab || "profile");
-    this.activeTab = ["profile", "wallet", "ranking"].includes(uiTab) ? uiTab : "profile";
+    this.activeTab = ["profile", "wallet", "ranking", "rivals"].includes(uiTab) ? uiTab : "profile";
     this.scrollY = 0;
     this.scrollMax = 0;
     this._dragScroll = null;
@@ -351,6 +357,18 @@ export class ProfileScene {
       ui: {
         ...(s.ui || {}),
         profileTab: tab,
+      },
+    });
+  }
+
+  _selectRivalProfile(id) {
+    const rivalId = String(id || "").trim();
+    if (!rivalId) return;
+    const s = this.store.get() || {};
+    this.store.set({
+      ui: {
+        ...(s.ui || {}),
+        selectedRivalProfileId: rivalId,
       },
     });
   }
@@ -881,6 +899,43 @@ export class ProfileScene {
     this._toast(this._ui('Cekim talebi olusturuldu', 'Withdrawal request created'));
   }
 
+  _botProfiles(state = this.getState()) {
+    try {
+      const engineList = window.tcBotEngine?.listProfiles?.();
+      if (Array.isArray(engineList) && engineList.length) return engineList.map((bot) => ({ ...bot }));
+    } catch (_) {}
+    return (Array.isArray(state?.bots) ? state.bots : [])
+      .filter((bot) => bot && (bot.isBot || bot.isRival || bot.group || bot.kind))
+      .map((bot) => ({ ...bot }));
+  }
+
+  _selectedRival(state, bots) {
+    const pvp = state?.pvp || {};
+    const ui = state?.ui || {};
+    const selectedId = String(
+      ui.selectedRivalProfileId ||
+      ui.selectedBotProfileId ||
+      pvp.currentOpponentProfileId ||
+      pvp.currentOpponent?.id ||
+      pvp.currentOpponentProfile?.id ||
+      ""
+    ).trim();
+    const list = Array.isArray(bots) ? bots : [];
+    const direct = selectedId
+      ? list.find((bot) => String(bot.id || "").trim() === selectedId || String(bot.username || "").trim() === selectedId)
+      : null;
+    if (direct) return direct;
+    if (pvp.currentOpponentProfile?.username) return pvp.currentOpponentProfile;
+    if (pvp.currentOpponent?.username) return pvp.currentOpponent;
+    return list[0] || null;
+  }
+
+  _rivalSortValue(bot) {
+    if (bot?.kind === "blackMarket") return 0;
+    if (bot?.kind === "arena") return 1;
+    return 2;
+  }
+
   _seedLeaderboard() {
     try {
       const s = this.store.get() || {};
@@ -889,6 +944,28 @@ export class ProfileScene {
       const username = String(p.username || "Player").trim() || "Player";
       const selfId = String(p.telegramId || p.id || "player_main").trim() || "player_main";
       const board = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.map((x) => ({ ...x })) : [];
+      const rivalRows = this._botProfiles(s)
+        .slice()
+        .sort((a, b) => Number(b.rating || b.rank || 0) - Number(a.rating || a.rank || 0))
+        .slice(0, 40)
+        .map((bot) => {
+          const botWins = Math.max(0, Number(bot.wins || 0));
+          const botLosses = Math.max(0, Number(bot.losses || 0));
+          const botRating = Math.max(100, Number(bot.rating || bot.rank || 1000));
+          return {
+            id: String(bot.id || bot.username || ""),
+            name: String(bot.username || bot.name || "Rival"),
+            wins: botWins,
+            losses: botLosses,
+            rating: botRating,
+            score: botRating + botWins * 8,
+            group: bot.group || "",
+            premium: !!bot.premium,
+            isRival: true,
+            updatedAt: Date.now(),
+          };
+        });
+      const rivalIds = new Set(rivalRows.map((row) => row.id).filter(Boolean));
       const wins = Math.max(0, Number(pvp.wins || 0));
       const losses = Math.max(0, Number(pvp.losses || 0));
       const rating = Math.max(0, Number(pvp.rating || 1000));
@@ -896,6 +973,7 @@ export class ProfileScene {
       const next = board.filter((x) => {
         if (!x) return false;
         const rowId = String(x.id || x.telegram_id || x.telegramId || "").trim();
+        if (x.isRival || rivalIds.has(rowId)) return false;
         if (rowId) return rowId !== selfId;
         return String(x.name || "") !== username;
       });
@@ -908,6 +986,7 @@ export class ProfileScene {
         score,
         updatedAt: Date.now(),
       });
+      next.push(...rivalRows);
       next.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
       this.store.set({ pvp: { ...pvp, leaderboard: next.slice(0, 50) } });
     } catch (err) {
@@ -1044,6 +1123,11 @@ export class ProfileScene {
       const board = Array.isArray(state?.pvp?.leaderboard) ? state.pvp.leaderboard : [];
       return 70 + Math.max(6, Math.min(12, board.length || 6)) * (layout.mobile ? 52 : 48);
     }
+    if (tab === "rivals") {
+      const bots = this._botProfiles(state);
+      const rows = Math.max(8, Math.min(layout.mobile ? 18 : 16, bots.length || 8));
+      return (layout.mobile ? 420 : 380) + rows * (layout.mobile ? 82 : 74);
+    }
     return layout.mobile ? 448 : 332;
   }
 
@@ -1125,6 +1209,7 @@ export class ProfileScene {
 
     if (this.activeTab === "wallet") this.drawWalletContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
     else if (this.activeTab === "ranking") this.drawRankingContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
+    else if (this.activeTab === "rivals") this.drawRivalsContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
     else this.drawProfileContent(ctx, state, viewportX + 2, drawY + 2, viewportW - 6, contentH - 4, L);
 
     this.endScrollArea(ctx);
@@ -1276,6 +1361,7 @@ export class ProfileScene {
       { id: "profile", label: this._text("tabProfile") },
       { id: "wallet", label: this._text("tabWallet") },
       { id: "ranking", label: this._text("tabRanking") },
+      { id: "rivals", label: this._text("tabRivals") },
     ];
     const tabW = Math.floor((w - gap * (tabs.length - 1)) / tabs.length);
 
@@ -1287,7 +1373,7 @@ export class ProfileScene {
       fillRoundRect(ctx, tx, y, tabW, L.tabH, 14, active ? "rgba(243,187,102,0.20)" : "rgba(255,255,255,0.05)");
       strokeRoundRect(ctx, tx, y, tabW, L.tabH, 14, active ? "rgba(243,187,102,0.62)" : "rgba(255,255,255,0.10)", 1);
       ctx.fillStyle = active ? "rgba(255,248,236,0.98)" : "rgba(255,255,255,0.82)";
-      ctx.font = `700 ${L.mobile ? 12 : 13}px system-ui`;
+      ctx.font = `700 ${L.mobile && tabW < 76 ? 11 : L.mobile ? 12 : 13}px system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(tab.label, tx + tabW / 2, y + L.tabH / 2 + 1);
@@ -1668,6 +1754,189 @@ export class ProfileScene {
     ctx.font = '500 12px system-ui';
     const finalLines = wrapText(ctx, t('Yatirim Yap butonuna bas, limit sec, TON adresine gonder ve onayla.', 'Press Invest, choose a tier, send to the TON address, and confirm.'), innerW, 2);
     finalLines.forEach((line, idx) => ctx.fillText(line, innerX, cy + 52 + idx * 15));
+  }
+
+  drawRivalsContent(ctx, state, x, y, w, h, L) {
+    const bots = this._botProfiles(state);
+    const selected = this._selectedRival(state, bots);
+    const t = (tr, en) => this._ui(tr, en);
+    const fullW = w - 16;
+    const cardX = x + 8;
+    const innerX = cardX + 16;
+    const innerW = fullW - 32;
+
+    this.drawSectionTitle(ctx, this._text("rivalsTitle"), this._text("rivalsSub"), cardX, y + 20, fullW);
+    let cy = y + 50;
+
+    if (!bots.length) {
+      this.drawCard(ctx, cardX, cy, fullW, 94);
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "700 16px system-ui";
+      textFit(ctx, t("Rakip kayitlari hazirlaniyor", "Rival records are being prepared"), innerX, cy + 34, innerW);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = "500 12px system-ui";
+      textFit(ctx, t("Motor acildiginda profiller burada gorunecek.", "Profiles will appear here when the engine starts."), innerX, cy + 58, innerW);
+      return;
+    }
+
+    const counts = {
+      blackMarket: bots.filter((bot) => bot.kind === "blackMarket").length,
+      arena: bots.filter((bot) => bot.kind === "arena").length,
+      weak: bots.filter((bot) => bot.kind !== "blackMarket" && bot.kind !== "arena").length,
+    };
+    const summaryGap = 8;
+    const summaryW = Math.floor((fullW - summaryGap * 2) / 3);
+    this.drawInfoMini(ctx, cardX, cy, summaryW, 52, "Black Market", String(counts.blackMarket));
+    this.drawInfoMini(ctx, cardX + summaryW + summaryGap, cy, summaryW, 52, t("Arena", "Arena"), String(counts.arena));
+    this.drawInfoMini(ctx, cardX + (summaryW + summaryGap) * 2, cy, summaryW, 52, t("Sokak", "Street"), String(counts.weak));
+    cy += 68;
+
+    const feature = selected || bots[0];
+    const wins = Math.max(0, Number(feature?.wins || 0));
+    const losses = Math.max(0, Number(feature?.losses || 0));
+    const total = wins + losses;
+    const winRate = total ? Math.round((wins / total) * 100) : 0;
+    const businesses = Array.isArray(feature?.businesses) ? feature.businesses : [];
+    const businessText = businesses.length
+      ? businesses.slice(0, 2).map((biz) => `${biz.name || "Business"} L${Number(biz.level || 1)}`).join(" / ")
+      : t("Bina kaydi yok", "No building record");
+    const statusText = feature?.online !== false
+      ? "ONLINE"
+      : t(`Son ${Math.max(1, Number(feature?.lastSeenMinutes || 1))} dk`, `${Math.max(1, Number(feature?.lastSeenMinutes || 1))}m ago`);
+    const featuredH = L.mobile ? 244 : 198;
+    const strong = feature?.kind === "blackMarket" || feature?.kind === "arena";
+
+    this.drawCard(ctx, cardX, cy, fullW, featuredH);
+    fillRoundRect(ctx, cardX + 1, cy + 1, fullW - 2, featuredH - 2, 17, strong ? "rgba(130,40,20,0.10)" : "rgba(43,110,68,0.08)");
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "rgba(255,255,255,0.98)";
+    ctx.font = `700 ${L.mobile ? 19 : 22}px Georgia, "Times New Roman", serif`;
+    textFit(ctx, String(feature?.username || feature?.name || "Rival"), innerX, cy + 30, innerW - 116);
+
+    const chipW = L.mobile ? 86 : 104;
+    fillRoundRect(ctx, cardX + fullW - chipW - 14, cy + 14, chipW, 26, 13, feature?.online !== false ? "rgba(65,215,112,0.18)" : "rgba(255,255,255,0.08)");
+    strokeRoundRect(ctx, cardX + fullW - chipW - 14, cy + 14, chipW, 26, 13, feature?.online !== false ? "rgba(65,215,112,0.36)" : "rgba(255,255,255,0.14)", 1);
+    ctx.fillStyle = feature?.online !== false ? "rgba(143,255,176,0.96)" : "rgba(255,255,255,0.70)";
+    ctx.font = "800 10px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(statusText, cardX + fullW - chipW / 2 - 14, cy + 27);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+
+    ctx.fillStyle = "rgba(255,213,156,0.82)";
+    ctx.font = "700 12px system-ui";
+    textFit(ctx, String(feature?.group || t("Kayitli Rakip", "Registered Rival")), innerX, cy + 52, innerW);
+
+    const facts = [
+      `${t("Clan", "Clan")}: ${feature?.clanName || feature?.clan || t("Yok", "None")}`,
+      `${t("Silah", "Weapon")}: ${feature?.weaponName || t("Kayitli", "Registered")}`,
+      feature?.premium ? "Premium" : t("Standart", "Standard"),
+    ].join(" | ");
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "500 12px system-ui";
+    textFit(ctx, facts, innerX, cy + 74, innerW);
+
+    const noteLines = wrapText(
+      ctx,
+      String(feature?.profileNote || t("PvP kaydi ve gecmis maclari hazir.", "PvP record and match history are ready.")),
+      innerW,
+      2
+    );
+    noteLines.forEach((line, idx) => ctx.fillText(line, innerX, cy + 98 + idx * 15));
+
+    ctx.fillStyle = "rgba(255,213,156,0.76)";
+    ctx.font = "500 11px system-ui";
+    textFit(ctx, `${t("Bina", "Building")}: ${businessText}`, innerX, cy + (L.mobile ? 132 : 128), innerW);
+
+    const stats = [
+      [t("Level", "Level"), String(Number(feature?.level || 0))],
+      ["Rating", String(Number(feature?.rating || feature?.rank || 1000))],
+      [t("Kayit", "Record"), `${wins}W/${losses}L`],
+      ["Win", `${winRate}%`],
+    ];
+    const cols = L.mobile ? 2 : 4;
+    const statGap = 8;
+    const statW = Math.floor((innerW - statGap * (cols - 1)) / cols);
+    const statY = cy + (L.mobile ? 150 : 146);
+    stats.forEach(([label, value], idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      this.drawInfoMini(ctx, innerX + col * (statW + statGap), statY + row * 46, statW, 38, label, value);
+    });
+    cy += featuredH + 18;
+
+    this.drawSectionTitle(
+      ctx,
+      t("Rakip Kayitlari", "Rival Records"),
+      t("Son eslesmeler ayrilir; ayni rakip surekli gelmez.", "Recent matches are separated so the same rival is not repeated."),
+      cardX,
+      cy + 8,
+      fullW
+    );
+    cy += 38;
+
+    const selectedId = String(feature?.id || "").trim();
+    const list = bots
+      .slice()
+      .sort((a, b) => {
+        const aSelected = selectedId && String(a.id || "") === selectedId ? -1 : 0;
+        const bSelected = selectedId && String(b.id || "") === selectedId ? -1 : 0;
+        if (aSelected !== bSelected) return aSelected - bSelected;
+        const kindDiff = this._rivalSortValue(a) - this._rivalSortValue(b);
+        if (kindDiff) return kindDiff;
+        return Number(b.rating || b.rank || 0) - Number(a.rating || a.rank || 0);
+      })
+      .slice(0, L.mobile ? 18 : 16);
+
+    list.forEach((bot) => {
+      const rowH = L.mobile ? 74 : 66;
+      const rowSelected = selectedId && String(bot.id || "") === selectedId;
+      const btn = { x: cardX, y: cy, w: fullW, h: rowH, onClick: () => this._selectRivalProfile(bot.id || bot.username) };
+      this.buttons.push(btn);
+      this.drawCard(ctx, cardX, cy, fullW, rowH);
+      if (rowSelected) fillRoundRect(ctx, cardX + 1, cy + 1, fullW - 2, rowH - 2, 17, "rgba(243,187,102,0.12)");
+
+      const rowInnerW = fullW - 32;
+      const rating = Number(bot.rating || bot.rank || 1000);
+      const rowWins = Math.max(0, Number(bot.wins || 0));
+      const rowLosses = Math.max(0, Number(bot.losses || 0));
+      const recent = (Array.isArray(bot.recentMatches) ? bot.recentMatches : [])
+        .slice(0, 4)
+        .map((match) => String(match?.result || "").toLowerCase() === "win" ? "W" : "L")
+        .join(" ");
+      const bizCount = Array.isArray(bot.businesses) ? bot.businesses.length : 0;
+      const rowFacts = [
+        bot.group || t("Kayitli Rakip", "Registered Rival"),
+        `${t("Clan", "Clan")} ${bot.clan || "-"}`,
+        bot.premium ? "Premium" : t("Standart", "Standard"),
+        bizCount ? `${bizCount} ${t("bina", "building")}` : t("kayitli", "registered"),
+      ].join(" | ");
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = rowSelected ? "#ffd494" : "rgba(255,255,255,0.96)";
+      ctx.font = "700 15px system-ui";
+      textFit(ctx, String(bot.username || bot.name || "Rival"), innerX, cy + 25, rowInnerW - 92);
+      ctx.fillStyle = "rgba(255,213,156,0.76)";
+      ctx.font = "500 11px system-ui";
+      textFit(ctx, rowFacts, innerX, cy + 44, rowInnerW - 20);
+      ctx.fillStyle = "rgba(255,255,255,0.62)";
+      ctx.font = "500 10px system-ui";
+      textFit(ctx, `${t("Gecmis", "History")}: ${recent || "-"} | ${rowWins}W/${rowLosses}L`, innerX, cy + 61, rowInnerW - 20);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#f6c46b";
+      ctx.font = "800 14px system-ui";
+      ctx.fillText(String(rating), cardX + fullW - 18, cy + 25);
+      ctx.fillStyle = "rgba(255,255,255,0.66)";
+      ctx.font = "600 10px system-ui";
+      ctx.fillText(`L${Number(bot.level || 0)}`, cardX + fullW - 18, cy + 44);
+      ctx.textAlign = "left";
+      cy += rowH + 8;
+    });
   }
 
   drawRankingContent(ctx, state, x, y, w, h, L) {
