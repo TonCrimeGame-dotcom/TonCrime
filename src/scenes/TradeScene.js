@@ -1,6 +1,6 @@
 import { supabase } from "../supabase.js";
 
-import { fetchBackendJson } from "../supabase.js?v=20260408-2";
+import { fetchBackendJson } from "../supabase.js?v=20260408-3";
 import {
   getBusinessCatalog,
   getBusinessDef,
@@ -14,7 +14,7 @@ import {
   playRichRewardedAd,
   warmRichAdsController,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260403-19";
+} from "../ads/richAds.js?v=20260413-ads-1";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
@@ -2412,7 +2412,7 @@ class TradeScene {
       icon: iconForType(row.business_type),
       imageKey: art?.imageKey || "",
       imageSrc: art?.imageSrc || "",
-      name: row.name || this._typeLabel(row.business_type),
+      name: row.business_name || row.name || this._typeLabel(row.business_type),
       ownerId: String(row.owner_id || ""),
       ownerName: String(playerName || "Player"),
       dailyProduction: Number(row.daily_production || 50),
@@ -2480,7 +2480,7 @@ class TradeScene {
       icon: String(business.icon || iconForType(type)),
       imageKey: String(business.imageKey || art.imageKey || ""),
       imageSrc: String(business.imageSrc || business.image || art.imageSrc || ""),
-      name: String(business.name || this._typeLabel(type)),
+      name: String(business.name || business.business_name || this._typeLabel(type)),
       ownerId: String(business.ownerId || business.owner_id || ""),
       ownerName: String(business.ownerName || "Player"),
       dailyProduction: Math.max(0, Number(business.dailyProduction || business.daily_production || 50)),
