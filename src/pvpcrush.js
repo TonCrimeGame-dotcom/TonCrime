@@ -976,6 +976,56 @@
     return { kind: "swap", ...bestMove };
   }
 
+  function calcRandomBotAction(board, hpBias) {
+    const actions = [];
+    for (const cell of collectBoardCells(board)) {
+      if (getTileSpecial(board?.[cell.r]?.[cell.c])) {
+        actions.push({ kind: "special", cell, score: 8 + Math.random() * 18 });
+      }
+    }
+
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        for (const d of [{ r: 0, c: 1 }, { r: 1, c: 0 }]) {
+          const rr = r + d.r;
+          const cc = c + d.c;
+          if (!inBounds(rr, cc)) continue;
+          const swapped = swapCells(board, { r, c }, { r: rr, c: cc });
+          const res = evaluateBoard(swapped);
+          if (!res.hasAction) continue;
+          actions.push({
+            kind: "swap",
+            a: { r, c },
+            b: { r: rr, c: cc },
+            score: res.damage + res.heal * (hpBias < 45 ? 0.8 : 0.25) + Math.random() * 16,
+          });
+        }
+      }
+    }
+
+    if (!actions.length) return null;
+    actions.sort((a, b) => Number(a.score || 0) - Number(b.score || 0));
+    const pickFrom = actions.slice(0, Math.max(1, Math.ceil(actions.length * 0.55)));
+    return pickFrom[Math.floor(Math.random() * pickFrom.length)] || actions[0];
+  }
+
+  function botMistakeRate(opponent) {
+    const tuning = opponent?.botTuning || opponent?.performance || {};
+    const raw = Number(tuning.mistakeRate);
+    if (Number.isFinite(raw)) return clamp(raw, 0.03, 0.62);
+    const difficulty = Number(tuning.difficulty || opponent?.difficulty || 40);
+    return clamp((100 - difficulty) / 145, 0.05, 0.52);
+  }
+
+  function botReactionDelay(opponent) {
+    const tuning = opponent?.botTuning || opponent?.performance || {};
+    const raw = Number(tuning.reactionMs);
+    if (Number.isFinite(raw)) {
+      return randInt(Math.max(360, raw * 0.72), Math.max(520, raw * 1.34));
+    }
+    return randInt(850, 1900);
+  }
+
   function drawTileIcon(ctx, tileLike, x, y, size, selected, animT) {
     const tile = tileLike && typeof tileLike === "object" ? tileLike : { type: tileLike, special: null };
     const meta = TILE_META[getTileType(tile)] || TILE_META[TILE.PUNCH];
@@ -3286,13 +3336,16 @@
       if (!this._running || !this._state || this._state.turn !== "enemy" || this._state.matchmaking) return;
       this._locked = true;
 
-      const thinking = randInt(850, 1900);
+      const thinking = botReactionDelay(this._opponent);
       this._state.info = this._text("thinkingStarted", "Dusunme suresi basladi");
       this._updateHud();
       this._render();
       await this._sleep(thinking);
 
-      const action = calcBotAction(this._state.board, this._state.enemyHp);
+      const mistakeRate = botMistakeRate(this._opponent);
+      const action = Math.random() < mistakeRate
+        ? calcRandomBotAction(this._state.board, this._state.enemyHp)
+        : calcBotAction(this._state.board, this._state.enemyHp);
       if (!action) {
         this._state.info = this._text("opponentNoMove", "Rakip hamle bulamadi");
         this._toast(this._text("opponentNoMove", "Rakip hamle bulamadi"));
