@@ -1,9 +1,10 @@
 import { Engine } from "./engine/Engine.js";
-import { Store } from "./engine/Store.js";
+import { Store } from "./engine/Store.js?v=20260413-bots-1";
 import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
+import { startBotEngine } from "./engine/BotEngine.js?v=20260413-bots-1";
 import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260408-3";
 
 import { StarsScene } from "./scenes/StarsScene.js";
@@ -30,7 +31,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-13-richads-video-2";
+const BUILD_STAMP = "2026-04-13-rival-bots-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -621,6 +622,7 @@ const initial = buildInitialState(loaded);
 
 const store = new Store(initial);
 window.tcStore = store;
+startBotEngine(store);
 let _lastObservedProfileStateKey = "";
 let _lastObservedProfileFieldSnapshot = null;
 const _dirtyProfileFields = new Set();
