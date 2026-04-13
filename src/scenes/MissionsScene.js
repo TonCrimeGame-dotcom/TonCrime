@@ -5,7 +5,7 @@ import {
   playRichRewardedAd,
   warmRichAdsController,
   tryPlayRichRewardedAdImmediately,
-} from "../ads/richAds.js?v=20260413-ads-1";
+} from "../ads/richAds.js?v=20260413-ads-2";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -374,14 +374,30 @@ export class MissionsScene {
     this._claim("dailyAd", { silent: true });
   }
 
-  _handleAdPlaybackResult(played) {
+  _rememberAdFailure(played, detail) {
     const diag = getRichAdsDiagnosticLabel(played);
+    try {
+      window.tcLastRichAdsUiError = {
+        scene: "missions",
+        at: Date.now(),
+        reason: played?.reason || "unknown",
+        diag,
+        detail,
+        played,
+      };
+    } catch (_) {}
+    console.warn("[TonCrime] Missions RichAds failure:", { diag, detail, played });
+    return diag;
+  }
+
+  _handleAdPlaybackResult(played) {
     if (isRecoverableRichAdsSdkFailure(played)) {
       const detail = describeRichAdFailure(played, "unknown");
+      this._rememberAdFailure(played, detail);
       this._showToast(
         this._ui(
-          `[${diag}] RichAds gecici hata verdi, reklam sayilmadi: ${detail}`,
-          `[${diag}] RichAds had a temporary error, the ad was not counted: ${detail}`
+          "RichAds gecici hata verdi. Tekrar dene.",
+          "RichAds had a temporary error. Try again."
         ),
         3200
       );
@@ -390,20 +406,23 @@ export class MissionsScene {
 
     if (!played?.ok) {
       const detail = describeRichAdFailure(played, "unknown");
+      this._rememberAdFailure(played, detail);
       if (played?.reason === "controller_missing" || played?.reason === "method_missing") {
         this._showToast(
-          this._ui(`[${diag}] RichAds hazir degil: ${detail}`, `[${diag}] RichAds is not ready: ${detail}`),
+          this._ui(
+            "Reklam servisi hazir degil. 5 sn sonra tekrar dene.",
+            "Ad service is not ready. Try again in 5 seconds."
+          ),
           2600
         );
         return;
       }
       if (played?.reason === "not_completed") {
-        this._showToast(this._ui(`[${diag}] Reklam tamamlanmadi: ${detail}`, `[${diag}] Ad was not completed: ${detail}`), 2400);
+        this._showToast(this._ui("Reklam tamamlanmadi veya stok yok.", "Ad was not completed or no fill."), 2400);
         return;
       }
-      console.warn("[TonCrime] RichAds video error:", detail, played?.error || played?.result || played);
       this._showToast(
-        this._ui(`[${diag}] Reklam acilamadi: ${detail}`, `[${diag}] Ad failed: ${detail}`),
+        this._ui("Reklam acilamadi. Tekrar dene.", "Ad failed. Try again."),
         2800
       );
       return;
