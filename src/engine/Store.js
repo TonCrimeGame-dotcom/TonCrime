@@ -463,13 +463,19 @@ class Store {
     if (!Array.isArray(merged.market.shops)) merged.market.shops = [];
     if (!Array.isArray(merged.market.listings)) merged.market.listings = [];
     if (!Array.isArray(merged.market.salesHistory)) merged.market.salesHistory = [];
-    merged.bots = [];
+    if (!Array.isArray(merged.bots)) merged.bots = [];
     merged.botState = {
-      enabled: false,
-      bootstrapped: false,
-      lastPresenceAt: 0,
-      lastMarketAt: 0,
-      lastChatAt: 0,
+      enabled: !!merged.botState?.enabled,
+      bootstrapped: !!merged.botState?.bootstrapped,
+      rosterVersion: String(merged.botState?.rosterVersion || ""),
+      lastPresenceAt: Math.max(0, Number(merged.botState?.lastPresenceAt || 0)),
+      lastMarketAt: Math.max(0, Number(merged.botState?.lastMarketAt || 0)),
+      lastChatAt: Math.max(0, Number(merged.botState?.lastChatAt || 0)),
+      lastPickedAt: Math.max(0, Number(merged.botState?.lastPickedAt || 0)),
+      lastPickedBotId: String(merged.botState?.lastPickedBotId || ""),
+      recentOpponentIds: Array.isArray(merged.botState?.recentOpponentIds)
+        ? merged.botState.recentOpponentIds.filter(Boolean).slice(0, 18)
+        : [],
     };
 
     if (typeof merged.wallet.tonBalance !== "number") merged.wallet.tonBalance = 0;
