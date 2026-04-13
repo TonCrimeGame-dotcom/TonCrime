@@ -918,8 +918,14 @@ const DAMAGE = {
       if (this._isOnlineMatch()) return;
       if (!this._state || this._state.finished || now < this._state.botNextActionAt) return;
 
-      const missChance = 0.18;
-      const skullFailChance = 0.10;
+      const tuning = this._opponent?.botTuning || this._opponent?.performance || {};
+      const difficulty = clamp(Number(tuning.difficulty || this._opponent?.difficulty || 42), 10, 99);
+      const mistakeRate = Number.isFinite(Number(tuning.mistakeRate))
+        ? clamp(Number(tuning.mistakeRate), 0.03, 0.62)
+        : clamp((100 - difficulty) / 150, 0.05, 0.48);
+      const missChance = clamp(mistakeRate * 0.72, 0.04, 0.38);
+      const skullFailChance = clamp(mistakeRate * 0.46, 0.02, 0.24);
+      const baseDelay = clamp(Number(tuning.reactionMs || 980), 420, 1700);
 
       if (Math.random() < skullFailChance) {
         const skull = ICONS.find((x) => x.id === "skull");
@@ -933,7 +939,7 @@ const DAMAGE = {
         }
       }
 
-      this._state.botNextActionAt = now + randInt(320, 760);
+      this._state.botNextActionAt = now + randInt(baseDelay * 0.38, baseDelay * 0.88);
     },
 
     _applyDamage(target, dmg, toastText, iconMeta = null) {
