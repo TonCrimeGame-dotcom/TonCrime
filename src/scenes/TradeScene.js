@@ -1,7 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260408-3";
-import { openExternalWallet } from "../walletBridge.js?v=20260413-wallet-1";
+import { openExternalWallet } from "../walletBridge.js?v=20260414-stars-1";
 import {
   getBusinessCatalog,
   getBusinessDef,
@@ -383,7 +383,7 @@ class TradeScene {
         ...player,
         membership: this._isPremium() ? "premium" : player.membership || "standard",
         canOwnBusiness: unlocked,
-        canWithdraw: unlocked,
+        canWithdraw: false,
       },
       trade: {
         ...trade,
@@ -2983,7 +2983,7 @@ class TradeScene {
             level,
             membership,
             canOwnBusiness: isPremium || level >= 50,
-            canWithdraw: isPremium || level >= 50,
+            canWithdraw: false,
           },
           businesses: {
             ...(state.businesses || {}),
@@ -5164,7 +5164,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
           level,
           membership: String(profile?.membership || state2.player?.membership || (isPremium ? "premium" : "standard")),
           canOwnBusiness: isPremium || level >= 50,
-          canWithdraw: isPremium || level >= 50,
+          canWithdraw: false,
         },
         businesses: {
           ...(state2.businesses || {}),
