@@ -1,10 +1,156 @@
 import { fetchBackendJson } from "../supabase.js?v=20260408-3";
-import {
-  STARS_PRODUCTS,
-  getStarsProductDescription,
-  getStarsProductTitle,
-} from "../data/starsCatalog.js?v=20260414-stars-1";
-import { applyStarsProductGrantToState, ensureStarsEconomyState } from "../economy/StarsEconomy.js?v=20260414-stars-1";
+
+const STARS_PRODUCTS = [
+  {
+    id: "premium_lifetime",
+    titleTr: "Premium Uyelik",
+    titleEn: "Premium Membership",
+    descriptionTr: "Cekilemeyen oyun ici premium, level 50 ve isletme acma hakki.",
+    descriptionEn: "Non-withdrawable in-game premium, level 50, and business unlock.",
+    priceStars: 499,
+    badge: "PREMIUM",
+    grant: { premium: true, levelAtLeast: 50, canOwnBusiness: true, canWithdraw: false },
+  },
+  {
+    id: "energy_full",
+    titleTr: "Full Enerji",
+    titleEn: "Full Energy",
+    descriptionTr: "Enerjini maksimuma doldurur. Cekim veya TON degeri vermez.",
+    descriptionEn: "Refills energy to max. Does not grant withdrawal or TON value.",
+    priceStars: 35,
+    badge: "ENERGY",
+    grant: { fullEnergy: true },
+  },
+  {
+    id: "yton_1000",
+    titleTr: "1000 Oyun YTON",
+    titleEn: "1000 Game YTON",
+    descriptionTr: "Sadece oyun icinde harcanan, cekilemeyen YTON paketi.",
+    descriptionEn: "A non-withdrawable YTON pack for in-game use only.",
+    priceStars: 99,
+    badge: "YTON",
+    grant: { yton: 1000, withdrawable: false },
+  },
+  {
+    id: "match_assist_10",
+    titleTr: "10 Kolay Eslesme Hakki",
+    titleEn: "10 Easier Match Tickets",
+    descriptionTr: "PvP bot eslesmelerinde daha dusuk seviye rakip ihtimalini artirir.",
+    descriptionEn: "Increases the chance of lower-level bot opponents in PvP.",
+    priceStars: 75,
+    badge: "MATCH",
+    grant: { easyMatchTickets: 10 },
+  },
+  {
+    id: "gold_badge",
+    titleTr: "Altin Profil Rozeti",
+    titleEn: "Gold Profile Badge",
+    descriptionTr: "Profilinde gorunen kozmetik rozet. Ekonomik veya cekilebilir deger vermez.",
+    descriptionEn: "Cosmetic profile badge. No economic or withdrawable value.",
+    priceStars: 55,
+    badge: "GOLD",
+    grant: { cosmeticBadge: "gold" },
+  },
+];
+
+function getStarsProductTitle(product, lang = "tr") {
+  if (!product) return "";
+  return lang === "en" ? product.titleEn : product.titleTr;
+}
+
+function getStarsProductDescription(product, lang = "tr") {
+  if (!product) return "";
+  return lang === "en" ? product.descriptionEn : product.descriptionTr;
+}
+
+function ensureStarsEconomyState(state = {}) {
+  const stars = state.stars || {};
+  return {
+    ...stars,
+    owned: stars.owned || {},
+    selectedId: stars.selectedId ?? null,
+    lastClaimTs: stars.lastClaimTs || {},
+    twinBonusClaimed: stars.twinBonusClaimed || {},
+    diseaseUntil: Number(stars.diseaseUntil || 0),
+    lastDiseaseAt: Number(stars.lastDiseaseAt || 0),
+    purchases: Array.isArray(stars.purchases) ? stars.purchases : [],
+    easyMatchTickets: Math.max(0, Number(stars.easyMatchTickets || 0)),
+    cosmetics: { ...(stars.cosmetics || {}) },
+    economyMode: "stars",
+  };
+}
+
+function applyStarsProductGrantToState(state = {}, product, payment = {}) {
+  if (!product?.id) return state;
+
+  const now = Date.now();
+  const grant = product.grant || {};
+  const player = { ...(state.player || {}) };
+  const stars = ensureStarsEconomyState(state);
+  const wallet = { ...(state.wallet || {}) };
+  const currentCoins = Math.max(0, Number(state.coins ?? state.yton ?? wallet.yton ?? 0));
+  let nextCoins = currentCoins;
+
+  if (Number(grant.yton || 0) > 0) nextCoins += Number(grant.yton || 0);
+
+  if (grant.fullEnergy) {
+    const maxEnergy = Math.max(1, Number(player.energyMax || 100));
+    player.energy = maxEnergy;
+  }
+
+  if (grant.premium) {
+    player.membership = "premium";
+    player.premium = true;
+    player.isPremium = true;
+    player.canOwnBusiness = !!grant.canOwnBusiness;
+    player.canWithdraw = false;
+    if (Number(grant.levelAtLeast || 0) > 0) {
+      player.level = Math.max(Number(player.level || 0), Number(grant.levelAtLeast || 0));
+    }
+  }
+
+  if (Number(grant.easyMatchTickets || 0) > 0) {
+    stars.easyMatchTickets = Math.max(0, Number(stars.easyMatchTickets || 0)) + Number(grant.easyMatchTickets || 0);
+  }
+
+  if (grant.cosmeticBadge) {
+    stars.cosmetics = { ...(stars.cosmetics || {}), badge: String(grant.cosmeticBadge) };
+  }
+
+  return {
+    ...state,
+    coins: nextCoins,
+    yton: nextCoins,
+    premium: !!(state.premium || grant.premium),
+    isPremium: !!(state.isPremium || grant.premium),
+    player,
+    wallet: {
+      ...wallet,
+      yton: nextCoins,
+      tonBalance: 0,
+      starsWithdrawable: false,
+    },
+    stars: {
+      ...stars,
+      purchases: [
+        {
+          id: `stars_${product.id}_${now}`,
+          productId: product.id,
+          priceStars: Number(product.priceStars || 0),
+          currency: "XTR",
+          withdrawable: false,
+          source: "telegram_stars",
+          status: payment.status || "paid",
+          chargeId: payment.chargeId || "",
+          createdAt: now,
+        },
+        ...(stars.purchases || []),
+      ].slice(0, 80),
+      lastPurchaseAt: now,
+      lastProductId: product.id,
+    },
+  };
+}
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
