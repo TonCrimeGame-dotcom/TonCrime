@@ -1,8 +1,39 @@
-import { consumeEasyMatchTicketFromState } from "../economy/StarsEconomy.js?v=20260414-stars-1";
-
-const BOT_ROSTER_VERSION = "2026-04-14-stars-1";
+const BOT_ROSTER_VERSION = "2026-04-14-stars-2";
 const BOT_COUNT = 96;
 const RECENT_OPPONENT_LIMIT = 18;
+
+function ensureStarsEconomyState(state = {}) {
+  const stars = state.stars || {};
+  return {
+    ...stars,
+    owned: stars.owned || {},
+    selectedId: stars.selectedId ?? null,
+    lastClaimTs: stars.lastClaimTs || {},
+    twinBonusClaimed: stars.twinBonusClaimed || {},
+    purchases: Array.isArray(stars.purchases) ? stars.purchases : [],
+    easyMatchTickets: Math.max(0, Number(stars.easyMatchTickets || 0)),
+    cosmetics: { ...(stars.cosmetics || {}) },
+    economyMode: "stars",
+  };
+}
+
+function consumeEasyMatchTicketFromState(state = {}) {
+  const stars = ensureStarsEconomyState(state);
+  const current = Math.max(0, Number(stars.easyMatchTickets || 0));
+  if (current <= 0) return { state, consumed: false };
+
+  return {
+    consumed: true,
+    state: {
+      ...state,
+      stars: {
+        ...stars,
+        easyMatchTickets: current - 1,
+        lastEasyMatchUsedAt: Date.now(),
+      },
+    },
+  };
+}
 
 const FIRST_NAMES = [
   "Vito", "Rico", "Dante", "Nero", "Mako", "Santos", "Kobra", "Raven",
