@@ -1,11 +1,17 @@
-﻿import { stars } from "../assets/starsData.js";
+import { fetchBackendJson } from "../supabase.js?v=20260408-3";
+import {
+  STARS_PRODUCTS,
+  getStarsProductDescription,
+  getStarsProductTitle,
+} from "../data/starsCatalog.js?v=20260414-stars-1";
+import { applyStarsProductGrantToState, ensureStarsEconomyState } from "../economy/StarsEconomy.js?v=20260414-stars-1";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
 function pointInRect(px, py, r) {
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  return !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -19,203 +25,73 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function fillRoundRect(ctx, x, y, w, h, r) {
+function fillRoundRect(ctx, x, y, w, h, r, fill) {
   roundRectPath(ctx, x, y, w, h, r);
+  ctx.fillStyle = fill;
   ctx.fill();
 }
 
-function strokeRoundRect(ctx, x, y, w, h, r) {
+function strokeRoundRect(ctx, x, y, w, h, r, stroke, lw = 1) {
   roundRectPath(ctx, x, y, w, h, r);
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = lw;
   ctx.stroke();
 }
 
-function fitText(ctx, text, maxWidth, startSize, minSize, family, weight = 700) {
+function fitText(ctx, text, maxWidth, startSize, minSize, family = "system-ui", weight = 800) {
   let size = startSize;
   while (size > minSize) {
     ctx.font = `${weight} ${size}px ${family}`;
-    if (ctx.measureText(text).width <= maxWidth) return size;
+    if (ctx.measureText(String(text || "")).width <= maxWidth) return size;
     size -= 1;
   }
   return minSize;
 }
 
-function ellipsisText(ctx, text, maxWidth) {
+function textFit(ctx, text, x, y, maxWidth) {
   let out = String(text || "");
-  if (ctx.measureText(out).width <= maxWidth) return out;
-  while (out.length > 0 && ctx.measureText(out + "â€¦").width > maxWidth) {
-    out = out.slice(0, -1);
+  if (ctx.measureText(out).width <= maxWidth) {
+    ctx.fillText(out, x, y);
+    return;
   }
-  return out + "â€¦";
+  while (out.length > 0 && ctx.measureText(out + "...").width > maxWidth) out = out.slice(0, -1);
+  ctx.fillText(out + "...", x, y);
 }
 
-function drawImageContainTop(ctx, img, x, y, w, h, topBias = 0.12) {
-  const iw = img.width || 1;
-  const ih = img.height || 1;
+function wrapText(ctx, text, maxWidth, maxLines = 3) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth) {
+      line = next;
+    } else {
+      if (line) lines.push(line);
+      line = word;
+      if (lines.length >= maxLines) break;
+    }
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  return lines;
+}
+
+function drawCoverImage(ctx, img, x, y, w, h, alpha = 1) {
+  if (!img || !img.complete || !img.naturalWidth) return false;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
   const scale = Math.max(w / iw, h / ih);
   const dw = iw * scale;
   const dh = ih * scale;
-  const dx = x + (w - dw) / 2;
-  const extraH = dh - h;
-  const dy = y - extraH * topBias;
-  ctx.drawImage(img, dx, dy, dw, dh);
-}
-
-function drawImageContainRounded(ctx, img, x, y, w, h, radius, topBias = 0.1) {
-  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const scale = Math.min(w / iw, h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = x + (w - dw) / 2;
-  const dy = y + (h - dh) / 2 - Math.max(0, h - dh) * topBias;
-
   ctx.save();
-  roundRectPath(ctx, x, y, w, h, radius);
-  ctx.clip();
-  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
   ctx.restore();
   return true;
 }
 
-function ensureArray(v) {
-  return Array.isArray(v) ? v : [];
-}
-
-function randomChance(prob) {
-  return Math.random() < prob;
-}
-
-function randInt(min, max) {
-  return Math.floor(min + Math.random() * (max - min + 1));
-}
-
-function fmtDiseaseCountdown(ms, lang = "tr") {
-  const totalSec = Math.max(0, Math.ceil(ms / 1000));
-  const hours = Math.floor(totalSec / 3600);
-  const minutes = Math.floor((totalSec % 3600) / 60);
-  const seconds = totalSec % 60;
-
-  if (lang === "en") {
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    if (minutes > 0) return `${minutes}m ${seconds}s`;
-    return `${seconds}s`;
-  }
-
-  if (hours > 0) return `${hours} sa ${minutes} dk`;
-  if (minutes > 0) return `${minutes} dk ${seconds} sn`;
-  return `${seconds} sn`;
-}
-
-const STARS_GIFT_CHANCE = 0.15;
-const STARS_DISEASE_CHANCE = 0.20;
-const STARS_DISEASE_WAIT_MS = 2 * 60 * 60 * 1000;
-const STARS_DISEASE_HEAL_COST = 20;
-
-function addInventoryItem(state, item) {
-  const items = ensureArray(state.inventory?.items).map((x) => ({ ...x }));
-  const existing = items.find(
-    (x) =>
-      String(x.name || "").toLowerCase() === String(item.name || "").toLowerCase() &&
-      String(x.kind || "") === String(item.kind || "")
-  );
-
-  if (existing) {
-    existing.qty = Number(existing.qty || 0) + Number(item.qty || 1);
-    if (!existing.imageSrc && item.imageSrc) existing.imageSrc = item.imageSrc;
-    if (!existing.imageKey && item.imageKey) existing.imageKey = item.imageKey;
-  } else {
-    items.unshift({
-      id: item.id || `${item.kind}_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
-      kind: item.kind || "rare",
-      icon: item.icon || "GIFT",
-      name: item.name || "Hediye",
-      rarity: item.rarity || "common",
-      qty: Number(item.qty || 1),
-      usable: !!item.usable,
-      sellable: item.sellable !== false,
-      marketable: !!item.marketable,
-      energyGain: Number(item.energyGain || 0),
-      sellPrice: Number(item.sellPrice || 0),
-      marketPrice: Number(item.marketPrice || 0),
-      imageKey: item.imageKey || "",
-      imageSrc: item.imageSrc || item.image || "",
-      desc: item.desc || "",
-    });
-  }
-
-  return {
-    ...(state.inventory || {}),
-    items,
-  };
-}
-
-function getGiftReward(star, lang = "tr") {
-  const sourceName = String(star?.name || (lang === "en" ? "star girl" : "yildiz kiz"));
-  const pool = [
-    {
-      kind: "girls",
-      icon: "gift",
-      name: lang === "en" ? "Backstage Pass" : "Sahne Arkasi Gecis",
-      rarity: "rare",
-      qty: 1,
-      usable: true,
-      sellable: true,
-      marketable: true,
-      energyGain: 14,
-      sellPrice: 24,
-      marketPrice: 36,
-      imageSrc: "./src/assets/bonus.png",
-      desc: lang === "en" ? `${sourceName} slipped you a backstage pass.` : `${sourceName} sana sahne arkasi gecis verdi.`,
-    },
-    {
-      kind: "consumable",
-      icon: "gift",
-      name: lang === "en" ? "Velvet Perfume" : "Kadife Parfum",
-      rarity: "common",
-      qty: 1,
-      usable: true,
-      sellable: true,
-      marketable: true,
-      energyGain: 8,
-      sellPrice: 14,
-      marketPrice: 22,
-      imageSrc: "./src/assets/club.png",
-      desc: lang === "en" ? `${sourceName} left this behind.` : `${sourceName} bunu geride birakti.`,
-    },
-    {
-      kind: "goods",
-      icon: "gift",
-      name: lang === "en" ? "Signed Stockings" : "Imzali Corap",
-      rarity: "rare",
-      qty: 1,
-      usable: false,
-      sellable: true,
-      marketable: true,
-      energyGain: 0,
-      sellPrice: 20,
-      marketPrice: 30,
-      imageSrc: "./src/assets/g_star1.png",
-      desc: lang === "en" ? `${sourceName} gave you a private souvenir.` : `${sourceName} sana ozel bir hatira verdi.`,
-    },
-    {
-      kind: "rare",
-      icon: "gift",
-      name: lang === "en" ? "VIP Room Key" : "VIP Oda Anahtari",
-      rarity: "epic",
-      qty: 1,
-      usable: false,
-      sellable: true,
-      marketable: true,
-      energyGain: 0,
-      sellPrice: 32,
-      marketPrice: 48,
-      imageSrc: "./src/assets/bonus.png",
-      desc: lang === "en" ? `${sourceName} trusted you with a VIP key.` : `${sourceName} sana VIP oda anahtari verdi.`,
-    },
-  ];
-
-  return { ...pool[randInt(0, pool.length - 1)] };
+function getTelegramWebApp() {
+  try { return window.Telegram?.WebApp || null; } catch (_) { return null; }
 }
 
 export class StarsScene {
@@ -225,31 +101,16 @@ export class StarsScene {
     this.i18n = i18n;
     this.assets = assets;
     this.scenes = scenes;
-
+    this.buttons = [];
     this.scrollY = 0;
     this.maxScroll = 0;
-
     this.dragging = false;
     this.downY = 0;
     this.startScrollY = 0;
-    this.moved = 0;
-    this.clickCandidate = false;
-
-    this.hitButtons = [];
-    this.hitBack = null;
-    this.hitDiseaseWait = null;
-    this.hitDiseasePay = null;
-
-    this._bgImg = null;
-    this._audio = null;
-    this._audioStarted = false;
-    this._starImageCache = new Map();
-
     this.toastText = "";
     this.toastUntil = 0;
-    this.flashUntil = 0;
-    this._diseasePrompt = null;
-    this._diseaseRecoveredToastAt = 0;
+    this.buyingProductId = "";
+    this.bg = null;
   }
 
   _lang() {
@@ -260,649 +121,275 @@ export class StarsScene {
     return this._lang() === "en" ? en : tr;
   }
 
-  _ensureStarsState() {
-    const s = this.store.get() || {};
-    const starsState = s.stars || {};
-    const nextStars = {
-      ...starsState,
-      owned: starsState.owned || {},
-      selectedId: starsState.selectedId ?? null,
-      lastClaimTs: starsState.lastClaimTs || {},
-      twinBonusClaimed: starsState.twinBonusClaimed || {},
-      diseaseUntil: Number(starsState.diseaseUntil || 0),
-      lastDiseaseAt: Number(starsState.lastDiseaseAt || 0),
-    };
-    this.store.set({ stars: nextStars });
-    return nextStars;
+  _showToast(text, ms = 2200) {
+    this.toastText = String(text || "");
+    this.toastUntil = Date.now() + ms;
+    try {
+      window.dispatchEvent(new CustomEvent("tc:toast", { detail: { text: this.toastText } }));
+    } catch (_) {}
   }
 
-  _getDiseaseUntil() {
-    return Number(this.store.get()?.stars?.diseaseUntil || 0);
-  }
-
-  _isDiseaseLocked(now = Date.now()) {
-    return this._getDiseaseUntil() > now;
-  }
-
-  _clearDiseaseLock(showToast = true) {
-    const s = this.store.get() || {};
-    const starsState = s.stars || {};
-    if (Number(starsState.diseaseUntil || 0) <= 0) return;
-    this.store.set({
-      stars: {
-        ...starsState,
-        diseaseUntil: 0,
-      },
-    });
-    if (showToast) {
-      this._showToast(this._ui("Hastalik gecti", "Disease cleared"), 1800);
-    }
-  }
-
-  _openDiseasePrompt(star) {
-    this._diseasePrompt = {
-      starId: Number(star?.id || 0),
-      starName: String(star?.name || ""),
-    };
-  }
-
-  _chooseDiseaseWait() {
-    const s = this.store.get() || {};
-    const starsState = this._ensureStarsState();
-    this.store.set({
-      stars: {
-        ...starsState,
-        diseaseUntil: Date.now() + STARS_DISEASE_WAIT_MS,
-        lastDiseaseAt: Date.now(),
-      },
-    });
-    this._diseasePrompt = null;
-    this._showToast(this._ui("Hastasin. Bekleme basladi.", "You are sick. Wait started."), 2000);
-  }
-
-  _chooseDiseaseHealNow() {
-    const s = this.store.get() || {};
-    const coins = Number(s.coins || 0);
-    if (coins < STARS_DISEASE_HEAL_COST) {
-      this._showToast(this._ui("Yetersiz yton", "Not enough yton"));
-      return;
-    }
-
-    const starsState = this._ensureStarsState();
-    this.store.set({
-      coins: coins - STARS_DISEASE_HEAL_COST,
-      stars: {
-        ...starsState,
-        diseaseUntil: 0,
-        lastDiseaseAt: Date.now(),
-      },
-    });
-    this._diseasePrompt = null;
-    this._showToast(this._ui("Aninda iyilestin", "You healed instantly"), 1800);
+  _ensureState() {
+    const state = this.store.get() || {};
+    this.store.set({ stars: ensureStarsEconomyState(state) });
   }
 
   onEnter() {
-    this._ensureStarsState();
-
+    this._ensureState();
+    this.buttons = [];
     this.scrollY = 0;
     this.maxScroll = 0;
     this.dragging = false;
-    this.moved = 0;
-    this.clickCandidate = false;
-    this._diseasePrompt = null;
-    this.hitDiseaseWait = null;
-    this.hitDiseasePay = null;
-
-    this._bgImg = new Image();
-    this._bgImg.src = "./src/assets/xxx-bg.png";
-
-    this._primeStarImages();
-
-    try {
-      this._audio = new Audio("./src/assets/xxx.mp3");
-      this._audio.loop = true;
-      this._audio.volume = 0.35;
-      this._audio.preload = "auto";
-      this._audioStarted = false;
-    } catch (_) {
-      this._audio = null;
-    }
+    this.bg = new Image();
+    this.bg.src = "./src/assets/pvp-bg.png";
   }
 
   onExit() {
     this.dragging = false;
-    try {
-      if (this._audio) {
-        this._audio.pause();
-        this._audio.currentTime = 0;
-      }
-    } catch (_) {}
+    this.buyingProductId = "";
   }
 
-  _primeStarImages() {
-    for (const star of stars) {
-      this._getStarImage(star);
-    }
-  }
-
-  _getStarImage(star) {
-    const src = String(star?.assetPath || star?.image || "").trim();
-    const fallback = String(star?.fallbackImage || stars[0]?.assetPath || "").trim();
-    const key = `${src}|${fallback}`;
-
-    if (this._starImageCache.has(key)) {
-      return this._starImageCache.get(key);
-    }
-
-    const img = new Image();
-    img.src = src || fallback;
-    img.onerror = () => {
-      if (img.src !== fallback && fallback) img.src = fallback;
-    };
-
-    this._starImageCache.set(key, img);
-    return img;
-  }
-
-  _showToast(text, ms = 1800) {
-    this.toastText = String(text || "");
-    this.toastUntil = Date.now() + ms;
-  }
-
-  _startAudioIfNeeded() {
-    if (this._audioStarted || !this._audio) return;
-    this._audioStarted = true;
-    this._audio.play().catch(() => {});
-  }
-
-  _buyService(star) {
-    const s = this.store.get();
-    const p = { ...(s.player || {}) };
-
-    const cost = Math.max(1, Number(star.coinValue || 0));
-    const gainBase = Math.max(1, Number(star.energyGain || 0));
-
-    const coins = Number(s.coins || 0);
-    const energy = Number(p.energy || 0);
-    const energyMax = Math.max(1, Number(p.energyMax || 100));
-
-    if (coins < cost) {
-      this._showToast(this._ui("Yetersiz yton", "Not enough yton"));
-      return;
-    }
-
-    if (energy >= energyMax) {
-      this._showToast(this._ui("Enerji zaten full", "Energy already full"));
-      return;
-    }
-
-    let nextCoins = coins - cost;
-    let nextEnergy = clamp(energy + gainBase, 0, energyMax);
-    let inventory = s.inventory || { items: [] };
-
-    const gotGift = randomChance(STARS_GIFT_CHANCE);
-    const gotDisease = randomChance(STARS_DISEASE_CHANCE);
-
-    let giftText = "";
-
-    if (gotGift) {
-      const gift = getGiftReward(star, this._lang());
-      inventory = addInventoryItem(
-        {
-          ...(s || {}),
-          inventory: inventory || s.inventory || { items: [] },
-        },
-        gift
-      );
-      giftText = this._ui(` • Hediye: ${gift.name}`, ` • Gift: ${gift.name}`);
-    }
-
-    p.energy = nextEnergy;
-
-    this.store.set({
-      coins: nextCoins,
-      player: p,
-      inventory,
-    });
-
+  _grantProduct(product, payment = {}) {
+    const current = this.store.get() || {};
+    this.store.set(applyStarsProductGrantToState(current, product, payment));
     this._showToast(
       this._ui(
-        `+${Math.max(0, nextEnergy - energy)} enerji${giftText}`,
-        `+${Math.max(0, nextEnergy - energy)} energy${giftText}`
+        `${getStarsProductTitle(product, "tr")} teslim edildi. Cekim hakki vermez.`,
+        `${getStarsProductTitle(product, "en")} delivered. It does not grant withdrawal.`
       ),
-      2400
+      2600
     );
+  }
 
-    if (gotDisease) {
-      this._openDiseasePrompt(star);
-      this.flashUntil = Date.now() + 260;
+  async _buyProduct(product) {
+    if (!product?.id || this.buyingProductId) return;
+    this.buyingProductId = product.id;
+
+    const tg = getTelegramWebApp();
+    const canDevGrant = String(localStorage.getItem("toncrime_stars_dev_grant") || "") === "1";
+
+    try {
+      if (!tg?.openInvoice && !canDevGrant) {
+        this._showToast(this._ui("Telegram Stars odemesi sadece Telegram icinde acilir", "Telegram Stars payment opens only inside Telegram"));
+        return;
+      }
+
+      if (canDevGrant && !tg?.openInvoice) {
+        this._grantProduct(product, { status: "dev_grant" });
+        return;
+      }
+
+      this._showToast(this._ui("Stars odeme penceresi hazirlaniyor", "Preparing Stars payment"), 1800);
+      const json = await fetchBackendJson("/public/stars/invoice", {
+        method: "POST",
+        body: JSON.stringify({ product_id: product.id }),
+      });
+      const invoiceLink = String(json?.invoice_link || "").trim();
+      if (!invoiceLink) throw new Error("invoice link missing");
+
+      await new Promise((resolve) => {
+        tg.openInvoice(invoiceLink, (status) => {
+          if (status === "paid") {
+            this._grantProduct(product, { status: "paid", chargeId: "client_paid" });
+          } else if (status === "cancelled" || status === "failed") {
+            this._showToast(this._ui("Stars odemesi tamamlanmadi", "Stars payment was not completed"));
+          }
+          resolve(status);
+        });
+      });
+    } catch (err) {
+      console.error("[StarsScene] payment failed:", err);
+      this._showToast(err?.message || this._ui("Stars odemesi baslatilamadi", "Stars payment could not start"));
+    } finally {
+      this.buyingProductId = "";
     }
   }
 
   update() {
     const px = this.input?.pointer?.x || 0;
     const py = this.input?.pointer?.y || 0;
-    const now = Date.now();
-    const diseaseUntil = this._getDiseaseUntil();
-
-    if (diseaseUntil > 0 && diseaseUntil <= now) {
-      if (this._diseaseRecoveredToastAt !== diseaseUntil) {
-        this._clearDiseaseLock(true);
-        this._diseaseRecoveredToastAt = diseaseUntil;
-      }
-    }
-
-    if (this._isDiseaseLocked(now)) {
-      if (this.input?.justPressed?.()) this._startAudioIfNeeded();
-      this.dragging = false;
-      this.clickCandidate = false;
-      return;
-    }
-
-    if (this._diseasePrompt) {
-      if (this.input?.justPressed?.()) this._startAudioIfNeeded();
-      if (this.input?.justReleased?.()) {
-        if (this.hitDiseaseWait && pointInRect(px, py, this.hitDiseaseWait)) {
-          this._chooseDiseaseWait();
-          return;
-        }
-        if (this.hitDiseasePay && pointInRect(px, py, this.hitDiseasePay)) {
-          this._chooseDiseaseHealNow();
-          return;
-        }
-      }
-      return;
-    }
+    const isDown = !!this.input?.pointer?.down;
 
     if (this.input?.justPressed?.()) {
-      this._startAudioIfNeeded();
-
       this.dragging = true;
       this.downY = py;
       this.startScrollY = this.scrollY;
-      this.moved = 0;
-      this.clickCandidate = true;
     }
 
-    if (this.dragging && this.input?.isDown?.()) {
-      const dy = py - this.downY;
-      this.scrollY = clamp(this.startScrollY - dy, 0, this.maxScroll);
-      this.moved = Math.max(this.moved, Math.abs(dy));
-      if (this.moved > 10) this.clickCandidate = false;
+    if (this.dragging && isDown) {
+      this.scrollY = clamp(this.startScrollY - (py - this.downY), 0, this.maxScroll);
     }
 
-    if (this.dragging && this.input?.justReleased?.()) {
+    if (this.input?.justReleased?.()) {
+      const moved = Math.abs(py - this.downY);
       this.dragging = false;
+      if (moved > 10) return;
 
-      if (!this.clickCandidate) return;
-
-      if (this.hitBack && pointInRect(px, py, this.hitBack)) {
-        this.scenes.go("home");
-        return;
-      }
-
-      for (const h of this.hitButtons) {
-        if (!pointInRect(px, py, h.rect)) continue;
-
-        if (h.action === "buy") {
-          this._buyService(h.star);
+      for (const btn of this.buttons) {
+        if (pointInRect(px, py, btn.rect)) {
+          if (btn.action === "close") this.scenes?.go?.("home");
+          if (btn.action === "buy") void this._buyProduct(btn.product);
           return;
         }
       }
     }
   }
 
-  render(ctx, w, h) {
-    const W = Number(w || ctx.canvas.width || 0);
-    const H = Number(h || ctx.canvas.height || 0);
+  draw(ctx) {
+    const state = this.store.get() || {};
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    const safe = state.ui?.safe || { x: 0, y: 0, w, h };
+    const hudTop = Number(state.ui?.hudReservedTop || 98);
+    const chatBottom = Number(state.ui?.chatReservedBottom || 64);
+    const lang = this._lang();
+    const starsState = ensureStarsEconomyState(state);
 
-    const s = this.store.get();
-    const p = s.player || {};
-    const safe = s?.ui?.safe ?? { x: 0, y: 0, w: W, h: H };
-    const hudReservedTop = Number(s?.ui?.hudReservedTop || 110);
-    const chatReservedBottom = Number(s?.ui?.chatReservedBottom || 82);
-
-    this.hitButtons = [];
-    this.hitBack = null;
-    this.hitDiseaseWait = null;
-    this.hitDiseasePay = null;
-
-    ctx.clearRect(0, 0, W, H);
-
-    const bg = this._bgImg;
-    if (bg && bg.complete) {
-      drawImageContainTop(ctx, bg, 0, 0, W, H, 0.02);
-    } else {
-      ctx.fillStyle = "#090909";
-      ctx.fillRect(0, 0, W, H);
+    this.buttons = [];
+    ctx.clearRect(0, 0, w, h);
+    if (!drawCoverImage(ctx, this.bg, 0, 0, w, h, 1)) {
+      ctx.fillStyle = "#130d08";
+      ctx.fillRect(0, 0, w, h);
     }
+    const fade = ctx.createLinearGradient(0, 0, 0, h);
+    fade.addColorStop(0, "rgba(10,6,3,0.34)");
+    fade.addColorStop(1, "rgba(10,6,3,0.82)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, w, h);
 
-    const bgShade = ctx.createLinearGradient(0, 0, 0, H);
-    bgShade.addColorStop(0, "rgba(0,0,0,0.16)");
-    bgShade.addColorStop(0.45, "rgba(0,0,0,0.24)");
-    bgShade.addColorStop(1, "rgba(0,0,0,0.40)");
-    ctx.fillStyle = bgShade;
-    ctx.fillRect(0, 0, W, H);
+    const side = safe.w <= 430 ? 12 : 22;
+    const panelX = safe.x + side;
+    const panelY = safe.y + Math.max(8, hudTop - 4);
+    const panelW = safe.w - side * 2;
+    const panelBottom = safe.y + safe.h - Math.max(10, chatBottom - 6);
+    const panelH = Math.max(320, panelBottom - panelY);
+    const innerX = panelX + 16;
+    const innerW = panelW - 32;
 
-    const vignette = ctx.createRadialGradient(
-      W * 0.5,
-      H * 0.42,
-      40,
-      W * 0.5,
-      H * 0.42,
-      Math.max(W, H) * 0.78
-    );
-    vignette.addColorStop(0, "rgba(0,0,0,0)");
-    vignette.addColorStop(0.72, "rgba(0,0,0,0.10)");
-    vignette.addColorStop(1, "rgba(0,0,0,0.34)");
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, W, H);
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 24, "rgba(13,10,10,0.70)");
+    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 24, "rgba(255,195,109,0.22)", 1);
 
-    const panelX = safe.x + 14;
-    const panelY = safe.y + hudReservedTop;
-    const panelW = safe.w - 28;
-    const panelH = safe.h - hudReservedTop - chatReservedBottom - 10;
-
-    ctx.fillStyle = "rgba(10,8,14,0.62)";
-    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 18);
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    ctx.lineWidth = 1;
-    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 18);
-
-    const titleX = panelX + 16;
-    const titleY = panelY + 30;
-
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = "900 18px system-ui";
-    ctx.fillText(this._ui("Genel Ev", "Stars House"), titleX, titleY);
-
-    ctx.fillStyle = "rgba(255,214,160,0.78)";
-    ctx.font = "600 12px system-ui";
-    ctx.fillText(
-      this._ui("Sansini zorla, odul kap, riski gorme.", "Push your luck, grab rewards, dodge the risk."),
-      titleX,
-      panelY + 48
-    );
-
-    const closeRect = {
-      x: panelX + panelW - 48,
-      y: panelY + 14,
-      w: 32,
-      h: 32,
-    };
-    this.hitBack = closeRect;
-
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
-    fillRoundRect(ctx, closeRect.x, closeRect.y, closeRect.w, closeRect.h, 10);
-    ctx.strokeStyle = "rgba(255,255,255,0.16)";
-    strokeRoundRect(ctx, closeRect.x + 0.5, closeRect.y + 0.5, closeRect.w - 1, closeRect.h - 1, 10);
-
-    ctx.fillStyle = "#ffffff";
+    const closeRect = { x: panelX + panelW - 48, y: panelY + 14, w: 32, h: 32 };
+    this.buttons.push({ rect: closeRect, action: "close" });
+    fillRoundRect(ctx, closeRect.x, closeRect.y, closeRect.w, closeRect.h, 10, "rgba(255,255,255,0.10)");
+    ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "900 18px system-ui";
     ctx.fillText("X", closeRect.x + closeRect.w / 2, closeRect.y + closeRect.h / 2 + 1);
 
-    const rowGap = 10;
-    const listX = panelX + 10;
-    const listY = panelY + 66;
-    const listW = panelW - 20;
-    const listH = panelH - 78;
-    const isSmall = safe.w <= 420;
-    const contentTop = listY;
-    const contentBottom = listY + listH;
-    const contentH = listH;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#fff6de";
+    ctx.font = `900 ${safe.w <= 430 ? 22 : 28}px system-ui`;
+    textFit(ctx, this._ui("Telegram Stars Magazasi", "Telegram Stars Shop"), innerX, panelY + 38, innerW - 44);
+    ctx.fillStyle = "rgba(255,216,160,0.80)";
+    ctx.font = "700 12px system-ui";
+    textFit(
+      ctx,
+      this._ui("Cekilemeyen oyun ici avantajlar. TON, crypto veya cekim hakki vermez.", "Non-withdrawable in-game benefits. No TON, crypto, or withdrawal rights."),
+      innerX,
+      panelY + 60,
+      innerW
+    );
 
-    const rowH = 84;
-    const thumbW = 54;
-    const thumbH = 60;
-    const btnW = 96;
-    const btnH = 40;
+    const summaryY = panelY + 76;
+    const summaryH = 74;
+    fillRoundRect(ctx, innerX, summaryY, innerW, summaryH, 18, "rgba(255,255,255,0.055)");
+    strokeRoundRect(ctx, innerX + 0.5, summaryY + 0.5, innerW - 1, summaryH - 1, 18, "rgba(255,195,109,0.18)", 1);
+    ctx.fillStyle = "rgba(255,255,255,0.96)";
+    ctx.font = "900 13px system-ui";
+    textFit(ctx, this._ui(`Oyun YTON: ${Math.floor(Number(state.coins || 0)).toLocaleString("tr-TR")}`, `Game YTON: ${Math.floor(Number(state.coins || 0)).toLocaleString("tr-TR")}`), innerX + 14, summaryY + 25, innerW - 28);
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.font = "700 11px system-ui";
+    textFit(ctx, this._ui(`Kolay eslesme hakki: ${Math.floor(Number(starsState.easyMatchTickets || 0))}`, `Easier match tickets: ${Math.floor(Number(starsState.easyMatchTickets || 0))}`), innerX + 14, summaryY + 47, innerW - 28);
+    textFit(ctx, this._ui("Stars ile alinan YTON sadece oyun icidir.", "YTON bought with Stars is in-game only."), innerX + 14, summaryY + 64, innerW - 28);
 
-    const totalContentHeight = stars.length * (rowH + rowGap);
-    this.maxScroll = Math.max(0, totalContentHeight - listH);
+    const listY = summaryY + summaryH + 14;
+    const listH = panelY + panelH - listY - 14;
+    const rowGap = 12;
+    const rowH = safe.w <= 430 ? 136 : 124;
+    const contentH = STARS_PRODUCTS.length * rowH + Math.max(0, STARS_PRODUCTS.length - 1) * rowGap;
+    this.maxScroll = Math.max(0, contentH - listH);
     this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
 
     ctx.save();
-    roundRectPath(ctx, listX, listY, listW, listH, 16);
+    roundRectPath(ctx, innerX, listY, innerW, listH, 18);
     ctx.clip();
 
-    const rowsBg = ctx.createLinearGradient(0, listY, 0, listY + listH);
-    rowsBg.addColorStop(0, "rgba(0,0,0,0.14)");
-    rowsBg.addColorStop(1, "rgba(0,0,0,0.28)");
-    ctx.fillStyle = rowsBg;
-    ctx.fillRect(listX, listY, listW, listH);
+    let y = listY - this.scrollY;
+    for (const product of STARS_PRODUCTS) {
+      const row = { x: innerX, y, w: innerW, h: rowH };
+      if (row.y + row.h >= listY - 20 && row.y <= listY + listH + 20) {
+        const busy = this.buyingProductId === product.id;
+        fillRoundRect(ctx, row.x, row.y, row.w, row.h, 20, "rgba(0,0,0,0.34)");
+        strokeRoundRect(ctx, row.x + 0.5, row.y + 0.5, row.w - 1, row.h - 1, 20, "rgba(255,195,109,0.18)", 1);
 
-    let y = contentTop - this.scrollY;
-
-    for (let i = 0; i < stars.length; i++) {
-      const star = stars[i];
-      const rowRect = { x: listX, y, w: listW, h: rowH };
-
-      if (rowRect.y > contentBottom + 20 || rowRect.y + rowRect.h < contentTop - 20) {
-        y += rowH + rowGap;
-        continue;
-      }
-
-      ctx.fillStyle = "rgba(0,0,0,0.32)";
-      fillRoundRect(ctx, rowRect.x, rowRect.y, rowRect.w, rowRect.h, 18);
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      ctx.lineWidth = 1;
-      strokeRoundRect(ctx, rowRect.x + 0.5, rowRect.y + 0.5, rowRect.w - 1, rowRect.h - 1, 18);
-
-      const imgX = rowRect.x + 12;
-      const imgY = rowRect.y + (rowRect.h - thumbH) / 2;
-      const imgW = thumbW;
-      const imgH = thumbH;
-      const imgRadius = 16;
-
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
-      fillRoundRect(ctx, imgX, imgY, imgW, imgH, imgRadius);
-
-      const starImg = this._getStarImage(star);
-      const drew = drawImageContainRounded(ctx, starImg, imgX, imgY, imgW, imgH, imgRadius, 0.14);
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      strokeRoundRect(ctx, imgX + 0.5, imgY + 0.5, imgW - 1, imgH - 1, imgRadius);
-
-      if (!drew) {
-        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        const badgeSize = 54;
+        fillRoundRect(ctx, row.x + 12, row.y + 16, badgeSize, badgeSize, 18, "rgba(255,179,71,0.16)");
+        strokeRoundRect(ctx, row.x + 12.5, row.y + 16.5, badgeSize - 1, badgeSize - 1, 18, "rgba(255,195,109,0.38)", 1);
+        ctx.fillStyle = "#ffd596";
+        ctx.font = "900 12px system-ui";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `700 ${isSmall ? 11 : 12}px system-ui`;
-        ctx.fillText(star.assetName || "IMG", imgX + imgW / 2, imgY + imgH / 2);
+        ctx.fillText(product.badge || "XTR", row.x + 12 + badgeSize / 2, row.y + 16 + badgeSize / 2);
+
+        const textX = row.x + 80;
+        const btnW = safe.w <= 430 ? 98 : 116;
+        const btnH = 42;
+        const btnX = row.x + row.w - btnW - 12;
+        const textW = Math.max(90, btnX - textX - 12);
+        const title = getStarsProductTitle(product, lang);
+        const desc = getStarsProductDescription(product, lang);
+        const titleSize = fitText(ctx, title, textW, 17, 13);
+
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `900 ${titleSize}px system-ui`;
+        textFit(ctx, title, textX, row.y + 28, textW);
+        ctx.fillStyle = "rgba(255,255,255,0.72)";
+        ctx.font = "600 11px system-ui";
+        wrapText(ctx, desc, textW, 3).forEach((line, idx) => ctx.fillText(line, textX, row.y + 50 + idx * 16));
+        ctx.fillStyle = "rgba(255,213,156,0.82)";
+        ctx.font = "900 12px system-ui";
+        ctx.fillText(`${Number(product.priceStars || 0)} Stars`, textX, row.y + row.h - 18);
+
+        const btn = { x: btnX, y: row.y + (row.h - btnH) / 2, w: btnW, h: btnH };
+        this.buttons.push({ rect: btn, action: "buy", product });
+        fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 14, busy ? "rgba(255,255,255,0.08)" : "rgba(255,179,71,0.18)");
+        strokeRoundRect(ctx, btn.x + 0.5, btn.y + 0.5, btn.w - 1, btn.h - 1, 14, "rgba(255,195,109,0.38)", 1);
+        ctx.fillStyle = "#fff6de";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "900 12px system-ui";
+        ctx.fillText(busy ? this._ui("ACILIYOR", "OPENING") : this._ui("STARS ILE AL", "BUY STARS"), btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
       }
-
-      const btnX = rowRect.x + rowRect.w - btnW - 12;
-      const btnY = rowRect.y + (rowRect.h - btnH) / 2;
-
-      const textX = imgX + imgW + 12;
-      const textW = Math.max(60, btnX - textX - 12);
-
-      const nameSize = fitText(ctx, star.name, textW, 17, 13, "system-ui", 900);
-
-      const line1Y = rowRect.y + 22;
-      const line2Y = rowRect.y + 40;
-      const line3Y = rowRect.y + 58;
-      const line4Y = rowRect.y + 74;
-
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
-      ctx.font = `900 ${nameSize}px system-ui`;
-      ctx.fillText(ellipsisText(ctx, star.name, textW), textX, line1Y);
-
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.font = "12px system-ui";
-      ctx.fillText(this._ui(`+Enerji: ${Number(star.energyGain || 0)}`, `+Energy: ${Number(star.energyGain || 0)}`), textX, line2Y);
-
-      ctx.fillStyle = "rgba(255,255,255,0.76)";
-      ctx.font = "12px system-ui";
-      ctx.fillText(this._ui(`Fiyat: ${Number(star.coinValue || 0)} yton`, `Price: ${Number(star.coinValue || 0)} yton`), textX, line3Y);
-      ctx.fillText(`${this._ui("Rarity", "Rarity")}: ${String(star.rarity || "common").toUpperCase()}`, textX, line4Y);
-
-      ctx.fillStyle = "rgba(18,18,22,0.70)";
-      fillRoundRect(ctx, btnX, btnY, btnW, btnH, 14);
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      strokeRoundRect(ctx, btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1, 14);
-
-      const btnGloss = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH);
-      btnGloss.addColorStop(0, "rgba(255,255,255,0.10)");
-      btnGloss.addColorStop(0.4, "rgba(255,255,255,0.03)");
-      btnGloss.addColorStop(1, "rgba(255,255,255,0.00)");
-      ctx.fillStyle = btnGloss;
-      fillRoundRect(ctx, btnX + 1, btnY + 1, btnW - 2, btnH * 0.55, 13);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.font = `700 ${isSmall ? 13 : 14}px system-ui`;
-      ctx.fillText(this._ui("SATIN AL", "BUY"), btnX + btnW / 2, btnY + btnH / 2 + 1);
-
-      this.hitButtons.push({
-        rect: { x: btnX, y: btnY, w: btnW, h: btnH },
-        action: "buy",
-        star,
-      });
-
       y += rowH + rowGap;
     }
-
     ctx.restore();
 
     if (this.maxScroll > 0) {
-      const trackW = 4;
-      const trackH = listH - 20;
-      const trackX = listX + listW - 5;
+      const trackX = innerX + innerW - 5;
       const trackY = listY + 10;
-
-      ctx.fillStyle = "rgba(255,255,255,0.10)";
-      fillRoundRect(ctx, trackX, trackY, trackW, trackH, 4);
-
-      const thumbH = Math.max(42, (contentH / totalContentHeight) * trackH);
-      const ratio = this.scrollY / Math.max(1, this.maxScroll);
-      const thumbY = trackY + (trackH - thumbH) * ratio;
-
-      ctx.fillStyle = "rgba(255,255,255,0.34)";
-      fillRoundRect(ctx, trackX, thumbY, trackW, thumbH, 4);
-    }
-
-    if (Date.now() < this.flashUntil) {
-      ctx.fillStyle = "rgba(255,70,70,0.12)";
-      ctx.fillRect(0, 0, W, H);
+      const trackH = listH - 20;
+      fillRoundRect(ctx, trackX, trackY, 3, trackH, 3, "rgba(255,255,255,0.10)");
+      const thumbH = Math.max(38, (listH / Math.max(listH, contentH)) * trackH);
+      const thumbY = trackY + (trackH - thumbH) * (this.scrollY / Math.max(1, this.maxScroll));
+      fillRoundRect(ctx, trackX, thumbY, 3, thumbH, 3, "rgba(255,195,109,0.72)");
     }
 
     if (this.toastText && Date.now() < this.toastUntil) {
-      ctx.font = "700 13px system-ui";
-      const tw = Math.min(panelW - 28, Math.max(180, ctx.measureText(this.toastText).width + 34));
-      const th = 40;
+      const tw = Math.min(innerW, 420);
       const tx = panelX + (panelW - tw) / 2;
-      const ty = panelY + panelH - th - 14;
-
-      ctx.fillStyle = "rgba(10,10,12,0.82)";
-      fillRoundRect(ctx, tx, ty, tw, th, 12);
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      strokeRoundRect(ctx, tx + 0.5, ty + 0.5, tw - 1, th - 1, 12);
-
-      ctx.fillStyle = "#ffffff";
+      const ty = panelY + panelH - 58;
+      fillRoundRect(ctx, tx, ty, tw, 42, 14, "rgba(0,0,0,0.72)");
+      strokeRoundRect(ctx, tx + 0.5, ty + 0.5, tw - 1, 41, 14, "rgba(255,195,109,0.24)", 1);
+      ctx.fillStyle = "#fff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(this.toastText, tx + tw / 2, ty + th / 2 + 1);
+      ctx.font = "800 12px system-ui";
+      textFit(ctx, this.toastText, tx + tw / 2, ty + 22, tw - 24);
     }
-
-    const now = Date.now();
-    const diseaseUntil = this._getDiseaseUntil();
-    const isDiseaseLocked = diseaseUntil > now;
-
-    if (this._diseasePrompt || isDiseaseLocked) {
-      ctx.fillStyle = "rgba(0,0,0,0.64)";
-      ctx.fillRect(0, 0, W, H);
-
-      const modalW = Math.min(panelW - 24, 320);
-      const modalH = isDiseaseLocked ? 180 : 220;
-      const modalX = panelX + (panelW - modalW) / 2;
-      const modalY = panelY + (panelH - modalH) / 2;
-
-      ctx.fillStyle = "rgba(14,14,18,0.96)";
-      fillRoundRect(ctx, modalX, modalY, modalW, modalH, 18);
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
-      strokeRoundRect(ctx, modalX + 0.5, modalY + 0.5, modalW - 1, modalH - 1, 18);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "alphabetic";
-      ctx.font = "900 20px system-ui";
-      ctx.fillText(
-        this._ui("Hastalik kaptin aptal", "You caught a disease, idiot"),
-        modalX + modalW / 2,
-        modalY + 42
-      );
-
-      ctx.fillStyle = "rgba(255,255,255,0.82)";
-      ctx.font = "13px system-ui";
-
-      if (isDiseaseLocked) {
-        const remainText = fmtDiseaseCountdown(diseaseUntil - now, this._lang());
-        ctx.fillText(
-          this._ui("Oyun kilitli. Bekleme suruyor.", "Game locked. Waiting in progress."),
-          modalX + modalW / 2,
-          modalY + 82
-        );
-        ctx.font = "900 26px system-ui";
-        ctx.fillStyle = "#ffd36c";
-        ctx.fillText(remainText, modalX + modalW / 2, modalY + 124);
-        ctx.font = "12px system-ui";
-        ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.fillText(
-          this._ui("Sure dolana kadar hicbir sey yapamazsin.", "You cannot do anything until the timer ends."),
-          modalX + modalW / 2,
-          modalY + 154
-        );
-      } else {
-        ctx.fillText(
-          this._ui("a) 2 saat bekle  b) 20 yton ode aninda iyiles", "a) Wait 2 hours  b) Pay 20 yton to heal now"),
-          modalX + modalW / 2,
-          modalY + 82
-        );
-        ctx.fillStyle = "rgba(255,255,255,0.72)";
-        ctx.font = "12px system-ui";
-        ctx.fillText(
-          this._ui("Beklersen oyun bu ekranda kilitlenir.", "If you wait, the game stays locked on this screen."),
-          modalX + modalW / 2,
-          modalY + 104
-        );
-
-        const waitRect = {
-          x: modalX + 18,
-          y: modalY + modalH - 62,
-          w: Math.floor((modalW - 46) / 2),
-          h: 42,
-        };
-        const payRect = {
-          x: waitRect.x + waitRect.w + 10,
-          y: waitRect.y,
-          w: waitRect.w,
-          h: waitRect.h,
-        };
-        this.hitDiseaseWait = waitRect;
-        this.hitDiseasePay = payRect;
-
-        ctx.fillStyle = "rgba(28,28,36,0.96)";
-        fillRoundRect(ctx, waitRect.x, waitRect.y, waitRect.w, waitRect.h, 14);
-        fillRoundRect(ctx, payRect.x, payRect.y, payRect.w, payRect.h, 14);
-        ctx.strokeStyle = "rgba(255,255,255,0.16)";
-        strokeRoundRect(ctx, waitRect.x + 0.5, waitRect.y + 0.5, waitRect.w - 1, waitRect.h - 1, 14);
-        strokeRoundRect(ctx, payRect.x + 0.5, payRect.y + 0.5, payRect.w - 1, payRect.h - 1, 14);
-
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "800 13px system-ui";
-        ctx.fillText(this._ui("2 Saat Bekle", "Wait 2 Hours"), waitRect.x + waitRect.w / 2, waitRect.y + 26);
-        ctx.fillText(this._ui("20 yton Ode", "Pay 20 Yton"), payRect.x + payRect.w / 2, payRect.y + 26);
-      }
-    }
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
   }
 }
