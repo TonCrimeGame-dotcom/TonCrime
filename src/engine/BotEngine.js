@@ -1,4 +1,6 @@
-const BOT_ROSTER_VERSION = "2026-04-13-rivals-1";
+import { consumeEasyMatchTicketFromState } from "../economy/StarsEconomy.js?v=20260414-stars-1";
+
+const BOT_ROSTER_VERSION = "2026-04-14-stars-1";
 const BOT_COUNT = 96;
 const RECENT_OPPONENT_LIMIT = 18;
 
@@ -268,6 +270,7 @@ function desiredBotKind(state, mode = "grid", source = "general") {
   const playerLevel = Math.max(0, Number(state?.player?.level ?? 0));
   const stake = Number(state?.pvp?.betStake || state?.pvp?.entryStake || 0);
 
+  if (source === "stars_easy") return "weak";
   if (lossStreak >= 2 || playerLevel < 4) return "weak";
   if (mode === "arena" && (playerLevel >= 16 || winStreak >= 3)) return "arena";
   if ((source === "trade" || source === "blackmarket" || stake >= 30 || playerLevel >= 34) && winStreak >= 2) {
@@ -281,11 +284,21 @@ function desiredBotKind(state, mode = "grid", source = "general") {
 function scoreBotCandidate(bot, state, mode, source, recentIds) {
   const skill = getPlayerSkill(state);
   const targetKind = desiredBotKind(state, mode, source);
-  const kindPenalty = bot.kind === targetKind ? 0 : bot.kind === "weak" ? 16 : 9;
+  const easyAssist = source === "stars_easy";
+  const kindPenalty = bot.kind === targetKind
+    ? 0
+    : targetKind === "weak"
+      ? (bot.kind === "arena" ? 28 : 46)
+      : bot.kind === "weak" ? 16 : 9;
   const recentPenalty = recentIds.includes(bot.id) ? 999 : 0;
-  const difficultyGap = Math.abs(Number(bot.difficulty || 0) - (targetKind === "weak" ? Math.max(16, skill + 8) : targetKind === "arena" ? skill + 18 : skill + 30));
-  const levelGap = Math.abs(Number(bot.level || 0) - Math.max(0, Number(state?.player?.level ?? 0)));
-  return recentPenalty + kindPenalty + difficultyGap * 1.4 + levelGap * 0.35 + Math.random() * 12;
+  const playerLevel = Math.max(0, Number(state?.player?.level ?? 0));
+  const targetDifficulty = easyAssist
+    ? clamp(skill * 0.52 + 14, 14, 46)
+    : targetKind === "weak" ? Math.max(16, skill + 8) : targetKind === "arena" ? skill + 18 : skill + 30;
+  const difficultyGap = Math.abs(Number(bot.difficulty || 0) - targetDifficulty);
+  const levelGap = Math.abs(Number(bot.level || 0) - playerLevel);
+  const overLevelPenalty = easyAssist ? Math.max(0, Number(bot.level || 0) - playerLevel - 4) * 1.6 : 0;
+  return recentPenalty + kindPenalty + difficultyGap * 1.4 + levelGap * 0.35 + overLevelPenalty + Math.random() * 12;
 }
 
 function buildOpponentPayload(bot, mode) {
@@ -467,13 +480,18 @@ export function startBotEngine(store) {
         ? latest.botState.recentOpponentIds.slice(0, RECENT_OPPONENT_LIMIT)
         : [];
       const mode = String(options.mode || latest?.pvp?.selectedMode || "grid");
-      const source = String(options.source || latest?.pvp?.source || "general");
+      const baseSource = String(options.source || latest?.pvp?.source || "general");
+      const assistResult = options.consumeEasyMatch === false
+        ? { state: latest, consumed: false }
+        : consumeEasyMatchTicketFromState(latest);
+      const scoringState = assistResult.consumed ? assistResult.state : latest;
+      const source = assistResult.consumed ? "stars_easy" : baseSource;
       const candidates = current
-        .map((bot) => ({ bot, score: scoreBotCandidate(bot, latest, mode, source, recentIds) }))
+        .map((bot) => ({ bot, score: scoreBotCandidate(bot, scoringState, mode, source, recentIds) }))
         .sort((a, b) => a.score - b.score);
       const picked = candidates[0]?.bot || current[Math.floor(Math.random() * current.length)] || makeBot(0);
       const nextRecent = [picked.id, ...recentIds.filter((id) => id !== picked.id)].slice(0, RECENT_OPPONENT_LIMIT);
-      store.set({
+      const patch = {
         bots: current,
         botState: {
           ...(latest.botState || {}),
@@ -483,8 +501,13 @@ export function startBotEngine(store) {
           lastPickedAt: Date.now(),
           lastPickedBotId: picked.id,
           recentOpponentIds: nextRecent,
+          lastEasyMatchUsed: !!assistResult.consumed,
         },
-      });
+      };
+      if (assistResult.consumed) {
+        patch.stars = scoringState.stars;
+      }
+      store.set(patch);
       return buildOpponentPayload(picked, mode);
     },
     emitProfiles() {
