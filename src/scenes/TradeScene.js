@@ -1,6 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260408-3";
+import { openExternalWallet } from "../walletBridge.js?v=20260413-wallet-1";
 import {
   getBusinessCatalog,
   getBusinessDef,
@@ -5087,90 +5088,14 @@ _drawButton(ctx, rect, text, style = "ghost") {
       return;
     }
 
-    if (Number(this._wallet().tonBalance || 0) < PREMIUM_COST_TON) {
-      this._showToast(this._ui('Premium icin 100 TON gerekli', '100 TON is required for premium'), 2200);
-      return;
-    }
-
-    const baseName = this._lang() === 'en' ? def.nameEn : def.nameTr;
-    const nameRaw = window.prompt(
-      this._ui(baseName + ' icin mekan adi gir:', 'Enter a venue name for ' + baseName + ':'),
-      baseName
-    );
-    if (nameRaw === null) return;
-    const name = String(nameRaw || baseName).trim() || baseName;
-
-    if (!this._consumeTon(PREMIUM_COST_TON)) {
-      this._showToast(this._ui('TON bakiye yetersiz', 'Not enough TON balance'));
-      return;
-    }
-
-    try {
-      const json = await fetchBackendJson("/public/businesses/purchase", {
-        method: "POST",
-        body: JSON.stringify({
-          business_type: String(businessType),
-          name,
-          grant_premium: true,
-        }),
-      });
-      const remoteBusiness = this._normalizeServerBusinessSnapshot(json?.business || null);
-      const remoteBusinesses = this._normalizeServerBusinessList(json?.businesses || []);
-      const nextOwned = remoteBusinesses.length
-        ? this._mergeOwnedBusinesses(remoteBusinesses)
-        : this._mergeOwnedBusinesses(remoteBusiness?.id ? [remoteBusiness] : []);
-      const targetBusinessId = remoteBusiness?.id || remoteBusinesses[0]?.id || nextOwned[0]?.id || null;
-      if (!nextOwned.length) {
-        throw new Error(this._ui("Isletme kaydedilemedi", "Business could not be saved"));
-      }
-
-      const state2 = this.store.get();
-      const profile = json?.profile || null;
-      const nextLevel = Math.max(50, Number(profile?.level || state2.player?.level || 1));
-      const player = {
-        ...(state2.player || {}),
-        id: String(profile?.id || state2.player?.id || ""),
-        username: String(profile?.username || state2.player?.username || "Player"),
-        level: nextLevel,
-        membership: "premium",
-        canOwnBusiness: true,
-        canWithdraw: true,
-      };
-
-      this.store.set({
-        premium: true,
-        isPremium: true,
-        player,
-        businesses: {
-          ...(state2.businesses || {}),
-          owned: nextOwned,
-        },
-        trade: {
-          ...(state2.trade || {}),
-          activeTab: "businesses",
-          selectedBusinessId: targetBusinessId,
-        },
-      });
-
-      try {
-        window.tcActivityFeed?.push?.({
-          event: "premium",
-          actor: player.username || "Player",
-          venueName: name,
-          amountTon: PREMIUM_COST_TON,
-        });
-      } catch (_) {}
-
-      this._pushSystemChat(this._ui((player.username || 'Player') + ' premium aldi ve ' + name + ' mekanini acti.', (player.username || 'Player') + ' purchased premium and unlocked ' + name + '.'));
-      this._showToast(this._ui('Premium aktif edildi', 'Premium activated'), 2200);
-      await this._syncTradeStateFromBackend({ quiet: true });
-    } catch (err) {
-      const state2 = this.store.get();
-      const wallet = { ...(state2.wallet || {}) };
-      wallet.tonBalance = roundTokenAmount(Number(wallet.tonBalance || 0) + PREMIUM_COST_TON);
-      this.store.set({ wallet });
-      console.error("premium_purchase error:", err);
-      this._showToast(err?.message || this._ui("Premium satin alinamadi", "Premium could not be purchased"));
+    this._showToast(this._ui('Premium crypto islemi harici cuzdan alaninda aciliyor', 'Premium crypto flow is opening in the external wallet'), 2200);
+    const result = await openExternalWallet({
+      source: "trade",
+      intent: "premium",
+      businessType: String(businessType || ""),
+    });
+    if (!result?.opened) {
+      this._showToast(this._ui('Harici cuzdan acilamadi', 'External wallet could not be opened'), 2200);
     }
   }
 
@@ -5273,7 +5198,6 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
   _renderBuy(ctx, x, y, w) {
     const isPremium = this._isPremium();
-    const tonBalance = Number(this._wallet().tonBalance || 0);
     const canOwn = this._canOwnBusiness();
     const defs = Object.entries(this._businessDefs()).map(([type, def]) => ({ type, ...def }));
     const compact = w <= 420;
@@ -5287,7 +5211,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
       this._ui('Satin Al', 'Buy'),
       isPremium
         ? this._ui('Sunucu urunlerin acik. Premium uyelik aktif ve secili bina acildi.', 'Server store is unlocked. Premium membership is active and your selected business is open.')
-        : this._ui('Sunucu urunleri icinde 100 TON omurluk premium uyelik bulunur. Bir bina sec ve direkt level 50 ol.', 'Server products include a 100 TON lifetime premium membership. Pick one business and jump straight to level 50.'),
+        : this._ui('Crypto premium ve cekim islemleri Telegram disindaki harici cuzdan alaninda acilir.', 'Crypto premium and withdrawal actions open in the external wallet outside Telegram.'),
       isPremium ? this._ui('UYELIK AKTIF', 'MEMBERSHIP ON') : this._ui('SERVER URUNLERI', 'SERVER PRODUCTS'),
       { imageKey: 'blackmarket', imageSrc: './src/assets/BlackMarket.png' },
       '#ffcc66'
@@ -5297,7 +5221,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
     ctx.font = '12px system-ui';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    textFit(ctx, this._ui('TON Bakiye: ', 'TON Balance: ') + fmtTokenAmount(tonBalance), x + 18, y + 104, w - 36);
+    textFit(ctx, this._ui('Harici cuzdan: toncrime-wallet.vercel.app', 'External wallet: toncrime-wallet.vercel.app'), x + 18, y + 104, w - 36);
     textFit(ctx, this._ui('Gunluk uretim: 50 rastgele urun / toplama suresi: 1 saat', 'Daily output: 50 random products / collection window: 1 hour'), x + 18, y + 122, w - 36);
     y += 146;
 
@@ -5333,7 +5257,7 @@ _drawButton(ctx, rect, text, style = "ghost") {
 
       const premiumRect = { x: x + 14, y: y + (compact ? 102 : 90), w: compact ? 104 : 112, h: 24 };
       this.hitButtons.push({ rect: premiumRect, action: 'buy_premium', businessType: def.type });
-      this._drawButton(ctx, premiumRect, isPremium ? this._ui('Uyelik Acik', 'Membership Active') : this._ui('Uyeligi Al', 'Buy Membership'), isPremium ? 'muted' : 'gold');
+      this._drawButton(ctx, premiumRect, isPremium ? this._ui('Uyelik Acik', 'Membership Active') : this._ui('Cuzdanda Ac', 'Open Wallet'), isPremium ? 'muted' : 'gold');
 
       const normalRect = { x: premiumRect.x + premiumRect.w + 8, y: premiumRect.y, w: compact ? 86 : 94, h: 24 };
       this.hitButtons.push({ rect: normalRect, action: 'buy_business', businessType: def.type });
