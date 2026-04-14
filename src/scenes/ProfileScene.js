@@ -1574,7 +1574,7 @@ export class ProfileScene {
       innerX + colW + colGap,
       "WALLET",
       [
-        t("Cekim var", "Withdrawal available"),
+        t("Cekim harici alanda", "Withdrawal in external area"),
         t("Premium var", "Premium available"),
         t("Islemler harici domainde", "Actions on external domain"),
       ],
