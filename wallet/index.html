@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TonCrime Wallet</title>
+  <style>
+    :root {
+      --gold: #ffb347;
+      --orange: #ff6a00;
+      --red: #ff3c1f;
+      --purple: #8b5cf6;
+      --glass: rgba(10, 7, 15, 0.68);
+      --border: rgba(255, 195, 109, 0.28);
+      --text: #fff4dd;
+      --muted: #d6b28a;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(13, 7, 6, 0.50), rgba(13, 7, 6, 0.78)),
+        url('./pvp-bg.png') center center / cover no-repeat fixed;
+      min-height: 100vh;
+    }
+
+    .wrap {
+      min-height: 100vh;
+      backdrop-filter: blur(2px);
+      padding: 24px 16px 40px;
+    }
+
+    .topbar {
+      max-width: 1100px;
+      margin: 0 auto 22px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-badge {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(255,179,71,.95), rgba(255,60,31,.95));
+      box-shadow: 0 0 24px rgba(255, 126, 29, 0.45);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #2b1100;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 52px);
+      line-height: 1;
+      text-shadow: 0 0 18px rgba(255, 170, 77, 0.32);
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .nav a, .btn {
+      border: 1px solid var(--border);
+      background: rgba(23, 11, 18, 0.66);
+      color: var(--text);
+      text-decoration: none;
+      padding: 12px 16px;
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      transition: .2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .nav a.active, .nav a:hover, .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 179, 71, 0.7);
+      box-shadow: 0 0 22px rgba(255, 128, 38, 0.18), var(--shadow);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 22px;
+    }
+
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 26px;
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(10,5,3,0.78));
+      pointer-events: none;
+    }
+
+    .hero > * { position: relative; z-index: 1; }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 179, 71, 0.12);
+      border: 1px solid rgba(255, 179, 71, 0.35);
+      font-size: 13px;
+      margin-bottom: 14px;
+      color: #ffd596;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 5vw, 58px);
+      line-height: 1.02;
+    }
+
+    .lead {
+      margin: 0;
+      color: #f2d2a9;
+      max-width: 620px;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .actions {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, rgba(255,179,71,0.95), rgba(255,106,0,0.95));
+      color: #281003;
+      border-color: transparent;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255, 191, 109, 0.14);
+    }
+
+    .stat small {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .stat strong {
+      font-size: 28px;
+    }
+
+    .list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .row span:last-child { color: #ffd596; font-weight: 700; }
+
+    .footer-note {
+      max-width: 1100px;
+      margin: 18px auto 0;
+      color: #d6b28a;
+      font-size: 13px;
+      text-align: center;
+      text-shadow: 0 1px 1px rgba(0,0,0,.4);
+    }
+
+    @media (max-width: 900px) {
+      .container { grid-template-columns: 1fr; }
+      .hero { min-height: 360px; }
+      .stats { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      .wrap { padding: 16px 12px 28px; }
+      .card { padding: 18px; border-radius: 22px; }
+      .stats { grid-template-columns: 1fr; }
+      .nav a, .btn { width: 100%; }
+      .nav { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-badge">TC</div>
+        <div>
+          <h1>TonCrime Wallet</h1>
+          <p>Cüzdan, çekim ve işlem takibi merkezi</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a class="active" href="./index.html">Ana Sayfa</a>
+        <a href="./deposit.html">Yatır</a>
+        <a href="./withdraw.html">Çekim</a>
+        <a href="./history.html">Geçmiş</a>
+      </nav>
+    </div>
+
+    <main class="container">
+      <section class="card hero">
+        <span class="eyebrow">TonCrime dış cüzdan merkezi</span>
+        <h2>Kazancını yönet, hareketlerini takip et.</h2>
+        <p class="lead">
+          Bu ekran TonCrime oyuncuları için dış cüzdan merkezi olarak tasarlandı. Buradan yatırma, çekim ve geçmiş
+          takibini ayrı bir alanda yönetebilirsin.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="./deposit.html">Bakiye Yükle</a>
+          <a class="btn" href="./withdraw.html">Çekim Talebi</a>
+          <a class="btn" href="./history.html">İşlem Geçmişi</a>
+        </div>
+      </section>
+
+      <aside class="card">
+        <div class="stats">
+          <div class="stat">
+            <small>Toplam Bakiye</small>
+            <strong id="walletTotal">Oturum bekleniyor</strong>
+          </div>
+          <div class="stat">
+            <small>Çekilebilir</small>
+            <strong id="walletWithdrawable">Oturum bekleniyor</strong>
+          </div>
+          <div class="stat">
+            <small>Bekleyen</small>
+            <strong id="walletPending">Oturum bekleniyor</strong>
+          </div>
+          <div class="stat">
+            <small>Son İşlem</small>
+            <strong id="walletLast">-</strong>
+          </div>
+        </div>
+
+        <div class="list">
+          <div class="row"><span>Cüzdan Durumu</span><span id="walletStatus">Oturum bekleniyor</span></div>
+          <div class="row"><span>Aktif Oyun Kimliği</span><span id="walletIdentity">-</span></div>
+          <div class="row"><span>Bugünkü Market Satışı</span><span id="walletMarketToday">-</span></div>
+          <div class="row"><span>Günlük Çekim Limiti</span><span id="walletDailyLimit">-</span></div>
+        </div>
+      </aside>
+    </main>
+
+    <div class="footer-note">
+      Harici cuzdan girisi Telegram oyunundan uretilen kisa sureli oturumla acilir. Stars bakiyesi cekilebilir TON'a donusmez.
+    </div>
+  </div>
+  <script src="./app.js?v=20260413-wallet-1"></script>
+</body>
+</html>

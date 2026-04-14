@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TonCrime Wallet - Geçmiş</title>
+  <style>
+    :root {
+      --gold: #ffb347;
+      --orange: #ff6a00;
+      --red: #ff3c1f;
+      --glass: rgba(10, 7, 15, 0.72);
+      --border: rgba(255, 195, 109, 0.28);
+      --text: #fff4dd;
+      --muted: #d6b28a;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      --green: #7dffae;
+      --yellow: #ffd27d;
+      --rose: #ff8f8f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(13, 7, 6, 0.55), rgba(13, 7, 6, 0.84)),
+        url('./pvp-bg.png') center center / cover no-repeat fixed;
+      min-height: 100vh;
+    }
+    .wrap { min-height: 100vh; padding: 24px 16px 40px; }
+    .topbar, .card, .footer-note { max-width: 1100px; margin-left: auto; margin-right: auto; }
+    .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 22px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-badge { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; color: #2b1100; background: linear-gradient(135deg, rgba(255,179,71,.95), rgba(255,60,31,.95)); box-shadow: 0 0 24px rgba(255,126,29,.45); }
+    .brand h1 { margin: 0; font-size: clamp(28px, 5vw, 52px); line-height: 1; }
+    .brand p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    .nav { display: flex; flex-wrap: wrap; gap: 10px; }
+    .nav a { border: 1px solid var(--border); background: rgba(23,11,18,.66); color: var(--text); text-decoration: none; padding: 12px 16px; border-radius: 14px; box-shadow: var(--shadow); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; transition: .2s ease; }
+    .nav a.active, .nav a:hover { transform: translateY(-1px); border-color: rgba(255,179,71,.7); box-shadow: 0 0 22px rgba(255,128,38,.18), var(--shadow); }
+    .card { background: var(--glass); border: 1px solid var(--border); border-radius: 28px; box-shadow: var(--shadow); padding: 26px; backdrop-filter: blur(10px); }
+    h2 { margin-top: 0; font-size: clamp(28px, 4vw, 44px); }
+    p { color: #f2d2a9; line-height: 1.6; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    th, td { padding: 14px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.08); }
+    th { color: #ffd596; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+    td { color: var(--text); }
+    .badge { display: inline-block; padding: 8px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .ok { background: rgba(125,255,174,.12); color: var(--green); border: 1px solid rgba(125,255,174,.25); }
+    .pending { background: rgba(255,210,125,.12); color: var(--yellow); border: 1px solid rgba(255,210,125,.25); }
+    .cancel { background: rgba(255,143,143,.12); color: var(--rose); border: 1px solid rgba(255,143,143,.25); }
+    .footer-note { margin-top: 18px; color: #d6b28a; font-size: 13px; text-align: center; }
+    @media (max-width: 560px) { .wrap { padding: 16px 12px 28px; } .card { padding: 18px; border-radius: 22px; } .nav, .nav a { width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-badge">TC</div>
+        <div>
+          <h1>TonCrime Wallet</h1>
+          <p>İşlem geçmişi</p>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="./index.html">Ana Sayfa</a>
+        <a href="./deposit.html">Yatır</a>
+        <a href="./withdraw.html">Çekim</a>
+        <a class="active" href="./history.html">Geçmiş</a>
+      </nav>
+    </div>
+
+    <section class="card">
+      <h2>İşlem Geçmişi</h2>
+      <p>Yatırım, çekim ve market satış hareketlerini bu alandan takip edebilirsin.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tarih</th>
+              <th>İşlem</th>
+              <th>Tutar</th>
+              <th>Durum</th>
+              <th>Açıklama</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>-</td>
+              <td>Oturum</td>
+              <td>-</td>
+              <td><span class="badge pending">Bekleniyor</span></td>
+              <td>Canli islem gecmisi harici cuzdan oturumu baglandiginda gosterilecek.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="footer-note">Canli islem gecmisi backend wallet oturumu ve ledger akisi tamamlandiginda burada gorunecek.</div>
+  </div>
+</body>
+</html>

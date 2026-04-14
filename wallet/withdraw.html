@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TonCrime Wallet - Çekim</title>
+  <style>
+    :root {
+      --gold: #ffb347;
+      --orange: #ff6a00;
+      --red: #ff3c1f;
+      --glass: rgba(10, 7, 15, 0.70);
+      --border: rgba(255, 195, 109, 0.28);
+      --text: #fff4dd;
+      --muted: #d6b28a;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(13, 7, 6, 0.55), rgba(13, 7, 6, 0.82)),
+        url('./pvp-bg.png') center center / cover no-repeat fixed;
+      min-height: 100vh;
+    }
+    .wrap { min-height: 100vh; padding: 24px 16px 40px; }
+    .topbar, .container, .footer-note { max-width: 1100px; margin-left: auto; margin-right: auto; }
+    .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 22px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-badge { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; color: #2b1100; background: linear-gradient(135deg, rgba(255,179,71,.95), rgba(255,60,31,.95)); box-shadow: 0 0 24px rgba(255,126,29,.45); }
+    .brand h1 { margin: 0; font-size: clamp(28px, 5vw, 52px); line-height: 1; }
+    .brand p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    .nav { display: flex; flex-wrap: wrap; gap: 10px; }
+    .nav a, .btn { border: 1px solid var(--border); background: rgba(23,11,18,.66); color: var(--text); text-decoration: none; padding: 12px 16px; border-radius: 14px; box-shadow: var(--shadow); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: .2s ease; }
+    .nav a.active, .nav a:hover, .btn:hover { transform: translateY(-1px); border-color: rgba(255,179,71,.7); box-shadow: 0 0 22px rgba(255,128,38,.18), var(--shadow); }
+    .container { display: grid; grid-template-columns: 1.05fr .95fr; gap: 22px; }
+    .card { background: var(--glass); border: 1px solid var(--border); border-radius: 28px; box-shadow: var(--shadow); padding: 26px; backdrop-filter: blur(10px); }
+    h2 { margin-top: 0; font-size: clamp(28px, 4vw, 44px); }
+    p { color: #f2d2a9; line-height: 1.6; }
+    .field { display: grid; gap: 8px; margin-bottom: 14px; }
+    .field label { color: #ffd596; font-size: 14px; font-weight: 700; }
+    .field input {
+      width: 100%;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,195,109,.2);
+      background: rgba(0,0,0,.28);
+      color: var(--text);
+      outline: none;
+      font-size: 16px;
+    }
+    .field input::placeholder { color: #c9a47d; }
+    .primary { width: 100%; padding: 16px; border: none; border-radius: 18px; background: linear-gradient(135deg, rgba(255,179,71,.95), rgba(255,106,0,.95)); color: #281003; font-size: 17px; font-weight: 800; cursor: pointer; box-shadow: var(--shadow); }
+    .grid { display: grid; gap: 14px; }
+    .info-row { display: flex; justify-content: space-between; gap: 14px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); }
+    .info-row span:last-child { color: #ffd596; font-weight: 700; }
+    .footer-note { margin-top: 18px; color: #d6b28a; font-size: 13px; text-align: center; }
+    @media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) { .wrap { padding: 16px 12px 28px; } .card { padding: 18px; border-radius: 22px; } .nav, .nav a { width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-badge">TC</div>
+        <div>
+          <h1>TonCrime Wallet</h1>
+          <p>Çekim merkezi</p>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="./index.html">Ana Sayfa</a>
+        <a href="./deposit.html">Yatır</a>
+        <a class="active" href="./withdraw.html">Çekim</a>
+        <a href="./history.html">Geçmiş</a>
+      </nav>
+    </div>
+
+    <main class="container">
+      <section class="card">
+        <h2>Çekim Talebi</h2>
+        <p>Çekilebilir bakiyeni kendi TON cüzdanına göndermek için aşağıdaki formu doldur.</p>
+
+        <div class="field">
+          <label for="wallet">TON Cüzdan Adresi</label>
+          <input id="wallet" type="text" placeholder="UQ... ile başlayan cüzdan adresini gir" />
+        </div>
+
+        <div class="field">
+          <label for="amount">Tutar</label>
+          <input id="amount" type="number" placeholder="0.5 - 100 TON arası" min="0.5" max="100" step="0.01" />
+        </div>
+
+        <button class="primary" type="button" disabled>Oturum Bekleniyor</button>
+      </section>
+
+      <aside class="card">
+        <h2 style="font-size:32px;">Çekim Kuralları</h2>
+        <div class="grid">
+          <div class="info-row"><span>Minimum Tutar</span><span>0.5 TON</span></div>
+          <div class="info-row"><span>Maksimum Tutar</span><span>100 TON</span></div>
+          <div class="info-row"><span>İşlem Süresi</span><span>0-24 Saat</span></div>
+          <div class="info-row"><span>Durum</span><span>Manuel Onay</span></div>
+        </div>
+      </aside>
+    </main>
+
+    <div class="footer-note">Bu sayfa harici cuzdan akisi icindir; canli cekim backend oturumu ve bakiye dogrulamasi baglandiginda aktif olacak.</div>
+  </div>
+</body>
+</html>
