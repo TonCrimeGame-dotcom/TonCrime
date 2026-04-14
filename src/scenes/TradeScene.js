@@ -1,7 +1,7 @@
 import { supabase } from "../supabase.js";
 
 import { fetchBackendJson } from "../supabase.js?v=20260408-3";
-import { openExternalWallet } from "../walletBridge.js?v=20260414-stars-1";
+import { openExternalWallet } from "../walletBridge.js?v=20260414-stars-2";
 import {
   getBusinessCatalog,
   getBusinessDef,
