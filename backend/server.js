@@ -7,6 +7,7 @@ import { TonClient, WalletContractV4, internal, toNano, SendMode } from '@ton/to
 import { beginCell, Address } from '@ton/core';
 import { mnemonicToPrivateKey } from '@ton/crypto';
 import { getBusinessDef as getSharedBusinessDef, sortBusinessProductsByCatalog } from '../src/data/businessCatalog.js';
+import { STARS_PRODUCTS, getStarsProduct, getStarsProductDescription, getStarsProductTitle } from '../src/data/starsCatalog.js';
 
 const app = express();
 app.use(cors());
@@ -645,6 +646,155 @@ function buildWalletUrl(token, meta = {}) {
   if (intent) url.searchParams.set('intent', intent);
   if (businessType) url.searchParams.set('business_type', businessType);
   return url.toString();
+}
+
+function signStarsPayload(payload) {
+  return signWalletTokenPayload({
+    typ: 'tc_stars_purchase',
+    ...payload,
+  });
+}
+
+function verifyStarsPayload(payloadText) {
+  const payload = verifyWalletToken(payloadText);
+  if (payload.typ !== 'tc_stars_purchase') {
+    const error = new Error('Invalid Stars payload');
+    error.status = 401;
+    throw error;
+  }
+  return payload;
+}
+
+function buildStarsInvoicePayload(identity, product) {
+  const now = Date.now();
+  return signStarsPayload({
+    profile_key: String(identity.profileKey || '').trim(),
+    identity_key: String(identity.authIdentityKey || '').trim(),
+    username: sanitizeUsername(identity.username || 'Player'),
+    product_id: String(product.id || '').trim(),
+    amount_stars: Math.max(1, Math.floor(asNumber(product.priceStars, 1))),
+    nonce: crypto.randomBytes(12).toString('hex'),
+    iat: now,
+    exp: now + 30 * 60_000,
+  });
+}
+
+async function createTelegramStarsInvoiceLink({ identity, product, lang = 'tr' }) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    const error = new Error('TELEGRAM_BOT_TOKEN is required for Stars invoices');
+    error.status = 503;
+    throw error;
+  }
+
+  const title = getStarsProductTitle(product, lang) || product.id;
+  const description = getStarsProductDescription(product, lang) || 'TonCrime in-game item';
+  const payload = buildStarsInvoicePayload(identity, product);
+  const body = {
+    title,
+    description,
+    payload,
+    provider_token: '',
+    currency: 'XTR',
+    prices: [
+      {
+        label: title,
+        amount: Math.max(1, Math.floor(asNumber(product.priceStars, 1))),
+      },
+    ],
+  };
+
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/createInvoiceLink`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !json?.ok || !json?.result) {
+    const error = new Error(json?.description || `Telegram invoice failed (${response.status})`);
+    error.status = 502;
+    throw error;
+  }
+
+  return { invoiceLink: json.result, payload };
+}
+
+function buildStarsGrantPatch(profile, product) {
+  const grant = product?.grant || {};
+  const patch = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (Number(grant.yton || 0) > 0) {
+    patch.coins = Math.max(0, asNumber(profile?.coins, 0) + Number(grant.yton || 0));
+  }
+
+  if (grant.fullEnergy) {
+    const maxEnergy = Math.max(1, asNumber(profile?.energy_max, 100));
+    patch.energy = maxEnergy;
+    patch.energy_max = maxEnergy;
+  }
+
+  if (grant.premium) {
+    patch.level = Math.max(asInteger(profile?.level, 0), asInteger(grant.levelAtLeast, 50));
+    patch.membership = 'premium';
+    patch.premium = true;
+    patch.can_own_business = !!grant.canOwnBusiness;
+    patch.can_withdraw = false;
+  }
+
+  return patch;
+}
+
+async function applyStarsPurchaseToProfile({ profileKey, product, payment = {} }) {
+  if (!product?.id) throw new Error('Stars product is required');
+
+  let profile = await getProfileByKey(profileKey).catch(() => null);
+  if (!profile?.id) {
+    await ensureProfileRecordForIdentity(profileKey, payment.username || 'Player').catch(() => null);
+    profile = await getProfileByKey(profileKey).catch(() => null);
+  }
+  if (!profile?.id) {
+    const error = new Error('Profile not found for Stars purchase');
+    error.status = 404;
+    throw error;
+  }
+
+  const refId = String(payment.chargeId || payment.payloadId || product.id).slice(0, 120);
+  if (refId) {
+    const { data: existingLedger } = await supabase
+      .from('wallet_ledger')
+      .select('id')
+      .eq('profile_id', profile.id)
+      .eq('entry_type', 'telegram_stars_purchase')
+      .eq('ref_id', refId)
+      .maybeSingle()
+      .catch(() => ({ data: null }));
+    if (existingLedger?.id) {
+      return profile;
+    }
+  }
+
+  const patch = buildStarsGrantPatch(profile, product);
+  const updated = await updateRowWithPruning('profiles', profile.id, patch);
+
+  try {
+    const { error: ledgerError } = await supabase.from('wallet_ledger').insert({
+      profile_id: profile.id,
+      entry_type: 'telegram_stars_purchase',
+      yton_amount: Number(product?.grant?.yton || 0),
+      ton_amount: 0,
+      note: `${product.id} via Telegram Stars (non-withdrawable)`,
+      ref_id: refId,
+      created_at: new Date().toISOString(),
+    });
+    if (ledgerError) {
+      console.warn('[stars] wallet ledger insert skipped:', ledgerError.message || ledgerError);
+    }
+  } catch (ledgerError) {
+    console.warn('[stars] wallet ledger insert failed:', ledgerError?.message || ledgerError);
+  }
+
+  return updated || await getProfileById(profile.id).catch(() => profile);
 }
 
 function buildIdentityPassword(identityKey) {
@@ -2921,6 +3071,117 @@ app.get('/public/wallet/session', makePublicRateLimit('wallet-session', 60_000, 
   }
 });
 
+app.get('/public/stars/catalog', makePublicRateLimit('stars-catalog', 60_000, 120), async (_req, res) => {
+  return res.json({
+    ok: true,
+    currency: 'XTR',
+    withdrawable: false,
+    items: STARS_PRODUCTS,
+  });
+});
+
+app.post('/public/stars/invoice', makePublicRateLimit('stars-invoice', 60_000, 30), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: false });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+    if (!identity.verified || identity.isGuest) {
+      return res.status(401).json({ ok: false, error: 'Verified Telegram session required for Stars invoice' });
+    }
+
+    const product = getStarsProduct(req.body?.product_id || req.query?.product_id);
+    if (!product?.id) {
+      return res.status(400).json({ ok: false, error: 'Unknown Stars product' });
+    }
+
+    await ensureProfileRecordForIdentity(identity.profileKey, identity.username || 'Player').catch(() => null);
+
+    const lang = String(req.body?.lang || req.query?.lang || 'tr').trim() === 'en' ? 'en' : 'tr';
+    const invoice = await createTelegramStarsInvoiceLink({ identity, product, lang });
+    return res.json({
+      ok: true,
+      invoice_link: invoice.invoiceLink,
+      payload: invoice.payload,
+      product,
+      currency: 'XTR',
+      amount: Math.max(1, Math.floor(asNumber(product.priceStars, 1))),
+      withdrawable: false,
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'Stars invoice failed' });
+  }
+});
+
+app.post('/telegram/stars/webhook', async (req, res) => {
+  try {
+    const secret = String(process.env.TELEGRAM_WEBHOOK_SECRET || '').trim();
+    if (secret) {
+      const got = String(req.headers['x-telegram-bot-api-secret-token'] || '').trim();
+      if (got !== secret) return res.status(403).json({ ok: false, error: 'Forbidden' });
+    }
+
+    const update = req.body || {};
+    const preCheckout = update.pre_checkout_query || null;
+    if (preCheckout?.id) {
+      let ok = true;
+      let errorMessage = '';
+      try {
+        const payload = verifyStarsPayload(preCheckout.invoice_payload);
+        const product = getStarsProduct(payload.product_id);
+        if (!product?.id) throw new Error('Unknown product');
+        if (String(preCheckout.currency || '') !== 'XTR') throw new Error('Invalid currency');
+        if (asInteger(preCheckout.total_amount, 0) !== asInteger(product.priceStars, 0)) {
+          throw new Error('Invalid Stars amount');
+        }
+      } catch (err) {
+        ok = false;
+        errorMessage = err.message || 'Invalid Stars purchase';
+      }
+
+      if (TELEGRAM_BOT_TOKEN) {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerPreCheckoutQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pre_checkout_query_id: preCheckout.id,
+            ok,
+            ...(ok ? {} : { error_message: errorMessage }),
+          }),
+        }).catch(() => null);
+      }
+      return res.json({ ok: true, pre_checkout: ok });
+    }
+
+    const payment = update.message?.successful_payment || null;
+    if (payment?.invoice_payload) {
+      const payload = verifyStarsPayload(payment.invoice_payload);
+      const product = getStarsProduct(payload.product_id);
+      if (!product?.id) throw new Error('Unknown Stars product');
+      if (String(payment.currency || '') !== 'XTR') throw new Error('Invalid Stars currency');
+      if (asInteger(payment.total_amount, 0) !== asInteger(product.priceStars, 0)) {
+        throw new Error('Invalid Stars amount');
+      }
+
+      const profile = await applyStarsPurchaseToProfile({
+        profileKey: payload.profile_key,
+        product,
+        payment: {
+          username: payload.username,
+          chargeId: payment.telegram_payment_charge_id || '',
+          payloadId: payload.nonce || '',
+        },
+      });
+
+      return res.json({ ok: true, paid: true, product_id: product.id, profile });
+    }
+
+    return res.json({ ok: true, ignored: true });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'Stars webhook failed' });
+  }
+});
+
 app.get('/public/profile', makePublicRateLimit('profile-read', 60_000, 120), async (req, res) => {
   try {
     const identity = resolveIdentityContext(req, { allowGuest: true });
@@ -3413,7 +3674,7 @@ app.post('/public/businesses/purchase', makePublicRateLimit('business-purchase',
         membership: 'premium',
         premium: true,
         can_own_business: true,
-        can_withdraw: true,
+        can_withdraw: false,
         updated_at: new Date().toISOString(),
       }).catch(() => null);
       buyerAfterUpdate = buyerAfterUpdate || await getProfileById(originalProfile.id).catch(() => originalProfile) || originalProfile;
