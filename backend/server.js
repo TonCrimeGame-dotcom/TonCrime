@@ -55,6 +55,7 @@ const WALLET_HANDOFF_TTL_MS = Math.max(
   60_000,
   Number(process.env.WALLET_HANDOFF_TTL_MS || 5 * 60_000)
 );
+const WALLET_LEDGER_LIVE = String(process.env.WALLET_LEDGER_LIVE || '').trim() === '1';
 const SINGLE_DEVICE_SESSION_TTL_MS = Math.max(
   30_000,
   Number(process.env.SINGLE_DEVICE_SESSION_TTL_MS || 60_000)
@@ -2877,16 +2878,15 @@ app.get('/public/wallet/session', makePublicRateLimit('wallet-session', 60_000, 
         .catch(() => []),
     ]);
 
-    const pendingTon = (withdrawRows || [])
+    const pendingTon = WALLET_LEDGER_LIVE ? (withdrawRows || [])
       .filter((row) => ['pending', 'processing'].includes(String(row?.status || '').toLowerCase()))
-      .reduce((sum, row) => sum + asNumber(row?.ton_amount, 0), 0);
-    const lastActivityAt =
+      .reduce((sum, row) => sum + asNumber(row?.ton_amount, 0), 0) : null;
+    const lastActivityAt = WALLET_LEDGER_LIVE ? (
       withdrawRows?.[0]?.updated_at ||
       withdrawRows?.[0]?.created_at ||
       ledgerRows?.[0]?.created_at ||
-      profile.updated_at ||
-      profile.created_at ||
-      null;
+      null
+    ) : null;
 
     return res.json({
       ok: true,
@@ -2902,17 +2902,18 @@ app.get('/public/wallet/session', makePublicRateLimit('wallet-session', 60_000, 
         can_own_business: !!profile.can_own_business,
       },
       wallet: {
+        ledger_live: WALLET_LEDGER_LIVE,
         yton_balance: asNumber(profile.coins, 0),
-        ton_balance: 0,
-        withdrawable_ton: 0,
+        ton_balance: WALLET_LEDGER_LIVE ? 0 : null,
+        withdrawable_ton: WALLET_LEDGER_LIVE ? 0 : null,
         pending_ton: pendingTon,
-        min_withdraw_ton: asNumber(limits.min_amount, 1),
-        max_withdraw_ton: asNumber(limits.max_amount, 100),
-        daily_withdraw_limit_ton: asNumber(limits.daily_limit, 100),
+        min_withdraw_ton: WALLET_LEDGER_LIVE ? asNumber(limits.min_amount, 1) : null,
+        max_withdraw_ton: WALLET_LEDGER_LIVE ? asNumber(limits.max_amount, 100) : null,
+        daily_withdraw_limit_ton: WALLET_LEDGER_LIVE ? asNumber(limits.daily_limit, 100) : null,
         last_activity_at: lastActivityAt,
       },
-      withdraws: withdrawRows || [],
-      ledger: ledgerRows || [],
+      withdraws: WALLET_LEDGER_LIVE ? (withdrawRows || []) : [],
+      ledger: WALLET_LEDGER_LIVE ? (ledgerRows || []) : [],
       expires_at: new Date(asNumber(session.exp, Date.now())).toISOString(),
     });
   } catch (err) {
