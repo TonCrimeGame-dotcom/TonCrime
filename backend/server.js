@@ -48,6 +48,13 @@ const IDENTITY_AUTH_SECRET = String(
   process.env.ADMIN_API_KEY ||
   ''
 ).trim();
+const WALLET_APP_URL = String(process.env.WALLET_APP_URL || 'https://toncrime-wallet.vercel.app')
+  .trim()
+  .replace(/\/+$/, '');
+const WALLET_HANDOFF_TTL_MS = Math.max(
+  60_000,
+  Number(process.env.WALLET_HANDOFF_TTL_MS || 5 * 60_000)
+);
 const SINGLE_DEVICE_SESSION_TTL_MS = Math.max(
   30_000,
   Number(process.env.SINGLE_DEVICE_SESSION_TTL_MS || 60_000)
@@ -550,6 +557,93 @@ function resolveIdentityContext(req, { allowGuest = false } = {}) {
 
 function buildIdentityEmail(identityKey) {
   return `${sanitizeIdentityKey(identityKey) || 'guest_unknown'}@toncrime.local`;
+}
+
+function encodeWalletTokenPart(value) {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value);
+  return Buffer.from(raw, 'utf8').toString('base64url');
+}
+
+function decodeWalletTokenPart(value) {
+  return Buffer.from(String(value || ''), 'base64url').toString('utf8');
+}
+
+function walletTokenSecret() {
+  return IDENTITY_AUTH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || ADMIN_API_KEY || 'toncrime_wallet_secret';
+}
+
+function signWalletTokenPayload(payload) {
+  const body = encodeWalletTokenPart(payload);
+  const signature = crypto
+    .createHmac('sha256', walletTokenSecret())
+    .update(body)
+    .digest('base64url');
+  return `${body}.${signature}`;
+}
+
+function verifyWalletToken(token) {
+  const raw = String(token || '').trim();
+  const [body, signature, extra] = raw.split('.');
+  if (!body || !signature || extra) {
+    const error = new Error('Invalid wallet session token');
+    error.status = 401;
+    throw error;
+  }
+
+  const expected = crypto
+    .createHmac('sha256', walletTokenSecret())
+    .update(body)
+    .digest('base64url');
+
+  const left = Buffer.from(signature);
+  const right = Buffer.from(expected);
+  if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+    const error = new Error('Invalid wallet session signature');
+    error.status = 401;
+    throw error;
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(decodeWalletTokenPart(body));
+  } catch (_) {
+    const error = new Error('Invalid wallet session payload');
+    error.status = 401;
+    throw error;
+  }
+
+  if (!payload?.profile_key || !payload?.identity_key || !payload?.exp || Date.now() > Number(payload.exp)) {
+    const error = new Error('Wallet session expired');
+    error.status = 401;
+    throw error;
+  }
+
+  return payload;
+}
+
+function createWalletHandoffToken(identity, meta = {}) {
+  const now = Date.now();
+  return signWalletTokenPayload({
+    typ: 'tc_wallet_handoff',
+    profile_key: String(identity.profileKey || '').trim(),
+    identity_key: String(identity.authIdentityKey || '').trim(),
+    username: sanitizeUsername(identity.username || 'Player'),
+    intent: String(meta.intent || '').trim().slice(0, 40),
+    business_type: String(meta.business_type || '').trim().slice(0, 40),
+    nonce: crypto.randomBytes(12).toString('hex'),
+    iat: now,
+    exp: now + WALLET_HANDOFF_TTL_MS,
+  });
+}
+
+function buildWalletUrl(token, meta = {}) {
+  const url = new URL('/', `${WALLET_APP_URL}/`);
+  url.searchParams.set('tc_wallet_token', token);
+  const intent = String(meta.intent || '').trim().slice(0, 40);
+  const businessType = String(meta.business_type || '').trim().slice(0, 40);
+  if (intent) url.searchParams.set('intent', intent);
+  if (businessType) url.searchParams.set('business_type', businessType);
+  return url.toString();
 }
 
 function buildIdentityPassword(identityKey) {
@@ -1182,6 +1276,34 @@ function detectQuantityKey(row) {
 
 function detectPriceKey(row) {
   return ['price_yton', 'price', 'unit_price', 'market_price'].find((key) => hasOwn(row, key)) || '';
+}
+
+function getMarketListingBusinessProductId(row = {}) {
+  return readRowText(row, ['business_product_id', 'product_id']);
+}
+
+function isMarketListingRowActive(row = {}) {
+  const quantityKey = detectQuantityKey(row);
+  if (!quantityKey) return false;
+  if (Math.max(0, readRowQuantity(row, [quantityKey])) <= 0) return false;
+  if (hasOwn(row, 'is_active') && !readBooleanish(row, ['is_active'], true)) return false;
+
+  const status = String(row?.status || '').trim().toLowerCase();
+  if (status && ['inactive', 'sold_out', 'deleted', 'removed', 'cancelled'].includes(status)) {
+    return false;
+  }
+
+  return true;
+}
+
+function resolveMarketListingBusinessId(row = {}, businessProductsById = new Map()) {
+  const directBusinessId = readRowText(row, ['business_id']);
+  if (directBusinessId) return directBusinessId;
+
+  const productId = getMarketListingBusinessProductId(row);
+  if (!productId) return '';
+
+  return readRowText(businessProductsById.get(String(productId || '').trim()) || {}, ['business_id']);
 }
 
 function readBooleanish(row, keys = [], fallback = false) {
@@ -2684,6 +2806,120 @@ app.post('/public/auth/session', makePublicRateLimit('auth-session', 60_000, 40)
   }
 });
 
+app.post('/public/wallet/handoff', makePublicRateLimit('wallet-handoff', 60_000, 40), async (req, res) => {
+  try {
+    const identity = resolveIdentityContext(req, { allowGuest: false });
+    if (!identity.ok) {
+      return res.status(identity.status || 401).json({ ok: false, error: identity.error });
+    }
+    if (!identity.verified || identity.isGuest) {
+      return res.status(401).json({ ok: false, error: 'Verified Telegram session required for wallet handoff' });
+    }
+
+    await ensureProfileRecordForIdentity(identity.profileKey, identity.username || 'Player').catch(() => null);
+
+    const meta = {
+      intent: String(req.body?.intent || req.query?.intent || '').trim(),
+      business_type: String(req.body?.business_type || req.query?.business_type || '').trim(),
+    };
+    const token = createWalletHandoffToken(identity, meta);
+
+    return res.json({
+      ok: true,
+      token,
+      wallet_url: buildWalletUrl(token, meta),
+      expires_in: Math.floor(WALLET_HANDOFF_TTL_MS / 1000),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'wallet handoff failed' });
+  }
+});
+
+app.get('/public/wallet/session', makePublicRateLimit('wallet-session', 60_000, 120), async (req, res) => {
+  try {
+    const authHeader = String(req.headers.authorization || '').trim();
+    const bearer = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1] || '';
+    const token = String(req.query.tc_wallet_token || req.query.token || bearer || '').trim();
+    const session = verifyWalletToken(token);
+
+    let profile = await getProfileByKey(session.profile_key).catch(() => null);
+    if (!profile && session.profile_key) {
+      await ensureProfileRecordForIdentity(session.profile_key, session.username || 'Player').catch(() => null);
+      profile = await getProfileByKey(session.profile_key).catch(() => null);
+    }
+    if (!profile?.id) {
+      return res.status(404).json({ ok: false, error: 'Wallet profile not found' });
+    }
+
+    const [limits, withdrawRows, ledgerRows] = await Promise.all([
+      getWithdrawLimits().catch(() => ({ min_amount: 1, max_amount: 100, daily_limit: 100 })),
+      supabase
+        .from('withdraw_requests')
+        .select('*')
+        .eq('profile_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return data || [];
+        })
+        .catch(() => []),
+      supabase
+        .from('wallet_ledger')
+        .select('*')
+        .eq('profile_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return data || [];
+        })
+        .catch(() => []),
+    ]);
+
+    const pendingTon = (withdrawRows || [])
+      .filter((row) => ['pending', 'processing'].includes(String(row?.status || '').toLowerCase()))
+      .reduce((sum, row) => sum + asNumber(row?.ton_amount, 0), 0);
+    const lastActivityAt =
+      withdrawRows?.[0]?.updated_at ||
+      withdrawRows?.[0]?.created_at ||
+      ledgerRows?.[0]?.created_at ||
+      profile.updated_at ||
+      profile.created_at ||
+      null;
+
+    return res.json({
+      ok: true,
+      profile: {
+        id: profile.id,
+        telegram_id: String(profile.telegram_id || session.profile_key || ''),
+        username: sanitizeUsername(profile.username || session.username || 'Player'),
+        level: asNumber(profile.level, 0),
+        yton: asNumber(profile.coins, 0),
+        premium: !!profile.premium || String(profile.membership || '').toLowerCase() === 'premium',
+        membership: String(profile.membership || (profile.premium ? 'premium' : 'standard')),
+        can_withdraw: !!profile.can_withdraw,
+        can_own_business: !!profile.can_own_business,
+      },
+      wallet: {
+        yton_balance: asNumber(profile.coins, 0),
+        ton_balance: 0,
+        withdrawable_ton: 0,
+        pending_ton: pendingTon,
+        min_withdraw_ton: asNumber(limits.min_amount, 1),
+        max_withdraw_ton: asNumber(limits.max_amount, 100),
+        daily_withdraw_limit_ton: asNumber(limits.daily_limit, 100),
+        last_activity_at: lastActivityAt,
+      },
+      withdraws: withdrawRows || [],
+      ledger: ledgerRows || [],
+      expires_at: new Date(asNumber(session.exp, Date.now())).toISOString(),
+    });
+  } catch (err) {
+    return res.status(err.status || 500).json({ ok: false, error: err.message || 'wallet session failed' });
+  }
+});
+
 app.get('/public/profile', makePublicRateLimit('profile-read', 60_000, 120), async (req, res) => {
   try {
     const identity = resolveIdentityContext(req, { allowGuest: true });
@@ -2995,20 +3231,43 @@ app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), 
     const ownedBusinessIdSet = new Set(
       (ownedBusinessRows || []).map((row) => String(row?.id || '').trim()).filter(Boolean)
     );
+    const candidateListingRows = (rawListingRows || []).filter((row) =>
+      isMarketListingRowActive(row) && !!(
+        readRowText(row, ['business_id']) ||
+        getMarketListingBusinessProductId(row) ||
+        readRowText(row, ['inventory_item_id'])
+      )
+    );
 
-    const activeListingRows = (rawListingRows || []).filter((row) => {
-      const quantityKey = detectQuantityKey(row);
-      if (!quantityKey) return false;
-      if (Math.max(0, readRowQuantity(row, [quantityKey])) <= 0) return false;
-      if (hasOwn(row, 'is_active') && !readBooleanish(row, ['is_active'], true)) return false;
+    const [inventoryRows, directBusinessProductRows] = await Promise.all([
+      getTableRowsByIds(
+        'inventory_items',
+        candidateListingRows.map((row) => readRowText(row, ['inventory_item_id'])).filter(Boolean)
+      ).catch(() => []),
+      getTableRowsByIds(
+        'business_products',
+        candidateListingRows.map((row) => getMarketListingBusinessProductId(row)).filter(Boolean)
+      ).catch(() => []),
+    ]);
 
-      const status = String(row?.status || '').trim().toLowerCase();
-      if (status && ['inactive', 'sold_out', 'deleted', 'removed', 'cancelled'].includes(status)) {
-        return false;
-      }
+    const directBusinessProductsById = new Map();
+    for (const row of directBusinessProductRows || []) {
+      const id = String(row?.id || '').trim();
+      if (id) directBusinessProductsById.set(id, row);
+    }
 
-      return !!readRowText(row, ['business_id']);
-    });
+    const activeListingRows = candidateListingRows
+      .map((row) => {
+        const businessId = resolveMarketListingBusinessId(row, directBusinessProductsById);
+        if (!businessId) return null;
+        return {
+          ...row,
+          business_id: businessId,
+          business_product_id: getMarketListingBusinessProductId(row) || row?.business_product_id || row?.product_id,
+          product_id: getMarketListingBusinessProductId(row) || row?.product_id || row?.business_product_id,
+        };
+      })
+      .filter(Boolean);
 
     const listingBusinessIds = activeListingRows
       .map((row) => readRowText(row, ['business_id']))
@@ -3020,14 +3279,21 @@ app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), 
       .map((row) => String(row?.id || '').trim())
       .filter(Boolean);
 
-    const [allProductRows, inventoryRows, ownerProfiles] = await Promise.all([
+    const [allProductRows, ownerProfiles] = await Promise.all([
       listBusinessProductsByBusinessIds(allBusinessIds).catch(() => []),
-      getTableRowsByIds(
-        'inventory_items',
-        activeListingRows.map((row) => readRowText(row, ['inventory_item_id'])).filter(Boolean)
-      ).catch(() => []),
       getProfilesByIdMap(allBusinessRows.map((row) => getBusinessOwnerId(row)).filter(Boolean)).catch(() => new Map()),
     ]);
+
+    const combinedProductRows = [...(allProductRows || [])];
+    const seenBusinessProductIds = new Set(
+      combinedProductRows.map((row) => String(row?.id || '').trim()).filter(Boolean)
+    );
+    for (const row of directBusinessProductRows || []) {
+      const rowId = String(row?.id || '').trim();
+      if (rowId && seenBusinessProductIds.has(rowId)) continue;
+      if (rowId) seenBusinessProductIds.add(rowId);
+      combinedProductRows.push(row);
+    }
 
     const businessRowsById = new Map();
     for (const row of allBusinessRows || []) {
@@ -3035,7 +3301,7 @@ app.get('/public/trade/state', makePublicRateLimit('trade-state', 60_000, 120), 
       if (id) businessRowsById.set(id, row);
     }
 
-    const ensuredProductState = await ensureBusinessProductCatalogs(allBusinessRows, allProductRows).catch(() => ({
+    const ensuredProductState = await ensureBusinessProductCatalogs(allBusinessRows, combinedProductRows).catch(() => ({
       byBusinessId: new Map(),
       byId: new Map(),
     }));
