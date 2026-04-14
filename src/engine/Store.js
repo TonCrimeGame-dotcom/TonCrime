@@ -97,6 +97,12 @@ class Store {
         tutorialSeen: false,
       },
 
+      economy: {
+        mode: "",
+        choiceSeen: false,
+        choiceAt: 0,
+      },
+
       ui: {
         safe: {
           x: 0,
@@ -405,6 +411,10 @@ class Store {
         selectedId: null,
         lastClaimTs: {},
         twinBonusClaimed: {},
+        purchases: [],
+        easyMatchTickets: 0,
+        cosmetics: {},
+        economyMode: "stars",
       },
 
       missions: {
@@ -451,6 +461,7 @@ class Store {
     const merged = this._deepMerge(this._clone(defaults), state || {});
 
     if (!merged.intro) merged.intro = {};
+    if (!merged.economy) merged.economy = {};
     if (!merged.player) merged.player = {};
     if (!merged.trade) merged.trade = {};
     if (!merged.wallet) merged.wallet = {};
@@ -463,6 +474,22 @@ class Store {
     if (!Array.isArray(merged.market.shops)) merged.market.shops = [];
     if (!Array.isArray(merged.market.listings)) merged.market.listings = [];
     if (!Array.isArray(merged.market.salesHistory)) merged.market.salesHistory = [];
+    if (!merged.stars) merged.stars = {};
+    merged.stars = {
+      owned: merged.stars.owned || {},
+      selectedId: merged.stars.selectedId ?? null,
+      lastClaimTs: merged.stars.lastClaimTs || {},
+      twinBonusClaimed: merged.stars.twinBonusClaimed || {},
+      purchases: Array.isArray(merged.stars.purchases) ? merged.stars.purchases.slice(0, 80) : [],
+      easyMatchTickets: Math.max(0, Number(merged.stars.easyMatchTickets || 0)),
+      cosmetics: { ...(merged.stars.cosmetics || {}) },
+      economyMode: "stars",
+      diseaseUntil: Number(merged.stars.diseaseUntil || 0),
+      lastDiseaseAt: Number(merged.stars.lastDiseaseAt || 0),
+      lastPurchaseAt: Math.max(0, Number(merged.stars.lastPurchaseAt || 0)),
+      lastProductId: String(merged.stars.lastProductId || ""),
+      lastEasyMatchUsedAt: Math.max(0, Number(merged.stars.lastEasyMatchUsedAt || 0)),
+    };
     if (!Array.isArray(merged.bots)) merged.bots = [];
     merged.botState = {
       enabled: !!merged.botState?.enabled,
@@ -490,6 +517,14 @@ class Store {
     intro.ageVerified = !!intro.ageVerified;
     intro.profileCompleted = !!intro.profileCompleted;
     intro.tutorialSeen = !!intro.tutorialSeen;
+
+    merged.economy = {
+      mode: ["stars", "crypto_external"].includes(String(merged.economy.mode || ""))
+        ? String(merged.economy.mode || "")
+        : "",
+      choiceSeen: !!merged.economy.choiceSeen,
+      choiceAt: Math.max(0, Number(merged.economy.choiceAt || 0)),
+    };
 
     const dailyLogin = merged.dailyLogin;
     dailyLogin.lastClaimKey = String(dailyLogin.lastClaimKey || "");
@@ -541,7 +576,7 @@ class Store {
     const econUnlocked = !!(merged.premium || merged.isPremium) || Number(player.level ?? 0) >= 50;
     player.membership = econUnlocked && (merged.premium || merged.isPremium) ? "premium" : (player.membership || "standard");
     player.canOwnBusiness = econUnlocked;
-    player.canWithdraw = econUnlocked;
+    player.canWithdraw = false;
 
     for (const biz of merged.businesses.owned) {
       if (!biz.ownerName) biz.ownerName = playerName;
