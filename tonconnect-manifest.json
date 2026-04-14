@@ -1,7 +1,7 @@
 {
-  "url": "https://ton-crime-blush.vercel.app",
-  "name": "TonCrime",
-  "iconUrl": "https://ton-crime-blush.vercel.app/src/assets/ui/logo.png",
-  "termsOfUseUrl": "https://ton-crime-blush.vercel.app",
-  "privacyPolicyUrl": "https://ton-crime-blush.vercel.app"
+  "url": "https://toncrime-wallet.vercel.app",
+  "name": "TonCrime Wallet",
+  "iconUrl": "https://toncrime-wallet.vercel.app/logo.png",
+  "termsOfUseUrl": "https://toncrime-wallet.vercel.app",
+  "privacyPolicyUrl": "https://toncrime-wallet.vercel.app"
 }
