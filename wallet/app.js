@@ -76,14 +76,15 @@
   function renderSession(json) {
     const profile = json?.profile || {};
     const wallet = json?.wallet || {};
-    setText("walletStatus", "Bagli");
-    setText("walletTotal", fmtNumber(wallet.yton_balance, "YTON"));
-    setText("walletWithdrawable", fmtNumber(wallet.withdrawable_ton, "TON"));
-    setText("walletPending", fmtNumber(wallet.pending_ton, "TON"));
-    setText("walletLast", wallet.last_activity_at ? new Date(wallet.last_activity_at).toLocaleString("tr-TR") : "-");
+    const tonLive = !!wallet.ledger_live;
+    setText("walletStatus", tonLive ? "Canli TON bagli" : "Profil bagli / TON verisi yok");
+    setText("walletTotal", `${fmtNumber(wallet.yton_balance, "YTON")} oyun bakiyesi`);
+    setText("walletWithdrawable", tonLive ? fmtNumber(wallet.withdrawable_ton, "TON") : "Canli TON yok");
+    setText("walletPending", tonLive ? fmtNumber(wallet.pending_ton, "TON") : "Canli TON yok");
+    setText("walletLast", tonLive && wallet.last_activity_at ? new Date(wallet.last_activity_at).toLocaleString("tr-TR") : "TON ledger bagli degil");
     setText("walletIdentity", profile.username ? `@${profile.username}` : String(profile.telegram_id || "-"));
-    setText("walletMarketToday", "Canli hesaplama sonraki adimda");
-    setText("walletDailyLimit", fmtNumber(wallet.daily_withdraw_limit_ton, "TON"));
+    setText("walletMarketToday", tonLive ? "Canli hesaplama sonraki adimda" : "TON ledger aktif degil");
+    setText("walletDailyLimit", tonLive ? fmtNumber(wallet.daily_withdraw_limit_ton, "TON") : "Aktif degil");
   }
 
   async function boot() {
