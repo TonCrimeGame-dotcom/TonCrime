@@ -75,6 +75,7 @@ export class HomeScene {
     };
 
     this._cardRect = { x: 0, y: 0, w: 0, h: 0 };
+    this._economyChoiceRects = [];
   }
 
   onEnter() {
@@ -127,11 +128,170 @@ export class HomeScene {
     ];
   }
 
+  _lang() {
+    return this.i18n?.getLang?.() === "en" ? "en" : "tr";
+  }
+
+  _ui(tr, en) {
+    return this._lang() === "en" ? en : tr;
+  }
+
+  _shouldShowEconomyIntro() {
+    const state = this.store.get() || {};
+    return !state.economy?.choiceSeen;
+  }
+
+  _chooseEconomyMode(mode) {
+    const safeMode = mode === "crypto_external" ? "crypto_external" : "stars";
+    this.store.set({
+      economy: {
+        mode: safeMode,
+        choiceSeen: true,
+        choiceAt: Date.now(),
+      },
+      stars: {
+        ...((this.store.get() || {}).stars || {}),
+        economyMode: "stars",
+      },
+    });
+
+    if (safeMode === "crypto_external") {
+      if (typeof window.tcOpenExternalWallet === "function") {
+        window.tcOpenExternalWallet({ source: "economy_intro" });
+      } else {
+        try { this.scenes?.go?.("profile"); } catch (_) {}
+      }
+      return;
+    }
+
+    try { this.scenes?.go?.("xxx"); } catch (_) {}
+  }
+
+  _drawEconomyIntro(ctx, safe, w, h) {
+    this._economyChoiceRects = [];
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.66)";
+    ctx.fillRect(0, 0, w, h);
+
+    const stacked = safe.w < 440;
+    const panelW = Math.min(safe.w - 24, 500);
+    const panelH = stacked ? 420 : 326;
+    const panelX = safe.x + (safe.w - panelW) / 2;
+    const panelY = Math.max(safe.y + 12, safe.y + (safe.h - panelH) / 2);
+
+    ctx.fillStyle = "rgba(15,12,10,0.94)";
+    fillRoundRect(ctx, panelX, panelY, panelW, panelH, 24);
+    ctx.strokeStyle = "rgba(255,195,109,0.34)";
+    ctx.lineWidth = 1;
+    strokeRoundRect(ctx, panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 24);
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#fff6de";
+    ctx.font = "900 22px system-ui";
+    ctx.fillText(this._ui("Oyun ekonomisi", "Game economy"), panelX + 18, panelY + 34);
+
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "700 11px system-ui";
+    ctx.fillText(
+      this._ui("Stars Telegram icinde, crypto harici cuzdan alanindadir.", "Stars stays inside Telegram; crypto is handled in the external wallet."),
+      panelX + 18,
+      panelY + 56
+    );
+
+    const cardTop = panelY + 78;
+    const gap = 10;
+    const cardW = stacked ? panelW - 36 : (panelW - 46) / 2;
+    const cardH = stacked ? 128 : 164;
+    const cards = [
+      {
+        mode: "stars",
+        title: "STARS",
+        accent: "#ffd596",
+        lines: [
+          this._ui("Cekim yok", "No withdrawal"),
+          this._ui("Premium var", "Premium available"),
+          this._ui("Dusuk seviye eslesme hakki", "Easier match tickets"),
+        ],
+        button: this._ui("Stars ile devam", "Continue with Stars"),
+      },
+      {
+        mode: "crypto_external",
+        title: "CRYPTO",
+        accent: "#9ee7ff",
+        lines: [
+          this._ui("Cekim harici cuzdanla", "Withdrawal in external wallet"),
+          this._ui("Premium var", "Premium available"),
+          this._ui("Oyunda ekstra avantaj yok", "No extra gameplay advantage"),
+        ],
+        button: this._ui("Harici cuzdan", "External wallet"),
+      },
+    ];
+
+    cards.forEach((card, idx) => {
+      const x = stacked ? panelX + 18 : panelX + 18 + idx * (cardW + gap);
+      const y = stacked ? cardTop + idx * (cardH + gap) : cardTop;
+      ctx.fillStyle = "rgba(255,255,255,0.055)";
+      fillRoundRect(ctx, x, y, cardW, cardH, 18);
+      ctx.strokeStyle = idx === 0 ? "rgba(255,213,150,0.40)" : "rgba(158,231,255,0.36)";
+      strokeRoundRect(ctx, x + 0.5, y + 0.5, cardW - 1, cardH - 1, 18);
+
+      ctx.fillStyle = card.accent;
+      ctx.font = "900 15px system-ui";
+      ctx.fillText(card.title, x + 14, y + 28);
+
+      ctx.fillStyle = "rgba(255,255,255,0.80)";
+      ctx.font = "700 11px system-ui";
+      card.lines.forEach((line, lineIdx) => {
+        ctx.fillText(`- ${line}`, x + 14, y + 54 + lineIdx * 18);
+      });
+
+      const btn = { x: x + 14, y: y + cardH - 44, w: cardW - 28, h: 32 };
+      this._economyChoiceRects.push({ rect: btn, mode: card.mode });
+      ctx.fillStyle = idx === 0 ? "rgba(255,179,71,0.18)" : "rgba(104,205,255,0.15)";
+      fillRoundRect(ctx, btn.x, btn.y, btn.w, btn.h, 12);
+      ctx.strokeStyle = idx === 0 ? "rgba(255,213,150,0.44)" : "rgba(158,231,255,0.40)";
+      strokeRoundRect(ctx, btn.x + 0.5, btn.y + 0.5, btn.w - 1, btn.h - 1, 12);
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "900 11px system-ui";
+      ctx.fillText(card.button, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+    });
+
+    ctx.fillStyle = "rgba(255,216,160,0.72)";
+    ctx.font = "700 10px system-ui";
+    ctx.fillText(
+      this._ui("Stars ile alinan urunler TON veya cekim hakki vermez.", "Items bought with Stars do not grant TON or withdrawal rights."),
+      panelX + 18,
+      panelY + panelH - 18
+    );
+    ctx.restore();
+  }
+
 
   update() {
     const c = this.carousel;
     const px = this.input.pointer.x;
     const py = this.input.pointer.y;
+
+    if (this._shouldShowEconomyIntro()) {
+      if (this.input.justPressed()) {
+        c.dragging = false;
+        c.clickCandidate = false;
+      }
+      if (this.input.justReleased()) {
+        for (const item of this._economyChoiceRects) {
+          if (pointInRect(px, py, item.rect)) {
+            this._chooseEconomyMode(item.mode);
+            return;
+          }
+        }
+      }
+      return;
+    }
 
     if (this.input.justPressed()) {
       c.dragging = true;
@@ -345,6 +505,10 @@ export class HomeScene {
       ctx.fillStyle =
         i === idx ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.28)";
       ctx.fill();
+    }
+
+    if (this._shouldShowEconomyIntro()) {
+      this._drawEconomyIntro(ctx, safe, w, h);
     }
   }
 }
