@@ -13,10 +13,10 @@ import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
 import { HomeScene } from "./scenes/HomeScene.js";
 import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260413-ads-2";
-import { ProfileScene } from "./scenes/ProfileScene.js";
+import { ProfileScene } from "./scenes/ProfileScene.js?v=20260413-wallet-1";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260413-ads-2";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260413-wallet-1";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -31,7 +31,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-13-rival-bots-1";
+const BUILD_STAMP = "2026-04-13-wallet-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -1788,7 +1788,7 @@ const i18n = new I18n(store);
 i18n.register({
   tr: {
     loading: "Yükleniyor...",
-    "hud.wallet": "Cüzdan",
+    "hud.wallet": "Harici Cüzdan",
     "hud.openProfile": "Profili Aç",
     "hud.language": "Dil",
     "lang.current": "TR",
@@ -1804,7 +1804,7 @@ i18n.register({
   },
   en: {
     loading: "Loading...",
-    "hud.wallet": "Wallet",
+    "hud.wallet": "External Wallet",
     "hud.openProfile": "Open profile",
     "hud.language": "Language",
     "lang.current": "EN",
