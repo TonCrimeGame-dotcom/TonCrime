@@ -1,7 +1,7 @@
 export const translations = {
   tr: {
     loading: 'Yükleniyor...',
-    hud.wallet: 'Cüzdan',
+    hud.wallet: 'Harici Cuzdan',
     hud.openProfile: 'Profili Aç',
     hud.language: 'Dil',
     lang.current: 'TR',
@@ -14,11 +14,11 @@ export const translations = {
     home.blackmarket: 'Black Market',
     home.nightclub: 'Gece Kulübü',
     home.coffeeshop: 'Coffeeshop',
-    home.xxx: 'Genel Ev',
+    home.xxx: 'Stars Magazasi',
   },
   en: {
     loading: 'Loading...',
-    hud.wallet: 'Wallet',
+    hud.wallet: 'External Wallet',
     hud.openProfile: 'Open profile',
     hud.language: 'Language',
     lang.current: 'EN',
@@ -31,6 +31,6 @@ export const translations = {
     home.blackmarket: 'Black Market',
     home.nightclub: 'Nightclub',
     home.coffeeshop: 'Coffeeshop',
-    home.xxx: 'Brothel',
+    home.xxx: 'Stars Shop',
   },
 };
