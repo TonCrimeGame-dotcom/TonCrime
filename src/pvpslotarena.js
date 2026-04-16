@@ -1702,6 +1702,10 @@
       if (ctxPrize > 0) return ctxPrize;
       try {
         const state = window.tcStore?.get?.() || {};
+        const rewardCurrency = String(state?.pvp?.rewardCurrency || state?.pvp?.economyCurrency || "YTON").toUpperCase();
+        if (rewardCurrency !== "YTON") return 0;
+        const payout = Number(state?.pvp?.rewardYton ?? state?.pvp?.expectedPayout ?? 0);
+        if (payout > 0) return payout;
         const stake = Number(state?.pvp?.entryStake || 0);
         return stake > 0 ? stake : 0;
       } catch (_) {
