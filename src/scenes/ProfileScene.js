@@ -1,4 +1,4 @@
-import { openExternalWallet, WALLET_APP_URL } from "../walletBridge.js?v=20260414-stars-2";
+import { openExternalWallet, WALLET_APP_URL } from "../walletBridge.js?v=20260414-economy-1";
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
