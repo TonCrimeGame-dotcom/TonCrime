@@ -137,8 +137,7 @@ export class HomeScene {
   }
 
   _shouldShowEconomyIntro() {
-    const state = this.store.get() || {};
-    return !state.economy?.choiceSeen;
+    return false;
   }
 
   _chooseEconomyMode(mode) {
