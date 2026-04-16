@@ -169,6 +169,30 @@
     { stake: 30, payout: 55, commission: 5, label: "30 yTon" },
   ];
 
+  const PVP_MODE_ECONOMY = {
+    grid: {
+      currency: "STARS",
+      stake: 0,
+      payout: 0,
+      commission: 0,
+      usesStarsAssist: true,
+      labelTr: "Stars destekli",
+      labelEn: "Stars assisted",
+    },
+    arena: {
+      currency: "YTON",
+      usesBetPackage: true,
+      labelTr: "YTON bahisli",
+      labelEn: "YTON wager",
+    },
+    slotarena: {
+      currency: "YTON",
+      usesBetPackage: true,
+      labelTr: "YTON bahisli",
+      labelEn: "YTON wager",
+    },
+  };
+
   const MODE_ENERGY_COST = {
     grid: 10,
     arena: 5,
@@ -189,6 +213,7 @@
       matchAuthUnavailable: "Online eşleşme için giriş hazır değil",
       insufficientEnergyMode: "Yetersiz enerji • {amount} gerekli • {mode}",
       insufficientYton: "Yetersiz YTON • {stake} giriş gerekli",
+      starsModeStarting: "Stars destekli mod • YTON bahis yok",
       queueStartFailed: "Bahisli PvP kuyruğu başlatılamadı",
       headerNightclub: "Rakip Havuzu: Nightclub içi",
       headerCoffeeshop: "Rakip Havuzu: Coffeeshop içi",
@@ -208,6 +233,8 @@
       cardLocked: "Kilitli",
       energyEntry: "Enerji: {energy} • Giriş: {stake} yTon",
       rewardCommission: "Kazanç: {payout} yTon • Komisyon: {commission} yTon",
+      energyEntryStars: "Enerji: {energy} • Stars destekli • YTON bahis yok",
+      rewardCommissionStars: "Kolay eşleşme hakkı varsa otomatik kullanılır",
       statusLoading: "PvP • Yükleniyor...",
       statusStarted: "PvP • {mode} başladı",
       statusModeMissing: "PvP • Mod bulunamadı",
@@ -238,6 +265,7 @@
       matchAuthUnavailable: "Online matchmaking is not ready",
       insufficientEnergyMode: "Not enough energy • {amount} required • {mode}",
       insufficientYton: "Not enough YTON • {stake} entry required",
+      starsModeStarting: "Stars assisted mode • no YTON wager",
       queueStartFailed: "Bet PvP queue could not be started",
       headerNightclub: "Opponent Pool: Nightclub Only",
       headerCoffeeshop: "Opponent Pool: Coffeeshop Only",
@@ -257,6 +285,8 @@
       cardLocked: "Locked",
       energyEntry: "Energy: {energy} • Entry: {stake} yTon",
       rewardCommission: "Payout: {payout} yTon • Commission: {commission} yTon",
+      energyEntryStars: "Energy: {energy} • Stars assisted • no YTON wager",
+      rewardCommissionStars: "Easier match tickets are used automatically when available",
       statusLoading: "PvP • Loading...",
       statusStarted: "PvP • {mode} started",
       statusModeMissing: "PvP • Mode not found",
@@ -310,8 +340,25 @@
     };
   }
 
+  function getPvpEconomyForMode(modeId, pvpState = null, lang = "tr") {
+    const meta = PVP_MODE_ECONOMY[modeId] || PVP_MODE_ECONOMY.grid;
+    const pkg = meta.usesBetPackage ? getBetPackageForMode(modeId, pvpState) : null;
+    const currency = String(meta.currency || "YTON").toUpperCase();
+    return {
+      modeId,
+      currency,
+      isYton: currency === "YTON",
+      isStars: currency === "STARS",
+      usesStarsAssist: !!meta.usesStarsAssist,
+      stake: Number(pkg?.stake ?? meta.stake ?? 0),
+      payout: Number(pkg?.payout ?? meta.payout ?? 0),
+      commission: Number(pkg?.commission ?? meta.commission ?? 0),
+      label: lang === "en" ? (meta.labelEn || currency) : (meta.labelTr || currency),
+    };
+  }
+
   function getStakeForMode(modeId, pvpState = null) {
-    return Number(getBetPackageForMode(modeId, pvpState).stake || 0);
+    return Number(getPvpEconomyForMode(modeId, pvpState).stake || 0);
   }
 
   function getEnergyCostForMode(modeId) {
@@ -886,9 +933,11 @@
     }
 
     _makeOpponent(modeId = this.matchModeId) {
+      const economy = getPvpEconomyForMode(modeId || this.matchModeId || "grid", this._getPvpState(), this._lang());
       const fromEngine = window.tcBotEngine?.pickOpponent?.({
         mode: modeId || this.matchModeId || "grid",
         source: this.source || "general",
+        consumeEasyMatch: !!economy.usesStarsAssist,
       });
       if (fromEngine?.username) return fromEngine;
 
@@ -916,6 +965,8 @@
     }
 
     _buildBotMatchContext(opponent, modeId, reason = "bot_fallback") {
+      const pvpState = this._getPvpState();
+      const economy = getPvpEconomyForMode(modeId || this.matchModeId || "grid", pvpState, this._lang());
       return {
         matchId: null,
         userId: null,
@@ -932,6 +983,12 @@
         opponentUsername: opponent?.username || this._text("opponent"),
         opponentLevel: opponent?.level ?? STARTING_LEVEL,
         botProfileId: opponent?.id || "",
+        economyCurrency: economy.currency,
+        entryStake: economy.stake,
+        expectedPayout: economy.payout,
+        rewardYton: economy.isYton ? economy.payout : 0,
+        rewardCurrency: economy.currency,
+        usesStarsAssist: economy.usesStarsAssist,
       };
     }
 
@@ -948,6 +1005,8 @@
     _buildMatchContext(match, userId, modeId) {
       if (!match || !userId) return null;
       const amIPlayer1 = String(match.player1_id || "") === String(userId);
+      const pvpState = this._getPvpState();
+      const economy = getPvpEconomyForMode(modeId || this.matchModeId || "grid", pvpState, this._lang());
       return {
         matchId: match.id,
         userId,
@@ -960,6 +1019,12 @@
         player1Username: match.player1_username || "Player 1",
         player2Username: match.player2_username || "Player 2",
         opponentUsername: amIPlayer1 ? (match.player2_username || this._text("opponent")) : (match.player1_username || this._text("opponent")),
+        economyCurrency: economy.currency,
+        entryStake: economy.stake,
+        expectedPayout: economy.payout,
+        rewardYton: economy.isYton ? economy.payout : 0,
+        rewardCurrency: economy.currency,
+        usesStarsAssist: economy.usesStarsAssist,
       };
     }
 
@@ -1296,8 +1361,8 @@
       const mode = this._mapModeIdToSqlMode(id);
       const s = this.store?.get?.() || {};
       const pvpState = { ...(s.pvp || {}) };
-      const stakePkg = getBetPackageForMode(id, pvpState);
-      const stake = Number(stakePkg.stake || 0);
+      const economy = getPvpEconomyForMode(id, pvpState, this._lang());
+      const stake = Number(economy.stake || 0);
       const player = this._getPlayerMeta();
       const playerState = { ...(s.player || {}) };
       const currentEnergy = Number(playerState.energy || 0);
@@ -1319,7 +1384,7 @@
         return;
       }
 
-      if (ytonBalance < stake) {
+      if (economy.isYton && ytonBalance < stake) {
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: this._format("insufficientYton", { stake }) },
@@ -1329,13 +1394,23 @@
         return;
       }
 
-      if (!mode || !stake) {
+      if (!mode || (economy.isYton && !stake)) {
         this.matchState = "menu";
         try {
           window.dispatchEvent(new CustomEvent("tc:toast", {
             detail: { text: this._text("matchAuthUnavailable") },
           }));
         } catch (_) {}
+        return;
+      }
+
+      if (!economy.isYton) {
+        try {
+          window.dispatchEvent(new CustomEvent("tc:toast", {
+            detail: { text: this._text("starsModeStarting") },
+          }));
+        } catch (_) {}
+        this.matchFallbackTimer = setTimeout(() => this._fallbackToBotMatch(id, "stars_assisted"), 450);
         return;
       }
 
@@ -1358,8 +1433,10 @@
             ...(latest.pvp || {}),
             betStake: stake,
             betMode: mode,
-            betPayout: Number(stakePkg.payout || 0),
-            betCommission: Number(stakePkg.commission || 0),
+            betPayout: Number(economy.payout || 0),
+            betCommission: Number(economy.commission || 0),
+            economyCurrency: economy.currency,
+            economyLabel: economy.label,
             queueStatus: queueData?.status || "searching",
           },
         });
@@ -1618,31 +1695,17 @@
 
       const s = this.store?.get?.() || {};
       const pvp = { ...(s.pvp || {}) };
-      const ECONOMY = {
-        grid: {
-          energy: getEnergyCostForMode("grid"),
-          stake: getStakeForMode("grid", pvp),
-          payout: Number(getBetPackageForMode("grid", pvp).payout || 0),
-          commission: Number(getBetPackageForMode("grid", pvp).commission || 0),
-          modeKey: "iq_arena",
-        },
-        arena: {
-          energy: getEnergyCostForMode("arena"),
-          stake: getStakeForMode("arena", pvp),
-          payout: Number(getBetPackageForMode("arena", pvp).payout || 0),
-          commission: Number(getBetPackageForMode("arena", pvp).commission || 0),
-          modeKey: "cage_fight",
-        },
-        slotarena: {
-          energy: getEnergyCostForMode("slotarena"),
-          stake: getStakeForMode("slotarena", pvp),
-          payout: Number(getBetPackageForMode("slotarena", pvp).payout || 0),
-          commission: Number(getBetPackageForMode("slotarena", pvp).commission || 0),
-          modeKey: "slot_arena",
-        },
+      const MODE_KEYS = {
+        grid: "iq_arena",
+        arena: "cage_fight",
+        slotarena: "slot_arena",
       };
       const player = { ...(s.player || {}) };
-      const economy = ECONOMY[id];
+      const economy = {
+        ...getPvpEconomyForMode(id, pvp, this._lang()),
+        energy: getEnergyCostForMode(id),
+        modeKey: MODE_KEYS[id],
+      };
       const normalizedOpponent = this._normalizeOpponentForGame(opponentData, matchCtx);
 
       pvp.selectedMode = id;
@@ -1674,7 +1737,7 @@
       const chargeMatch = () => {
         if (charged) return;
         charged = true;
-        this.store?.set?.({
+        const chargePatch = {
           player: {
             ...player,
             energy: Math.max(0, currentEnergy - economy.energy),
@@ -1686,14 +1749,23 @@
             entryPaid: true,
             entryEnergy: economy.energy,
             entryStake: economy.stake,
+            entryCurrency: economy.currency,
+            economyCurrency: economy.currency,
+            economyLabel: economy.label,
             expectedPayout: economy.payout,
-            rewardYton: Number(economy.payout || 0),
+            rewardYton: economy.isYton ? Number(economy.payout || 0) : 0,
+            rewardCurrency: economy.currency,
             serverFee: Number(economy.commission || 0),
+            usesStarsAssist: !!economy.usesStarsAssist,
             payoutDone: false,
             matchStartedAt: Date.now(),
             modeKey: economy.modeKey,
           },
-        });
+        };
+        if (economy.isYton && economy.stake > 0) {
+          Object.assign(chargePatch, patchWalletYton(s, Math.max(0, currentYton - economy.stake)));
+        }
+        this.store?.set?.(chargePatch);
       };
 
       const refundMatch = () => {
@@ -1701,7 +1773,7 @@
         charged = false;
         const latest = this.store?.get?.() || {};
         const latestPlayer = { ...(latest.player || player) };
-        this.store?.set?.({
+        const refundPatch = {
           player: {
             ...latestPlayer,
             energy: Number(latestPlayer.energy || 0) + economy.energy,
@@ -1712,7 +1784,16 @@
             entryPaid: false,
             payoutDone: false,
           },
-        });
+        };
+        if (economy.isYton && economy.stake > 0) {
+          refundPatch.wallet = {
+            ...(latest.wallet || {}),
+            yton: getWalletYton(latest) + economy.stake,
+          };
+          refundPatch.yton = getWalletYton(latest) + economy.stake;
+          refundPatch.coins = getWalletYton(latest) + economy.stake;
+        }
+        this.store?.set?.(refundPatch);
       };
 
       try {
@@ -1725,7 +1806,7 @@
         if (dom.spinner) dom.spinner.classList.remove("hidden");
 
         if (id === "grid") {
-          await loadPvpGameScript(["./src/pvpcrush.js?v=20260413-bots-1", "./pvpcrush.js?v=20260413-bots-1"]);
+          await loadPvpGameScript(["./src/pvpcrush.js?v=20260414-economy-1", "./pvpcrush.js?v=20260414-economy-1"]);
 
           if (!window.TonCrimePVP_CRUSH) {
             throw new Error("TonCrimePVP_CRUSH not found");
@@ -1789,7 +1870,7 @@
         }
 
         if (id === "slotarena") {
-          await loadPvpGameScript(["./src/pvpslotarena.js?v=20260413-bots-1", "./pvpslotarena.js?v=20260413-bots-1"]);
+          await loadPvpGameScript(["./src/pvpslotarena.js?v=20260414-economy-1", "./pvpslotarena.js?v=20260414-economy-1"]);
 
           if (!window.TonCrimePVP_SLOT) {
             throw new Error("TonCrimePVP_SLOT not found");
@@ -1853,7 +1934,7 @@
         }
 
         if (id === "arena") {
-          await loadPvpGameScript(["./src/pvpcage.js?v=20260413-bots-1", "./pvpcage.js?v=20260413-bots-1"]);
+          await loadPvpGameScript(["./src/pvpcage.js?v=20260414-economy-1", "./pvpcage.js?v=20260414-economy-1"]);
 
           if (!window.TonCrimePVP_CAGE) {
             throw new Error("TonCrimePVP_CAGE not found");
@@ -1929,7 +2010,30 @@
 
     async _finishBetMatchIfNeeded(matchCtx, opponentData, didWin, resultMeta = null) {
       try {
-        if (!matchCtx?.matchId) return;
+        if (!matchCtx?.matchId) {
+          const latest = this.store?.get?.() || {};
+          const pvp = { ...(latest.pvp || {}) };
+          const rewardCurrency = String(pvp.rewardCurrency || pvp.economyCurrency || matchCtx?.rewardCurrency || "YTON").toUpperCase();
+          const rewardYton = Math.max(0, Number(resultMeta?.rewardYton ?? pvp.rewardYton ?? pvp.expectedPayout ?? matchCtx?.rewardYton ?? 0));
+          if (didWin && rewardCurrency === "YTON" && rewardYton > 0 && !pvp.payoutDone) {
+            const nextYton = getWalletYton(latest) + rewardYton;
+            this.store?.set?.({
+              ...patchWalletYton(latest, nextYton),
+              pvp: {
+                ...pvp,
+                payoutDone: true,
+              },
+            });
+          } else if (!pvp.payoutDone) {
+            this.store?.set?.({
+              pvp: {
+                ...pvp,
+                payoutDone: true,
+              },
+            });
+          }
+          return;
+        }
         const sb = this._getSupabase();
         const userId = await this._getAuthUserId();
         if (!sb || !userId) return;
@@ -1950,8 +2054,17 @@
         }
         if (didWin && data?.prize_yton != null) {
           const latest = this.store?.get?.() || {};
-          const nextYton = getWalletYton(latest) + Number(data.prize_yton || 0);
-          this.store?.set?.(patchWalletYton(latest, nextYton));
+          const pvp = { ...(latest.pvp || {}) };
+          if (!pvp.payoutDone) {
+            const nextYton = getWalletYton(latest) + Number(data.prize_yton || 0);
+            this.store?.set?.({
+              ...patchWalletYton(latest, nextYton),
+              pvp: {
+                ...pvp,
+                payoutDone: true,
+              },
+            });
+          }
         }
       } catch (err) {
         console.error("[TonCrime] _finishBetMatchIfNeeded fatal:", err);
@@ -2276,7 +2389,7 @@
         ctx.fillText(card.open ? this._text("cardOpen") : this._text("cardLocked"), btnX + btnW / 2, btnY + btnH / 2);
 
         const pvpState = { ...((state && state.pvp) || {}) };
-        const selectedPkg = getBetPackageForMode(card.id, pvpState);
+        const economy = getPvpEconomyForMode(card.id, pvpState, this._lang());
         const energyCost = getEnergyCostForMode(card.id);
         const descX = x + 18;
         const descY = y + 14 + cardTitleSize + 5 + cardSubSize + 12;
@@ -2295,18 +2408,38 @@
 
         ctx.fillStyle = "rgba(255,255,255,0.88)";
         ctx.font = `700 ${Math.max(11, cardTextSize - 1)}px system-ui, Arial`;
-        ctx.fillText(this._format("energyEntry", { energy: energyCost, stake: selectedPkg.stake }), descX, lineY + 4);
+        ctx.fillText(
+          economy.isYton
+            ? this._format("energyEntry", { energy: energyCost, stake: economy.stake })
+            : this._format("energyEntryStars", { energy: energyCost }),
+          descX,
+          lineY + 4
+        );
         ctx.fillStyle = "rgba(255,214,140,0.96)";
         ctx.fillText(
-          this._format("rewardCommission", {
-            payout: selectedPkg.payout,
-            commission: selectedPkg.commission,
-          }),
+          economy.isYton
+            ? this._format("rewardCommission", {
+                payout: economy.payout,
+                commission: economy.commission,
+              })
+            : this._text("rewardCommissionStars"),
           descX,
           lineY + 4 + Math.round((cardTextSize + 1) * 1.22)
         );
 
+        const economyChipW = Math.min(Math.ceil(ctx.measureText(economy.label).width) + 22, cw - 36);
+        const economyChipX = x + cw - economyChipW - 18;
+        const economyChipY = y + 56;
+        fillRoundRect(ctx, economyChipX, economyChipY, economyChipW, 24, 10, economy.isYton ? "rgba(255,181,74,0.18)" : "rgba(91,181,245,0.18)");
+        strokeRoundRect(ctx, economyChipX, economyChipY, economyChipW, 24, 10, economy.isYton ? "rgba(255,181,74,0.42)" : "rgba(91,181,245,0.48)", 1);
+        ctx.fillStyle = economy.isYton ? "#ffd79a" : "#bfeaff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "800 10px system-ui, Arial";
+        ctx.fillText(economy.label, economyChipX + economyChipW / 2, economyChipY + 12);
+
         const betRects = [];
+        if (economy.isYton) {
         let tagX = x + 18;
         const tagY = y + cardH - 48;
         const tagH = 30;
@@ -2316,7 +2449,7 @@
           const label = `${pkg.stake}→${pkg.payout}`;
           const tw = Math.ceil(ctx.measureText(label).width) + 24;
           if (tagX + tw > x + cw - 18) break;
-          const active = Number(selectedPkg.stake) === Number(pkg.stake);
+          const active = Number(economy.stake) === Number(pkg.stake);
           fillRoundRect(ctx, tagX, tagY, tw, tagH, 10, active ? "rgba(255,181,74,0.22)" : "rgba(255,255,255,0.06)");
           strokeRoundRect(ctx, tagX, tagY, tw, tagH, 10, active ? "rgba(255,181,74,0.82)" : "rgba(255,255,255,0.10)", active ? 1.4 : 1);
           ctx.fillStyle = active ? "#ffd79a" : "rgba(255,255,255,0.92)";
@@ -2325,6 +2458,7 @@
           ctx.fillText(label, tagX + tw / 2, tagY + tagH / 2);
           betRects.push({ x: tagX, y: tagY, w: tw, h: tagH, stake: pkg.stake });
           tagX += tw + 8;
+        }
         }
 
         this.cardRects.push({
