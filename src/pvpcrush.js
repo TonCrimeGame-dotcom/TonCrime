@@ -2274,6 +2274,15 @@
       if (Number.isFinite(ctxReward) && ctxReward > 0) return ctxReward;
 
       const pvpState = window.tcStore?.get?.()?.pvp || {};
+      const rewardCurrency = String(
+        this._matchCtx?.rewardCurrency ||
+        this._matchCtx?.economyCurrency ||
+        pvpState?.rewardCurrency ||
+        pvpState?.economyCurrency ||
+        "YTON"
+      ).toUpperCase();
+      if (rewardCurrency !== "YTON") return 0;
+
       const storeReward = Number(
         pvpState?.rewardYton ??
         pvpState?.expectedPayout ??
@@ -3559,7 +3568,6 @@
       this._resultRecorded = true;
       const store = window.tcStore;
       const now = Date.now();
-      const REWARD_COINS = 36;
       const opponent = this._opponentName();
       const rewardEligible = !!(win && meta?.rewardEligible !== false);
       const prizeYton = Math.max(0, Number(meta?.prizeYton || 0));
@@ -3580,7 +3588,8 @@
       if (store?.get && store?.set) {
         const state = store.get() || {};
         const pvp = { ...(state.pvp || {}) };
-        const nextCoins = Number(state.coins || 0) + (rewardEligible && !pvp.payoutDone ? REWARD_COINS : 0);
+        const rewardCoins = rewardEligible && !pvp.payoutDone ? prizeYton : 0;
+        const nextCoins = Number(state.coins || 0) + rewardCoins;
         const recentMatches = Array.isArray(pvp.recentMatches) ? pvp.recentMatches.slice(0, 19) : [];
         const leaderboard = Array.isArray(pvp.leaderboard) ? pvp.leaderboard.slice() : [];
         const playerName = String(state?.player?.username || "Player");
@@ -3614,6 +3623,11 @@
 
         store.set({
           coins: nextCoins,
+          yton: nextCoins,
+          wallet: {
+            ...(state.wallet || {}),
+            yton: nextCoins,
+          },
           pvp: {
             ...pvp,
             payoutDone: true,
