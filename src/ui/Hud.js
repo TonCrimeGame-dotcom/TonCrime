@@ -268,6 +268,7 @@ export function startHud(store, i18n) {
   }
 
   let walletBtn = document.getElementById("hudWalletBtn");
+  let starsBtn = document.getElementById("hudStarsBtn");
   let langBtn = document.getElementById("hudLangBtn");
   let telegramBtn = document.getElementById("hudTelegramBtn");
   let debugBtn = document.getElementById("hudDebugBtn");
@@ -345,7 +346,18 @@ export function startHud(store, i18n) {
     bottomDock.appendChild(premiumBtn);
   }
 
+  if (!starsBtn) {
+    starsBtn = document.createElement("button");
+    starsBtn.id = "hudStarsBtn";
+    starsBtn.type = "button";
+    starsBtn.textContent = "STARS";
+    bottomDock.appendChild(starsBtn);
+  } else if (starsBtn.parentElement !== bottomDock) {
+    bottomDock.appendChild(starsBtn);
+  }
+
   bottomDock.appendChild(premiumBtn);
+  bottomDock.appendChild(starsBtn);
   bottomDock.appendChild(buttonTray);
   [telegramBtn, walletBtn, debugBtn, langBtn].forEach((btn) => {
     if (btn) buttonTray.appendChild(btn);
@@ -639,6 +651,15 @@ export function startHud(store, i18n) {
     } catch (_) {}
   }
 
+  function openStarsStore() {
+    try {
+      const scenes = window.tcScenes;
+      if (scenes && typeof scenes.go === "function") {
+        scenes.go("xxx");
+      }
+    } catch (_) {}
+  }
+
   function updateDynamicLabels() {
     const lang = i18n?.getLang?.() || store.get?.()?.lang || "tr";
 
@@ -679,6 +700,19 @@ export function startHud(store, i18n) {
       premiumBtn.textContent = "PREMIUM";
       premiumBtn.style.font = `${window.innerWidth <= 420 ? 900 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
       premiumBtn.style.letterSpacing = "0.7px";
+    }
+
+    if (starsBtn) {
+      const state = store.get?.() || {};
+      const tickets = Math.max(0, Number(state?.stars?.easyMatchTickets || 0));
+      const label = tickets > 0 ? `STARS ${Math.floor(tickets)}` : "STARS";
+      starsBtn.title = lang === "tr"
+        ? `Stars magazasi - kolay eslesme hakki: ${Math.floor(tickets)}`
+        : `Stars shop - easier match tickets: ${Math.floor(tickets)}`;
+      starsBtn.setAttribute("aria-label", starsBtn.title);
+      starsBtn.textContent = label;
+      starsBtn.style.font = `${window.innerWidth <= 420 ? 900 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
+      starsBtn.style.letterSpacing = "0.7px";
     }
   }
 
@@ -748,6 +782,12 @@ export function startHud(store, i18n) {
       premiumBtn.addEventListener("click", openTradeStore);
       premiumBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
     }
+
+    if (starsBtn && !starsBtn.__starsBound) {
+      starsBtn.__starsBound = true;
+      starsBtn.addEventListener("click", openStarsStore);
+      starsBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
   }
 
   function applyButtonsStyle() {
@@ -760,10 +800,11 @@ export function startHud(store, i18n) {
     const size = compact ? 32 : (narrow ? 34 : (mobile ? 38 : (tablet ? 40 : 42)));
     const gap = compact ? 5 : (narrow ? 6 : 8);
     const premiumWidth = compact ? 72 : (narrow ? 78 : (mobile ? 86 : 96));
+    const starsWidth = compact ? 68 : (narrow ? 74 : (mobile ? 82 : 90));
     const dockBottom = compact ? 6 : (narrow ? 7 : 8);
     const dockSide = compact ? 6 : (narrow ? 8 : 10);
     const dockShift = compact ? 10 : (narrow ? 12 : 14);
-    const estimatedDockWidth = premiumWidth + size * 4 + gap * 5 + 18;
+    const estimatedDockWidth = premiumWidth + starsWidth + size * 4 + gap * 6 + 18;
     const chatDrawer = document.getElementById("chatDrawer");
     const chatRect = chatDrawer?.getBoundingClientRect?.() || null;
     const chatClosed =
@@ -829,6 +870,13 @@ export function startHud(store, i18n) {
       width: premiumWidth,
       paddingX: compact ? 8 : (narrow ? 10 : 12),
     });
+    if (starsBtn) {
+      applyButtonChrome(starsBtn, {
+        size,
+        width: starsWidth,
+        paddingX: compact ? 8 : (narrow ? 10 : 12),
+      });
+    }
     walletBtn.style.font = "inherit";
     walletBtn.style.lineHeight = "1";
     if (premiumBtn) {
@@ -841,6 +889,16 @@ export function startHud(store, i18n) {
       premiumBtn.style.textShadow = "0 1px 0 rgba(255,255,255,0.28)";
       premiumBtn.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(96,36,8,0.32), 0 10px 18px rgba(255,156,61,0.28)";
     }
+    if (starsBtn) {
+      starsBtn.style.position = "static";
+      starsBtn.style.left = "auto";
+      starsBtn.style.top = "auto";
+      starsBtn.style.zIndex = "1";
+      starsBtn.style.background = "linear-gradient(180deg, rgba(170,226,255,0.88) 0%, rgba(91,181,245,0.78) 42%, rgba(16,52,88,0.92) 100%)";
+      starsBtn.style.color = "#061525";
+      starsBtn.style.textShadow = "0 1px 0 rgba(255,255,255,0.30)";
+      starsBtn.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.42), inset 0 -1px 0 rgba(10,45,88,0.28), 0 10px 18px rgba(91,181,245,0.22)";
+    }
   }
 
   root.style.zIndex = "5000";
@@ -852,6 +910,7 @@ export function startHud(store, i18n) {
   if (bottomDock) bottomDock.style.pointerEvents = shellVisible ? "auto" : "none";
   if (buttonTray) buttonTray.style.pointerEvents = "auto";
   if (premiumBtn) premiumBtn.style.pointerEvents = "auto";
+  if (starsBtn) starsBtn.style.pointerEvents = "auto";
 
   let lastReservedTop = 0;
   let lastAvatarUrl = "";
@@ -943,6 +1002,18 @@ export function startHud(store, i18n) {
       premiumBtn.style.transform = isPremium ? "translateY(0)" : `translateY(${Math.sin(Date.now() / 420) * -1.4}px) scale(${1 + pulse * 0.035})`;
       premiumBtn.style.filter = isPremium ? "drop-shadow(0 0 8px rgba(255,208,110,0.18))" : `drop-shadow(0 0 ${8 + pulse * 9}px rgba(255,208,110,${0.28 + pulse * 0.32}))`;
       premiumBtn.style.pointerEvents = "auto";
+    }
+
+    if (starsBtn) {
+      const tickets = Math.max(0, Number(s?.stars?.easyMatchTickets || 0));
+      const pulse = tickets > 0 ? (Math.sin(Date.now() / 260) + 1) / 2 : 0;
+      starsBtn.style.display = "inline-flex";
+      starsBtn.style.opacity = String(tickets > 0 ? 0.88 + pulse * 0.12 : 0.86);
+      starsBtn.style.transform = tickets > 0 ? `translateY(${Math.sin(Date.now() / 520) * -1}px)` : "translateY(0)";
+      starsBtn.style.filter = tickets > 0
+        ? `drop-shadow(0 0 ${7 + pulse * 7}px rgba(91,181,245,${0.24 + pulse * 0.24}))`
+        : "drop-shadow(0 0 7px rgba(91,181,245,0.16))";
+      starsBtn.style.pointerEvents = "auto";
     }
 
     if (elLogo) elLogo.style.display = "none";
