@@ -1,28 +1,28 @@
 import { Engine } from "./engine/Engine.js";
-import { Store } from "./engine/Store.js?v=20260414-stars-1";
+import { Store } from "./engine/Store.js?v=20260414-economy-1";
 import { SceneManager } from "./engine/SceneManager.js";
 import { Input } from "./engine/Input.js";
 import { Assets } from "./engine/Assets.js";
 import { I18n } from "./engine/I18n.js";
-import { startBotEngine } from "./engine/BotEngine.js?v=20260414-stars-1";
+import { startBotEngine } from "./engine/BotEngine.js?v=20260414-economy-1";
 import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260408-3";
 
-import { StarsScene } from "./scenes/StarsScene.js?v=20260414-stars-1";
+import { StarsScene } from "./scenes/StarsScene.js?v=20260414-economy-1";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
-import { HomeScene } from "./scenes/HomeScene.js?v=20260414-stars-1";
+import { HomeScene } from "./scenes/HomeScene.js?v=20260414-economy-1";
 import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260413-ads-2";
-import { ProfileScene } from "./scenes/ProfileScene.js?v=20260414-stars-1";
+import { ProfileScene } from "./scenes/ProfileScene.js?v=20260414-economy-1";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
-import { TradeScene } from "./scenes/TradeScene.js?v=20260414-stars-1";
+import { TradeScene } from "./scenes/TradeScene.js?v=20260414-economy-1";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
-import { startHud } from "./ui/Hud.js?v=20260403-4";
+import { startHud } from "./ui/Hud.js?v=20260414-economy-1";
 import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-14-stars-1";
+const BUILD_STAMP = "2026-04-14-economy-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -474,7 +474,7 @@ const defaultState = {
 
   economy: {
     mode: "",
-    choiceSeen: false,
+    choiceSeen: true,
     choiceAt: 0,
   },
 
