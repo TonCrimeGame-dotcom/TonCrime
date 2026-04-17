@@ -46,6 +46,11 @@ export function startHud(store, i18n) {
       dock.style.opacity = "1";
       dock.style.pointerEvents = "auto";
     }
+    const storeDock = document.getElementById("hudStoreTray");
+    if (storeDock) {
+      storeDock.style.opacity = "1";
+      storeDock.style.pointerEvents = "auto";
+    }
   }
 
   if (!shellVisible) {
@@ -275,6 +280,7 @@ export function startHud(store, i18n) {
   let premiumBtn = document.getElementById("hudPremiumBtn");
   let buttonTray = document.getElementById("hudActionTray");
   let bottomDock = document.getElementById("hudBottomDock");
+  let storeTray = document.getElementById("hudStoreTray");
 
   if (!bottomDock) {
     bottomDock = document.createElement("div");
@@ -290,6 +296,14 @@ export function startHud(store, i18n) {
     bottomDock.appendChild(buttonTray);
   } else if (buttonTray.parentElement !== bottomDock) {
     bottomDock.appendChild(buttonTray);
+  }
+
+  if (!storeTray) {
+    storeTray = document.createElement("div");
+    storeTray.id = "hudStoreTray";
+    document.body.appendChild(storeTray);
+  } else if (storeTray.parentElement !== document.body) {
+    document.body.appendChild(storeTray);
   }
 
   if (!telegramBtn) {
@@ -340,10 +354,10 @@ export function startHud(store, i18n) {
     premiumBtn = document.createElement("button");
     premiumBtn.id = "hudPremiumBtn";
     premiumBtn.type = "button";
-    premiumBtn.textContent = "SATIN AL";
-    bottomDock.appendChild(premiumBtn);
-  } else if (premiumBtn.parentElement !== bottomDock) {
-    bottomDock.appendChild(premiumBtn);
+    premiumBtn.textContent = "PREMIUM";
+    storeTray.appendChild(premiumBtn);
+  } else if (premiumBtn.parentElement !== storeTray) {
+    storeTray.appendChild(premiumBtn);
   }
 
   if (!starsBtn) {
@@ -351,13 +365,13 @@ export function startHud(store, i18n) {
     starsBtn.id = "hudStarsBtn";
     starsBtn.type = "button";
     starsBtn.textContent = "STARS";
-    bottomDock.appendChild(starsBtn);
-  } else if (starsBtn.parentElement !== bottomDock) {
-    bottomDock.appendChild(starsBtn);
+    storeTray.appendChild(starsBtn);
+  } else if (starsBtn.parentElement !== storeTray) {
+    storeTray.appendChild(starsBtn);
   }
 
-  bottomDock.appendChild(premiumBtn);
-  bottomDock.appendChild(starsBtn);
+  storeTray.appendChild(premiumBtn);
+  storeTray.appendChild(starsBtn);
   bottomDock.appendChild(buttonTray);
   [telegramBtn, walletBtn, debugBtn, langBtn].forEach((btn) => {
     if (btn) buttonTray.appendChild(btn);
@@ -655,7 +669,7 @@ export function startHud(store, i18n) {
     try {
       const scenes = window.tcScenes;
       if (scenes && typeof scenes.go === "function") {
-        scenes.go("xxx");
+        scenes.go("stars");
       }
     } catch (_) {}
   }
@@ -698,8 +712,8 @@ export function startHud(store, i18n) {
       premiumBtn.title = lang === "tr" ? "Premium ekranini ac" : "Open premium";
       premiumBtn.setAttribute("aria-label", premiumBtn.title);
       premiumBtn.textContent = "PREMIUM";
-      premiumBtn.style.font = `${window.innerWidth <= 420 ? 900 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
-      premiumBtn.style.letterSpacing = "0.7px";
+      premiumBtn.style.font = `${window.innerWidth <= 420 ? 800 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
+      premiumBtn.style.letterSpacing = "0";
     }
 
     if (starsBtn) {
@@ -711,8 +725,8 @@ export function startHud(store, i18n) {
         : `Stars shop - easier match tickets: ${Math.floor(tickets)}`;
       starsBtn.setAttribute("aria-label", starsBtn.title);
       starsBtn.textContent = label;
-      starsBtn.style.font = `${window.innerWidth <= 420 ? 900 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
-      starsBtn.style.letterSpacing = "0.7px";
+      starsBtn.style.font = `${window.innerWidth <= 420 ? 800 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
+      starsBtn.style.letterSpacing = "0";
     }
   }
 
@@ -792,50 +806,61 @@ export function startHud(store, i18n) {
 
   function applyButtonsStyle() {
     const viewportW = Math.max(0, Number(window.innerWidth || 0));
-    const viewportH = Math.max(0, Number(window.innerHeight || 0));
     const narrow = viewportW <= 420;
     const compact = viewportW <= 380;
     const mobile = viewportW <= 720;
     const tablet = viewportW > 720 && viewportW <= 1100;
     const size = compact ? 32 : (narrow ? 34 : (mobile ? 38 : (tablet ? 40 : 42)));
     const gap = compact ? 5 : (narrow ? 6 : 8);
-    const premiumWidth = compact ? 72 : (narrow ? 78 : (mobile ? 86 : 96));
-    const starsWidth = compact ? 68 : (narrow ? 74 : (mobile ? 82 : 90));
+    const storeSize = compact ? 28 : (narrow ? 30 : 32);
+    const premiumWidth = compact ? 64 : (narrow ? 72 : 82);
+    const starsWidth = compact ? 58 : (narrow ? 66 : 74);
     const dockBottom = compact ? 6 : (narrow ? 7 : 8);
     const dockSide = compact ? 6 : (narrow ? 8 : 10);
-    const dockShift = compact ? 10 : (narrow ? 12 : 14);
-    const estimatedDockWidth = premiumWidth + starsWidth + size * 4 + gap * 6 + 18;
+    const storeBottom = dockBottom + size + (compact ? 8 : 10);
     const chatDrawer = document.getElementById("chatDrawer");
-    const chatRect = chatDrawer?.getBoundingClientRect?.() || null;
-    const chatClosed =
-      !!chatRect &&
-      !chatDrawer?.classList?.contains("open") &&
-      Number(chatRect.width || 0) > 72 &&
-      Number(chatRect.height || 0) > 32 &&
-      Number(chatRect.bottom || 0) <= viewportH + 24;
-    const useChatAnchor =
-      chatClosed &&
-      Number(chatRect.right || 0) + dockShift + estimatedDockWidth <= viewportW - dockSide;
+    const chatOpen = !!chatDrawer?.classList?.contains("open");
 
     if (bottomDock) {
       bottomDock.style.position = "fixed";
       bottomDock.style.display = "inline-flex";
       bottomDock.style.alignItems = "center";
-      bottomDock.style.justifyContent = "flex-start";
+      bottomDock.style.justifyContent = "flex-end";
       bottomDock.style.gap = `${gap}px`;
       bottomDock.style.bottom = `calc(max(var(--sab), 0px) + ${dockBottom}px)`;
-      bottomDock.style.left = useChatAnchor
-        ? `${Math.round(Number(chatRect?.right || 0) + dockShift)}px`
-        : "auto";
-      bottomDock.style.right = useChatAnchor
-        ? "auto"
-        : `calc(max(var(--sar), 0px) + ${dockSide}px)`;
+      bottomDock.style.left = "auto";
+      bottomDock.style.right = `calc(max(var(--sar), 0px) + ${dockSide}px)`;
       bottomDock.style.maxWidth =
         "calc(100vw - max(var(--sal), 0px) - max(var(--sar), 0px) - 16px)";
       bottomDock.style.zIndex = "5900";
       bottomDock.style.pointerEvents = shellVisible ? "auto" : "none";
       bottomDock.style.opacity = shellVisible ? "1" : "0";
       bottomDock.style.transition = "opacity 180ms ease";
+    }
+
+    if (storeTray) {
+      const storeVisible = shellVisible && !chatOpen;
+      storeTray.style.position = "fixed";
+      storeTray.style.display = "inline-flex";
+      storeTray.style.alignItems = "center";
+      storeTray.style.justifyContent = "center";
+      storeTray.style.gap = `${Math.max(5, gap - 1)}px`;
+      storeTray.style.left = "50%";
+      storeTray.style.right = "auto";
+      storeTray.style.bottom = `calc(max(var(--sab), 0px) + ${storeBottom}px)`;
+      storeTray.style.transform = "translateX(-50%)";
+      storeTray.style.padding = compact ? "3px" : "4px";
+      storeTray.style.borderRadius = "8px";
+      storeTray.style.border = "1px solid rgba(255,255,255,0.08)";
+      storeTray.style.background = "rgba(7,9,13,0.38)";
+      storeTray.style.boxShadow = "0 8px 18px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.04)";
+      storeTray.style.backdropFilter = "blur(10px) saturate(1.05)";
+      storeTray.style.webkitBackdropFilter = "blur(10px) saturate(1.05)";
+      storeTray.style.maxWidth = "calc(100vw - max(var(--sal), 0px) - max(var(--sar), 0px) - 18px)";
+      storeTray.style.zIndex = "5890";
+      storeTray.style.pointerEvents = storeVisible ? "auto" : "none";
+      storeTray.style.opacity = storeVisible ? "1" : "0";
+      storeTray.style.transition = "opacity 160ms ease, transform 160ms ease";
     }
 
     if (buttonTray) {
@@ -866,15 +891,15 @@ export function startHud(store, i18n) {
     applyButtonChrome(debugBtn, { size });
     applyButtonChrome(langBtn, { size });
     applyButtonChrome(premiumBtn, {
-      size,
+      size: storeSize,
       width: premiumWidth,
-      paddingX: compact ? 8 : (narrow ? 10 : 12),
+      paddingX: compact ? 7 : (narrow ? 8 : 10),
     });
     if (starsBtn) {
       applyButtonChrome(starsBtn, {
-        size,
+        size: storeSize,
         width: starsWidth,
-        paddingX: compact ? 8 : (narrow ? 10 : 12),
+        paddingX: compact ? 7 : (narrow ? 8 : 10),
       });
     }
     walletBtn.style.font = "inherit";
@@ -884,20 +909,24 @@ export function startHud(store, i18n) {
       premiumBtn.style.left = "auto";
       premiumBtn.style.top = "auto";
       premiumBtn.style.zIndex = "1";
-      premiumBtn.style.background = "linear-gradient(180deg, rgba(255,235,160,0.92) 0%, rgba(255,191,74,0.94) 36%, rgba(142,64,16,0.96) 100%)";
-      premiumBtn.style.color = "#2a1204";
-      premiumBtn.style.textShadow = "0 1px 0 rgba(255,255,255,0.28)";
-      premiumBtn.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(96,36,8,0.32), 0 10px 18px rgba(255,156,61,0.28)";
+      premiumBtn.style.borderRadius = "8px";
+      premiumBtn.style.background = "rgba(255,204,104,0.14)";
+      premiumBtn.style.border = "1px solid rgba(255,216,144,0.22)";
+      premiumBtn.style.color = "rgba(255,235,190,0.95)";
+      premiumBtn.style.textShadow = "none";
+      premiumBtn.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.08)";
     }
     if (starsBtn) {
       starsBtn.style.position = "static";
       starsBtn.style.left = "auto";
       starsBtn.style.top = "auto";
       starsBtn.style.zIndex = "1";
-      starsBtn.style.background = "linear-gradient(180deg, rgba(170,226,255,0.88) 0%, rgba(91,181,245,0.78) 42%, rgba(16,52,88,0.92) 100%)";
-      starsBtn.style.color = "#061525";
-      starsBtn.style.textShadow = "0 1px 0 rgba(255,255,255,0.30)";
-      starsBtn.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.42), inset 0 -1px 0 rgba(10,45,88,0.28), 0 10px 18px rgba(91,181,245,0.22)";
+      starsBtn.style.borderRadius = "8px";
+      starsBtn.style.background = "rgba(93,184,245,0.14)";
+      starsBtn.style.border = "1px solid rgba(142,213,255,0.22)";
+      starsBtn.style.color = "rgba(221,244,255,0.96)";
+      starsBtn.style.textShadow = "none";
+      starsBtn.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.08)";
     }
   }
 
@@ -908,6 +937,7 @@ export function startHud(store, i18n) {
   root.style.right = "max(var(--sar), 0px)";
   if (row) row.style.pointerEvents = "auto";
   if (bottomDock) bottomDock.style.pointerEvents = shellVisible ? "auto" : "none";
+  if (storeTray) storeTray.style.pointerEvents = shellVisible ? "auto" : "none";
   if (buttonTray) buttonTray.style.pointerEvents = "auto";
   if (premiumBtn) premiumBtn.style.pointerEvents = "auto";
   if (starsBtn) starsBtn.style.pointerEvents = "auto";
@@ -996,23 +1026,19 @@ export function startHud(store, i18n) {
     elPremiumBadge.style.display = isPremium ? "inline-flex" : "none";
 
     if (premiumBtn) {
-      const pulse = (Math.sin(Date.now() / 210) + 1) / 2;
       premiumBtn.style.display = "inline-flex";
-      premiumBtn.style.opacity = String(isPremium ? 0.9 : 0.82 + pulse * 0.18);
-      premiumBtn.style.transform = isPremium ? "translateY(0)" : `translateY(${Math.sin(Date.now() / 420) * -1.4}px) scale(${1 + pulse * 0.035})`;
-      premiumBtn.style.filter = isPremium ? "drop-shadow(0 0 8px rgba(255,208,110,0.18))" : `drop-shadow(0 0 ${8 + pulse * 9}px rgba(255,208,110,${0.28 + pulse * 0.32}))`;
+      premiumBtn.style.opacity = isPremium ? "0.72" : "0.96";
+      premiumBtn.style.transform = "none";
+      premiumBtn.style.filter = "none";
       premiumBtn.style.pointerEvents = "auto";
     }
 
     if (starsBtn) {
       const tickets = Math.max(0, Number(s?.stars?.easyMatchTickets || 0));
-      const pulse = tickets > 0 ? (Math.sin(Date.now() / 260) + 1) / 2 : 0;
       starsBtn.style.display = "inline-flex";
-      starsBtn.style.opacity = String(tickets > 0 ? 0.88 + pulse * 0.12 : 0.86);
-      starsBtn.style.transform = tickets > 0 ? `translateY(${Math.sin(Date.now() / 520) * -1}px)` : "translateY(0)";
-      starsBtn.style.filter = tickets > 0
-        ? `drop-shadow(0 0 ${7 + pulse * 7}px rgba(91,181,245,${0.24 + pulse * 0.24}))`
-        : "drop-shadow(0 0 7px rgba(91,181,245,0.16))";
+      starsBtn.style.opacity = tickets > 0 ? "1" : "0.94";
+      starsBtn.style.transform = "none";
+      starsBtn.style.filter = "none";
       starsBtn.style.pointerEvents = "auto";
     }
 
