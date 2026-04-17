@@ -9,6 +9,8 @@ const STARS_PRODUCTS = [
     descriptionEn: "Non-withdrawable in-game premium, level 50, and business unlock.",
     priceStars: 499,
     badge: "PREMIUM",
+    imageSrc: "./src/assets/prestige.png",
+    imageMode: "contain",
     grant: { premium: true, levelAtLeast: 50, canOwnBusiness: true, canWithdraw: false },
   },
   {
@@ -19,6 +21,8 @@ const STARS_PRODUCTS = [
     descriptionEn: "Refills energy to max. Does not grant withdrawal or TON value.",
     priceStars: 35,
     badge: "ENERGY",
+    imageSrc: "./src/assets/bonus.png",
+    imageMode: "contain",
     grant: { fullEnergy: true },
   },
   {
@@ -29,6 +33,8 @@ const STARS_PRODUCTS = [
     descriptionEn: "A non-withdrawable YTON pack for in-game use only.",
     priceStars: 99,
     badge: "YTON",
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
     grant: { yton: 1000, withdrawable: false },
   },
   {
@@ -39,6 +45,8 @@ const STARS_PRODUCTS = [
     descriptionEn: "Increases the chance of lower-level bot opponents in PvP.",
     priceStars: 75,
     badge: "MATCH",
+    imageSrc: "./src/assets/pvp.jpg",
+    imageMode: "cover",
     grant: { easyMatchTickets: 10 },
   },
   {
@@ -49,6 +57,8 @@ const STARS_PRODUCTS = [
     descriptionEn: "Cosmetic profile badge. No economic or withdrawable value.",
     priceStars: 55,
     badge: "GOLD",
+    imageSrc: "./src/assets/crown.png",
+    imageMode: "contain",
     grant: { cosmeticBadge: "gold" },
   },
 ];
@@ -236,6 +246,20 @@ function drawCoverImage(ctx, img, x, y, w, h, alpha = 1) {
   return true;
 }
 
+function drawContainImage(ctx, img, x, y, w, h, alpha = 1) {
+  if (!img || !img.complete || !img.naturalWidth) return false;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const scale = Math.min(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  ctx.restore();
+  return true;
+}
+
 function getTelegramWebApp() {
   try { return window.Telegram?.WebApp || null; } catch (_) { return null; }
 }
@@ -257,6 +281,7 @@ export class StarsScene {
     this.toastUntil = 0;
     this.buyingProductId = "";
     this.bg = null;
+    this.productImages = new Map();
   }
 
   _lang() {
@@ -288,11 +313,60 @@ export class StarsScene {
     this.dragging = false;
     this.bg = new Image();
     this.bg.src = "./src/assets/pvp-bg.png";
+    STARS_PRODUCTS.forEach((product) => this._productImage(product));
   }
 
   onExit() {
     this.dragging = false;
     this.buyingProductId = "";
+  }
+
+  _productImage(product) {
+    const src = String(product?.imageSrc || "").trim();
+    if (!src) return null;
+    if (!this.productImages.has(src)) {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => { img._ready = true; };
+      img.onerror = () => { img._failed = true; };
+      img.src = src;
+      this.productImages.set(src, img);
+    }
+    const img = this.productImages.get(src);
+    return img && !img._failed ? img : null;
+  }
+
+  _drawProductVisual(ctx, product, x, y, size) {
+    const img = this._productImage(product);
+    fillRoundRect(ctx, x, y, size, size, 18, "rgba(255,179,71,0.10)");
+    strokeRoundRect(ctx, x + 0.5, y + 0.5, size - 1, size - 1, 18, "rgba(255,195,109,0.26)", 1);
+
+    ctx.save();
+    roundRectPath(ctx, x + 2, y + 2, size - 4, size - 4, 16);
+    ctx.clip();
+    const grad = ctx.createLinearGradient(x, y, x + size, y + size);
+    grad.addColorStop(0, "rgba(255,225,156,0.12)");
+    grad.addColorStop(1, "rgba(20,11,7,0.58)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, size, size);
+
+    const pad = product?.imageMode === "cover" ? 0 : Math.max(7, Math.round(size * 0.12));
+    const drawn = product?.imageMode === "cover"
+      ? drawCoverImage(ctx, img, x + 2, y + 2, size - 4, size - 4, 0.96)
+      : drawContainImage(ctx, img, x + pad, y + pad, size - pad * 2, size - pad * 2, 0.96);
+
+    if (!drawn) {
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      ctx.fillRect(x, y, size, size);
+    }
+
+    const shade = ctx.createLinearGradient(0, y, 0, y + size);
+    shade.addColorStop(0, "rgba(255,255,255,0.08)");
+    shade.addColorStop(0.62, "rgba(0,0,0,0.00)");
+    shade.addColorStop(1, "rgba(0,0,0,0.24)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(x, y, size, size);
+    ctx.restore();
   }
 
   _grantProduct(product, payment = {}) {
@@ -475,16 +549,12 @@ export class StarsScene {
         fillRoundRect(ctx, row.x, row.y, row.w, row.h, 20, "rgba(0,0,0,0.34)");
         strokeRoundRect(ctx, row.x + 0.5, row.y + 0.5, row.w - 1, row.h - 1, 20, "rgba(255,195,109,0.18)", 1);
 
-        const badgeSize = 54;
-        fillRoundRect(ctx, row.x + 12, row.y + 16, badgeSize, badgeSize, 18, "rgba(255,179,71,0.16)");
-        strokeRoundRect(ctx, row.x + 12.5, row.y + 16.5, badgeSize - 1, badgeSize - 1, 18, "rgba(255,195,109,0.38)", 1);
-        ctx.fillStyle = "#ffd596";
-        ctx.font = "900 12px system-ui";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(product.badge || "XTR", row.x + 12 + badgeSize / 2, row.y + 16 + badgeSize / 2);
+        const badgeSize = safe.w <= 430 ? 72 : 76;
+        const badgeX = row.x + 12;
+        const badgeY = row.y + (row.h - badgeSize) / 2;
+        this._drawProductVisual(ctx, product, badgeX, badgeY, badgeSize);
 
-        const textX = row.x + 80;
+        const textX = badgeX + badgeSize + 16;
         const btnW = safe.w <= 430 ? 98 : 116;
         const btnH = 42;
         const btnX = row.x + row.w - btnW - 12;
