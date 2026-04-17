@@ -1,7 +1,11 @@
 export function ensureStarsEconomyState(state = {}) {
   const stars = state.stars || {};
+  const balance = Math.max(0, Number(stars.balance ?? stars.gameStars ?? stars.starBalance ?? 0));
   return {
     ...stars,
+    balance,
+    gameStars: balance,
+    withdrawable: false,
     owned: stars.owned || {},
     selectedId: stars.selectedId ?? null,
     lastClaimTs: stars.lastClaimTs || {},
@@ -22,47 +26,15 @@ export function applyStarsProductGrantToState(state = {}, product, payment = {})
 
   const now = Date.now();
   const grant = product.grant || {};
-  const player = { ...(state.player || {}) };
   const stars = ensureStarsEconomyState(state);
-  const wallet = { ...(state.wallet || {}) };
-  const currentCoins = Math.max(0, Number(state.coins ?? state.yton ?? wallet.yton ?? 0));
-  let nextCoins = currentCoins;
-
-  if (Number(grant.yton || 0) > 0) {
-    nextCoins += Number(grant.yton || 0);
-  }
-
-  if (grant.fullEnergy) {
-    const maxEnergy = Math.max(1, Number(player.energyMax || 100));
-    player.energy = maxEnergy;
-  }
-
-  if (grant.premium) {
-    player.membership = "premium";
-    player.premium = true;
-    player.isPremium = true;
-    player.canOwnBusiness = !!grant.canOwnBusiness;
-    player.canWithdraw = false;
-    if (Number(grant.levelAtLeast || 0) > 0) {
-      player.level = Math.max(Number(player.level || 0), Number(grant.levelAtLeast || 0));
-    }
-  }
-
-  if (Number(grant.easyMatchTickets || 0) > 0) {
-    stars.easyMatchTickets = Math.max(0, Number(stars.easyMatchTickets || 0)) + Number(grant.easyMatchTickets || 0);
-  }
-
-  if (grant.cosmeticBadge) {
-    stars.cosmetics = {
-      ...(stars.cosmetics || {}),
-      badge: String(grant.cosmeticBadge),
-    };
-  }
+  const addedStars = Math.max(0, Number(grant.gameStars ?? grant.stars ?? 0));
+  const nextStars = Math.max(0, Number(stars.balance || 0) + addedStars);
 
   const purchaseRecord = {
     id: `stars_${product.id}_${now}`,
     productId: product.id,
     priceStars: Number(product.priceStars || 0),
+    gameStars: addedStars,
     currency: "XTR",
     withdrawable: false,
     source: "telegram_stars",
@@ -73,19 +45,11 @@ export function applyStarsProductGrantToState(state = {}, product, payment = {})
 
   return {
     ...state,
-    coins: nextCoins,
-    yton: nextCoins,
-    premium: !!(state.premium || grant.premium),
-    isPremium: !!(state.isPremium || grant.premium),
-    player,
-    wallet: {
-      ...wallet,
-      yton: nextCoins,
-      tonBalance: 0,
-      starsWithdrawable: false,
-    },
     stars: {
       ...stars,
+      balance: nextStars,
+      gameStars: nextStars,
+      withdrawable: false,
       purchases: [purchaseRecord, ...(stars.purchases || [])].slice(0, 80),
       lastPurchaseAt: now,
       lastProductId: product.id,
