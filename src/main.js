@@ -17,6 +17,7 @@ import { ProfileScene } from "./scenes/ProfileScene.js?v=20260414-economy-1";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
 import { NightclubScene } from "./scenes/NightclubScene.js";
 import { TradeScene } from "./scenes/TradeScene.js?v=20260416-stars-ui-1";
+import { BrothelScene } from "./scenes/BrothelScene.js?v=20260417-brothel-shop-1";
 
 import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
@@ -30,7 +31,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-17-brothel-route-1";
+const BUILD_STAMP = "2026-04-17-brothel-shop-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -2534,7 +2535,7 @@ if (typeof window.PvpScene === "function") {
 }
 
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
-scenes.register("xxx", new BrothelHubScene({ store, scenes }));
+scenes.register("xxx", new BrothelScene({ store, input, i18n, assets, scenes }));
 
 scenes.register(
   "clan",
