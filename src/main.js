@@ -7,7 +7,7 @@ import { I18n } from "./engine/I18n.js";
 import { startBotEngine } from "./engine/BotEngine.js?v=20260414-economy-1";
 import { clearLocalProfileMemory, fetchBackendJson, forgetCurrentProfile, getBackendCandidates } from "./supabase.js?v=20260408-3";
 
-import { StarsScene } from "./scenes/StarsScene.js?v=20260417-stars-visuals-1";
+import { StarsScene } from "./scenes/StarsScene.js?v=20260417-stars-yton-only-1";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
@@ -23,7 +23,7 @@ import { ClanSystem } from "./clan/ClanSystem.js";
 import { ClanScene } from "./scenes/ClanScene.js";
 import { ClanCreateScene } from "./scenes/ClanCreateScene.js";
 
-import { startHud } from "./ui/Hud.js?v=20260416-stars-ui-1";
+import { startHud } from "./ui/Hud.js?v=20260417-stars-yton-only-1";
 import { startChat } from "./ui/Chat.js?v=20260402-2";
 import { startActivityTicker } from "./ui/ActivityTicker.js";
 import { startMenu } from "./ui/Menu.js";
@@ -31,7 +31,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-17-stars-visuals-1";
+const BUILD_STAMP = "2026-04-17-stars-yton-only-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
