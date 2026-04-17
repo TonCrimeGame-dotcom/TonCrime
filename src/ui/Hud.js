@@ -22,6 +22,7 @@ export function startHud(store, i18n) {
 
   const elOnlineBadge = document.getElementById("hudOnlineBadge");
   const elPremiumBadge = document.getElementById("hudPremiumBadge");
+  const elCoinsLine = elCoins?.parentElement || null;
 
   if (
     !root || !row || !elUsername || !elCoins || !elWeaponName || !elWeaponBonus ||
@@ -60,6 +61,25 @@ export function startHud(store, i18n) {
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const clamp01 = (n) => clamp(n, 0, 1);
   const TELEGRAM_URL = "https://t.me/TonCrimeEu";
+
+  function readGameStarBalance(state = {}) {
+    const stars = state.stars || {};
+    const value = Number(stars.balance ?? stars.gameStars ?? stars.starBalance ?? 0);
+    return Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
+  }
+
+  let elStarsBalance = document.getElementById("hudStarsBalance");
+  if (!elStarsBalance && elCoinsLine) {
+    elStarsBalance = document.createElement("span");
+    elStarsBalance.id = "hudStarsBalance";
+    elStarsBalance.style.marginLeft = "8px";
+    elStarsBalance.style.paddingLeft = "8px";
+    elStarsBalance.style.borderLeft = "1px solid rgba(255,255,255,0.20)";
+    elStarsBalance.style.color = "rgba(255,232,172,0.96)";
+    elStarsBalance.style.fontWeight = "800";
+    elStarsBalance.style.whiteSpace = "nowrap";
+    elCoinsLine.appendChild(elStarsBalance);
+  }
 
   function fmtMMSS(ms) {
     const totalSec = Math.max(0, Math.ceil(ms / 1000));
@@ -145,6 +165,12 @@ export function startHud(store, i18n) {
     const equippedId = String(state?.weapons?.equippedId || "").trim();
     const weaponName = String(player?.weaponName || "").trim();
     const candidates = [];
+    const noWeaponNames = new Set(["", "silah_yok", "silahyok", "no_weapon", "none", "weapon_none"]);
+    const normalizedWeaponName = normalizeAssetName(weaponName);
+
+    if (!equippedId && noWeaponNames.has(normalizedWeaponName)) {
+      return [];
+    }
 
     const aliasMap = {
       "silah_yok": ["weapon_none", "weapon-empty", "weapon_none_icon"],
@@ -185,13 +211,12 @@ export function startHud(store, i18n) {
       (aliasMap[equippedNorm] || []).forEach((alias) => candidates.push(...makeAssetCandidates(alias)));
     }
 
-    if (weaponName) {
+    if (weaponName && !noWeaponNames.has(normalizedWeaponName)) {
       candidates.push(...makeAssetCandidates(weaponName));
-      const norm = normalizeAssetName(weaponName);
-      (aliasMap[norm] || []).forEach((alias) => candidates.push(...makeAssetCandidates(alias)));
+      (aliasMap[normalizedWeaponName] || []).forEach((alias) => candidates.push(...makeAssetCandidates(alias)));
     }
 
-    if (!candidates.length) candidates.push(...makeAssetCandidates("weapon_none"));
+    if (!candidates.length && equippedId) candidates.push(...makeAssetCandidates("weapon_none"));
     return uniq(candidates);
   }
 
@@ -268,6 +293,7 @@ export function startHud(store, i18n) {
       img.src = sources[0];
     } else {
       holder.classList.add("is-empty");
+      img.removeAttribute("src");
     }
     return holder;
   }
@@ -973,6 +999,10 @@ export function startHud(store, i18n) {
     const yton = Number(s.coins ?? p.coins ?? 0);
     elCoins.textContent = `YTON ${Number.isFinite(yton) ? yton.toLocaleString("tr-TR") : "0"}`;
     ensureInlineImage("hudCoinsAssetImg", elCoins, makeAssetCandidates("yton"), "YTON", 15);
+    if (elStarsBalance) {
+      elStarsBalance.textContent = `STAR ${readGameStarBalance(s).toLocaleString("tr-TR")}`;
+      elStarsBalance.title = "Oyun ici Star - cekilemez";
+    }
 
     const weaponName = String(p.weaponName || "Silah Yok").trim() || "Silah Yok";
     elWeaponName.textContent = weaponName;
