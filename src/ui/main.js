@@ -173,7 +173,7 @@ scenes.register("dealer", new SimpleScreenScene({ i18n, titleKey: "Dealer" }));
 scenes.register("pvp", new SimpleScreenScene({ i18n, titleKey: "PvP" }));
 scenes.register("clan", new SimpleScreenScene({ i18n, titleKey: "Clan" }));
 scenes.register("nightclub", new SimpleScreenScene({ i18n, titleKey: "Nightclub" }));
-scenes.register("xxx", new SimpleScreenScene({ i18n, titleKey: "XXX" }));
+scenes.register("xxx", new SimpleScreenScene({ i18n, titleKey: "Genelev" }));
 
 const engine = new Engine({ canvas, ctx, input, scenes });
 
