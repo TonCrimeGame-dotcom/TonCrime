@@ -717,14 +717,11 @@ export function startHud(store, i18n) {
     }
 
     if (starsBtn) {
-      const state = store.get?.() || {};
-      const tickets = Math.max(0, Number(state?.stars?.easyMatchTickets || 0));
-      const label = tickets > 0 ? `STARS ${Math.floor(tickets)}` : "STARS";
       starsBtn.title = lang === "tr"
-        ? `Stars magazasi - kolay eslesme hakki: ${Math.floor(tickets)}`
-        : `Stars shop - easier match tickets: ${Math.floor(tickets)}`;
+        ? "Telegram Stars ile YTON al"
+        : "Buy YTON with Telegram Stars";
       starsBtn.setAttribute("aria-label", starsBtn.title);
-      starsBtn.textContent = label;
+      starsBtn.textContent = "STARS";
       starsBtn.style.font = `${window.innerWidth <= 420 ? 800 : 800} ${window.innerWidth <= 420 ? 9 : 10}px system-ui`;
       starsBtn.style.letterSpacing = "0";
     }
@@ -1034,9 +1031,8 @@ export function startHud(store, i18n) {
     }
 
     if (starsBtn) {
-      const tickets = Math.max(0, Number(s?.stars?.easyMatchTickets || 0));
       starsBtn.style.display = "inline-flex";
-      starsBtn.style.opacity = tickets > 0 ? "1" : "0.94";
+      starsBtn.style.opacity = "0.94";
       starsBtn.style.transform = "none";
       starsBtn.style.filter = "none";
       starsBtn.style.pointerEvents = "auto";
