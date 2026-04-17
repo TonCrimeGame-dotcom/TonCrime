@@ -77,6 +77,24 @@ function getBackendCandidates() {
   return out;
 }
 
+function getTelegramInitData() {
+  try {
+    return String(window.tcGetTelegramInitData?.() || window.Telegram?.WebApp?.initData || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function withTelegramInitData(headers = {}) {
+  const initData = getTelegramInitData();
+  return initData ? { ...headers, "X-Telegram-Init-Data": initData } : { ...headers };
+}
+
+function isAuthError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return Number(error?.status || 0) === 401 || /telegram session|required|unauthorized|missing_init_data/.test(message);
+}
+
 function extractHistoryItems(json) {
   if (Array.isArray(json?.items)) return json.items;
   if (Array.isArray(json?.messages)) return json.messages;
@@ -209,14 +227,17 @@ async function fetchBackend(path, options = {}) {
       const res = await fetch(url, {
         ...options,
         headers: {
-          "Content-Type": "application/json",
-          ...(options.headers || {}),
+          ...withTelegramInitData({
+            "Content-Type": "application/json",
+            ...(options.headers || {}),
+          }),
         },
       });
 
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         lastErr = new Error(json?.error || `HTTP ${res.status}`);
+        lastErr.status = res.status;
         continue;
       }
       return json;
@@ -363,9 +384,11 @@ export function startActivityTicker(store) {
   }
 
   function toPayload(activity) {
+    const initData = getTelegramInitData();
     return {
       username: activity.actor,
       text: fallbackTextOf(activity),
+      ...(initData ? { tg_init_data: initData } : {}),
       player_meta: {
         kind: "activity",
         activityId: activity.key,
@@ -397,6 +420,7 @@ export function startActivityTicker(store) {
     }
 
     if (options.remote === false) return activity;
+    if (!getTelegramInitData()) return activity;
 
     try {
       const json = await fetchBackend("/public/chat/send", {
@@ -406,7 +430,7 @@ export function startActivityTicker(store) {
       const item = extractSingleItem(json);
       if (item && isActivityRow(item)) remember(normalizeActivity(item, store)?.key);
     } catch (err) {
-      console.warn("[ACTIVITY] publish failed:", err);
+      if (!isAuthError(err)) console.warn("[ACTIVITY] publish failed:", err);
     }
 
     return activity;
@@ -447,12 +471,13 @@ export function startActivityTicker(store) {
         showActivity(activity, index * 120);
       });
     } catch (err) {
-      console.warn("[ACTIVITY] history sync failed:", err);
+      if (!isAuthError(err)) console.warn("[ACTIVITY] history sync failed:", err);
     }
   }
 
   function sendLeaveBeacon() {
     if (state.unloadSent) return;
+    if (!getTelegramInitData()) return;
     state.unloadSent = true;
 
     const activity = normalizeLocalActivity(
