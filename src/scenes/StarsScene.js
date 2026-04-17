@@ -2,81 +2,81 @@ import { fetchBackendJson } from "../supabase.js?v=20260408-3";
 
 const STARS_PRODUCTS = [
   {
-    id: "yton_100",
-    titleTr: "100 Oyun YTON",
-    titleEn: "100 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 10,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_100",
+    titleTr: "100 Oyun Star",
+    titleEn: "100 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 100,
+    imageSrc: "./src/assets/crown.png",
     imageMode: "contain",
-    grant: { yton: 100, withdrawable: false },
+    grant: { gameStars: 100, withdrawable: false },
   },
   {
-    id: "yton_250",
-    titleTr: "250 Oyun YTON",
-    titleEn: "250 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 24,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_250",
+    titleTr: "250 Oyun Star",
+    titleEn: "250 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 250,
+    imageSrc: "./src/assets/diamond.png",
     imageMode: "contain",
-    grant: { yton: 250, withdrawable: false },
+    grant: { gameStars: 250, withdrawable: false },
   },
   {
-    id: "yton_500",
-    titleTr: "500 Oyun YTON",
-    titleEn: "500 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 49,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_500",
+    titleTr: "500 Oyun Star",
+    titleEn: "500 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 500,
+    imageSrc: "./src/assets/gold.png",
     imageMode: "contain",
-    grant: { yton: 500, withdrawable: false },
+    grant: { gameStars: 500, withdrawable: false },
   },
   {
-    id: "yton_1000",
-    titleTr: "1000 Oyun YTON",
-    titleEn: "1000 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 99,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_1000",
+    titleTr: "1000 Oyun Star",
+    titleEn: "1000 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 1000,
+    imageSrc: "./src/assets/prestige.png",
     imageMode: "contain",
-    grant: { yton: 1000, withdrawable: false },
+    grant: { gameStars: 1000, withdrawable: false },
   },
   {
-    id: "yton_2500",
-    titleTr: "2500 Oyun YTON",
-    titleEn: "2500 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 239,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_2500",
+    titleTr: "2500 Oyun Star",
+    titleEn: "2500 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 2500,
+    imageSrc: "./src/assets/platinum.png",
     imageMode: "contain",
-    grant: { yton: 2500, withdrawable: false },
+    grant: { gameStars: 2500, withdrawable: false },
   },
   {
-    id: "yton_5000",
-    titleTr: "5000 Oyun YTON",
-    titleEn: "5000 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 469,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_5000",
+    titleTr: "5000 Oyun Star",
+    titleEn: "5000 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 5000,
+    imageSrc: "./src/assets/king.png",
     imageMode: "contain",
-    grant: { yton: 5000, withdrawable: false },
+    grant: { gameStars: 5000, withdrawable: false },
   },
   {
-    id: "yton_10000",
-    titleTr: "10000 Oyun YTON",
-    titleEn: "10000 Game YTON",
-    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
-    descriptionEn: "Game-only YTON bought with Telegram Stars.",
-    priceStars: 899,
-    imageSrc: "./src/assets/yton.png",
+    id: "game_star_10000",
+    titleTr: "10000 Oyun Star",
+    titleEn: "10000 Game Stars",
+    descriptionTr: "Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.",
+    descriptionEn: "Non-withdrawable in-game Star balance bought with Telegram Stars.",
+    priceStars: 10000,
+    imageSrc: "./src/assets/bonus.png",
     imageMode: "contain",
-    grant: { yton: 10000, withdrawable: false },
+    grant: { gameStars: 10000, withdrawable: false },
   },
 ];
 
@@ -92,8 +92,11 @@ function getStarsProductDescription(product, lang = "tr") {
 
 function ensureStarsEconomyState(state = {}) {
   const stars = state.stars || {};
+  const balance = Math.max(0, Number(stars.balance ?? stars.gameStars ?? stars.starBalance ?? 0));
   return {
     ...stars,
+    balance,
+    gameStars: balance,
     owned: stars.owned || {},
     selectedId: stars.selectedId ?? null,
     lastClaimTs: stars.lastClaimTs || {},
@@ -111,32 +114,23 @@ function applyStarsProductGrantToState(state = {}, product, payment = {}) {
 
   const now = Date.now();
   const grant = product.grant || {};
-  const player = { ...(state.player || {}) };
   const stars = ensureStarsEconomyState(state);
-  const wallet = { ...(state.wallet || {}) };
-  const currentCoins = Math.max(0, Number(state.coins ?? state.yton ?? wallet.yton ?? 0));
-  let nextCoins = currentCoins;
-
-  if (Number(grant.yton || 0) > 0) nextCoins += Number(grant.yton || 0);
+  const addedStars = Math.max(0, Number(grant.gameStars ?? grant.stars ?? 0));
+  const nextStars = Math.max(0, Number(stars.balance || 0) + addedStars);
 
   return {
     ...state,
-    coins: nextCoins,
-    yton: nextCoins,
-    player,
-    wallet: {
-      ...wallet,
-      yton: nextCoins,
-      tonBalance: 0,
-      starsWithdrawable: false,
-    },
     stars: {
       ...stars,
+      balance: nextStars,
+      gameStars: nextStars,
+      withdrawable: false,
       purchases: [
         {
           id: `stars_${product.id}_${now}`,
           productId: product.id,
           priceStars: Number(product.priceStars || 0),
+          gameStars: addedStars,
           currency: "XTR",
           withdrawable: false,
           source: "telegram_stars",
@@ -402,16 +396,16 @@ export class StarsScene {
   _grantProduct(product, payment = {}) {
     const current = this.store.get() || {};
     this.store.set(applyStarsProductGrantToState(current, product, payment));
-    const yton = Math.max(0, Number(product?.grant?.yton || 0));
+    const gameStars = Math.max(0, Number(product?.grant?.gameStars ?? product?.grant?.stars ?? 0));
     const titleTr = getStarsProductTitle(product, "tr");
     const titleEn = getStarsProductTitle(product, "en");
     this._showToast(
       this._ui(
-        yton > 0
-          ? `${yton.toLocaleString("tr-TR")} YTON eklendi. Cekim hakki vermez.`
+        gameStars > 0
+          ? `${gameStars.toLocaleString("tr-TR")} Star eklendi. Cekim hakki vermez.`
           : `${titleTr} teslim edildi.`,
-        yton > 0
-          ? `${yton.toLocaleString("tr-TR")} YTON added. It does not grant withdrawal.`
+        gameStars > 0
+          ? `${gameStars.toLocaleString("tr-TR")} Stars added. It does not grant withdrawal.`
           : `${titleEn} delivered.`
       ),
       2600
@@ -511,6 +505,7 @@ export class StarsScene {
     const hudTop = Number(state.ui?.hudReservedTop || 98);
     const chatBottom = Number(state.ui?.chatReservedBottom || 64);
     const lang = this._lang();
+    const starsState = ensureStarsEconomyState(state);
 
     this.buttons = [];
     ctx.clearRect(0, 0, w, h);
@@ -552,13 +547,7 @@ export class StarsScene {
     textFit(ctx, this._ui("Telegram Stars Magazasi", "Telegram Stars Shop"), innerX, panelY + 38, innerW - 44);
     ctx.fillStyle = "rgba(255,216,160,0.80)";
     ctx.font = "700 12px system-ui";
-    textFit(
-      ctx,
-      this._ui("YTON paketleri Telegram Stars ile alinir. Cekim hakki vermez.", "YTON packs are bought with Telegram Stars. No withdrawal rights."),
-      innerX,
-      panelY + 60,
-      innerW
-    );
+    textFit(ctx, this._ui("Telegram Stars ile oyun ici Star bakiyesi yukle.", "Top up in-game Stars with Telegram Stars."), innerX, panelY + 60, innerW);
 
     const summaryY = panelY + 76;
     const summaryH = 74;
@@ -566,11 +555,20 @@ export class StarsScene {
     strokeRoundRect(ctx, innerX + 0.5, summaryY + 0.5, innerW - 1, summaryH - 1, 18, "rgba(255,195,109,0.18)", 1);
     ctx.fillStyle = "rgba(255,255,255,0.96)";
     ctx.font = "900 13px system-ui";
-    textFit(ctx, this._ui(`Oyun YTON: ${Math.floor(Number(state.coins || 0)).toLocaleString("tr-TR")}`, `Game YTON: ${Math.floor(Number(state.coins || 0)).toLocaleString("tr-TR")}`), innerX + 14, summaryY + 25, innerW - 28);
+    textFit(
+      ctx,
+      this._ui(
+        `Oyun Star: ${Math.floor(Number(starsState.balance || 0)).toLocaleString("tr-TR")}`,
+        `Game Stars: ${Math.floor(Number(starsState.balance || 0)).toLocaleString("tr-TR")}`
+      ),
+      innerX + 14,
+      summaryY + 25,
+      innerW - 28
+    );
     ctx.fillStyle = "rgba(255,255,255,0.68)";
     ctx.font = "700 11px system-ui";
-    textFit(ctx, this._ui("Butona basinca Telegram Stars odeme paneli acilir.", "Tap buy to open the Telegram Stars payment sheet."), innerX + 14, summaryY + 47, innerW - 28);
-    textFit(ctx, this._ui("Alinan YTON sadece oyun icidir; TON veya crypto degeri yoktur.", "Purchased YTON is game-only; it has no TON or crypto value."), innerX + 14, summaryY + 64, innerW - 28);
+    textFit(ctx, this._ui("Butona basinca Telegram'in kendi Stars odeme paneli acilir.", "Tap buy to open Telegram's native Stars payment sheet."), innerX + 14, summaryY + 47, innerW - 28);
+    textFit(ctx, this._ui("YTON ayri kalir; Star cekilemez ve TON degeri yoktur.", "YTON stays separate; Stars are not withdrawable and have no TON value."), innerX + 14, summaryY + 64, innerW - 28);
 
     const listY = summaryY + summaryH + 14;
     const listH = panelY + panelH - listY - 14;
