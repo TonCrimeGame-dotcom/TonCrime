@@ -14,7 +14,7 @@ export const translations = {
     home.blackmarket: 'Black Market',
     home.nightclub: 'Gece Kulübü',
     home.coffeeshop: 'Coffeeshop',
-    home.xxx: 'Stars Magazasi',
+    home.xxx: 'Genelev',
   },
   en: {
     loading: 'Loading...',
@@ -31,6 +31,6 @@ export const translations = {
     home.blackmarket: 'Black Market',
     home.nightclub: 'Nightclub',
     home.coffeeshop: 'Coffeeshop',
-    home.xxx: 'Stars Shop',
+    home.xxx: 'Brothel',
   },
 };
