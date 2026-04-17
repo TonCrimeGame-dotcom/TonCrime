@@ -5199,7 +5199,15 @@ _drawButton(ctx, rect, text, style = "ghost") {
   _renderBuy(ctx, x, y, w) {
     const isPremium = this._isPremium();
     const canOwn = this._canOwnBusiness();
-    const defs = Object.entries(this._businessDefs()).map(([type, def]) => ({ type, ...def }));
+    const focusType = String(this._trade()?.premiumPreviewType || "").trim();
+    const defs = Object.entries(this._businessDefs())
+      .map(([type, def]) => ({ type, ...def }))
+      .sort((left, right) => {
+        if (!focusType) return 0;
+        if (left.type === focusType) return -1;
+        if (right.type === focusType) return 1;
+        return 0;
+      });
     const compact = w <= 420;
 
     this._drawHeroCard(
