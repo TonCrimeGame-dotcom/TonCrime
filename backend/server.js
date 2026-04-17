@@ -10,67 +10,67 @@ import { getBusinessDef as getSharedBusinessDef, sortBusinessProductsByCatalog }
 
 const STARS_PRODUCTS = [
   {
-    id: 'yton_100',
-    titleTr: '100 Oyun YTON',
-    titleEn: '100 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 10,
-    grant: { yton: 100, withdrawable: false },
+    id: 'game_star_100',
+    titleTr: '100 Oyun Star',
+    titleEn: '100 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 100,
+    grant: { gameStars: 100, withdrawable: false },
   },
   {
-    id: 'yton_250',
-    titleTr: '250 Oyun YTON',
-    titleEn: '250 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 24,
-    grant: { yton: 250, withdrawable: false },
+    id: 'game_star_250',
+    titleTr: '250 Oyun Star',
+    titleEn: '250 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 250,
+    grant: { gameStars: 250, withdrawable: false },
   },
   {
-    id: 'yton_500',
-    titleTr: '500 Oyun YTON',
-    titleEn: '500 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 49,
-    grant: { yton: 500, withdrawable: false },
+    id: 'game_star_500',
+    titleTr: '500 Oyun Star',
+    titleEn: '500 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 500,
+    grant: { gameStars: 500, withdrawable: false },
   },
   {
-    id: 'yton_1000',
-    titleTr: '1000 Oyun YTON',
-    titleEn: '1000 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 99,
-    grant: { yton: 1000, withdrawable: false },
+    id: 'game_star_1000',
+    titleTr: '1000 Oyun Star',
+    titleEn: '1000 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 1000,
+    grant: { gameStars: 1000, withdrawable: false },
   },
   {
-    id: 'yton_2500',
-    titleTr: '2500 Oyun YTON',
-    titleEn: '2500 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 239,
-    grant: { yton: 2500, withdrawable: false },
+    id: 'game_star_2500',
+    titleTr: '2500 Oyun Star',
+    titleEn: '2500 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 2500,
+    grant: { gameStars: 2500, withdrawable: false },
   },
   {
-    id: 'yton_5000',
-    titleTr: '5000 Oyun YTON',
-    titleEn: '5000 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 469,
-    grant: { yton: 5000, withdrawable: false },
+    id: 'game_star_5000',
+    titleTr: '5000 Oyun Star',
+    titleEn: '5000 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 5000,
+    grant: { gameStars: 5000, withdrawable: false },
   },
   {
-    id: 'yton_10000',
-    titleTr: '10000 Oyun YTON',
-    titleEn: '10000 Game YTON',
-    descriptionTr: 'Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.',
-    descriptionEn: 'Game-only YTON bought with Telegram Stars.',
-    priceStars: 899,
-    grant: { yton: 10000, withdrawable: false },
+    id: 'game_star_10000',
+    titleTr: '10000 Oyun Star',
+    titleEn: '10000 Game Stars',
+    descriptionTr: 'Telegram Stars ile alinan, cekilemeyen oyun ici Star bakiyesi.',
+    descriptionEn: 'Non-withdrawable in-game Star balance bought with Telegram Stars.',
+    priceStars: 10000,
+    grant: { gameStars: 10000, withdrawable: false },
   },
 ];
 
@@ -803,9 +803,10 @@ function buildStarsGrantPatch(profile, product) {
   const patch = {
     updated_at: new Date().toISOString(),
   };
+  const addedStars = Math.max(0, Number(grant.gameStars ?? grant.stars ?? 0));
 
-  if (Number(grant.yton || 0) > 0) {
-    patch.coins = Math.max(0, asNumber(profile?.coins, 0) + Number(grant.yton || 0));
+  if (addedStars > 0) {
+    patch.star_balance = Math.max(0, asNumber(profile?.star_balance, 0) + addedStars);
   }
 
   return patch;
@@ -847,9 +848,9 @@ async function applyStarsPurchaseToProfile({ profileKey, product, payment = {} }
     const { error: ledgerError } = await supabase.from('wallet_ledger').insert({
       profile_id: profile.id,
       entry_type: 'telegram_stars_purchase',
-      yton_amount: Number(product?.grant?.yton || 0),
+      yton_amount: 0,
       ton_amount: 0,
-      note: `${product.id} via Telegram Stars (non-withdrawable)`,
+      note: `${product.id} via Telegram Stars (game stars, non-withdrawable)`,
       ref_id: refId,
       created_at: new Date().toISOString(),
     });
@@ -3474,6 +3475,9 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
     const coins = hasOwn(body, 'coins')
       ? Math.max(0, asNumber(body.coins, current?.coins ?? 100))
       : Math.max(0, asNumber(current?.coins, 100));
+    const starBalance = hasOwn(body, 'star_balance')
+      ? Math.max(0, Math.floor(asNumber(body.star_balance, current?.star_balance ?? 0)))
+      : Math.max(0, Math.floor(asNumber(current?.star_balance, 0)));
     const requestedEnergy = hasOwn(body, 'energy')
       ? Math.max(0, asNumber(body.energy, current?.energy ?? 100))
       : Math.max(0, asNumber(current?.energy, 100));
@@ -3499,6 +3503,7 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
       age,
       level,
       coins,
+      star_balance: starBalance,
       energy,
       energy_max: energyMax,
       updated_at: new Date().toISOString(),
@@ -3506,28 +3511,27 @@ app.post('/public/profile-sync', makePublicRateLimit('profile-sync', 60_000, 120
 
     let profileData = null;
     {
-      const { data, error } = await supabase
-        .from('profiles')
-        .upsert(payload, { onConflict: 'telegram_id' })
-        .select('*')
-        .single();
-
-      if (error) {
-        if (!isMissingProfileColumnError(error, 'age')) throw error;
-
-        const fallbackPayload = { ...payload };
-        delete fallbackPayload.age;
-
-        const fallback = await supabase
+      const fallbackPayload = { ...payload };
+      const stripped = new Set();
+      while (Object.keys(fallbackPayload).length) {
+        const { data, error } = await supabase
           .from('profiles')
           .upsert(fallbackPayload, { onConflict: 'telegram_id' })
           .select('*')
           .single();
 
-        if (fallback.error) throw fallback.error;
-        profileData = fallback.data || null;
-      } else {
-        profileData = data || null;
+        if (!error) {
+          profileData = data || null;
+          break;
+        }
+
+        const missingColumn = parseMissingColumnName(error, 'profiles');
+        if (!missingColumn || !hasOwn(fallbackPayload, missingColumn) || stripped.has(missingColumn)) {
+          throw error;
+        }
+
+        stripped.add(missingColumn);
+        delete fallbackPayload[missingColumn];
       }
     }
 
