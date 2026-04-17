@@ -7,74 +7,12 @@ import { TonClient, WalletContractV4, internal, toNano, SendMode } from '@ton/to
 import { beginCell, Address } from '@ton/core';
 import { mnemonicToPrivateKey } from '@ton/crypto';
 import { getBusinessDef as getSharedBusinessDef, sortBusinessProductsByCatalog } from '../src/data/businessCatalog.js';
-
-const STARS_PRODUCTS = [
-  {
-    id: 'premium_lifetime',
-    titleTr: 'Premium Uyelik',
-    titleEn: 'Premium Membership',
-    descriptionTr: 'Cekilemeyen oyun ici premium, level 50 ve isletme acma hakki.',
-    descriptionEn: 'Non-withdrawable in-game premium, level 50, and business unlock.',
-    priceStars: 499,
-    badge: 'PREMIUM',
-    grant: { premium: true, levelAtLeast: 50, canOwnBusiness: true, canWithdraw: false },
-  },
-  {
-    id: 'energy_full',
-    titleTr: 'Full Enerji',
-    titleEn: 'Full Energy',
-    descriptionTr: 'Enerjini maksimuma doldurur. Cekim veya TON degeri vermez.',
-    descriptionEn: 'Refills energy to max. Does not grant withdrawal or TON value.',
-    priceStars: 35,
-    badge: 'ENERGY',
-    grant: { fullEnergy: true },
-  },
-  {
-    id: 'yton_1000',
-    titleTr: '1000 Oyun YTON',
-    titleEn: '1000 Game YTON',
-    descriptionTr: 'Sadece oyun icinde harcanan, cekilemeyen YTON paketi.',
-    descriptionEn: 'A non-withdrawable YTON pack for in-game use only.',
-    priceStars: 99,
-    badge: 'YTON',
-    grant: { yton: 1000, withdrawable: false },
-  },
-  {
-    id: 'match_assist_10',
-    titleTr: '10 Kolay Eslesme Hakki',
-    titleEn: '10 Easier Match Tickets',
-    descriptionTr: 'PvP bot eslesmelerinde daha dusuk seviye rakip ihtimalini artirir.',
-    descriptionEn: 'Increases the chance of lower-level bot opponents in PvP.',
-    priceStars: 75,
-    badge: 'MATCH',
-    grant: { easyMatchTickets: 10 },
-  },
-  {
-    id: 'gold_badge',
-    titleTr: 'Altin Profil Rozeti',
-    titleEn: 'Gold Profile Badge',
-    descriptionTr: 'Profilinde gorunen kozmetik rozet. Ekonomik veya cekilebilir deger vermez.',
-    descriptionEn: 'Cosmetic profile badge. No economic or withdrawable value.',
-    priceStars: 55,
-    badge: 'GOLD',
-    grant: { cosmeticBadge: 'gold' },
-  },
-];
-
-function getStarsProduct(productId) {
-  const key = String(productId || '').trim();
-  return STARS_PRODUCTS.find((product) => product.id === key) || null;
-}
-
-function getStarsProductTitle(product, lang = 'tr') {
-  if (!product) return '';
-  return lang === 'en' ? product.titleEn : product.titleTr;
-}
-
-function getStarsProductDescription(product, lang = 'tr') {
-  if (!product) return '';
-  return lang === 'en' ? product.descriptionEn : product.descriptionTr;
-}
+import {
+  STARS_PRODUCTS,
+  getStarsProduct,
+  getStarsProductDescription,
+  getStarsProductTitle,
+} from '../src/data/starsCatalog.js';
 
 const app = express();
 app.use(cors());
@@ -793,20 +731,6 @@ function buildStarsGrantPatch(profile, product) {
 
   if (Number(grant.yton || 0) > 0) {
     patch.coins = Math.max(0, asNumber(profile?.coins, 0) + Number(grant.yton || 0));
-  }
-
-  if (grant.fullEnergy) {
-    const maxEnergy = Math.max(1, asNumber(profile?.energy_max, 100));
-    patch.energy = maxEnergy;
-    patch.energy_max = maxEnergy;
-  }
-
-  if (grant.premium) {
-    patch.level = Math.max(asInteger(profile?.level, 0), asInteger(grant.levelAtLeast, 50));
-    patch.membership = 'premium';
-    patch.premium = true;
-    patch.can_own_business = !!grant.canOwnBusiness;
-    patch.can_withdraw = false;
   }
 
   return patch;
