@@ -1,9 +1,94 @@
 import { fetchBackendJson } from "../supabase.js?v=20260408-3";
-import {
-  STARS_PRODUCTS,
-  getStarsProductDescription,
-  getStarsProductTitle,
-} from "../data/starsCatalog.js?v=20260417-yton-only-1";
+
+const STARS_PRODUCTS = [
+  {
+    id: "yton_100",
+    titleTr: "100 Oyun YTON",
+    titleEn: "100 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 10,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 100, withdrawable: false },
+  },
+  {
+    id: "yton_250",
+    titleTr: "250 Oyun YTON",
+    titleEn: "250 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 24,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 250, withdrawable: false },
+  },
+  {
+    id: "yton_500",
+    titleTr: "500 Oyun YTON",
+    titleEn: "500 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 49,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 500, withdrawable: false },
+  },
+  {
+    id: "yton_1000",
+    titleTr: "1000 Oyun YTON",
+    titleEn: "1000 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 99,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 1000, withdrawable: false },
+  },
+  {
+    id: "yton_2500",
+    titleTr: "2500 Oyun YTON",
+    titleEn: "2500 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 239,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 2500, withdrawable: false },
+  },
+  {
+    id: "yton_5000",
+    titleTr: "5000 Oyun YTON",
+    titleEn: "5000 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 469,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 5000, withdrawable: false },
+  },
+  {
+    id: "yton_10000",
+    titleTr: "10000 Oyun YTON",
+    titleEn: "10000 Game YTON",
+    descriptionTr: "Telegram Stars ile alinan, sadece oyun icinde harcanan YTON.",
+    descriptionEn: "Game-only YTON bought with Telegram Stars.",
+    priceStars: 899,
+    imageSrc: "./src/assets/yton.png",
+    imageMode: "contain",
+    grant: { yton: 10000, withdrawable: false },
+  },
+];
+
+function getStarsProductTitle(product, lang = "tr") {
+  if (!product) return "";
+  return lang === "en" ? product.titleEn : product.titleTr;
+}
+
+function getStarsProductDescription(product, lang = "tr") {
+  if (!product) return "";
+  return lang === "en" ? product.descriptionEn : product.descriptionTr;
+}
 
 function ensureStarsEconomyState(state = {}) {
   const stars = state.stars || {};
