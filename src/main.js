@@ -11,7 +11,7 @@ import { StarsScene } from "./scenes/StarsScene.js?v=20260416-stars-ui-1";
 import { WeaponsScene } from "./scenes/WeaponsDealerScene.js";
 import * as BootSceneModule from "./scenes/BootScene.js?v=20260402-4";
 import { IntroScene } from "./scenes/IntroScene.js?v=20260402-2";
-import { HomeScene } from "./scenes/HomeScene.js?v=20260416-stars-ui-1";
+import { HomeScene } from "./scenes/HomeScene.js?v=20260417-brothel-route-1";
 import { MissionsScene as MissionsScreen } from "./scenes/MissionsScene.js?v=20260413-ads-2";
 import { ProfileScene } from "./scenes/ProfileScene.js?v=20260414-economy-1";
 import { CoffeeShopScene } from "./scenes/CoffeeShopScene.js";
@@ -30,7 +30,7 @@ import { startPvpLobby } from "./ui/PvpLobby.js";
 import { startWeaponsDealer } from "./ui/WeaponsDealer.js";
 
 const BootScene = BootSceneModule.BootScene || BootSceneModule.default;
-const BUILD_STAMP = "2026-04-16-stars-ui-1";
+const BUILD_STAMP = "2026-04-17-brothel-route-1";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -2365,6 +2365,59 @@ class ClanHubScene {
   render() {}
 }
 
+class BrothelHubScene {
+  constructor({ scenes, store }) {
+    this.scenes = scenes;
+    this.store = store;
+    this._redirected = false;
+  }
+
+  onEnter() {
+    this._redirected = false;
+    const snapshot = this.store.get() || {};
+    this.store.set({
+      trade: {
+        ...(snapshot.trade || {}),
+        activeTab: "buy",
+        view: "main",
+        selectedShopId: null,
+        selectedBusinessId: null,
+        selectedShopItemId: null,
+        premiumPreviewType: "brothel",
+      },
+    });
+  }
+
+  update() {
+    if (this._redirected) return;
+    this._redirected = true;
+    this.scenes.go("trade");
+  }
+
+  render(ctx, w, h) {
+    const bg =
+      assets?.get?.("xxx_bg") ||
+      assets?.get?.("xxx") ||
+      assets?.get?.("blackmarket_bg") ||
+      null;
+
+    if (bg) {
+      const iw = bg.width || 1;
+      const ih = bg.height || 1;
+      const scale = Math.max(w / iw, h / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      ctx.drawImage(bg, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    } else {
+      ctx.fillStyle = "#09080c";
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    ctx.fillStyle = "rgba(0,0,0,0.44)";
+    ctx.fillRect(0, 0, w, h);
+  }
+}
+
 /* ===== INPUT / SCENES ===== */
 const input = new Input(canvas);
 const scenes = new SceneManager();
@@ -2481,6 +2534,7 @@ if (typeof window.PvpScene === "function") {
 }
 
 scenes.register("clanhub", new ClanHubScene({ store, scenes }));
+scenes.register("xxx", new BrothelHubScene({ store, scenes }));
 
 scenes.register(
   "clan",
