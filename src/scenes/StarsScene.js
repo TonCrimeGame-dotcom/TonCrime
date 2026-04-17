@@ -381,10 +381,14 @@ export class StarsScene {
     }
   }
 
-  draw(ctx) {
+  render(ctx, w, h) {
+    this.draw(ctx, w, h);
+  }
+
+  draw(ctx, viewW, viewH) {
     const state = this.store.get() || {};
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
+    const w = Math.max(1, Number(viewW || window.innerWidth || ctx.canvas.width || 1));
+    const h = Math.max(1, Number(viewH || window.innerHeight || ctx.canvas.height || 1));
     const safe = state.ui?.safe || { x: 0, y: 0, w, h };
     const hudTop = Number(state.ui?.hudReservedTop || 98);
     const chatBottom = Number(state.ui?.chatReservedBottom || 64);
