@@ -26,9 +26,14 @@ function getStar(id) {
 
 function ensureStarsState(store) {
   const s = store.get();
+  const currentStars = s.stars || {};
+  const balance = Math.max(0, Number(currentStars.balance ?? currentStars.gameStars ?? currentStars.starBalance ?? 0));
   if (!s.stars) {
     store.set({
       stars: {
+        balance,
+        gameStars: balance,
+        withdrawable: false,
         owned: {},
         selectedId: null,
         lastClaimTs: {},
@@ -41,6 +46,9 @@ function ensureStarsState(store) {
     store.set({
       stars: {
         ...s.stars,
+        balance,
+        gameStars: balance,
+        withdrawable: false,
         owned: s.stars.owned || {},
         selectedId: s.stars.selectedId ?? null,
         lastClaimTs: s.stars.lastClaimTs || {},
@@ -119,7 +127,7 @@ export function startStarsOverlay(store) {
 
         <div style="flex:1; min-width:0;">
           <div style="font-size:12px; opacity:.9; margin-bottom:8px;">
-            <div>Cost: <b id="soCost">-</b> coin</div>
+            <div>Cost: <b id="soCost">-</b> Star</div>
             <div>Energy Gain: <b id="soEnergy">-</b></div>
             <div>Twin: <b id="soTwin">-</b></div>
           </div>
@@ -194,7 +202,8 @@ export function startStarsOverlay(store) {
     const isOwned = !!owned[star.id];
 
     soName.textContent = star.name;
-    soMeta.textContent = `${star.gender.toUpperCase()} • Coins: ${s.coins ?? 0} • Energy: ${s.player?.energy ?? 0}/${s.player?.energyMax ?? 0}`;
+    const starBalance = Math.max(0, Number(s.stars?.balance ?? s.stars?.gameStars ?? 0));
+    soMeta.textContent = `${star.gender.toUpperCase()} - Stars: ${starBalance} - Energy: ${s.player?.energy ?? 0}/${s.player?.energyMax ?? 0}`;
     soCost.textContent = String(star.coinValue);
     soEnergy.textContent = String(star.energyGain);
     soTwin.textContent = star.twinId ? star.twinId : "-";
@@ -235,17 +244,24 @@ export function startStarsOverlay(store) {
     const owned = { ...(ss.stars?.owned || {}) };
 
     if (owned[star.id]) return;
-    const coins = Number(ss.coins || 0);
-    if (coins < star.coinValue) {
-      soStatus.textContent = "Not enough coins.";
+    const starBalance = Math.max(0, Number(ss.stars?.balance ?? ss.stars?.gameStars ?? 0));
+    if (starBalance < star.coinValue) {
+      soStatus.textContent = "Not enough Stars.";
       return;
     }
 
     owned[star.id] = true;
+    const nextStarBalance = starBalance - star.coinValue;
 
     store.set({
-      coins: coins - star.coinValue,
-      stars: { ...(ss.stars || {}), owned, selectedId: star.id },
+      stars: {
+        ...(ss.stars || {}),
+        balance: nextStarBalance,
+        gameStars: nextStarBalance,
+        withdrawable: false,
+        owned,
+        selectedId: star.id,
+      },
     });
 
     // twin bonus: set tamamlandıysa 1 kez +2 enerji
