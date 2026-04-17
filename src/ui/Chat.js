@@ -1,4 +1,4 @@
-import { fetchBackendJson, supabase } from "../supabase.js?v=20260402-2";
+import { fetchBackendJson, supabase } from "../supabase.js?v=20260408-3";
 
 const CHAT_STARTING_LEVEL = 0;
 const CHAT_DEMO_PATTERN = /^(test|demo|deneme|sample|ornek|ornk)([\s\d!?.-]|$)/i;
