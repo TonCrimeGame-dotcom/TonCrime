@@ -1,77 +1,9 @@
 import { fetchBackendJson } from "../supabase.js?v=20260408-3";
-
-const STARS_PRODUCTS = [
-  {
-    id: "premium_lifetime",
-    titleTr: "Premium Uyelik",
-    titleEn: "Premium Membership",
-    descriptionTr: "Cekilemeyen oyun ici premium, level 50 ve isletme acma hakki.",
-    descriptionEn: "Non-withdrawable in-game premium, level 50, and business unlock.",
-    priceStars: 499,
-    badge: "PREMIUM",
-    imageSrc: "./src/assets/prestige.png",
-    imageMode: "contain",
-    grant: { premium: true, levelAtLeast: 50, canOwnBusiness: true, canWithdraw: false },
-  },
-  {
-    id: "energy_full",
-    titleTr: "Full Enerji",
-    titleEn: "Full Energy",
-    descriptionTr: "Enerjini maksimuma doldurur. Cekim veya TON degeri vermez.",
-    descriptionEn: "Refills energy to max. Does not grant withdrawal or TON value.",
-    priceStars: 35,
-    badge: "ENERGY",
-    imageSrc: "./src/assets/bonus.png",
-    imageMode: "contain",
-    grant: { fullEnergy: true },
-  },
-  {
-    id: "yton_1000",
-    titleTr: "1000 Oyun YTON",
-    titleEn: "1000 Game YTON",
-    descriptionTr: "Sadece oyun icinde harcanan, cekilemeyen YTON paketi.",
-    descriptionEn: "A non-withdrawable YTON pack for in-game use only.",
-    priceStars: 99,
-    badge: "YTON",
-    imageSrc: "./src/assets/yton.png",
-    imageMode: "contain",
-    grant: { yton: 1000, withdrawable: false },
-  },
-  {
-    id: "match_assist_10",
-    titleTr: "10 Kolay Eslesme Hakki",
-    titleEn: "10 Easier Match Tickets",
-    descriptionTr: "PvP bot eslesmelerinde daha dusuk seviye rakip ihtimalini artirir.",
-    descriptionEn: "Increases the chance of lower-level bot opponents in PvP.",
-    priceStars: 75,
-    badge: "MATCH",
-    imageSrc: "./src/assets/pvp.jpg",
-    imageMode: "cover",
-    grant: { easyMatchTickets: 10 },
-  },
-  {
-    id: "gold_badge",
-    titleTr: "Altin Profil Rozeti",
-    titleEn: "Gold Profile Badge",
-    descriptionTr: "Profilinde gorunen kozmetik rozet. Ekonomik veya cekilebilir deger vermez.",
-    descriptionEn: "Cosmetic profile badge. No economic or withdrawable value.",
-    priceStars: 55,
-    badge: "GOLD",
-    imageSrc: "./src/assets/crown.png",
-    imageMode: "contain",
-    grant: { cosmeticBadge: "gold" },
-  },
-];
-
-function getStarsProductTitle(product, lang = "tr") {
-  if (!product) return "";
-  return lang === "en" ? product.titleEn : product.titleTr;
-}
-
-function getStarsProductDescription(product, lang = "tr") {
-  if (!product) return "";
-  return lang === "en" ? product.descriptionEn : product.descriptionTr;
-}
+import {
+  STARS_PRODUCTS,
+  getStarsProductDescription,
+  getStarsProductTitle,
+} from "../data/starsCatalog.js?v=20260417-yton-only-1";
 
 function ensureStarsEconomyState(state = {}) {
   const stars = state.stars || {};
@@ -84,7 +16,6 @@ function ensureStarsEconomyState(state = {}) {
     diseaseUntil: Number(stars.diseaseUntil || 0),
     lastDiseaseAt: Number(stars.lastDiseaseAt || 0),
     purchases: Array.isArray(stars.purchases) ? stars.purchases : [],
-    easyMatchTickets: Math.max(0, Number(stars.easyMatchTickets || 0)),
     cosmetics: { ...(stars.cosmetics || {}) },
     economyMode: "stars",
   };
@@ -103,36 +34,10 @@ function applyStarsProductGrantToState(state = {}, product, payment = {}) {
 
   if (Number(grant.yton || 0) > 0) nextCoins += Number(grant.yton || 0);
 
-  if (grant.fullEnergy) {
-    const maxEnergy = Math.max(1, Number(player.energyMax || 100));
-    player.energy = maxEnergy;
-  }
-
-  if (grant.premium) {
-    player.membership = "premium";
-    player.premium = true;
-    player.isPremium = true;
-    player.canOwnBusiness = !!grant.canOwnBusiness;
-    player.canWithdraw = false;
-    if (Number(grant.levelAtLeast || 0) > 0) {
-      player.level = Math.max(Number(player.level || 0), Number(grant.levelAtLeast || 0));
-    }
-  }
-
-  if (Number(grant.easyMatchTickets || 0) > 0) {
-    stars.easyMatchTickets = Math.max(0, Number(stars.easyMatchTickets || 0)) + Number(grant.easyMatchTickets || 0);
-  }
-
-  if (grant.cosmeticBadge) {
-    stars.cosmetics = { ...(stars.cosmetics || {}), badge: String(grant.cosmeticBadge) };
-  }
-
   return {
     ...state,
     coins: nextCoins,
     yton: nextCoins,
-    premium: !!(state.premium || grant.premium),
-    isPremium: !!(state.isPremium || grant.premium),
     player,
     wallet: {
       ...wallet,
@@ -282,6 +187,9 @@ export class StarsScene {
     this.buyingProductId = "";
     this.bg = null;
     this.productImages = new Map();
+    this.listRect = null;
+    this._wheelTarget = null;
+    this._wheelHandler = null;
   }
 
   _lang() {
@@ -314,11 +222,48 @@ export class StarsScene {
     this.bg = new Image();
     this.bg.src = "./src/assets/pvp-bg.png";
     STARS_PRODUCTS.forEach((product) => this._productImage(product));
+    this._bindWheel();
   }
 
   onExit() {
     this.dragging = false;
     this.buyingProductId = "";
+    this._unbindWheel();
+  }
+
+  _bindWheel() {
+    if (this._wheelHandler) return;
+    const target = this.input?.canvas || window;
+    this._wheelTarget = target;
+    this._wheelHandler = (event) => {
+      if (!this.maxScroll) return;
+
+      const canvas = this.input?.canvas;
+      let px = this.input?.pointer?.x || 0;
+      let py = this.input?.pointer?.y || 0;
+      if (canvas && typeof event.clientX === "number" && typeof event.clientY === "number") {
+        const rect = canvas.getBoundingClientRect();
+        px = event.clientX - rect.left;
+        py = event.clientY - rect.top;
+      }
+
+      if (this.listRect && !pointInRect(px, py, this.listRect)) return;
+
+      const modeScale = event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? 180 : 1;
+      const delta = Number(event.deltaY || 0) * modeScale;
+      if (!Number.isFinite(delta) || Math.abs(delta) < 0.5) return;
+
+      this.scrollY = clamp(this.scrollY + delta, 0, this.maxScroll);
+      event.preventDefault?.();
+    };
+    target.addEventListener("wheel", this._wheelHandler, { passive: false });
+  }
+
+  _unbindWheel() {
+    if (!this._wheelHandler || !this._wheelTarget) return;
+    this._wheelTarget.removeEventListener("wheel", this._wheelHandler);
+    this._wheelTarget = null;
+    this._wheelHandler = null;
   }
 
   _productImage(product) {
@@ -372,10 +317,17 @@ export class StarsScene {
   _grantProduct(product, payment = {}) {
     const current = this.store.get() || {};
     this.store.set(applyStarsProductGrantToState(current, product, payment));
+    const yton = Math.max(0, Number(product?.grant?.yton || 0));
+    const titleTr = getStarsProductTitle(product, "tr");
+    const titleEn = getStarsProductTitle(product, "en");
     this._showToast(
       this._ui(
-        `${getStarsProductTitle(product, "tr")} teslim edildi. Cekim hakki vermez.`,
-        `${getStarsProductTitle(product, "en")} delivered. It does not grant withdrawal.`
+        yton > 0
+          ? `${yton.toLocaleString("tr-TR")} YTON eklendi. Cekim hakki vermez.`
+          : `${titleTr} teslim edildi.`,
+        yton > 0
+          ? `${yton.toLocaleString("tr-TR")} YTON added. It does not grant withdrawal.`
+          : `${titleEn} delivered.`
       ),
       2600
     );
@@ -390,7 +342,12 @@ export class StarsScene {
 
     try {
       if (!tg?.openInvoice && !canDevGrant) {
-        this._showToast(this._ui("Telegram Stars odemesi sadece Telegram icinde acilir", "Telegram Stars payment opens only inside Telegram"));
+        this._showToast(
+          this._ui(
+            "Telegram Stars odemesi sadece Telegram icinde acilir",
+            "Telegram Stars payment opens only inside Telegram"
+          )
+        );
         return;
       }
 
@@ -402,7 +359,7 @@ export class StarsScene {
       this._showToast(this._ui("Stars odeme penceresi hazirlaniyor", "Preparing Stars payment"), 1800);
       const json = await fetchBackendJson("/public/stars/invoice", {
         method: "POST",
-        body: JSON.stringify({ product_id: product.id }),
+        body: JSON.stringify({ product_id: product.id, lang: this._lang() }),
       });
       const invoiceLink = String(json?.invoice_link || "").trim();
       if (!invoiceLink) throw new Error("invoice link missing");
@@ -428,7 +385,9 @@ export class StarsScene {
   update() {
     const px = this.input?.pointer?.x || 0;
     const py = this.input?.pointer?.y || 0;
-    const isDown = !!this.input?.pointer?.down;
+    const isDown = typeof this.input?.isDown === "function"
+      ? this.input.isDown()
+      : !!this.input?.pointer?.down;
 
     if (this.input?.justPressed?.()) {
       this.dragging = true;
@@ -467,7 +426,6 @@ export class StarsScene {
     const hudTop = Number(state.ui?.hudReservedTop || 98);
     const chatBottom = Number(state.ui?.chatReservedBottom || 64);
     const lang = this._lang();
-    const starsState = ensureStarsEconomyState(state);
 
     this.buttons = [];
     ctx.clearRect(0, 0, w, h);
@@ -511,7 +469,7 @@ export class StarsScene {
     ctx.font = "700 12px system-ui";
     textFit(
       ctx,
-      this._ui("Cekilemeyen oyun ici avantajlar. TON, crypto veya cekim hakki vermez.", "Non-withdrawable in-game benefits. No TON, crypto, or withdrawal rights."),
+      this._ui("YTON paketleri Telegram Stars ile alinir. Cekim hakki vermez.", "YTON packs are bought with Telegram Stars. No withdrawal rights."),
       innerX,
       panelY + 60,
       innerW
@@ -526,11 +484,12 @@ export class StarsScene {
     textFit(ctx, this._ui(`Oyun YTON: ${Math.floor(Number(state.coins || 0)).toLocaleString("tr-TR")}`, `Game YTON: ${Math.floor(Number(state.coins || 0)).toLocaleString("tr-TR")}`), innerX + 14, summaryY + 25, innerW - 28);
     ctx.fillStyle = "rgba(255,255,255,0.68)";
     ctx.font = "700 11px system-ui";
-    textFit(ctx, this._ui(`Kolay eslesme hakki: ${Math.floor(Number(starsState.easyMatchTickets || 0))}`, `Easier match tickets: ${Math.floor(Number(starsState.easyMatchTickets || 0))}`), innerX + 14, summaryY + 47, innerW - 28);
-    textFit(ctx, this._ui("Stars ile alinan YTON sadece oyun icidir.", "YTON bought with Stars is in-game only."), innerX + 14, summaryY + 64, innerW - 28);
+    textFit(ctx, this._ui("Butona basinca Telegram Stars odeme paneli acilir.", "Tap buy to open the Telegram Stars payment sheet."), innerX + 14, summaryY + 47, innerW - 28);
+    textFit(ctx, this._ui("Alinan YTON sadece oyun icidir; TON veya crypto degeri yoktur.", "Purchased YTON is game-only; it has no TON or crypto value."), innerX + 14, summaryY + 64, innerW - 28);
 
     const listY = summaryY + summaryH + 14;
     const listH = panelY + panelH - listY - 14;
+    this.listRect = { x: innerX, y: listY, w: innerW, h: listH };
     const rowGap = 12;
     const rowH = safe.w <= 430 ? 136 : 124;
     const contentH = STARS_PRODUCTS.length * rowH + Math.max(0, STARS_PRODUCTS.length - 1) * rowGap;
@@ -583,7 +542,7 @@ export class StarsScene {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.font = "900 12px system-ui";
-        ctx.fillText(busy ? this._ui("ACILIYOR", "OPENING") : this._ui("STARS ILE AL", "BUY STARS"), btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+        ctx.fillText(busy ? this._ui("ACILIYOR", "OPENING") : this._ui("SATIN AL", "BUY"), btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
       }
       y += rowH + rowGap;
     }
