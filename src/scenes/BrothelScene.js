@@ -1,8 +1,8 @@
 const STAR_NAMES = [
-  "Aylin", "Mira", "Selin", "Lara", "Nehir", "Eylül", "Derya", "Yasmin",
-  "Alara", "Ceren", "Mina", "Ela", "Sera", "Lina", "Rüya", "Nora",
-  "İdil", "Melis", "Sude", "Asya", "Defne", "Bade", "İrem", "Deniz",
-  "Leyla", "Maya",
+  "Scarlett", "Monica", "Isabella", "Valentina", "Sofia", "Bianca", "Adriana", "Natalia",
+  "Victoria", "Camila", "Vanessa", "Alessia", "Diana", "Elena", "Stella", "Nina",
+  "Aurora", "Gabriella", "Luna", "Carmen", "Anastasia", "Sienna", "Violet", "Roxanne",
+  "Maya", "Chloe",
 ];
 
 const BROTHEL_ITEMS = STAR_NAMES.map((name, index) => {
