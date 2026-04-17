@@ -124,7 +124,7 @@ export class HomeScene {
       { id: "blackmarket", titleKey: "home.blackmarket", sceneKey: "trade" },
       { id: "nightclub", titleKey: "home.nightclub", sceneKey: "nightclub" },
       { id: "coffeeshop", titleKey: "home.coffeeshop", sceneKey: "coffeeshop" },
-      { id: "xxx", titleKey: "home.xxx", sceneKey: "xxx" },
+      { id: "xxx", titleKey: "home.xxx", sceneKey: "xxx", tradeTab: "buy", businessType: "brothel" },
     ];
   }
 
@@ -163,7 +163,7 @@ export class HomeScene {
       return;
     }
 
-    try { this.scenes?.go?.("xxx"); } catch (_) {}
+    try { this.scenes?.go?.("stars"); } catch (_) {}
   }
 
   _drawEconomyIntro(ctx, safe, w, h) {
@@ -334,6 +334,20 @@ export class HomeScene {
             } catch (_) {}
           }
           return;
+        }
+
+        if (item.tradeTab) {
+          const snapshot = this.store.get() || {};
+          this.store.set({
+            trade: {
+              ...(snapshot.trade || {}),
+              activeTab: item.tradeTab,
+              view: "main",
+              selectedShopId: null,
+              selectedBusinessId: null,
+              premiumPreviewType: item.businessType || "brothel",
+            },
+          });
         }
 
         try {
